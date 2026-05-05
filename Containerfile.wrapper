@@ -1,0 +1,12 @@
+ARG DEV_IMAGE
+FROM ${DEV_IMAGE}
+
+ARG USER_ID=1000
+ARG AI_TOOLS="claude"
+ARG EXTRA_PACKAGES=""
+
+COPY install/ /tmp/jailbox-install/
+RUN sh /tmp/jailbox-install/setup.sh && rm -rf /tmp/jailbox-install
+
+EXPOSE 2222
+CMD ["/bin/sh", "-c", "mkdir -p /var/run/sshd /run/sshd; SSHD=$(command -v sshd); [ -n \"$SSHD\" ] || { echo 'sshd not found'; exit 1; }; exec \"$SSHD\" -D -e"]

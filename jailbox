@@ -1,0 +1,104 @@
+#!/bin/bash
+# =============================================================================
+# jailbox — Sandboxed AI Development Environment
+# =============================================================================
+#
+# PURPOSE
+#   Wraps a project's dev image with AI tooling and SSH access, then launches
+#   it as a hardened isolated container. The AI runs inside the same container
+#   as the project's dev environment — no bridge, no exec proxy.
+#
+# CONFIGURATION
+#   jailbox.conf in the project root is sourced if present. Supported settings:
+#     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
+#     AI_TOOLS, EXTRA_PACKAGES, EGRESS_ALLOW, REMOTE_PATH, READ_ONLY_ROOTFS.
+#
+# REQUIREMENTS
+#   podman, ssh, ssh-keygen, VSCodium/VSCode with open-remote-ssh extension
+# =============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR=$(pwd)
+PROJECT_NAME=$(basename "$PROJECT_DIR")
+
+# Image, container, volume, and network names
+PROJECT_DEV_IMAGE="${PROJECT_NAME}-dev"
+JAILBOX_IMAGE="${PROJECT_NAME}-jailbox"
+CONTAINER_NAME="${PROJECT_NAME}-jailbox"
+PROXY_NAME="${PROJECT_NAME}-jailbox-proxy"
+PROXY_IMAGE="${PROJECT_NAME}-jailbox-proxy"
+VOLUME_NAME="${PROJECT_NAME}-jailbox-home"
+NETWORK_NAME="${PROJECT_NAME}-jailbox-net"
+
+# Defaults overridden by jailbox.conf
+DEV_IMAGE=""
+DEV_CONTAINERFILE=""
+DEV_BUILD_CONTEXT=""
+DEV_TARGET_STAGE=""
+AI_TOOLS=("claude")
+EXTRA_PACKAGES=""
+EGRESS_ALLOW=()
+REMOTE_PATH="/home/devuser/project"
+READ_ONLY_ROOTFS=false
+
+# Runtime state populated by modules
+EDITOR_BIN=""
+LOCAL_PORT=""
+MY_UID=""
+USABLE_SHELL=""
+PKG_MANAGER=""
+SSH_DIR=""
+SSH_CONFIG=""
+KNOWN_HOSTS=""
+KEY_FILE=""
+READONLY_PATHS=()
+READONLY_MOUNTS=()
+GITCONFIG_MOUNT=()
+ROOTFS_FLAG=()
+FILTER_FILE=""
+JAILBOX_NETWORK=""
+PROXY_ENV=()
+
+# shellcheck source=jailbox/lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=jailbox/lib/preflight.sh
+source "$SCRIPT_DIR/lib/preflight.sh"
+# shellcheck source=jailbox/lib/dev-image.sh
+source "$SCRIPT_DIR/lib/dev-image.sh"
+# shellcheck source=jailbox/lib/ssh.sh
+source "$SCRIPT_DIR/lib/ssh.sh"
+# shellcheck source=jailbox/lib/network.sh
+source "$SCRIPT_DIR/lib/network.sh"
+# shellcheck source=jailbox/lib/runtime.sh
+source "$SCRIPT_DIR/lib/runtime.sh"
+# shellcheck source=jailbox/lib/validation.sh
+source "$SCRIPT_DIR/lib/validation.sh"
+
+main() {
+    load_project_config
+    parse_args "$@"
+    host_preflight "$@"
+    configure_readonly_paths
+
+    if [[ "${1:-}" == "--clean" ]]; then
+        clean_jailbox
+        return 0
+    fi
+
+    initialize_runtime_ids
+    build_or_select_dev_image
+    validate_dev_image
+    setup_ssh_keys
+    build_jailbox_image
+    build_readonly_mounts
+    configure_runtime_mounts
+    configure_network
+    ensure_home_volume
+    start_jailbox_container
+    wait_for_ssh
+    post_start_validation
+    open_editor
+}
+
+main "$@"
