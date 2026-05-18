@@ -1,8 +1,9 @@
 # Public interface declarations.
 #
 # Changes here drive release version suggestions:
-# - Removing a config key or CLI flag after v1.0.0 suggests a major bump.
-# - Adding a config key or CLI flag after v1.0.0 suggests a minor bump.
+# - Before v1.0.0, adding or removing a config key or CLI flag suggests a minor bump.
+# - After v1.0.0, removing a config key or CLI flag suggests a major bump.
+# - After v1.0.0, adding a config key or CLI flag suggests a minor bump.
 # - Other changes suggest a patch bump.
 
 CONFIG_SCALAR_KEYS=(

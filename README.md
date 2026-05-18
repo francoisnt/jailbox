@@ -59,10 +59,11 @@ an annotated git tag, and pushes it to `origin`. Pushing a tag starts the GitHub
 Actions release workflow, which builds `dist/jailbox-vX.Y.Z.tar.gz` from that
 tagged checkout and uploads it to the GitHub Release.
 
-Before `v1.0.0`, automatic releases use patch bumps only. Use `--first-major`
-when the project is ready for its first stable major release. After `v1.0.0`,
-removed config keys or CLI flags suggest a major bump, added keys or flags
-suggest a minor bump, and other changes suggest a patch bump.
+Before `v1.0.0`, added or removed public API items suggest a minor bump, and
+other changes suggest a patch bump. Use `--first-major` when the project is
+ready for its first stable major release. After `v1.0.0`, removed config keys
+or CLI flags suggest a major bump, added keys or flags suggest a minor bump, and
+other changes suggest a patch bump.
 
 Useful non-interactive forms:
 

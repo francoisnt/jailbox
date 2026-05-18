@@ -26,6 +26,7 @@ VERSION must look like vMAJOR.MINOR.PATCH.
 EOF_USAGE
 }
 
+# Print an error and stop packaging.
 die() {
     echo "Error: $*" >&2
     exit 1
@@ -50,9 +51,11 @@ for path in "${RELEASE_PATHS[@]}"; do
     cp -R "$ROOT_DIR/$path" "$stage_dir/"
 done
 
+# Ensure entry-point scripts remain executable after copying into the stage dir.
 chmod 755 "$stage_dir/jailbox" "$stage_dir/install.sh"
 chmod 755 "$stage_dir"/install/*.sh
 
+# Build from inside dist so the archive has a clean top-level directory.
 (cd "$DIST_DIR" && tar -czf "$release_name.tar.gz" "$release_name")
 rm -rf "$stage_dir"
 

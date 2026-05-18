@@ -16,17 +16,19 @@ GitHub Actions publishes the release tarball from the pushed tag.
 
 Options:
   --yes              Accept defaults without prompting
-  --first-major      Release v1.0.0; before this flag, pre-v1 bumps are patch-only
+  --first-major      Release v1.0.0
   --dry-run          Print the selected version without creating or pushing a tag
   --help             Show this help
 EOF_USAGE
 }
 
+# Print an error and stop the release flow.
 die() {
     echo "Error: $*" >&2
     exit 1
 }
 
+# Parse release flags. Version selection itself is policy-driven later.
 parse_args() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
@@ -46,20 +48,24 @@ parse_args() {
     done
 }
 
+# Ensure tags we create and consume use vMAJOR.MINOR.PATCH.
 validate_version() {
     [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid version '$1' (expected vMAJOR.MINOR.PATCH)"
 }
 
+# Strip the leading "v" from a SemVer tag.
 without_v() {
     printf '%s\n' "${1#v}"
 }
 
+# Return the major number from a vMAJOR.MINOR.PATCH tag.
 version_major() {
     local major
     IFS=. read -r major _ _ <<< "$(without_v "$1")"
     printf '%s\n' "$major"
 }
 
+# Bump one SemVer component and reset lower-order components as needed.
 bump_version() {
     local major minor patch
     IFS=. read -r major minor patch <<< "$(without_v "$1")"
@@ -73,10 +79,19 @@ bump_version() {
     printf 'v%s.%s.%s\n' "$major" "$minor" "$patch"
 }
 
+# Return the highest local version tag, if any.
 latest_tag() {
     git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1
 }
 
+# Fetch remote tags so local release decisions include published releases.
+refresh_tags() {
+    if git -C "$ROOT_DIR" remote get-url origin >/dev/null 2>&1; then
+        git -C "$ROOT_DIR" fetch --tags origin >/dev/null
+    fi
+}
+
+# True when any v1+ tag exists; used to keep --first-major one-time only.
 has_v1_or_later_tag() {
     local tag
     while IFS= read -r tag; do
@@ -86,99 +101,43 @@ has_v1_or_later_tag() {
     return 1
 }
 
+# Require a clean worktree for real releases. Dry runs intentionally skip this.
 ensure_clean_tree() {
     [ -z "$(git -C "$ROOT_DIR" status --porcelain)" ] || \
         die "working tree is not clean (commit or stash changes before releasing)"
 }
 
+# Run low-cost syntax checks before tagging.
 run_checks() {
     bash -n "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox" "$ROOT_DIR"/lib/*.sh "$ROOT_DIR"/scripts/*.sh
     sh -n "$ROOT_DIR"/install/*.sh
 }
 
-file_at_ref() {
-    local ref path
-    ref="$1"
-    path="$2"
+# Map public API diff status to the release bump policy.
+suggest_bump() {
+    local latest="$1" api_change="$2"
 
-    if [ -z "$ref" ]; then
-        cat "$ROOT_DIR/$path"
-    else
-        git -C "$ROOT_DIR" show "$ref:$path" 2>/dev/null || true
-    fi
-}
-
-public_api_values() {
-    local ref array_name
-
-    ref="$1"
-    array_name="$2"
-
-    file_at_ref "$ref" "lib/public-api.sh" |
-        awk -v array="$array_name" '
-            $0 ~ "^[[:space:]]*" array "=[(]" { in_array = 1; next }
-            in_array && /^[[:space:]]*[)]/ { in_array = 0; next }
-            in_array {
-                gsub(/#.*/, "")
-                gsub(/["'\''"]/, "")
-                for (i = 1; i <= NF; i++) print $i
-            }
-        ' |
-        sed '/^$/d' |
-        sort -u
-}
-
-public_api_names() {
-    {
-        public_api_values "$1" "CONFIG_SCALAR_KEYS"
-        public_api_values "$1" "CONFIG_ARRAY_KEYS"
-        public_api_values "$1" "CLI_FLAGS"
-    } | sort -u
-}
-
-describe_api_changes() {
-    local action="$1"
-    sed "s/^/$action public API item: /"
-}
-
-detect_stable_bump() {
-    local base_ref removed added
-
-    base_ref="$1"
-    removed=$(comm -23 <(public_api_names "$base_ref") <(public_api_names "") | describe_api_changes "Removed")
-    added=$(comm -13 <(public_api_names "$base_ref") <(public_api_names "") | describe_api_changes "Added")
-
-    if [ -n "$removed" ]; then
+    if [ "$FIRST_MAJOR" = true ]; then
         SUGGESTED_BUMP="major"
-        BUMP_REASON="$removed"
-    elif [ -n "$added" ]; then
+        BUMP_REASON="First stable major release requested"
+    elif [ "$(version_major "$latest")" -ge 1 ] && [ "$api_change" = removed ]; then
+        SUGGESTED_BUMP="major"
+        BUMP_REASON="Public API items were removed"
+    elif [ "$api_change" = added ] || [ "$api_change" = removed ]; then
         SUGGESTED_BUMP="minor"
-        BUMP_REASON="$added"
+        BUMP_REASON="Public API items changed"
     else
         SUGGESTED_BUMP="patch"
         BUMP_REASON="No public API items changed"
     fi
 }
 
-suggest_bump() {
-    local latest="$1" base_ref="$2"
-
-    if [ "$FIRST_MAJOR" = true ]; then
-        SUGGESTED_BUMP="major"
-        BUMP_REASON="First stable major release requested"
-    elif [ "$(version_major "$latest")" -lt 1 ]; then
-        SUGGESTED_BUMP="patch"
-        BUMP_REASON="Pre-v1 release: patch-only until --first-major releases v1.0.0"
-    else
-        detect_stable_bump "$base_ref"
-    fi
-}
-
+# Choose SELECTED_VERSION from latest tag, API change status, and --first-major.
 select_version() {
-    local latest="$1" base_ref="$2" latest_major
+    local latest="$1" api_change="$2" latest_major
 
     latest_major="$(version_major "$latest")"
-    suggest_bump "$latest" "$base_ref"
+    suggest_bump "$latest" "$api_change"
 
     if [ "$FIRST_MAJOR" = true ]; then
         [ "$latest_major" -lt 1 ] || die "--first-major is only valid before v1.0.0"
@@ -193,6 +152,7 @@ select_version() {
         die "tag already exists: $SELECTED_VERSION"
 }
 
+# Ask before creating and pushing a release tag unless --yes was supplied.
 confirm_release() {
     local answer
 
@@ -205,6 +165,7 @@ confirm_release() {
     esac
 }
 
+# Create the annotated tag and push it; GitHub Actions handles publication.
 tag_and_push() {
     git -C "$ROOT_DIR" tag -a "$SELECTED_VERSION" -m "Release $SELECTED_VERSION"
     echo "Created tag $SELECTED_VERSION"
@@ -212,18 +173,27 @@ tag_and_push() {
     echo "Pushed tag $SELECTED_VERSION. GitHub Actions will publish the release artifact."
 }
 
+# Coordinate validation, version selection, confirmation, and tag push.
 main() {
-    local latest base_ref
+    local latest api_change
 
     parse_args "$@"
-    ensure_clean_tree
+    if [ "$DRY_RUN" != true ]; then
+        ensure_clean_tree
+    fi
     run_checks
 
+    refresh_tags
     latest="$(latest_tag)"
-    base_ref="$latest"
     [ -n "$latest" ] || latest="v0.0.0"
 
-    select_version "$latest" "$base_ref"
+    if [ "$latest" = "v0.0.0" ] && [ "$FIRST_MAJOR" != true ]; then
+        SELECTED_VERSION="v0.1.0"
+        BUMP_REASON="Initial public release"
+    else
+        api_change="$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$latest")"
+        select_version "$latest" "$api_change"
+    fi
     echo "Selected version: $SELECTED_VERSION"
     echo "Reason:"
     printf '%s\n' "$BUMP_REASON" | sed 's/^/  /'
