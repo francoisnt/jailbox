@@ -21,7 +21,9 @@ check_authorized_keys() {
 }
 
 check_project_write_access() {
-    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -w '$REMOTE_PATH'" 2>/dev/null; then
+    local qpath
+    printf -v qpath '%q' "$REMOTE_PATH"
+    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -w $qpath" 2>/dev/null; then
         echo "  ⚠️  devuser cannot write to $REMOTE_PATH"
         echo "     Likely cause: UID mismatch. Host UID is $MY_UID."
         echo "     Fix: ensure devuser in the project image has UID $MY_UID, or run with --clean and rebuild."
@@ -40,15 +42,17 @@ check_runtime_sockets_absent() {
 }
 
 check_readonly_mounts() {
-    local ro_path checked failed
+    local ro_path checked failed qpath qro
     checked=0
     failed=0
+    printf -v qpath '%q' "$REMOTE_PATH"
 
     for ro_path in "${READONLY_PATHS[@]}"; do
         if [ -f "$PROJECT_DIR/$ro_path" ]; then
             checked=$((checked + 1))
+            printf -v qro '%q' "$ro_path"
             if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-                "{ echo x >> '$REMOTE_PATH/$ro_path'; } 2>/dev/null && echo writable || true" \
+                "{ echo x >> $qpath/$qro; } 2>/dev/null && echo writable || true" \
                 2>/dev/null | grep -q "^writable"; then
                 echo "  ⚠️  Read-only mount appears writable: $ro_path"
                 failed=$((failed + 1))
@@ -124,16 +128,15 @@ check_proxy_egress_allowed() {
 }
 
 egress_validation_url() {
-    local domain host
+    local domain
 
     for domain in "${EGRESS_ALLOW[@]}"; do
-        host=$(printf '%s' "$domain" | sed -e 's/\\\\//g' -e 's/^\.\*\.//' -e 's/^\.\*//' -e 's/[\^$]//g')
-        case "$host" in
+        case "$domain" in
             ""|*[\(\)\*\+\?\|\[\]\{\}]*|*"'"*|*\"*)
                 continue
                 ;;
         esac
-        printf 'https://%s\n' "$host"
+        printf 'https://%s\n' "$domain"
         return 0
     done
 

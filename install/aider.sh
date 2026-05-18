@@ -26,4 +26,4 @@ fi
 # --break-system-packages is required on newer distros (PEP 668).
 # Fall back for older pip that doesn't recognise the flag.
 sh "$INSTALL_DIR/run-as-devuser.sh" \
-    "pip3 install --user --break-system-packages '$AIDER_PACKAGE' 2>/dev/null || pip3 install --user '$AIDER_PACKAGE'"
+    "pip3 install --user --break-system-packages \"$AIDER_PACKAGE\" 2>/dev/null || pip3 install --user \"$AIDER_PACKAGE\""
