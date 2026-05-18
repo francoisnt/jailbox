@@ -16,7 +16,14 @@ else
     exit 1
 fi
 
+if [ -n "${AIDER_VERSION:-}" ]; then
+    AIDER_PACKAGE="aider-chat==$AIDER_VERSION"
+else
+    AIDER_PACKAGE="aider-chat"
+    echo "Warning: AIDER_VERSION is not set; installing latest aider-chat" >&2
+fi
+
 # --break-system-packages is required on newer distros (PEP 668).
 # Fall back for older pip that doesn't recognise the flag.
 sh "$INSTALL_DIR/run-as-devuser.sh" \
-    'pip3 install --user --break-system-packages aider-chat 2>/dev/null || pip3 install --user aider-chat'
+    "pip3 install --user --break-system-packages '$AIDER_PACKAGE' 2>/dev/null || pip3 install --user '$AIDER_PACKAGE'"

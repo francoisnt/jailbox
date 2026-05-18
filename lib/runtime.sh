@@ -2,6 +2,10 @@
 
 configure_readonly_paths() {
     READONLY_PATHS=(
+        "Containerfile"
+        "Dockerfile"
+        ".devcontainer/Containerfile"
+        ".devcontainer/Dockerfile"
         ".git/config"
         ".git/config.lock"
         ".git/hooks"
@@ -39,8 +43,9 @@ configure_runtime_mounts() {
     GITCONFIG_MOUNT=()
     [ -f ~/.gitconfig ] && GITCONFIG_MOUNT=(-v "$HOME/.gitconfig:/home/devuser/.gitconfig:ro")
 
-    ROOTFS_FLAG=()
-    [ "$READ_ONLY_ROOTFS" = "true" ] && ROOTFS_FLAG=(--read-only)
+    # The container root filesystem is always read-only. Project and home
+    # writes go through explicit mounts; runtime state uses tmpfs mounts.
+    ROOTFS_FLAG=(--read-only)
 }
 
 clean_jailbox() {

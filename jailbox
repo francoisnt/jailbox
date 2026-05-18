@@ -9,9 +9,10 @@
 #   as the project's dev environment — no bridge, no exec proxy.
 #
 # CONFIGURATION
-#   jailbox.conf in the project root is sourced if present. Supported settings:
+#   jailbox.conf in the project root is parsed if present. Supported settings:
 #     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
-#     AI_TOOLS, EXTRA_PACKAGES, EGRESS_ALLOW, REMOTE_PATH, READ_ONLY_ROOTFS.
+#     AI_TOOLS, EXTRA_PACKAGES, EGRESS_ALLOW, REMOTE_PATH,
+#     CLAUDE_INSTALL_SHA256, AIDER_VERSION.
 #
 # REQUIREMENTS
 #   podman, ssh, ssh-keygen, VSCodium/VSCode with open-remote-ssh extension
@@ -40,7 +41,8 @@ AI_TOOLS=("claude")
 EXTRA_PACKAGES=""
 EGRESS_ALLOW=()
 REMOTE_PATH="/home/devuser/project"
-READ_ONLY_ROOTFS=false
+CLAUDE_INSTALL_SHA256=""
+AIDER_VERSION=""
 
 # Runtime state populated by modules
 EDITOR_BIN=""
@@ -58,6 +60,7 @@ GITCONFIG_MOUNT=()
 ROOTFS_FLAG=()
 FILTER_FILE=""
 JAILBOX_NETWORK=""
+JAILBOX_INTERNAL_NETWORK=""
 PROXY_ENV=()
 
 # shellcheck source=jailbox/lib/common.sh

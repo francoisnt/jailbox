@@ -85,6 +85,8 @@ build_jailbox_image() {
         --build-arg USER_ID="$MY_UID" \
         --build-arg AI_TOOLS="${AI_TOOLS[*]}" \
         --build-arg EXTRA_PACKAGES="$EXTRA_PACKAGES" \
+        --build-arg CLAUDE_INSTALL_SHA256="$CLAUDE_INSTALL_SHA256" \
+        --build-arg AIDER_VERSION="$AIDER_VERSION" \
         "$SCRIPT_DIR"; then
         echo ""
         echo "Error: jailbox image build failed."
@@ -94,8 +96,9 @@ build_jailbox_image() {
         echo ""
         echo "Common causes:"
         echo "  - A package in AI_TOOLS or EXTRA_PACKAGES is unavailable in this image"
+        echo "  - CLAUDE_INSTALL_SHA256 or AIDER_VERSION does not match the downloaded tool"
         echo "  - The selected stage is a production or distroless stage"
-        echo "Fix: verify AI_TOOLS, EXTRA_PACKAGES, and DEV_TARGET_STAGE in jailbox.conf."
+        echo "Fix: verify AI_TOOLS, EXTRA_PACKAGES, CLAUDE_INSTALL_SHA256, AIDER_VERSION, and DEV_TARGET_STAGE in jailbox.conf."
         exit 1
     fi
 }

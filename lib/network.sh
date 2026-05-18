@@ -19,7 +19,7 @@ configure_proxy_network() {
 
     FILTER_FILE=$(mktemp)
     for domain in "${EGRESS_ALLOW[@]}"; do
-        printf '%s\n' "$domain" >> "$FILTER_FILE"
+        printf '(^|\\.)%s$\n' "$(tinyproxy_escape_host "$domain")" >> "$FILTER_FILE"
     done
 
     echo "📦 Building proxy image..."
@@ -48,6 +48,7 @@ configure_proxy_network() {
     echo "⚠️  Proxy is best-effort (env-based). Some tools may bypass it."
 
     JAILBOX_NETWORK="$internal_net"
+    JAILBOX_INTERNAL_NETWORK="$internal_net"
     PROXY_ENV=(
         --env "HTTP_PROXY=http://$PROXY_NAME:8888"
         --env "HTTPS_PROXY=http://$PROXY_NAME:8888"
@@ -56,4 +57,8 @@ configure_proxy_network() {
         --env "NO_PROXY=localhost,127.0.0.1"
         --env "no_proxy=localhost,127.0.0.1"
     )
+}
+
+tinyproxy_escape_host() {
+    printf '%s\n' "$1" | sed 's/\./\\./g'
 }

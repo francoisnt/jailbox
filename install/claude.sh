@@ -19,4 +19,16 @@ fi
 
 echo "Claude installer SHA256: $(sha256sum "$CLAUDE_INSTALL_SCRIPT" | cut -d' ' -f1)"
 
+if [ -n "${CLAUDE_INSTALL_SHA256:-}" ]; then
+    actual_sha256=$(sha256sum "$CLAUDE_INSTALL_SCRIPT" | cut -d' ' -f1)
+    if [ "$actual_sha256" != "$CLAUDE_INSTALL_SHA256" ]; then
+        echo "Error: Claude installer checksum mismatch" >&2
+        echo "  expected: $CLAUDE_INSTALL_SHA256" >&2
+        echo "  actual:   $actual_sha256" >&2
+        exit 1
+    fi
+else
+    echo "Warning: CLAUDE_INSTALL_SHA256 is not set; Claude installer is unpinned" >&2
+fi
+
 sh "$INSTALL_DIR/run-as-devuser.sh" "sh $CLAUDE_INSTALL_SCRIPT"

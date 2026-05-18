@@ -4,6 +4,8 @@ FROM ${DEV_IMAGE}
 ARG USER_ID=1000
 ARG AI_TOOLS="claude"
 ARG EXTRA_PACKAGES=""
+ARG CLAUDE_INSTALL_SHA256=""
+ARG AIDER_VERSION=""
 
 COPY install/ /tmp/jailbox-install/
 RUN sh /tmp/jailbox-install/setup.sh && rm -rf /tmp/jailbox-install
