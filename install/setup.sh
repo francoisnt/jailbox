@@ -6,9 +6,9 @@ INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Portable /etc/passwd lookup — getent is absent on Alpine/busybox images.
 get_passwd_entry() {
     if command -v getent >/dev/null 2>&1; then
-        getent passwd devuser
+        getent passwd "$DEV_USER"
     else
-        grep '^devuser:' /etc/passwd || true
+        grep "^${DEV_USER}:" /etc/passwd || true
     fi
 }
 
@@ -58,31 +58,31 @@ if ! command -v sshd >/dev/null 2>&1; then
     exit 1
 fi
 
-# ── devuser ───────────────────────────────────────────────────────────────────
-if id devuser >/dev/null 2>&1; then
-    existing_uid=$(id -u devuser)
+# ── dev user ──────────────────────────────────────────────────────────────────
+if id "$DEV_USER" >/dev/null 2>&1; then
+    existing_uid=$(id -u "$DEV_USER")
     if [ "$existing_uid" != "$USER_ID" ]; then
-        echo "devuser exists with UID $existing_uid, expected $USER_ID — attempting to update..."
+        echo "$DEV_USER exists with UID $existing_uid, expected $USER_ID — attempting to update..."
         if command -v usermod >/dev/null 2>&1; then
-            usermod -u "$USER_ID" devuser
+            usermod -u "$USER_ID" "$DEV_USER"
             # Best-effort: update ownership in common writable/application paths.
             for path in /home /root /var /opt /usr; do
                 [ -d "$path" ] && find "$path" -xdev -user "$existing_uid" -exec chown -h "$USER_ID" {} \; 2>/dev/null || true
             done
         else
-            echo "Error: devuser has UID $existing_uid but USER_ID=$USER_ID, and usermod is not available." >&2
-            echo "Fix: use an image where devuser does not exist, or set USER_ID=$existing_uid in jailbox.conf." >&2
+            echo "Error: $DEV_USER has UID $existing_uid but USER_ID=$USER_ID, and usermod is not available." >&2
+            echo "Fix: use an image where $DEV_USER does not exist, or set USER_ID=$existing_uid in jailbox.conf." >&2
             exit 1
         fi
     fi
 else
     if command -v useradd >/dev/null 2>&1; then
-        useradd -m -u "$USER_ID" -s /bin/sh devuser
+        useradd -m -u "$USER_ID" -s /bin/sh "$DEV_USER"
     elif command -v adduser >/dev/null 2>&1; then
         # Alpine-style adduser
-        adduser -D -u "$USER_ID" -h /home/devuser -s /bin/sh devuser
+        adduser -D -u "$USER_ID" -h "/home/$DEV_USER" -s /bin/sh "$DEV_USER"
     else
-        echo "Error: cannot create devuser (no useradd or adduser)" >&2
+        echo "Error: cannot create $DEV_USER (no useradd or adduser)" >&2
         exit 1
     fi
 fi
@@ -90,9 +90,9 @@ fi
 # Ensure a valid home directory
 PASSWD_ENTRY=$(get_passwd_entry)
 DEVUSER_HOME=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f6)
-[ -z "$DEVUSER_HOME" ] && DEVUSER_HOME="/home/devuser"
+[ -z "$DEVUSER_HOME" ] && DEVUSER_HOME="/home/$DEV_USER"
 mkdir -p "$DEVUSER_HOME"
-chown devuser:devuser "$DEVUSER_HOME" 2>/dev/null || true
+chown "$DEV_USER:$DEV_USER" "$DEVUSER_HOME" 2>/dev/null || true
 chmod 755 "$DEVUSER_HOME" 2>/dev/null || true
 
 # Ensure a usable login shell
@@ -101,7 +101,7 @@ DEVUSER_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
 case "$DEVUSER_SHELL" in
     ""|/bin/false|/sbin/nologin|/usr/sbin/nologin)
         if command -v usermod >/dev/null 2>&1; then
-            usermod -s /bin/sh devuser 2>/dev/null || true
+            usermod -s /bin/sh "$DEV_USER" 2>/dev/null || true
         fi
         ;;
 esac
@@ -112,14 +112,14 @@ DEVUSER_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
 [ -z "$DEVUSER_SHELL" ] && DEVUSER_SHELL="/bin/sh"
 if ! [ -x "$DEVUSER_SHELL" ]; then
     if [ -x /bin/sh ]; then
-        usermod -s /bin/sh devuser 2>/dev/null || true
+        usermod -s /bin/sh "$DEV_USER" 2>/dev/null || true
     fi
 fi
 
 # SSH directory
 mkdir -p "$DEVUSER_HOME/.ssh"
 chmod 700 "$DEVUSER_HOME/.ssh"
-chown -R devuser:devuser "$DEVUSER_HOME/.ssh"
+chown -R "$DEV_USER:$DEV_USER" "$DEVUSER_HOME/.ssh"
 
 # ── AI tools ──────────────────────────────────────────────────────────────────
 # AI_TOOLS is intentionally unquoted — it is a space-separated list.
@@ -158,7 +158,7 @@ ChallengeResponseAuthentication no
 KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 UsePAM no
-AllowUsers devuser
+AllowUsers ${DEV_USER}
 EOF
 
 printf '\nInclude /etc/ssh/jailbox_sshd_config\n' >> /etc/ssh/sshd_config

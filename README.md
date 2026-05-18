@@ -223,7 +223,7 @@ REMOTE_PATH="/workspace/project"
 Default:
 
 ```bash
-REMOTE_PATH="/home/devuser/project"
+REMOTE_PATH="/home/devuser/project"   # or /home/$DEV_USER/project if DEV_USER is set
 ```
 
 ### `CLAUDE_INSTALL_SHA256`
@@ -248,6 +248,21 @@ AIDER_VERSION="0.86.1"
 
 If set, jailbox installs `aider-chat==$AIDER_VERSION`. If unset, jailbox prints a
 warning and installs the latest available `aider-chat`.
+
+### `DEV_USER`
+
+Username of the non-root user inside the container.
+
+```bash
+DEV_USER=appuser
+```
+
+Default: `devuser`. Set this when your project image already has a non-root user
+under a different name (e.g. `ubuntu`, `app`, `node`). jailbox will SSH into the
+container as this user and install AI tools under their account.
+
+If you change `DEV_USER`, also update `REMOTE_PATH` if you rely on the default
+(`/home/devuser/project` — it won't automatically reflect the new username).
 
 ## Protected read-only project paths
 

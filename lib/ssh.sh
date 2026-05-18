@@ -19,7 +19,7 @@ setup_ssh_keys() {
 Host $CONTAINER_NAME
     HostName localhost
     Port $LOCAL_PORT
-    User devuser
+    User $DEV_USER
     IdentityFile $KEY_FILE
     StrictHostKeyChecking no
     UserKnownHostsFile $KNOWN_HOSTS

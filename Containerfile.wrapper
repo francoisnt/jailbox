@@ -6,6 +6,7 @@ ARG AI_TOOLS="claude"
 ARG EXTRA_PACKAGES=""
 ARG CLAUDE_INSTALL_SHA256=""
 ARG AIDER_VERSION=""
+ARG DEV_USER="devuser"
 
 COPY install/ /tmp/jailbox-install/
 RUN sh /tmp/jailbox-install/setup.sh && rm -rf /tmp/jailbox-install

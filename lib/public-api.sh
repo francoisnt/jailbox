@@ -15,6 +15,7 @@ CONFIG_SCALAR_KEYS=(
     REMOTE_PATH
     CLAUDE_INSTALL_SHA256
     AIDER_VERSION
+    DEV_USER
 )
 
 CONFIG_ARRAY_KEYS=(
@@ -31,6 +32,7 @@ CONFIG_DEFAULTS=(
     "REMOTE_PATH=/home/devuser/project"
     "CLAUDE_INSTALL_SHA256="
     "AIDER_VERSION="
+    "DEV_USER=devuser"
     "AI_TOOLS=claude"
     "EGRESS_ALLOW="
 )

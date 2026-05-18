@@ -41,7 +41,7 @@ build_readonly_mounts() {
 
 configure_runtime_mounts() {
     GITCONFIG_MOUNT=()
-    [ -f ~/.gitconfig ] && GITCONFIG_MOUNT=(-v "$HOME/.gitconfig:/home/devuser/.gitconfig:ro")
+    [ -f ~/.gitconfig ] && GITCONFIG_MOUNT=(-v "$HOME/.gitconfig:/home/$DEV_USER/.gitconfig:ro")
 
     # The container root filesystem is always read-only. Project and home
     # writes go through explicit mounts; runtime state uses tmpfs mounts.
@@ -79,11 +79,11 @@ start_jailbox_container() {
         "${ROOTFS_FLAG[@]}" \
         --tmpfs /tmp:rw,size=512m,noexec \
         --tmpfs /run:rw,size=64m \
-        -v "$VOLUME_NAME":/home/devuser \
+        -v "$VOLUME_NAME":/home/$DEV_USER \
         "${GITCONFIG_MOUNT[@]}" \
         -p 127.0.0.1:"$LOCAL_PORT":2222 \
         -v "$PROJECT_DIR:$REMOTE_PATH:Z" \
-        -v "$KEY_FILE.pub:/home/devuser/.ssh/authorized_keys:ro,Z" \
+        -v "$KEY_FILE.pub:/home/$DEV_USER/.ssh/authorized_keys:ro,Z" \
         "${READONLY_MOUNTS[@]}" \
         "${PROXY_ENV[@]}" \
         --memory=4g \

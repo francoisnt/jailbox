@@ -87,6 +87,7 @@ build_jailbox_image() {
         --build-arg EXTRA_PACKAGES="$EXTRA_PACKAGES" \
         --build-arg CLAUDE_INSTALL_SHA256="$CLAUDE_INSTALL_SHA256" \
         --build-arg AIDER_VERSION="$AIDER_VERSION" \
+        --build-arg DEV_USER="$DEV_USER" \
         "$SCRIPT_DIR"; then
         echo ""
         echo "Error: jailbox image build failed."
