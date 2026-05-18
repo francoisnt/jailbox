@@ -1,13 +1,10 @@
 # CLI parsing and host/tool validation.
 
 parse_args() {
-    case "${1:-}" in
-        ""|--clean|--help) ;;
-        *)
-            usage >&2
-            exit 2
-            ;;
-    esac
+    if ! is_cli_flag_allowed "${1:-}"; then
+        usage >&2
+        exit 2
+    fi
 
     if [[ "${1:-}" == "--help" ]]; then
         usage

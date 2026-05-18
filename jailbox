@@ -32,18 +32,6 @@ PROXY_IMAGE="${PROJECT_NAME}-jailbox-proxy"
 VOLUME_NAME="${PROJECT_NAME}-jailbox-home"
 NETWORK_NAME="${PROJECT_NAME}-jailbox-net"
 
-# Defaults overridden by jailbox.conf
-DEV_IMAGE=""
-DEV_CONTAINERFILE=""
-DEV_BUILD_CONTEXT=""
-DEV_TARGET_STAGE=""
-AI_TOOLS=("claude")
-EXTRA_PACKAGES=""
-EGRESS_ALLOW=()
-REMOTE_PATH="/home/devuser/project"
-CLAUDE_INSTALL_SHA256=""
-AIDER_VERSION=""
-
 # Runtime state populated by modules
 EDITOR_BIN=""
 LOCAL_PORT=""
@@ -63,6 +51,10 @@ JAILBOX_NETWORK=""
 JAILBOX_INTERNAL_NETWORK=""
 PROXY_ENV=()
 
+# shellcheck source=jailbox/lib/public-api.sh
+source "$SCRIPT_DIR/lib/public-api.sh"
+# Defaults overridden by jailbox.conf
+apply_config_defaults
 # shellcheck source=jailbox/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=jailbox/lib/preflight.sh

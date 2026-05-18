@@ -1,15 +1,19 @@
 # Common helpers and configuration loading.
 
 usage() {
+    local flag
+
     cat <<EOF_USAGE
 Usage: $(basename "$0") [--clean|--help]
 
 Launch this project inside a hardened jailbox container.
 
 Options:
-  --clean   Stop/remove jailbox containers, networks, and home volume
-  --help    Show this help
 EOF_USAGE
+
+    for flag in "${CLI_FLAGS[@]}"; do
+        printf '  %-8s %s\n' "$flag" "$(cli_flag_help "$flag")"
+    done
 }
 
 die() {
@@ -29,8 +33,8 @@ load_project_config() {
     config_file="$PROJECT_DIR/jailbox.conf"
     [ -f "$config_file" ] || return 0
 
-    scalar_keys='DEV_IMAGE|DEV_CONTAINERFILE|DEV_BUILD_CONTEXT|DEV_TARGET_STAGE|EXTRA_PACKAGES|REMOTE_PATH|CLAUDE_INSTALL_SHA256|AIDER_VERSION'
-    array_keys='AI_TOOLS|EGRESS_ALLOW'
+    scalar_keys=$(config_scalar_key_regex)
+    array_keys=$(config_array_key_regex)
     value_atom='[A-Za-z0-9_./:,@%+=~-]+'
     quoted_array_item='"[A-Za-z0-9_./:,@%+=~-]+"'
     array_item="(${value_atom}|${quoted_array_item})"

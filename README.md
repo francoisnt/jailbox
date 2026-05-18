@@ -3,6 +3,99 @@
 `jailbox` wraps a project's development image with SSH access and AI tooling,
 then launches it as a hardened Podman container for AI-assisted development.
 
+## Install
+
+Download a release tarball, unpack it, and run the installer:
+
+```bash
+curl -fsSLO https://github.com/OWNER/jailbox/releases/download/v0.1.0/jailbox-v0.1.0.tar.gz
+tar -xzf jailbox-v0.1.0.tar.gz
+cd jailbox-v0.1.0
+./install.sh
+```
+
+By default, this installs jailbox assets to:
+
+```text
+~/.local/share/jailbox
+```
+
+and creates this command symlink:
+
+```text
+~/.local/bin/jailbox
+```
+
+Make sure `~/.local/bin` is in your `PATH`.
+
+To install somewhere else:
+
+```bash
+PREFIX="$HOME/.local" ./install.sh
+```
+
+or set exact locations:
+
+```bash
+JAILBOX_INSTALL_DIR="$HOME/tools/jailbox" JAILBOX_BIN_DIR="$HOME/bin" ./install.sh
+```
+
+To uninstall:
+
+```bash
+./install.sh --uninstall
+```
+
+## Release
+
+Maintainers can create and push a release tag with:
+
+```bash
+scripts/release.sh
+```
+
+The release script suggests a semantic version, asks for confirmation, creates
+an annotated git tag, and pushes it to `origin`. Pushing a tag starts the GitHub
+Actions release workflow, which builds `dist/jailbox-vX.Y.Z.tar.gz` from that
+tagged checkout and uploads it to the GitHub Release.
+
+Before `v1.0.0`, automatic releases use patch bumps only. Use `--first-major`
+when the project is ready for its first stable major release. After `v1.0.0`,
+removed config keys or CLI flags suggest a major bump, added keys or flags
+suggest a minor bump, and other changes suggest a patch bump.
+
+Useful non-interactive forms:
+
+```bash
+scripts/release.sh --yes
+scripts/release.sh --yes --dry-run
+scripts/release.sh --first-major
+```
+
+To build the release tarball locally without publishing:
+
+```bash
+scripts/build-tarball.sh v0.2.0
+```
+
+## Requirements
+
+`jailbox` is currently Linux-first. Installation uses ordinary Unix shell
+tools, but running jailbox requires Linux container behavior from Podman.
+
+Required host tools:
+
+- `podman`
+- `ssh`
+- `ssh-keygen`
+- `cksum`
+- `realpath`
+- VSCodium or VS Code with the Remote SSH extension and a `codium` or `code`
+  CLI in `PATH`
+
+macOS may work with Podman Machine, but it is not currently a tested runtime
+target.
+
 ## Security defaults
 
 - The container root filesystem is always read-only (`--read-only`).
