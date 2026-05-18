@@ -37,7 +37,7 @@ case "$PKG_MGR" in
         apt-get clean && rm -rf /var/lib/apt/lists/*
         ;;
     apk)
-        apk add --no-cache openssh curl git procps ca-certificates
+        apk add --no-cache openssh curl git procps ca-certificates shadow
         [ -n "$EXTRA_PACKAGES" ] && apk add --no-cache $EXTRA_PACKAGES
         ;;
     dnf)
@@ -116,6 +116,14 @@ if ! [ -x "$DEVUSER_SHELL" ]; then
     fi
 fi
 
+# Ensure account is not locked. Required for SSH key auth on systems where
+# OpenSSH is compiled without PAM support (e.g. Alpine). useradd and adduser -D
+# both set the shadow password field to "!" (locked); change it to "*" (no
+# password, not locked) so key-based auth succeeds without PAM.
+if command -v usermod >/dev/null 2>&1; then
+    usermod -p '*' "$DEV_USER" 2>/dev/null || true
+fi
+
 # SSH directory
 mkdir -p "$DEVUSER_HOME/.ssh"
 chmod 700 "$DEVUSER_HOME/.ssh"
@@ -149,7 +157,7 @@ ssh-keygen -A
 #
 # Both ChallengeResponseAuthentication (pre-8.7) and
 # KbdInteractiveAuthentication (8.7+) are set to cover all OpenSSH versions.
-cat > /etc/ssh/jailbox_sshd_config << 'EOF'
+cat > /etc/ssh/jailbox_sshd_config << EOF
 Port 2222
 PermitRootLogin no
 PasswordAuthentication no

@@ -12,7 +12,7 @@
 #   jailbox.conf in the project root is parsed if present. Supported settings:
 #     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
 #     AI_TOOLS, EXTRA_PACKAGES, EGRESS_ALLOW, REMOTE_PATH,
-#     CLAUDE_INSTALL_SHA256, AIDER_VERSION.
+#     CLAUDE_INSTALL_SHA256, AIDER_VERSION, DEV_USER.
 #
 # REQUIREMENTS
 #   podman, ssh, ssh-keygen, VSCodium/VSCode with open-remote-ssh extension

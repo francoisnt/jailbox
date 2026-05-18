@@ -1,0 +1,26 @@
+# Test dev images for the jailbox integration test suite.
+# Each stage is a plain OS base that scripts/test.sh wraps with
+# Containerfile.wrapper and exercises a distinct scenario.
+
+# ── OS matrix ────────────────────────────────────────────────────────────────
+# These three stages verify that setup.sh works across all supported package
+# managers (apt-get, apk, dnf). No user is pre-created; setup.sh creates one.
+
+FROM debian:12 AS debian
+
+FROM alpine:3.21 AS alpine
+
+FROM fedora:41 AS fedora
+
+# ── DEV_USER ──────────────────────────────────────────────────────────────────
+# Simulates a project image that already has its own non-root user (appuser).
+# The wrapper must SSH in and install tools as appuser, not devuser.
+FROM debian:12 AS custom-user
+ARG HOST_UID=1000
+RUN useradd -m -u "${HOST_UID}" -s /bin/sh appuser
+
+# ── UID mismatch ──────────────────────────────────────────────────────────────
+# devuser pre-exists at UID 1234. setup.sh must call usermod to align it with
+# the host UID before the container can be used.
+FROM debian:12 AS uid-mismatch
+RUN useradd -m -u 1234 -s /bin/sh devuser
