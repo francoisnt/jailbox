@@ -37,7 +37,8 @@ case "$PKG_MGR" in
         apt-get clean && rm -rf /var/lib/apt/lists/*
         ;;
     apk)
-        apk add --no-cache openssh curl git procps ca-certificates shadow bash
+        apk add --no-cache openssh curl git procps ca-certificates shadow bash \
+            libstdc++ gcompat
         [ -n "$EXTRA_PACKAGES" ] && apk add --no-cache $EXTRA_PACKAGES
         ;;
     dnf)
@@ -103,7 +104,9 @@ chmod 755 "$DEVUSER_HOME" 2>/dev/null || true
 DEVUSER_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
 [ -z "$DEVUSER_SHELL" ] && DEVUSER_SHELL="/bin/sh"
 case "$DEVUSER_SHELL" in
-    ""|/bin/false|/sbin/nologin|/usr/sbin/nologin)
+    ""|/bin/sh|/bin/false|/sbin/nologin|/usr/sbin/nologin)
+        # Upgrade sh → bash when available; VS Code Remote SSH requires bash
+        # for its server install script and for terminal prompt support.
         if command -v usermod >/dev/null 2>&1; then
             usermod -s "$_PREFERRED_SHELL" "$DEV_USER" 2>/dev/null || true
         fi
