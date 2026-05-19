@@ -105,8 +105,9 @@ target.
 - `/home/devuser` is a persistent Podman volume.
 - `/tmp` and `/run` are writable tmpfs mounts.
 - SSH uses a fresh local Ed25519 keypair generated for each run.
-- The container drops all capabilities, disables new privileges, and applies
-  CPU, memory, and PID limits.
+- The container drops all Linux capabilities except a minimal set required for
+  OpenSSH privilege separation and user session switching, disables new
+  privileges, and applies CPU, memory, and PID limits.
 
 ## Configuration file
 
