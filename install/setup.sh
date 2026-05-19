@@ -27,27 +27,42 @@ else
 fi
 
 # ── Packages ──────────────────────────────────────────────────────────────────
+# Baseline follows VS Code Remote Development Linux prerequisites:
+# https://code.visualstudio.com/docs/remote/linux#_remote-host-container-wsl-linux-prerequisites
+#
+# Remote - SSH needs an OpenSSH server, bash, and curl or wget. The VS Code
+# server runtime also needs the listed libc/libstdc++ runtime packages plus tar.
+# Alpine support is preview/limited upstream; the extra VSCodium REH packages
+# cover native modules present in current vscodium-reh-alpine archives.
 # EXTRA_PACKAGES is intentionally unquoted — it is a space-separated list.
 # shellcheck disable=SC2086
 case "$PKG_MGR" in
     apt)
         apt-get update
-        apt-get install -y openssh-server curl git procps ca-certificates
+        apt-get install -y \
+            openssh-server bash curl git procps ca-certificates tar \
+            libc6 libstdc++6
         [ -n "$EXTRA_PACKAGES" ] && apt-get install -y $EXTRA_PACKAGES
         apt-get clean && rm -rf /var/lib/apt/lists/*
         ;;
     apk)
-        apk add --no-cache openssh curl git procps ca-certificates shadow bash \
-            libstdc++ gcompat
+        apk add --no-cache \
+            openssh bash curl git procps ca-certificates tar shadow \
+            musl libgcc libstdc++ \
+            gcompat krb5-libs webkit2gtk-4.1
         [ -n "$EXTRA_PACKAGES" ] && apk add --no-cache $EXTRA_PACKAGES
         ;;
     dnf)
-        dnf install -y openssh-server curl git procps-ng ca-certificates
+        dnf install -y \
+            openssh-server bash curl git procps-ng ca-certificates tar \
+            glibc libgcc libstdc++
         [ -n "$EXTRA_PACKAGES" ] && dnf install -y $EXTRA_PACKAGES
         dnf clean all
         ;;
     yum)
-        yum install -y openssh-server curl git procps ca-certificates
+        yum install -y \
+            openssh-server bash curl git procps ca-certificates tar \
+            glibc libgcc libstdc++
         [ -n "$EXTRA_PACKAGES" ] && yum install -y $EXTRA_PACKAGES
         yum clean all
         ;;
@@ -133,11 +148,15 @@ if command -v usermod >/dev/null 2>&1; then
     usermod -p '*' "$DEV_USER" 2>/dev/null || true
 fi
 
-# Provide a minimal .bashrc if the home dir doesn't already have one.
-# VS Code Remote SSH opens non-login interactive shells, so .bashrc is the
-# right place for PS1. Single-quote the heredoc to prevent early expansion.
+# Provide a minimal prompt for interactive bash shells. VS Code Remote SSH opens
+# non-login interactive shells, so .bashrc is the right place for PS1.
 if [ ! -f "$DEVUSER_HOME/.bashrc" ]; then
     cat > "$DEVUSER_HOME/.bashrc" << 'DOTBASHRC'
+export PS1='\u@\h:\w\$ '
+DOTBASHRC
+    chown "$DEV_USER:$DEV_USER" "$DEVUSER_HOME/.bashrc"
+elif ! grep -q 'PS1=' "$DEVUSER_HOME/.bashrc"; then
+    cat >> "$DEVUSER_HOME/.bashrc" << 'DOTBASHRC'
 export PS1='\u@\h:\w\$ '
 DOTBASHRC
     chown "$DEV_USER:$DEV_USER" "$DEVUSER_HOME/.bashrc"
@@ -170,9 +189,8 @@ done
 # Generate host keys for any missing algorithm.
 ssh-keygen -A
 
-# Write jailbox settings to a dedicated file and include it at the end of
-# sshd_config. The Include is appended last, so our file is processed after
-# all existing settings, giving it final precedence.
+# Write jailbox settings to a dedicated sshd config. The wrapper starts sshd
+# with this file directly so distro defaults cannot override jailbox policy.
 #
 # Both ChallengeResponseAuthentication (pre-8.7) and
 # KbdInteractiveAuthentication (8.7+) are set to cover all OpenSSH versions.
@@ -185,7 +203,7 @@ ChallengeResponseAuthentication no
 KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 UsePAM no
+AllowTcpForwarding yes
+AllowStreamLocalForwarding yes
 AllowUsers ${DEV_USER}
 EOF
-
-printf '\nInclude /etc/ssh/jailbox_sshd_config\n' >> /etc/ssh/sshd_config

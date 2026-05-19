@@ -11,7 +11,7 @@
 # Each stage gets its own SSH port so all stages can run simultaneously.
 # Output is buffered per stage and printed in order once all finish.
 #
-# Usage: scripts/test.sh [stage...]
+# Usage: tests/integration-images.sh [stage...]
 # Env:   JAILBOX_TEST_AI_TOOLS  — AI tools to install (default: none)
 set -euo pipefail
 
@@ -42,7 +42,7 @@ Environment:
   JAILBOX_TEST_AI_TOOLS   AI tools to install inside the wrapper (default: none).
                           Example: JAILBOX_TEST_AI_TOOLS=claude $0 debian
 
-Requires: podman, ssh, ssh-keygen
+Requires: podman, ssh, ssh-keygen, cksum
 EOF
 }
 
@@ -54,6 +54,17 @@ stage_port() {
         fedora)       echo 22231 ;;
         custom-user)  echo 22232 ;;
         uid-mismatch) echo 22233 ;;
+        *) die "unknown stage: $1" ;;
+    esac
+}
+
+stage_forward_port() {
+    case "$1" in
+        debian)       echo 23229 ;;
+        alpine)       echo 23230 ;;
+        fedora)       echo 23231 ;;
+        custom-user)  echo 23232 ;;
+        uid-mismatch) echo 23233 ;;
         *) die "unknown stage: $1" ;;
     esac
 }
@@ -73,6 +84,9 @@ Host jailbox-test
     Port $port
     User $dev_user
     IdentityFile $key
+    IdentitiesOnly yes
+    PreferredAuthentications publickey
+    PasswordAuthentication no
     StrictHostKeyChecking no
     UserKnownHostsFile $ssh_dir/known_hosts
     BatchMode yes
@@ -115,6 +129,38 @@ assert_eq() {
     fi
 }
 
+assert_local_forwarding() {
+    local config="$1" port="$2" desc="$3"
+    local forward_pid=""
+
+    ssh -F "$config" -N -L "127.0.0.1:${port}:127.0.0.1:2222" jailbox-test >/dev/null 2>&1 &
+    forward_pid=$!
+
+    for _ in $(seq 1 20); do
+        if timeout 1 bash -c \
+            "exec 3<>/dev/tcp/127.0.0.1/$port; IFS= read -r line <&3; [[ \$line == SSH-* ]]" \
+            2>/dev/null; then
+            kill "$forward_pid" >/dev/null 2>&1 || true
+            wait "$forward_pid" 2>/dev/null || true
+            pass "$desc"
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    kill "$forward_pid" >/dev/null 2>&1 || true
+    wait "$forward_pid" 2>/dev/null || true
+    echo "  Forwarding diagnostic:"
+    ssh -vv -F "$config" -o ConnectTimeout=3 -N \
+        -L "127.0.0.1:${port}:127.0.0.1:2222" jailbox-test 2>&1 \
+        | sed 's/^/    /' &
+    forward_pid=$!
+    sleep 1
+    kill "$forward_pid" >/dev/null 2>&1 || true
+    wait "$forward_pid" 2>/dev/null || true
+    fail "$desc"
+}
+
 # ── run_case ──────────────────────────────────────────────────────────────────
 # Designed to run inside a subshell. PASSED/FAILED are subshell-local;
 # written to $log_dir/$stage.counts at exit for the parent to collect.
@@ -122,7 +168,7 @@ assert_eq() {
 run_case() {
     local stage="$1"
     local log_dir="$2"
-    local port dev_user test_build_args ctr
+    local port forward_port dev_user test_build_args ctr
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope. Initialize here so the trap can
     # always reference them safely under set -u.
@@ -130,6 +176,7 @@ run_case() {
     build_log=""
 
     port=$(stage_port "$stage")
+    forward_port=$(stage_forward_port "$stage")
     dev_user="devuser"
     test_build_args=()
 
@@ -144,11 +191,11 @@ run_case() {
     local wrapper_image="jailbox-wrapper-${stage}"
     ctr="jailbox-test-${stage}-ctr"
     ssh_dir=$(mktemp -d)
-    build_log=$(mktemp)
+    build_log="$log_dir/${stage}.build.log"
 
     # Fires when the subshell exits — cleans up regardless of success/failure.
     trap 'echo "$PASSED $FAILED" > "'"$log_dir"'/'"$stage"'.counts"
-          rm -rf "$ssh_dir" "$build_log"
+          rm -rf "$ssh_dir"
           podman stop "'"$ctr"'" >/dev/null 2>&1 || true
           podman rm   "'"$ctr"'" >/dev/null 2>&1 || true' EXIT
 
@@ -175,6 +222,7 @@ run_case() {
             -t "$wrapper_image" \
             -f "$JAILBOX_DIR/Containerfile.wrapper" \
             --build-arg "DEV_IMAGE=${test_image}" \
+            --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(jailbox_install_cache_bust)" \
             --build-arg "USER_ID=$(id -u)" \
             --build-arg "DEV_USER=${dev_user}" \
             --build-arg "AI_TOOLS=${AI_TOOLS}" \
@@ -215,6 +263,15 @@ run_case() {
     assert_ssh "$ssh_dir/config" "home dir exists"  "test -d /home/${dev_user}"
     assert_ssh "$ssh_dir/config" "no docker socket" "! test -S /var/run/docker.sock"
     assert_ssh "$ssh_dir/config" "no podman socket"  "! test -S /run/podman/podman.sock"
+    assert_local_forwarding "$ssh_dir/config" "$forward_port" "SSH local forwarding works"
+}
+
+jailbox_install_cache_bust() {
+    find "$JAILBOX_DIR/install" -type f -print0 \
+        | sort -z \
+        | xargs -0 cksum \
+        | cksum \
+        | cut -d' ' -f1
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -227,6 +284,7 @@ main() {
     command -v podman     >/dev/null 2>&1 || die "podman is required"
     command -v ssh        >/dev/null 2>&1 || die "ssh is required"
     command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
+    command -v cksum      >/dev/null 2>&1 || die "cksum is required"
 
     local stages=("$@")
     [ ${#stages[@]} -eq 0 ] && stages=("${ALL_STAGES[@]}")
@@ -238,8 +296,8 @@ main() {
     done
 
     local log_dir
-    log_dir=$(mktemp -d)
-    trap 'rm -rf "$log_dir"' EXIT
+    log_dir="$JAILBOX_DIR/testlog/test-$(date +%Y%m%d-%H%M%S)-$$"
+    mkdir -p "$log_dir"
 
     echo "jailbox integration tests (parallel)"
     echo "Stages : ${stages[*]}"
@@ -285,7 +343,8 @@ main() {
         wait "$pid" 2>/dev/null || true
     done
 
-    # Print full per-stage output in defined order, then tally totals.
+    # Print full per-stage output in defined order and keep the same files in
+    # testlog for terminals that clip long runs.
     local total_passed=0 total_failed=0 p f
     for stage in "${stages[@]}"; do
         cat "$log_dir/${stage}.log" 2>/dev/null || true
@@ -301,6 +360,7 @@ main() {
     echo ""
     echo "──────────────────────────────────────────────────────────────────────"
     echo "Results: $total_passed passed, $total_failed failed"
+    echo "Full logs: $log_dir"
     [ $total_failed -eq 0 ] || exit 1
 }
 

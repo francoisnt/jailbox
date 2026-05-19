@@ -1,5 +1,5 @@
 # Test dev images for the jailbox integration test suite.
-# Each stage is a plain OS base that scripts/test.sh wraps with
+# Each stage is a plain OS base that tests/integration-images.sh wraps with
 # Containerfile.wrapper and exercises a distinct scenario.
 
 # ── OS matrix ────────────────────────────────────────────────────────────────

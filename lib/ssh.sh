@@ -21,6 +21,9 @@ Host $CONTAINER_NAME
     Port $LOCAL_PORT
     User $DEV_USER
     IdentityFile $KEY_FILE
+    IdentitiesOnly yes
+    PreferredAuthentications publickey
+    PasswordAuthentication no
     StrictHostKeyChecking no
     UserKnownHostsFile $KNOWN_HOSTS
     BatchMode yes

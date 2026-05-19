@@ -77,11 +77,16 @@ validate_dev_image() {
 }
 
 build_jailbox_image() {
+    local install_cache_bust
+
+    install_cache_bust=$(jailbox_install_cache_bust)
+
     echo "📦 Building jailbox image..."
     if ! podman build \
         -t "$JAILBOX_IMAGE" \
         -f "$SCRIPT_DIR/Containerfile.wrapper" \
         --build-arg DEV_IMAGE="$PROJECT_DEV_IMAGE" \
+        --build-arg JAILBOX_INSTALL_CACHE_BUST="$install_cache_bust" \
         --build-arg USER_ID="$MY_UID" \
         --build-arg AI_TOOLS="${AI_TOOLS[*]}" \
         --build-arg EXTRA_PACKAGES="$EXTRA_PACKAGES" \
@@ -102,4 +107,12 @@ build_jailbox_image() {
         echo "Fix: verify AI_TOOLS, EXTRA_PACKAGES, CLAUDE_INSTALL_SHA256, AIDER_VERSION, and DEV_TARGET_STAGE in jailbox.conf."
         exit 1
     fi
+}
+
+jailbox_install_cache_bust() {
+    find "$SCRIPT_DIR/install" -type f -print0 \
+        | sort -z \
+        | xargs -0 cksum \
+        | cksum \
+        | cut -d' ' -f1
 }
