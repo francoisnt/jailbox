@@ -2,7 +2,7 @@
 
 configure_network() {
     FILTER_FILE=""
-    cleanup_filter_file() { [ -n "$FILTER_FILE" ] && rm -f "$FILTER_FILE"; }
+    cleanup_filter_file() { if [ -n "$FILTER_FILE" ]; then rm -f "$FILTER_FILE"; fi; }
     trap cleanup_filter_file EXIT
 
     if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then

@@ -26,6 +26,23 @@ Host $CONTAINER_NAME
     BatchMode yes
 SSHEOF
     chmod 600 "$SSH_CONFIG"
+
+    # Register the project SSH config in ~/.ssh/config so VS Code Remote SSH
+    # can resolve the container host. Include must appear before any Host block,
+    # so prepend it if not already present.
+    local global_config="$HOME/.ssh/config"
+    local include_line="Include $SSH_CONFIG"
+    mkdir -p "$HOME/.ssh"
+    chmod 700 "$HOME/.ssh"
+    touch "$global_config"
+    chmod 600 "$global_config"
+    if ! grep -qxF "$include_line" "$global_config" 2>/dev/null; then
+        local tmp
+        tmp=$(mktemp)
+        { printf '%s\n' "$include_line"; cat "$global_config"; } > "$tmp"
+        mv "$tmp" "$global_config"
+        chmod 600 "$global_config"
+    fi
 }
 
 wait_for_ssh() {

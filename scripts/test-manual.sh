@@ -1,0 +1,225 @@
+#!/bin/bash
+# Manual test runner: cycles through jailbox test stages sequentially,
+# opens VSCodium for each, prompts for a pass/fail result, and logs everything.
+#
+# Prerequisites: run scripts/test.sh first to build the jailbox-test-* images.
+#
+# Usage: scripts/test-manual.sh [stage...]
+# With no arguments runs all stages in order.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
+
+ALL_STAGES=(debian alpine fedora custom-user uid-mismatch)
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<EOF
+Usage: $(basename "$0") [stage...]
+
+Cycle through jailbox stages, open VSCodium for each, and log results.
+
+Stages: ${ALL_STAGES[*]}
+Default: all stages in order.
+
+Run scripts/test.sh first to build the jailbox-test-* images.
+EOF
+    exit 0
+fi
+
+# ── stage list ────────────────────────────────────────────────────────────────
+
+stages=("$@")
+if [[ ${#stages[@]} -eq 0 ]]; then
+    stages=("${ALL_STAGES[@]}")
+else
+    for s in "${stages[@]}"; do
+        valid=0
+        for a in "${ALL_STAGES[@]}"; do [[ "$s" == "$a" ]] && valid=1 && break; done
+        [[ $valid -eq 1 ]] || { echo "Error: unknown stage '$s'. Valid: ${ALL_STAGES[*]}" >&2; exit 1; }
+    done
+fi
+
+# ── log file ──────────────────────────────────────────────────────────────────
+
+LOG_FILE="/tmp/jailbox-manual-$(date +%Y%m%d-%H%M%S).log"
+log() { printf '%s\n' "$*" | tee -a "$LOG_FILE"; }
+
+# ── result tracking ───────────────────────────────────────────────────────────
+
+declare -A RESULTS=()   # stage → pass | fail | skip
+declare -A NOTES=()     # stage → free-text note
+
+# ── per-stage helpers ─────────────────────────────────────────────────────────
+
+dev_user_for() {
+    [[ "$1" == "custom-user" ]] && echo "appuser" || echo "devuser"
+}
+
+run_stage() {
+    local stage="$1"
+    local idx="$2"
+    local total="$3"
+    local dev_user project_dir
+
+    dev_user=$(dev_user_for "$stage")
+    project_dir="/tmp/jailbox-manual-$stage"
+
+    # ── setup ────────────────────────────────────────────────────────────────
+
+    rm -rf "$project_dir"
+    mkdir -p "$project_dir"
+
+    cat > "$project_dir/jailbox.conf" << EOF
+DEV_IMAGE=jailbox-test-$stage
+DEV_USER=$dev_user
+AI_TOOLS=()
+REMOTE_PATH=/home/$dev_user/project
+EOF
+    echo "jailbox manual test — $stage" > "$project_dir/README.txt"
+
+    # Ensure cleanup on Ctrl-C or error during this stage.
+    local cleaned=0
+    stage_cleanup() {
+        if [[ $cleaned -eq 0 ]]; then
+            cleaned=1
+            ( cd "$project_dir" && "$JAILBOX_DIR/jailbox" --clean 2>/dev/null || true )
+            rm -rf "$project_dir"
+        fi
+    }
+    trap 'stage_cleanup; exit 130' INT
+
+    # ── header ───────────────────────────────────────────────────────────────
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    printf  "  Stage %d/%d  ·  %s  ·  user: %s  ·  UID: %s\n" \
+        "$idx" "$total" "$stage" "$dev_user" "$(id -u)"
+    printf  "  Host project dir  →  %s\n" "$project_dir"
+    printf  "  Container mount   →  /home/%s/project\n" "$dev_user"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Checklist — verify each item in the VSCodium remote window:"
+    echo ""
+    echo "  Remote indicator"
+    echo "    □ Bottom-left badge shows  SSH: <container>  (not local)"
+    echo ""
+    echo "  Terminal  (Ctrl+\`)"
+    echo "    □ whoami        → $dev_user"
+    echo "    □ id -u         → $(id -u)"
+    echo "    □ bash --version"
+    echo "    □ git --version"
+    echo "    □ cat /etc/os-release | head -3"
+    echo ""
+    echo "  Project mount"
+    echo "    □ ls /home/$dev_user/project      → README.txt visible"
+    echo "    □ touch /home/$dev_user/project/test.txt"
+    echo ""
+    echo "  Security"
+    echo "    □ ls /var/run/docker.sock 2>&1   → No such file"
+    echo "    □ touch /usr/local/test 2>&1     → Permission denied"
+    echo ""
+    read -rp "  Press Enter to launch jailbox and open VSCodium..."
+    echo ""
+
+    # ── launch ────────────────────────────────────────────────────────────────
+
+    ( cd "$project_dir" && "$JAILBOX_DIR/jailbox" )
+
+    # codium --remote is non-blocking; container stays up until we clean up.
+    echo ""
+    echo "  VSCodium is open. Work through the checklist above."
+    echo ""
+
+    # ── prompt ────────────────────────────────────────────────────────────────
+
+    local result note
+    while true; do
+        read -rp "  Result for $stage — [p]ass / [f]ail / [s]kip: " result
+        case "${result,,}" in
+            p|pass)  result=pass;  break ;;
+            f|fail)  result=fail;  break ;;
+            s|skip)  result=skip;  break ;;
+            *) echo "  Please enter p, f, or s." ;;
+        esac
+    done
+
+    note=""
+    if [[ "$result" != "skip" ]]; then
+        read -rp "  Notes (optional, Enter to skip): " note || true
+    fi
+
+    RESULTS[$stage]="$result"
+    NOTES[$stage]="$note"
+
+    # ── cleanup ───────────────────────────────────────────────────────────────
+
+    stage_cleanup
+    trap - INT   # restore default after stage
+
+    # ── per-stage log entry ───────────────────────────────────────────────────
+
+    local symbol
+    case "$result" in
+        pass) symbol="✅" ;;
+        fail) symbol="❌" ;;
+        skip) symbol="⏭ " ;;
+    esac
+
+    local entry="$symbol $stage"
+    [[ -n "$note" ]] && entry="$entry — $note"
+    log "  $entry"
+}
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════╗"
+echo "║  jailbox manual test run                                            ║"
+printf "║  stages: %-60s ║\n" "${stages[*]}"
+echo "╚══════════════════════════════════════════════════════════════════════╝"
+
+{
+    echo ""
+    echo "jailbox manual test — $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "stages: ${stages[*]}"
+    echo ""
+} >> "$LOG_FILE"
+
+# Verify all images exist before starting.
+for stage in "${stages[@]}"; do
+    podman image exists "jailbox-test-$stage" 2>/dev/null || {
+        echo "Error: jailbox-test-$stage not found — run scripts/test.sh first" >&2
+        exit 1
+    }
+done
+
+total=${#stages[@]}
+idx=0
+for stage in "${stages[@]}"; do
+    idx=$((idx + 1))
+    run_stage "$stage" "$idx" "$total"
+    echo ""
+done
+
+# ── summary ───────────────────────────────────────────────────────────────────
+
+passed=0 failed=0 skipped=0
+for stage in "${stages[@]}"; do
+    case "${RESULTS[$stage]:-skip}" in
+        pass) passed=$((passed + 1)) ;;
+        fail) failed=$((failed + 1)) ;;
+        skip) skipped=$((skipped + 1)) ;;
+    esac
+done
+
+{
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Results: $passed passed, $failed failed, $skipped skipped"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+} | tee -a "$LOG_FILE"
+
+echo ""
+echo "Full log: $LOG_FILE"
+
+[[ $failed -eq 0 ]]

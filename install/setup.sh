@@ -37,7 +37,7 @@ case "$PKG_MGR" in
         apt-get clean && rm -rf /var/lib/apt/lists/*
         ;;
     apk)
-        apk add --no-cache openssh curl git procps ca-certificates shadow
+        apk add --no-cache openssh curl git procps ca-certificates shadow bash
         [ -n "$EXTRA_PACKAGES" ] && apk add --no-cache $EXTRA_PACKAGES
         ;;
     dnf)
@@ -59,6 +59,10 @@ if ! command -v sshd >/dev/null 2>&1; then
 fi
 
 # ── dev user ──────────────────────────────────────────────────────────────────
+# Prefer bash for the interactive shell; VS Code Remote SSH opens non-login
+# interactive shells so .bashrc (not .bash_profile) is what gets sourced.
+_PREFERRED_SHELL=$(command -v bash 2>/dev/null || echo /bin/sh)
+
 if id "$DEV_USER" >/dev/null 2>&1; then
     existing_uid=$(id -u "$DEV_USER")
     if [ "$existing_uid" != "$USER_ID" ]; then
@@ -77,10 +81,10 @@ if id "$DEV_USER" >/dev/null 2>&1; then
     fi
 else
     if command -v useradd >/dev/null 2>&1; then
-        useradd -m -u "$USER_ID" -s /bin/sh "$DEV_USER"
+        useradd -m -u "$USER_ID" -s "$_PREFERRED_SHELL" "$DEV_USER"
     elif command -v adduser >/dev/null 2>&1; then
         # Alpine-style adduser
-        adduser -D -u "$USER_ID" -h "/home/$DEV_USER" -s /bin/sh "$DEV_USER"
+        adduser -D -u "$USER_ID" -h "/home/$DEV_USER" -s "$_PREFERRED_SHELL" "$DEV_USER"
     else
         echo "Error: cannot create $DEV_USER (no useradd or adduser)" >&2
         exit 1
@@ -101,7 +105,7 @@ DEVUSER_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
 case "$DEVUSER_SHELL" in
     ""|/bin/false|/sbin/nologin|/usr/sbin/nologin)
         if command -v usermod >/dev/null 2>&1; then
-            usermod -s /bin/sh "$DEV_USER" 2>/dev/null || true
+            usermod -s "$_PREFERRED_SHELL" "$DEV_USER" 2>/dev/null || true
         fi
         ;;
 esac
@@ -109,9 +113,11 @@ esac
 # Refresh after any shell update above.
 PASSWD_ENTRY=$(get_passwd_entry)
 DEVUSER_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
-[ -z "$DEVUSER_SHELL" ] && DEVUSER_SHELL="/bin/sh"
+[ -z "$DEVUSER_SHELL" ] && DEVUSER_SHELL="$_PREFERRED_SHELL"
 if ! [ -x "$DEVUSER_SHELL" ]; then
-    if [ -x /bin/sh ]; then
+    if [ -x "$_PREFERRED_SHELL" ]; then
+        usermod -s "$_PREFERRED_SHELL" "$DEV_USER" 2>/dev/null || true
+    elif [ -x /bin/sh ]; then
         usermod -s /bin/sh "$DEV_USER" 2>/dev/null || true
     fi
 fi
@@ -122,6 +128,16 @@ fi
 # password, not locked) so key-based auth succeeds without PAM.
 if command -v usermod >/dev/null 2>&1; then
     usermod -p '*' "$DEV_USER" 2>/dev/null || true
+fi
+
+# Provide a minimal .bashrc if the home dir doesn't already have one.
+# VS Code Remote SSH opens non-login interactive shells, so .bashrc is the
+# right place for PS1. Single-quote the heredoc to prevent early expansion.
+if [ ! -f "$DEVUSER_HOME/.bashrc" ]; then
+    cat > "$DEVUSER_HOME/.bashrc" << 'DOTBASHRC'
+export PS1='\u@\h:\w\$ '
+DOTBASHRC
+    chown "$DEV_USER:$DEV_USER" "$DEVUSER_HOME/.bashrc"
 fi
 
 # SSH directory
