@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
 AI_TOOLS="${JAILBOX_TEST_AI_TOOLS:-}"
-ALL_STAGES=(debian alpine fedora custom-user uid-mismatch)
+ALL_STAGES=(debian alpine fedora custom-user uid-mismatch egress)
 
 PASSED=0
 FAILED=0
@@ -90,6 +90,7 @@ stage_forward_port() {
         fedora)       echo 24231 ;;
         custom-user)  echo 24232 ;;
         uid-mismatch) echo 24233 ;;
+        egress)       echo 24234 ;;
         *) die "unknown stage: $1" ;;
     esac
 }
@@ -101,7 +102,15 @@ stage_reh_probe_port() {
         fedora)       echo 25231 ;;
         custom-user)  echo 25232 ;;
         uid-mismatch) echo 25233 ;;
+        egress)       echo 25234 ;;
         *) die "unknown stage: $1" ;;
+    esac
+}
+
+stage_test_image() {
+    case "$1" in
+        egress) echo "jailbox-test-debian" ;;
+        *)      echo "jailbox-test-$1" ;;
     esac
 }
 
@@ -345,12 +354,19 @@ run_e2e_case() {
     rm -rf "$project_dir"
     mkdir -p "$project_dir"
 
+    local dev_image
+    dev_image=$(stage_test_image "$stage")
+
     cat > "$project_dir/jailbox.conf" << EOF
-DEV_IMAGE=jailbox-test-${stage}
+DEV_IMAGE=${dev_image}
 DEV_USER=${dev_user}
 AI_TOOLS=(${AI_TOOLS})
 REMOTE_PATH=/home/${dev_user}/project
 EOF
+
+    if [[ "$stage" == "egress" ]]; then
+        printf 'EGRESS_ALLOW=("api.ipify.org")\n' >> "$project_dir/jailbox.conf"
+    fi
 
     export JAILBOX_E2E_PROJECT="$project_dir"
 
@@ -399,6 +415,20 @@ EOF
     assert_ssh_fails "$ssh_cfg" "$ctr" "rootfs is read-only"  "touch /etc/.e2e-test"
     assert_ssh       "$ssh_cfg" "$ctr" "no docker socket"     "! test -S /var/run/docker.sock"
     assert_ssh       "$ssh_cfg" "$ctr" "no podman socket"     "! test -S /run/podman/podman.sock"
+
+    # Egress policy (only run for the egress stage)
+    if [[ "$stage" == "egress" ]]; then
+        assert_ssh_fails "$ssh_cfg" "$ctr" "direct HTTP(S) bypassing proxy is blocked" \
+            "curl --noproxy '*' --connect-timeout 5 --max-time 5 -fs https://example.com"
+        assert_ssh_fails "$ssh_cfg" "$ctr" "raw TCP to external IP is blocked" \
+            "timeout 5 bash -c 'exec 3<>/dev/tcp/8.8.8.8/443' 2>/dev/null"
+        assert_ssh "$ssh_cfg" "$ctr" "curl via proxy to allowed host (api.ipify.org) succeeds" \
+            "curl --connect-timeout 15 --max-time 20 -fs https://api.ipify.org"
+        assert_ssh_fails "$ssh_cfg" "$ctr" "curl via proxy to disallowed host fails" \
+            "curl --connect-timeout 10 --max-time 10 -fs http://not-in-allowlist.example.org"
+        assert_ssh_fails "$ssh_cfg" "$ctr" "proxy rejects CONNECT to non-443 port" \
+            "curl --connect-timeout 5 --max-time 5 -fs https://api.ipify.org:8080/"
+    fi
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -422,9 +452,11 @@ main() {
         [ $valid -eq 1 ] || die "unknown stage '$s'. Valid: ${ALL_STAGES[*]}"
     done
 
+    local required_image
     for stage in "${stages[@]}"; do
-        podman image exists "jailbox-test-${stage}" 2>/dev/null || \
-            die "jailbox-test-${stage} not found — run tests/integration-images.sh first"
+        required_image=$(stage_test_image "$stage")
+        podman image exists "$required_image" 2>/dev/null || \
+            die "$required_image not found — run tests/integration-images.sh first"
     done
 
     local log_dir

@@ -45,7 +45,7 @@ configure_proxy_network() {
         "$PROXY_IMAGE"
 
     podman network connect "$internal_net" "$PROXY_NAME"
-    echo "⚠️  Proxy is best-effort (env-based). Some tools may bypass it."
+    echo "🔒 Direct egress blocked by internal network. Outbound HTTP(S) brokered through tinyproxy sidecar. Enforcement is proxy-mediated (protocol/domain filter), not per-packet."
 
     JAILBOX_NETWORK="$internal_net"
     JAILBOX_INTERNAL_NETWORK="$internal_net"

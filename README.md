@@ -210,8 +210,21 @@ allows the exact hostname and its subdomains.
 
 Default: empty, which means normal outbound network access.
 
-This is best suited for HTTP(S) tools. Direct egress is validated after launch
-when this mode is enabled.
+Direct egress is blocked by the internal Podman network. Outbound HTTP(S) is
+brokered through a tinyproxy sidecar. The remaining limitation is that
+enforcement depends on the proxy's protocol/domain filtering, not on per-packet
+domain-aware firewalling.
+
+Enforcement model: enforced at the network-route layer for direct egress;
+allowlist enforcement is proxy-mediated and limited to HTTP(S).
+
+Not protected against:
+
+- Malicious proxy bypasses if tinyproxy has a bug.
+- DNS/CDN/IP drift ambiguity (domain A records can change; IP-based connections
+  bypass the allowlist entirely).
+- Non-HTTP protocols unless blocked by lack of routing.
+- Traffic to services reachable on the internal Podman network.
 
 ### `REMOTE_PATH`
 
