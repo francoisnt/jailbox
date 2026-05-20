@@ -110,24 +110,22 @@ check_direct_egress_blocked() {
 }
 
 check_proxy_egress_allowed() {
-    local validation_domain http_code
+    local validation_domain
 
     validation_domain=$(egress_validation_domain)
     if [ -z "$validation_domain" ]; then
-        echo "  ⚠️  Skipping proxy filter check: no valid host found in EGRESS_ALLOW"
+        echo "  ⚠️  Skipping proxy egress check: no valid host found in EGRESS_ALLOW"
         WARNINGS=$((WARNINGS + 1))
         return 0
     fi
 
-    http_code=$(ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-        "curl --max-time 8 -s -o /dev/null -w '%{http_code}' 'http://$validation_domain'" \
-        2>/dev/null || true)
-
-    if [ "$http_code" = "403" ]; then
-        echo "  ⚠️  Proxy rejected $validation_domain with 403 — allowlist filter may be misconfigured"
-        WARNINGS=$((WARNINGS + 1))
+    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+        "curl -fsS --connect-timeout 5 --max-time 10 'https://$validation_domain' >/dev/null" \
+        2>/dev/null; then
+        echo "  ✅ Proxy egress to $validation_domain succeeded"
     else
-        echo "  ✅ Proxy filter accepts $validation_domain (HTTP $http_code)"
+        echo "  ⚠️  Proxy egress to $validation_domain failed"
+        WARNINGS=$((WARNINGS + 1))
     fi
 }
 

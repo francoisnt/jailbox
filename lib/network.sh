@@ -19,7 +19,13 @@ configure_proxy_network() {
 
     FILTER_FILE=$(mktemp)
     for domain in "${EGRESS_ALLOW[@]}"; do
-        printf '(^|\\.)%s$\n' "$(tinyproxy_escape_host "$domain")" >> "$FILTER_FILE"
+        local escaped
+        escaped="$(tinyproxy_escape_host "$domain")"
+        # Two patterns per domain: exact match and subdomain match.
+        # (^|\.)domain$ looks correct but the ^ inside a group is not
+        # honoured by musl libc's POSIX ERE (used in Alpine/tinyproxy).
+        printf '^%s$\n'   "$escaped" >> "$FILTER_FILE"
+        printf '\\.%s$\n' "$escaped" >> "$FILTER_FILE"
     done
 
     echo "📦 Building proxy image..."
@@ -32,10 +38,15 @@ configure_proxy_network() {
     podman network exists "$external_net" 2>/dev/null || podman network create "$external_net"
 
     echo "🔒 Starting egress proxy (${#EGRESS_ALLOW[@]} allowed hosts)..."
+    # Attach both networks at start time so external_net remains the primary
+    # (default-route) interface.  A subsequent `podman network connect` can
+    # replace the default route with the newly-added interface, which would
+    # cut off the proxy's outbound internet access.
     podman run -d \
         --name "$PROXY_NAME" \
         --replace \
         --network "$external_net" \
+        --network "$internal_net" \
         --read-only \
         --tmpfs /tmp:rw,noexec,nosuid,nodev \
         --tmpfs /run:rw,noexec,nosuid,nodev \
@@ -43,8 +54,6 @@ configure_proxy_network() {
         --security-opt=no-new-privileges \
         -v "$FILTER_FILE:/etc/tinyproxy/filter:ro" \
         "$PROXY_IMAGE"
-
-    podman network connect "$internal_net" "$PROXY_NAME"
     echo "🔒 Direct egress blocked by internal network. Outbound HTTP(S) brokered through tinyproxy sidecar. Enforcement is proxy-mediated (protocol/domain filter), not per-packet."
 
     JAILBOX_NETWORK="$internal_net"

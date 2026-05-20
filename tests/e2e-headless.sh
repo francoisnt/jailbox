@@ -418,16 +418,33 @@ EOF
 
     # Egress policy (only run for the egress stage)
     if [[ "$stage" == "egress" ]]; then
+        local proxy_ctr="${ctr}-proxy"
+
         assert_ssh_fails "$ssh_cfg" "$ctr" "direct HTTP(S) bypassing proxy is blocked" \
             "curl --noproxy '*' --connect-timeout 5 --max-time 5 -fs https://example.com"
         assert_ssh_fails "$ssh_cfg" "$ctr" "raw TCP to external IP is blocked" \
             "timeout 5 bash -c 'exec 3<>/dev/tcp/8.8.8.8/443' 2>/dev/null"
-        assert_ssh "$ssh_cfg" "$ctr" "proxy filter accepts api.ipify.org (not rejected with 403)" \
-            "r=\$(curl --max-time 5 -s -o /dev/null -w '%{http_code}' http://api.ipify.org); [ \"\$r\" != 403 ]"
+        assert_ssh "$ssh_cfg" "$ctr" "curl via proxy to allowed host (api.ipify.org) succeeds" \
+            "curl -fsS --connect-timeout 5 --max-time 10 https://api.ipify.org >/dev/null"
         assert_ssh_fails "$ssh_cfg" "$ctr" "curl via proxy to disallowed host fails" \
             "curl --connect-timeout 10 --max-time 10 -fs http://not-in-allowlist.example.org"
         assert_ssh_fails "$ssh_cfg" "$ctr" "proxy rejects CONNECT to non-443 port" \
             "curl --connect-timeout 5 --max-time 5 -fs https://api.ipify.org:8080/"
+
+        # ── Proxy network diagnostics ─────────────────────────────────────────
+        echo "  [diag] proxy env vars in SSH session:"
+        ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+            "env | grep -i proxy || echo '(none)'" 2>/dev/null || true
+        echo "  [diag] SetEnv lines in /run/sshd/sshd_config:"
+        ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+            "grep -i setenv /run/sshd/sshd_config 2>/dev/null || echo '(none)'" 2>/dev/null || true
+        echo "  [diag] proxy direct reach (wget api.ipify.org, bypassing tinyproxy):"
+        podman exec "$proxy_ctr" wget -qO- --timeout=5 http://api.ipify.org 2>&1 || echo "(wget failed)"
+        echo "  [diag] curl verbose via proxy (inside jailbox):"
+        ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+            "curl -v --connect-timeout 5 --max-time 10 https://api.ipify.org" 2>&1 || true
+        echo "  [diag] tinyproxy logs:"
+        podman logs "$proxy_ctr" 2>&1 || true
     fi
 }
 
