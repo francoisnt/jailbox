@@ -203,7 +203,9 @@ ChallengeResponseAuthentication no
 KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 UsePAM no
-AllowTcpForwarding yes
+AllowTcpForwarding local
 AllowStreamLocalForwarding yes
+PermitTunnel no
+GatewayPorts no
 AllowUsers ${DEV_USER}
 EOF

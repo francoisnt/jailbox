@@ -105,6 +105,8 @@ target.
 - `/home/devuser` is a persistent Podman volume.
 - `/tmp` and `/run` are writable tmpfs mounts.
 - SSH uses a fresh local Ed25519 keypair generated for each run.
+- SSH forwarding is restricted to local port forwarding (`AllowTcpForwarding local`);
+  remote forwarding, tunnel devices, and gateway ports are disabled.
 - The container drops all Linux capabilities except a minimal set required for
   OpenSSH privilege separation and user session switching, disables new
   privileges, and applies CPU, memory, and PID limits.
