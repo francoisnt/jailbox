@@ -234,11 +234,7 @@ Container path where the project is mounted and opened in the editor.
 REMOTE_PATH="/workspace/project"
 ```
 
-Default:
-
-```bash
-REMOTE_PATH="/home/devuser/project"   # or /home/$DEV_USER/project if DEV_USER is set
-```
+Default: `/home/$DEV_USER/project` (tracks `DEV_USER` automatically).
 
 ### `CLAUDE_INSTALL_SHA256`
 
@@ -275,8 +271,8 @@ Default: `devuser`. Set this when your project image already has a non-root user
 under a different name (e.g. `ubuntu`, `app`, `node`). jailbox will SSH into the
 container as this user and install AI tools under their account.
 
-If you change `DEV_USER`, also update `REMOTE_PATH` if you rely on the default
-(`/home/devuser/project` — it won't automatically reflect the new username).
+`REMOTE_PATH` defaults to `/home/$DEV_USER/project` and tracks `DEV_USER`
+automatically, so no extra update is needed when you change `DEV_USER`.
 
 ## Protected read-only project paths
 
