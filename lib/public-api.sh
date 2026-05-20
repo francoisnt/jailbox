@@ -100,9 +100,10 @@ set_config_array_default() {
     value="$2"
 
     if [ -z "$value" ]; then
+        # shellcheck disable=SC2229,SC2294  # dynamic array init; key is repo-controlled
         eval "$key=()"
     else
-        # Values are repo-controlled defaults from CONFIG_DEFAULTS.
+        # shellcheck disable=SC2229,SC2294  # values are repo-controlled defaults
         eval "$key=($value)"
     fi
 }
