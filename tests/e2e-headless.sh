@@ -420,6 +420,8 @@ EOF
     if [[ "$stage" == "egress" ]]; then
         local proxy_ctr="${ctr}-proxy"
 
+        assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
+            "[ -n \"\$HTTPS_PROXY\" ]"
         assert_ssh_fails "$ssh_cfg" "$ctr" "direct HTTP(S) bypassing proxy is blocked" \
             "curl --noproxy '*' --connect-timeout 5 --max-time 5 -fs https://example.com"
         assert_ssh_fails "$ssh_cfg" "$ctr" "raw TCP to external IP is blocked" \

@@ -78,6 +78,7 @@ validate_egress_policy() {
     fi
 
     check_internal_network_flag
+    check_proxy_env_in_session
     check_direct_egress_blocked
     check_proxy_egress_allowed
 }
@@ -89,6 +90,18 @@ check_internal_network_flag() {
     if [ "$internal_value" != "true" ]; then
         echo "  ⚠️  Egress network is not marked internal: $JAILBOX_INTERNAL_NETWORK"
         WARNINGS=$((WARNINGS + 1))
+    fi
+}
+
+check_proxy_env_in_session() {
+    local val
+    val=$(ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+        "printf '%s' \"\$HTTPS_PROXY\"" 2>/dev/null || true)
+    if [ -z "$val" ]; then
+        echo "  ⚠️  HTTPS_PROXY is not set in SSH sessions — jailbox-start SetEnv may have failed"
+        WARNINGS=$((WARNINGS + 1))
+    else
+        echo "  ✅ HTTPS_PROXY is set in SSH sessions ($val)"
     fi
 }
 
