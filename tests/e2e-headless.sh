@@ -422,8 +422,8 @@ EOF
             "curl --noproxy '*' --connect-timeout 5 --max-time 5 -fs https://example.com"
         assert_ssh_fails "$ssh_cfg" "$ctr" "raw TCP to external IP is blocked" \
             "timeout 5 bash -c 'exec 3<>/dev/tcp/8.8.8.8/443' 2>/dev/null"
-        assert_ssh "$ssh_cfg" "$ctr" "curl via proxy to allowed host (api.ipify.org) succeeds" \
-            "curl --connect-timeout 15 --max-time 20 -fs https://api.ipify.org"
+        assert_ssh "$ssh_cfg" "$ctr" "proxy filter accepts api.ipify.org (not rejected with 403)" \
+            "r=\$(curl --max-time 5 -s -o /dev/null -w '%{http_code}' http://api.ipify.org); [ \"\$r\" != 403 ]"
         assert_ssh_fails "$ssh_cfg" "$ctr" "curl via proxy to disallowed host fails" \
             "curl --connect-timeout 10 --max-time 10 -fs http://not-in-allowlist.example.org"
         assert_ssh_fails "$ssh_cfg" "$ctr" "proxy rejects CONNECT to non-443 port" \

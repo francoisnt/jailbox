@@ -39,13 +39,16 @@ SSHEOF
     chmod 700 "$HOME/.ssh"
     touch "$global_config"
     chmod 600 "$global_config"
-    if ! grep -qxF "$include_line" "$global_config" 2>/dev/null; then
-        local tmp
-        tmp=$(mktemp)
-        { printf '%s\n' "$include_line"; cat "$global_config"; } > "$tmp"
-        mv "$tmp" "$global_config"
-        chmod 600 "$global_config"
-    fi
+    (
+        flock 200
+        if ! grep -qxF "$include_line" "$global_config" 2>/dev/null; then
+            local tmp
+            tmp=$(mktemp)
+            { printf '%s\n' "$include_line"; cat "$global_config"; } > "$tmp"
+            mv "$tmp" "$global_config"
+            chmod 600 "$global_config"
+        fi
+    ) 200>"${global_config}.lock"
 }
 
 wait_for_ssh() {

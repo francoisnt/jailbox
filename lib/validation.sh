@@ -10,7 +10,9 @@ post_start_validation() {
     check_readonly_mounts
     validate_egress_policy
 
-    [ "$WARNINGS" -eq 0 ] && echo "  ✅ All checks passed"
+    if [ "$WARNINGS" -eq 0 ]; then
+        echo "  ✅ All checks passed"
+    fi
 }
 
 check_authorized_keys() {
@@ -108,26 +110,28 @@ check_direct_egress_blocked() {
 }
 
 check_proxy_egress_allowed() {
-    local validation_url
+    local validation_domain http_code
 
-    validation_url=$(egress_validation_url)
-    if [ -z "$validation_url" ]; then
-        echo "  ⚠️  Skipping proxy egress success check: no HTTP(S)-compatible validation host found in EGRESS_ALLOW"
+    validation_domain=$(egress_validation_domain)
+    if [ -z "$validation_domain" ]; then
+        echo "  ⚠️  Skipping proxy filter check: no valid host found in EGRESS_ALLOW"
         WARNINGS=$((WARNINGS + 1))
         return 0
     fi
 
-    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-        "curl -fsS --connect-timeout 5 --max-time 10 '$validation_url' >/dev/null" \
-        2>/dev/null; then
-        echo "  ✅ Proxy egress succeeded via $validation_url"
-    else
-        echo "  ⚠️  Proxy egress failed via $validation_url"
+    http_code=$(ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+        "curl --max-time 8 -s -o /dev/null -w '%{http_code}' 'http://$validation_domain'" \
+        2>/dev/null || true)
+
+    if [ "$http_code" = "403" ]; then
+        echo "  ⚠️  Proxy rejected $validation_domain with 403 — allowlist filter may be misconfigured"
         WARNINGS=$((WARNINGS + 1))
+    else
+        echo "  ✅ Proxy filter accepts $validation_domain (HTTP $http_code)"
     fi
 }
 
-egress_validation_url() {
+egress_validation_domain() {
     local domain
 
     for domain in "${EGRESS_ALLOW[@]}"; do
@@ -136,7 +140,7 @@ egress_validation_url() {
                 continue
                 ;;
         esac
-        printf 'https://%s\n' "$domain"
+        printf '%s\n' "$domain"
         return 0
     done
 

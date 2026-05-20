@@ -12,5 +12,8 @@ ARG JAILBOX_INSTALL_CACHE_BUST=""
 COPY install/ /tmp/jailbox-install/
 RUN : "$JAILBOX_INSTALL_CACHE_BUST" && sh /tmp/jailbox-install/setup.sh && rm -rf /tmp/jailbox-install
 
+COPY jailbox-start /usr/local/bin/jailbox-start
+RUN chmod +x /usr/local/bin/jailbox-start
+
 EXPOSE 2222
-CMD ["/bin/sh", "-c", "mkdir -p /var/run/sshd /run/sshd; SSHD=$(command -v sshd); [ -n \"$SSHD\" ] || { echo 'sshd not found'; exit 1; }; exec \"$SSHD\" -D -e -f /etc/ssh/jailbox_sshd_config"]
+CMD ["/usr/local/bin/jailbox-start"]

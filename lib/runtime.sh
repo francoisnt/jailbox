@@ -55,13 +55,16 @@ clean_jailbox() {
     local project_ssh_config="$PROJECT_DIR/.ssh/config"
     local include_line="Include $project_ssh_config"
     local global_config="$HOME/.ssh/config"
-    if [[ -f "$global_config" ]]; then
-        local tmp
-        tmp=$(mktemp)
-        grep -vxF "$include_line" "$global_config" > "$tmp" 2>/dev/null || true
-        mv "$tmp" "$global_config"
-        chmod 600 "$global_config"
-    fi
+    (
+        flock 200
+        if [[ -f "$global_config" ]]; then
+            local tmp
+            tmp=$(mktemp)
+            grep -vxF "$include_line" "$global_config" > "$tmp" 2>/dev/null || true
+            mv "$tmp" "$global_config"
+            chmod 600 "$global_config"
+        fi
+    ) 200>"${global_config}.lock"
 
     podman stop "$CONTAINER_NAME" 2>/dev/null || true
     podman rm "$CONTAINER_NAME" 2>/dev/null || true

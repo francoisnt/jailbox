@@ -1,0 +1,31 @@
+#!/bin/sh
+# Container entrypoint — starts sshd with proxy env vars forwarded into sessions.
+#
+# When EGRESS_ALLOW is set, jailbox puts this container on an internal Podman
+# network (no external routes) and starts a tinyproxy sidecar on both the
+# internal and external networks. The internal network blocks all direct TCP to
+# the internet; tinyproxy is the only path out. HTTP_PROXY/HTTPS_PROXY tell
+# HTTP clients (curl, pip, npm, Claude CLI, ...) to send requests to tinyproxy
+# rather than trying to connect directly — which would be blocked anyway.
+#
+# The problem: `podman run --env` sets vars in PID 1's environment, but sshd
+# builds a fresh environment for every session and drops them. AI tools running
+# inside an SSH session therefore never see HTTP_PROXY and cannot reach even
+# allowed hosts through the proxy.
+#
+# The fix: at startup, copy the static sshd config into /run/sshd/ (writable
+# tmpfs, since the container rootfs is read-only) and append a SetEnv directive
+# for each proxy var that is present. sshd then injects them into every session.
+#
+# When EGRESS_ALLOW is empty no proxy vars are set, the loop writes nothing, and
+# behaviour is identical to a plain `exec sshd` entrypoint.
+set -e
+mkdir -p /var/run/sshd /run/sshd
+SSHD=$(command -v sshd)
+[ -n "$SSHD" ] || { echo 'sshd not found'; exit 1; }
+cp /etc/ssh/jailbox_sshd_config /run/sshd/sshd_config
+for _v in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy; do
+    _val=$(printenv "$_v" 2>/dev/null || true)
+    [ -n "$_val" ] && printf 'SetEnv %s=%s\n' "$_v" "$_val" >> /run/sshd/sshd_config
+done
+exec "$SSHD" -D -e -f /run/sshd/sshd_config
