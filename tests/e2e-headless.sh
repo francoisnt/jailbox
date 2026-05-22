@@ -395,13 +395,6 @@ EOF
     forward_port=$(stage_forward_port "$stage")
     reh_probe_port=$(stage_reh_probe_port "$stage")
 
-    # Host-side: $HOME/.ssh/config must include the project config for VS Code.
-    if grep -qxF "Include $ssh_cfg" "$HOME/.ssh/config" 2>/dev/null; then
-        pass "$HOME/.ssh/config has Include (VS Code can resolve host)"
-    else
-        fail "$HOME/.ssh/config missing Include — VS Code cannot resolve host"
-    fi
-
     # Shell and tools
     assert_eq "login shell is bash" "bash" \
         "$(e2e_ssh "$ssh_cfg" "$ctr" "basename \"\$(grep -m1 '^${dev_user}:' /etc/passwd | cut -d: -f7)\"" || true)"

@@ -94,7 +94,7 @@ On first launch, jailbox:
 4. Writes per-project SSH runtime state under your XDG state directory.
 5. Opens the project through VS Code or VSCodium Remote SSH.
 
-To remove the container, proxy sidecar, network, generated SSH include, and
+To remove the container, proxy sidecar, network, SSH runtime state, and
 persistent home volume for the current project:
 
 ```bash
@@ -122,9 +122,22 @@ EOF
 ## What jailbox changes in your project
 
 Each project gets generated SSH runtime state under
-`${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/<project-hash>/`, plus a
-matching `Include` line in your user-level `~/.ssh/config`. Jailbox does not
-create SSH runtime files inside the project tree.
+`${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/<project-hash>/`. Jailbox does
+not create SSH runtime files inside the project tree and does not modify your
+user-level `~/.ssh/config`.
+
+Some editors resolve SSH hosts only through your default SSH config. If needed,
+print the generated config path and host block:
+
+```bash
+jailbox ssh-config
+```
+
+Then add the generated config manually to `~/.ssh/config`:
+
+```sshconfig
+Include ~/.local/state/jailbox/<project-hash>/ssh_config
+```
 
 Other generated state:
 

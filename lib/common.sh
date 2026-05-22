@@ -4,7 +4,7 @@ usage() {
     local flag
 
     cat <<EOF_USAGE
-Usage: $(basename "$0") [--clean|--help]
+Usage: $(basename "$0") [ssh-config|--clean|--help]
 
 Launch this project inside a hardened jailbox container.
 

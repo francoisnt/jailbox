@@ -77,6 +77,12 @@ main() {
     initialize_project_names
     configure_readonly_paths
 
+    if [[ "${1:-}" == "ssh-config" ]]; then
+        initialize_runtime_ids
+        print_ssh_config_instructions
+        return 0
+    fi
+
     if [[ "${1:-}" == "--clean" ]]; then
         clean_jailbox
         return 0

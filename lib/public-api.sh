@@ -30,11 +30,13 @@ CONFIG_DEFAULTS=(
 )
 
 CLI_FLAGS=(
+    ssh-config
     --clean
     --help
 )
 
 CLI_HELP=(
+    "ssh-config=Print manual SSH config instructions for this project"
     "--clean=Stop/remove jailbox containers, networks, and home volume"
     "--help=Show this help"
 )

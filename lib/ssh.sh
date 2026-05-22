@@ -11,7 +11,12 @@ setup_ssh_keys() {
     ssh-keygen -t ed25519 -f "$KEY_FILE" -N "" -q
     chmod 600 "$KEY_FILE"
 
-    cat > "$SSH_CONFIG" <<SSHEOF
+    write_ssh_config > "$SSH_CONFIG"
+    chmod 600 "$SSH_CONFIG"
+}
+
+write_ssh_config() {
+    cat <<SSHEOF
 Host $CONTAINER_NAME
     HostName localhost
     Port $LOCAL_PORT
@@ -24,27 +29,19 @@ Host $CONTAINER_NAME
     UserKnownHostsFile $KNOWN_HOSTS
     BatchMode yes
 SSHEOF
-    chmod 600 "$SSH_CONFIG"
+}
 
-    # Register the project SSH config in ~/.ssh/config so VS Code Remote SSH
-    # can resolve the container host. Include must appear before any Host block,
-    # so prepend it if not already present.
-    local global_config="$HOME/.ssh/config"
-    local include_line="Include $SSH_CONFIG"
-    mkdir -p "$HOME/.ssh"
-    chmod 700 "$HOME/.ssh"
-    touch "$global_config"
-    chmod 600 "$global_config"
-    (
-        flock 200
-        if ! grep -qxF "$include_line" "$global_config" 2>/dev/null; then
-            local tmp
-            tmp=$(mktemp)
-            { printf '%s\n' "$include_line"; cat "$global_config"; } > "$tmp"
-            mv "$tmp" "$global_config"
-            chmod 600 "$global_config"
-        fi
-    ) 200>"${global_config}.lock"
+print_ssh_config_instructions() {
+    cat <<EOF_INSTRUCTIONS
+SSH config path:
+  $SSH_CONFIG
+
+Manual ~/.ssh/config include:
+  Include $SSH_CONFIG
+
+Host block:
+EOF_INSTRUCTIONS
+    write_ssh_config
 }
 
 wait_for_ssh() {

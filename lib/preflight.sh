@@ -13,8 +13,13 @@ parse_args() {
 }
 
 host_preflight() {
-    require_command podman
     require_command cksum
+
+    if [[ "${1:-}" == "ssh-config" ]]; then
+        return 0
+    fi
+
+    require_command podman
 
     if [[ "${1:-}" == "--clean" ]]; then
         return 0

@@ -47,20 +47,6 @@ configure_runtime_mounts() {
 clean_jailbox() {
     echo "🧹 Cleaning up..."
 
-    # Remove the project's Include line from ~/.ssh/config.
-    local include_line="Include $SSH_CONFIG"
-    local global_config="$HOME/.ssh/config"
-    (
-        flock 200
-        if [[ -f "$global_config" ]]; then
-            local tmp
-            tmp=$(mktemp)
-            grep -vxF "$include_line" "$global_config" > "$tmp" 2>/dev/null || true
-            mv "$tmp" "$global_config"
-            chmod 600 "$global_config"
-        fi
-    ) 200>"${global_config}.lock"
-
     podman stop "$CONTAINER_NAME" 2>/dev/null || true
     podman rm "$CONTAINER_NAME" 2>/dev/null || true
     podman stop "$PROXY_NAME" 2>/dev/null || true
