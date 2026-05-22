@@ -78,8 +78,23 @@ validate_egress_allow() {
     done
 }
 
+project_path_hash() {
+    printf '%s' "$PROJECT_DIR" | cksum | cut -d' ' -f1
+}
+
+initialize_project_names() {
+    PROJECT_RESOURCE_PREFIX="jailbox-$(project_path_hash)"
+    PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
+    JAILBOX_IMAGE="${PROJECT_RESOURCE_PREFIX}-image"
+    CONTAINER_NAME="${PROJECT_RESOURCE_PREFIX}"
+    PROXY_NAME="${PROJECT_RESOURCE_PREFIX}-proxy"
+    PROXY_IMAGE="${PROJECT_RESOURCE_PREFIX}-proxy"
+    VOLUME_NAME="${PROJECT_RESOURCE_PREFIX}-home"
+    NETWORK_NAME="${PROJECT_RESOURCE_PREFIX}-net"
+}
+
 initialize_runtime_ids() {
-    # Stable port derived from project name (49152–65534)
-    LOCAL_PORT=$(( 49152 + $(printf '%s' "$PROJECT_NAME" | cksum | cut -d' ' -f1) % 16383 ))
+    # Stable port derived from the full project path (49152-65534).
+    LOCAL_PORT=$(( 49152 + $(project_path_hash) % 16383 ))
     MY_UID=$(id -u)
 }

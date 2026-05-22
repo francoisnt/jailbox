@@ -14,6 +14,7 @@ parse_args() {
 
 host_preflight() {
     require_command podman
+    require_command cksum
 
     if [[ "${1:-}" == "--clean" ]]; then
         return 0
@@ -21,7 +22,6 @@ host_preflight() {
 
     require_command ssh
     require_command ssh-keygen
-    require_command cksum
     require_command realpath
 
     if command -v codium >/dev/null 2>&1; then
@@ -32,13 +32,4 @@ host_preflight() {
         die "neither 'codium' nor 'code' was found in PATH; install VSCodium/VSCode CLI before launching jailbox"
     fi
 
-    validate_ai_tools
-}
-
-validate_ai_tools() {
-    local tool
-    for tool in "${AI_TOOLS[@]}"; do
-        [[ "$tool" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid AI tool name '$tool' (allowed: letters, numbers, dot, underscore, dash)"
-        [ -f "$SCRIPT_DIR/install/${tool}.sh" ] || die "AI tool installer not found: $SCRIPT_DIR/install/${tool}.sh"
-    done
 }

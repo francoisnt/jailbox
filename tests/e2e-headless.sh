@@ -8,15 +8,13 @@
 # Prerequisites: run tests/integration-images.sh first to build the jailbox-test-* images.
 #
 # Usage: tests/e2e-headless.sh [stage...]
-# Env:   JAILBOX_TEST_AI_TOOLS  — AI tools to install (default: none)
-#        JAILBOX_E2E_REH_RELEASE / JAILBOX_E2E_REH_COMMIT
+# Env:   JAILBOX_E2E_REH_RELEASE / JAILBOX_E2E_REH_COMMIT
 #                              VSCodium REH build to smoke-test on Alpine
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
-AI_TOOLS="${JAILBOX_TEST_AI_TOOLS:-}"
 ALL_STAGES=(debian alpine fedora custom-user uid-mismatch egress)
 
 PASSED=0
@@ -28,6 +26,10 @@ stub_dir=""
 die()   { echo "Error: $*" >&2; exit 1; }
 pass()  { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail()  { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
+
+jailbox_container_name() {
+    printf 'jailbox-%s\n' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+}
 
 usage() {
     cat <<EOF
@@ -43,7 +45,6 @@ Stages: ${ALL_STAGES[*]}
 Requires: podman, ssh, ssh-keygen, curl
 
 Environment:
-  JAILBOX_TEST_AI_TOOLS  AI tools to install (default: none).
   JAILBOX_E2E_REH_RELEASE
   JAILBOX_E2E_REH_COMMIT  VSCodium REH build to smoke-test on Alpine.
 EOF
@@ -349,7 +350,6 @@ run_e2e_case() {
     echo ""
     echo "── e2e: $stage (user: $dev_user) ─────────────────────────────────────"
 
-    # Stable lowercase name — jailbox derives the image tag from basename(project_dir).
     project_dir="/tmp/jailbox-e2e-${stage}"
     rm -rf "$project_dir"
     mkdir -p "$project_dir"
@@ -360,7 +360,6 @@ run_e2e_case() {
     cat > "$project_dir/jailbox.conf" << EOF
 DEV_IMAGE=${dev_image}
 DEV_USER=${dev_user}
-AI_TOOLS=(${AI_TOOLS})
 REMOTE_PATH=/home/${dev_user}/project
 EOF
 
@@ -383,16 +382,17 @@ EOF
 
     # ── Phase 2: headless assertions (container still running) ────────────────
     local ssh_cfg="$project_dir/.ssh/config"
-    local ctr="jailbox-e2e-${stage}-jailbox"
+    local ctr
+    ctr=$(jailbox_container_name "$project_dir")
     local forward_port reh_probe_port
     forward_port=$(stage_forward_port "$stage")
     reh_probe_port=$(stage_reh_probe_port "$stage")
 
-    # Host-side: ~/.ssh/config must include the project config for VS Code.
+    # Host-side: $HOME/.ssh/config must include the project config for VS Code.
     if grep -qxF "Include $project_dir/.ssh/config" "$HOME/.ssh/config" 2>/dev/null; then
-        pass "~/.ssh/config has Include (VS Code can resolve host)"
+        pass "$HOME/.ssh/config has Include (VS Code can resolve host)"
     else
-        fail "~/.ssh/config missing Include — VS Code cannot resolve host"
+        fail "$HOME/.ssh/config missing Include — VS Code cannot resolve host"
     fi
 
     # Shell and tools
@@ -488,7 +488,6 @@ main() {
 
     echo "jailbox e2e tests (parallel)"
     echo "Stages : ${stages[*]}"
-    [ -n "$AI_TOOLS" ] && echo "AI_TOOLS: $AI_TOOLS"
     echo ""
 
     local -A stage_pids=()

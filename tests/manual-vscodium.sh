@@ -50,12 +50,15 @@ log() { printf '%s\n' "$*" | tee -a "$LOG_FILE"; }
 # ── result tracking ───────────────────────────────────────────────────────────
 
 declare -A RESULTS=()   # stage → pass | fail | skip
-declare -A NOTES=()     # stage → free-text note
 
 # ── per-stage helpers ─────────────────────────────────────────────────────────
 
 dev_user_for() {
     [[ "$1" == "custom-user" ]] && echo "appuser" || echo "devuser"
+}
+
+jailbox_container_name() {
+    printf 'jailbox-%s\n' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
 }
 
 collect_failure_diagnostics() {
@@ -136,7 +139,7 @@ run_stage() {
 
     dev_user=$(dev_user_for "$stage")
     project_dir="/tmp/jailbox-manual-$stage"
-    ctr="jailbox-manual-$stage-jailbox"
+    ctr=$(jailbox_container_name "$project_dir")
 
     # ── setup ────────────────────────────────────────────────────────────────
 
@@ -146,7 +149,6 @@ run_stage() {
     cat > "$project_dir/jailbox.conf" << EOF
 DEV_IMAGE=jailbox-test-$stage
 DEV_USER=$dev_user
-AI_TOOLS=()
 REMOTE_PATH=/home/$dev_user/project
 EOF
     echo "jailbox manual test — $stage" > "$project_dir/README.txt"
@@ -156,7 +158,10 @@ EOF
     stage_cleanup() {
         if [[ $cleaned -eq 0 ]]; then
             cleaned=1
-            ( cd "$project_dir" && "$JAILBOX_DIR/jailbox" --clean 2>/dev/null || true )
+            (
+                cd "$project_dir"
+                "$JAILBOX_DIR/jailbox" --clean 2>/dev/null || true
+            )
             rm -rf "$project_dir"
         fi
     }
@@ -211,7 +216,6 @@ EOF
     fi
 
     RESULTS[$stage]="$result"
-    NOTES[$stage]="$note"
 
     if [[ "$result" == "fail" ]]; then
         collect_failure_diagnostics "$stage" "$project_dir" "$dev_user" "$ctr"

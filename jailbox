@@ -4,15 +4,14 @@
 # =============================================================================
 #
 # PURPOSE
-#   Wraps a project's dev image with AI tooling and SSH access, then launches
+#   Wraps a project's dev image with SSH access, then launches
 #   it as a hardened isolated container. The AI runs inside the same container
 #   as the project's dev environment — no bridge, no exec proxy.
 #
 # CONFIGURATION
 #   jailbox.conf in the project root is parsed if present. Supported settings:
 #     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
-#     AI_TOOLS, EXTRA_PACKAGES, EGRESS_ALLOW, REMOTE_PATH,
-#     CLAUDE_INSTALL_SHA256, AIDER_VERSION, DEV_USER.
+#     EGRESS_ALLOW, REMOTE_PATH, DEV_USER.
 #
 # REQUIREMENTS
 #   podman, ssh, ssh-keygen, VSCodium/VSCode with open-remote-ssh extension
@@ -20,17 +19,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR=$(pwd)
-PROJECT_NAME=$(basename "$PROJECT_DIR")
+PROJECT_DIR=$(pwd -P)
 
 # Image, container, volume, and network names
-PROJECT_DEV_IMAGE="${PROJECT_NAME}-dev"
-JAILBOX_IMAGE="${PROJECT_NAME}-jailbox"
-CONTAINER_NAME="${PROJECT_NAME}-jailbox"
-PROXY_NAME="${PROJECT_NAME}-jailbox-proxy"
-PROXY_IMAGE="${PROJECT_NAME}-jailbox-proxy"
-VOLUME_NAME="${PROJECT_NAME}-jailbox-home"
-NETWORK_NAME="${PROJECT_NAME}-jailbox-net"
+PROJECT_RESOURCE_PREFIX=""
+PROJECT_DEV_IMAGE=""
+JAILBOX_IMAGE=""
+CONTAINER_NAME=""
+PROXY_NAME=""
+PROXY_IMAGE=""
+VOLUME_NAME=""
+NETWORK_NAME=""
 
 # Runtime state populated by modules
 EDITOR_BIN=""
@@ -74,6 +73,7 @@ main() {
     load_project_config
     parse_args "$@"
     host_preflight "$@"
+    initialize_project_names
     configure_readonly_paths
 
     if [[ "${1:-}" == "--clean" ]]; then

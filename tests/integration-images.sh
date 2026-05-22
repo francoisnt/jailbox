@@ -12,13 +12,11 @@
 # Output is buffered per stage and printed in order once all finish.
 #
 # Usage: tests/integration-images.sh [stage...]
-# Env:   JAILBOX_TEST_AI_TOOLS  — AI tools to install (default: none)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
-AI_TOOLS="${JAILBOX_TEST_AI_TOOLS:-}"
 ALL_STAGES=(debian alpine fedora custom-user uid-mismatch)
 
 PASSED=0
@@ -37,10 +35,6 @@ Usage: $(basename "$0") [stage...]
 Run jailbox integration tests. With no arguments all stages run in parallel.
 
 Stages: ${ALL_STAGES[*]}
-
-Environment:
-  JAILBOX_TEST_AI_TOOLS   AI tools to install inside the wrapper (default: none).
-                          Example: JAILBOX_TEST_AI_TOOLS=claude $0 debian
 
 Requires: podman, ssh, ssh-keygen, cksum
 EOF
@@ -101,8 +95,7 @@ ssh_run() {
 
 wait_for_ssh() {
     local config="$1"
-    local i
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 30); do
         if ssh_run "$config" true 2>/dev/null; then
             return 0
         fi
@@ -225,7 +218,6 @@ run_case() {
             --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(jailbox_install_cache_bust)" \
             --build-arg "USER_ID=$(id -u)" \
             --build-arg "DEV_USER=${dev_user}" \
-            --build-arg "AI_TOOLS=${AI_TOOLS}" \
             "$JAILBOX_DIR" > "$build_log" 2>&1; then
         fail "wrapper image build"
         tail -20 "$build_log" >&2
@@ -301,7 +293,6 @@ main() {
 
     echo "jailbox integration tests (parallel)"
     echo "Stages : ${stages[*]}"
-    [ -n "$AI_TOOLS" ] && echo "AI_TOOLS: $AI_TOOLS"
     echo ""
 
     # Launch all stages in parallel; each subshell buffers its own output.

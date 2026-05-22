@@ -19,6 +19,7 @@ shellcheck --shell=bash "$@" \
     scripts/build-tarball.sh \
     scripts/public-api-diff.sh \
     scripts/release.sh \
+    install.sh \
     tests/e2e-headless.sh \
     tests/integration-images.sh \
     tests/manual-vscodium.sh
@@ -26,9 +27,6 @@ shellcheck --shell=bash "$@" \
 # POSIX sh scripts
 echo "shellcheck: install/ and jailbox-start"
 shellcheck --shell=sh "$@" \
-    install.sh \
-    install/aider.sh \
-    install/claude.sh \
     install/run-as-devuser.sh \
     install/setup.sh \
     jailbox-start

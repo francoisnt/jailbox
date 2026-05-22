@@ -1,8 +1,6 @@
 #!/bin/sh
 set -e
 
-INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 # Portable /etc/passwd lookup — getent is absent on Alpine/busybox images.
 get_passwd_entry() {
     if command -v getent >/dev/null 2>&1; then
@@ -34,15 +32,12 @@ fi
 # server runtime also needs the listed libc/libstdc++ runtime packages plus tar.
 # Alpine support is preview/limited upstream; the extra VSCodium REH packages
 # cover native modules present in current vscodium-reh-alpine archives.
-# EXTRA_PACKAGES is intentionally unquoted — it is a space-separated list.
-# shellcheck disable=SC2086
 case "$PKG_MGR" in
     apt)
         apt-get update
         apt-get install -y \
             openssh-server bash curl git procps ca-certificates tar \
             libc6 libstdc++6
-        [ -n "$EXTRA_PACKAGES" ] && apt-get install -y $EXTRA_PACKAGES
         apt-get clean && rm -rf /var/lib/apt/lists/*
         ;;
     apk)
@@ -50,20 +45,17 @@ case "$PKG_MGR" in
             openssh bash curl git procps ca-certificates tar shadow \
             musl libgcc libstdc++ \
             gcompat krb5-libs webkit2gtk-4.1
-        [ -n "$EXTRA_PACKAGES" ] && apk add --no-cache $EXTRA_PACKAGES
         ;;
     dnf)
         dnf install -y \
             openssh-server bash curl git procps-ng ca-certificates tar \
             glibc libgcc libstdc++
-        [ -n "$EXTRA_PACKAGES" ] && dnf install -y $EXTRA_PACKAGES
         dnf clean all
         ;;
     yum)
         yum install -y \
             openssh-server bash curl git procps ca-certificates tar \
             glibc libgcc libstdc++
-        [ -n "$EXTRA_PACKAGES" ] && yum install -y $EXTRA_PACKAGES
         yum clean all
         ;;
 esac
@@ -87,7 +79,9 @@ if id "$DEV_USER" >/dev/null 2>&1; then
             usermod -u "$USER_ID" "$DEV_USER"
             # Best-effort: update ownership in common writable/application paths.
             for path in /home /root /var /opt /usr; do
-                [ -d "$path" ] && find "$path" -xdev -user "$existing_uid" -exec chown -h "$USER_ID" {} \; 2>/dev/null || true
+                if [ -d "$path" ]; then
+                    find "$path" -xdev -user "$existing_uid" -exec chown -h "$USER_ID" {} \; 2>/dev/null || true
+                fi
             done
         else
             echo "Error: $DEV_USER has UID $existing_uid but USER_ID=$USER_ID, and usermod is not available." >&2
@@ -166,24 +160,6 @@ fi
 mkdir -p "$DEVUSER_HOME/.ssh"
 chmod 700 "$DEVUSER_HOME/.ssh"
 chown -R "$DEV_USER:$DEV_USER" "$DEVUSER_HOME/.ssh"
-
-# ── AI tools ──────────────────────────────────────────────────────────────────
-# AI_TOOLS is intentionally unquoted — it is a space-separated list.
-# shellcheck disable=SC2086
-for tool in $AI_TOOLS; do
-    case "$tool" in
-        *[!A-Za-z0-9._-]*|"")
-            echo "Error: invalid AI tool name: $tool" >&2
-            exit 1
-            ;;
-    esac
-    if [ ! -f "$INSTALL_DIR/${tool}.sh" ]; then
-        echo "Error: AI tool installer not found: $INSTALL_DIR/${tool}.sh" >&2
-        exit 1
-    fi
-    echo "Installing AI tool: $tool"
-    sh "$INSTALL_DIR/${tool}.sh"
-done
 
 # ── sshd hardening ────────────────────────────────────────────────────────────
 # Generate host keys for any missing algorithm.

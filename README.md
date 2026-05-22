@@ -1,18 +1,44 @@
 # jailbox
 
-`jailbox` wraps a project's development image with SSH access and AI tooling,
-then launches it as a hardened Podman container for AI-assisted development.
+`jailbox` wraps a project's development image with SSH access, then launches it
+as a hardened Podman container for AI-assisted development.
+
+It is designed for projects that already have, or can build, a development
+container image. jailbox adds the editor/SSH layer around that image without
+mounting container runtime sockets into the AI environment. The project image
+owns any AI tools the team wants to provide.
+
+## Requirements
+
+`jailbox` is currently Linux-first. Installation uses ordinary Unix shell
+tools, but running jailbox requires Linux container behavior from Podman.
+
+Required host tools:
+
+- `podman`
+- `ssh`
+- `ssh-keygen`
+- `cksum`
+- `realpath`
+- VSCodium or VS Code with the Remote SSH extension and a `codium` or `code`
+  CLI in `PATH`
+
+macOS may work with Podman Machine, but it is not currently a tested runtime
+target.
 
 ## Install
 
 Download a release tarball, unpack it, and run the installer:
 
 ```bash
-curl -fsSLO https://github.com/OWNER/jailbox/releases/download/v0.1.0/jailbox-v0.1.0.tar.gz
+curl -fsSLO https://github.com/francoisnt/jailbox/releases/download/v0.1.0/jailbox-v0.1.0.tar.gz
 tar -xzf jailbox-v0.1.0.tar.gz
 cd jailbox-v0.1.0
 ./install.sh
 ```
+
+First release tarball:
+[francoisnt/jailbox](https://github.com/francoisnt/jailbox/releases/download/v0.1.0/jailbox-v0.1.0.tar.gz)
 
 By default, this installs jailbox assets to:
 
@@ -46,13 +72,71 @@ To uninstall:
 ./install.sh --uninstall
 ```
 
-## Release
+## Quick start
 
-Maintainers can create and push a release tag with:
+Run `jailbox` from the root of a project that has one of these files:
+
+- `Containerfile`
+- `Dockerfile`
+- `.devcontainer/Containerfile`
+- `.devcontainer/Dockerfile`
 
 ```bash
-scripts/release.sh
+cd /path/to/project
+jailbox
 ```
+
+On first launch, jailbox:
+
+1. Builds or selects the project development image.
+2. Builds a wrapper image with OpenSSH and editor prerequisites.
+3. Starts the hardened Podman container.
+4. Writes a project-local SSH config under `.ssh/`.
+5. Opens the project through VS Code or VSCodium Remote SSH.
+
+To remove the container, proxy sidecar, network, generated SSH include, and
+persistent home volume for the current project:
+
+```bash
+jailbox --clean
+```
+
+If the final stage of your Dockerfile is production-only or distroless, point
+jailbox at a development stage:
+
+```bash
+cat > jailbox.conf <<'EOF'
+DEV_CONTAINERFILE="./Dockerfile"
+DEV_TARGET_STAGE="dev"
+EOF
+```
+
+Or use an existing image directly:
+
+```bash
+cat > jailbox.conf <<'EOF'
+DEV_IMAGE="node:22-bookworm"
+EOF
+```
+
+## What jailbox changes in your project
+
+Each project gets its own generated runtime state:
+
+- `.ssh/jailbox_key` and `.ssh/jailbox_key.pub`
+- `.ssh/config`
+- `.ssh/known_hosts`
+- A matching `Include` line in your user-level `~/.ssh/config`
+- Podman image, container, volume, and network names derived from a hash of the
+  full project path
+
+Project files remain mounted writable inside the container at `REMOTE_PATH`.
+Selected metadata, workflow, SSH, and jailbox files are mounted read-only over
+that writable project mount.
+
+## Release
+
+Maintainers can create and push a release tag with `scripts/release.sh`.
 
 The release script suggests a semantic version, asks for confirmation, creates
 an annotated git tag, and pushes it to `origin`. Pushing a tag starts the GitHub
@@ -65,44 +149,22 @@ ready for its first stable major release. After `v1.0.0`, removed config keys
 or CLI flags suggest a major bump, added keys or flags suggest a minor bump, and
 other changes suggest a patch bump.
 
-Useful non-interactive forms:
+Useful forms:
 
 ```bash
+scripts/release.sh
 scripts/release.sh --yes
 scripts/release.sh --yes --dry-run
 scripts/release.sh --first-major
-```
-
-To build the release tarball locally without publishing:
-
-```bash
 scripts/build-tarball.sh v0.2.0
 ```
-
-## Requirements
-
-`jailbox` is currently Linux-first. Installation uses ordinary Unix shell
-tools, but running jailbox requires Linux container behavior from Podman.
-
-Required host tools:
-
-- `podman`
-- `ssh`
-- `ssh-keygen`
-- `cksum`
-- `realpath`
-- VSCodium or VS Code with the Remote SSH extension and a `codium` or `code`
-  CLI in `PATH`
-
-macOS may work with Podman Machine, but it is not currently a tested runtime
-target.
 
 ## Security defaults
 
 - The container root filesystem is always read-only (`--read-only`).
 - Project files are mounted at `REMOTE_PATH` and remain writable except for
   protected metadata/build files listed below.
-- `/home/devuser` is a persistent Podman volume.
+- `/home/$DEV_USER` is a persistent Podman volume.
 - `/tmp` and `/run` are writable tmpfs mounts.
 - SSH uses a fresh local Ed25519 keypair generated for each run.
 - SSH forwarding is restricted to local port forwarding (`AllowTcpForwarding local`);
@@ -170,33 +232,6 @@ DEV_TARGET_STAGE="dev"
 Use this when the final stage is production/distroless and lacks a shell or
 package manager.
 
-### `AI_TOOLS`
-
-Array of AI tools to install into the wrapper image.
-
-```bash
-AI_TOOLS=("claude" "aider")
-```
-
-Each tool must have a matching installer at `jailbox/install/<tool>.sh`.
-
-Default:
-
-```bash
-AI_TOOLS=("claude")
-```
-
-### `EXTRA_PACKAGES`
-
-Space-separated OS packages installed into the wrapper image.
-
-```bash
-EXTRA_PACKAGES="ripgrep jq make"
-```
-
-Package names must match the detected package manager in the dev image
-(`apt-get`, `apk`, `dnf`, or `yum`).
-
 ### `EGRESS_ALLOW`
 
 Array of allowed HTTP(S) hosts. If non-empty, jailbox starts a tinyproxy sidecar,
@@ -238,29 +273,6 @@ REMOTE_PATH="/workspace/project"
 
 Default: `/home/$DEV_USER/project` (tracks `DEV_USER` automatically).
 
-### `CLAUDE_INSTALL_SHA256`
-
-Optional expected SHA256 for the downloaded Claude installer script.
-
-```bash
-CLAUDE_INSTALL_SHA256="0123456789abcdef..."
-```
-
-If set, jailbox verifies the downloaded `https://claude.ai/install.sh` before
-running it. If unset, jailbox prints a warning and the Claude install remains
-unpinned.
-
-### `AIDER_VERSION`
-
-Optional exact `aider-chat` version.
-
-```bash
-AIDER_VERSION="0.86.1"
-```
-
-If set, jailbox installs `aider-chat==$AIDER_VERSION`. If unset, jailbox prints a
-warning and installs the latest available `aider-chat`.
-
 ### `DEV_USER`
 
 Username of the non-root user inside the container.
@@ -271,7 +283,7 @@ DEV_USER=appuser
 
 Default: `devuser`. Set this when your project image already has a non-root user
 under a different name (e.g. `ubuntu`, `app`, `node`). jailbox will SSH into the
-container as this user and install AI tools under their account.
+container as this user.
 
 `REMOTE_PATH` defaults to `/home/$DEV_USER/project` and tracks `DEV_USER`
 automatically, so no extra update is needed when you change `DEV_USER`.
@@ -305,19 +317,14 @@ read-only.
 
 ## Example configs
 
-Use a discovered local `Containerfile` and install Claude:
+Use a discovered local `Containerfile`:
 
-```bash
-AI_TOOLS=("claude")
-```
+No `jailbox.conf` is required.
 
-Use an existing Node image with Claude and Aider:
+Use an existing Node image:
 
 ```bash
 DEV_IMAGE="node:22-bookworm"
-AI_TOOLS=("claude" "aider")
-EXTRA_PACKAGES="ripgrep jq"
-AIDER_VERSION="0.86.1"
 ```
 
 Use a dev stage from a multi-stage Dockerfile:
@@ -326,12 +333,10 @@ Use a dev stage from a multi-stage Dockerfile:
 DEV_CONTAINERFILE="./Dockerfile"
 DEV_TARGET_STAGE="dev"
 DEV_BUILD_CONTEXT="."
-AI_TOOLS=("claude")
 ```
 
 Restrict HTTP(S) egress:
 
 ```bash
-AI_TOOLS=("claude")
 EGRESS_ALLOW=("claude.ai" "github.com" "api.github.com")
 ```

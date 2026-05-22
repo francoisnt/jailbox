@@ -11,15 +11,11 @@ CONFIG_SCALAR_KEYS=(
     DEV_CONTAINERFILE
     DEV_BUILD_CONTEXT
     DEV_TARGET_STAGE
-    EXTRA_PACKAGES
     REMOTE_PATH
-    CLAUDE_INSTALL_SHA256
-    AIDER_VERSION
     DEV_USER
 )
 
 CONFIG_ARRAY_KEYS=(
-    AI_TOOLS
     EGRESS_ALLOW
 )
 
@@ -28,12 +24,8 @@ CONFIG_DEFAULTS=(
     "DEV_CONTAINERFILE="
     "DEV_BUILD_CONTEXT="
     "DEV_TARGET_STAGE="
-    "EXTRA_PACKAGES="
     "REMOTE_PATH=/home/devuser/project"  # sentinel: re-derived from DEV_USER in load_project_config
-    "CLAUDE_INSTALL_SHA256="
-    "AIDER_VERSION="
     "DEV_USER=devuser"
-    "AI_TOOLS=claude"
     "EGRESS_ALLOW="
 )
 
