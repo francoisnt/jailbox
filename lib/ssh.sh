@@ -1,11 +1,6 @@
 # SSH key/config generation and readiness waiting.
 
 setup_ssh_keys() {
-    SSH_DIR="$PROJECT_DIR/.ssh"
-    SSH_CONFIG="$SSH_DIR/config"
-    KNOWN_HOSTS="$SSH_DIR/known_hosts"
-    KEY_FILE="$SSH_DIR/jailbox_key"
-
     mkdir -p "$SSH_DIR"
     chmod 700 "$SSH_DIR"
     touch "$KNOWN_HOSTS"
@@ -14,6 +9,7 @@ setup_ssh_keys() {
     # Fresh key pair on every run.
     rm -f "$KEY_FILE" "$KEY_FILE.pub"
     ssh-keygen -t ed25519 -f "$KEY_FILE" -N "" -q
+    chmod 600 "$KEY_FILE"
 
     cat > "$SSH_CONFIG" <<SSHEOF
 Host $CONTAINER_NAME

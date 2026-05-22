@@ -22,6 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR=$(pwd -P)
 
 # Image, container, volume, and network names
+PROJECT_HASH=""
 PROJECT_RESOURCE_PREFIX=""
 PROJECT_DEV_IMAGE=""
 JAILBOX_IMAGE=""

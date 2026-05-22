@@ -91,7 +91,7 @@ On first launch, jailbox:
 1. Builds or selects the project development image.
 2. Builds a wrapper image with OpenSSH and editor prerequisites.
 3. Starts the hardened Podman container.
-4. Writes a project-local SSH config under `.ssh/`.
+4. Writes per-project SSH runtime state under your XDG state directory.
 5. Opens the project through VS Code or VSCodium Remote SSH.
 
 To remove the container, proxy sidecar, network, generated SSH include, and
@@ -121,18 +121,19 @@ EOF
 
 ## What jailbox changes in your project
 
-Each project gets its own generated runtime state:
+Each project gets generated SSH runtime state under
+`${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/<project-hash>/`, plus a
+matching `Include` line in your user-level `~/.ssh/config`. Jailbox does not
+create SSH runtime files inside the project tree.
 
-- `.ssh/jailbox_key` and `.ssh/jailbox_key.pub`
-- `.ssh/config`
-- `.ssh/known_hosts`
-- A matching `Include` line in your user-level `~/.ssh/config`
+Other generated state:
+
 - Podman image, container, volume, and network names derived from a hash of the
   full project path
 
 Project files remain mounted writable inside the container at `REMOTE_PATH`.
-Selected metadata, workflow, SSH, and jailbox files are mounted read-only over
-that writable project mount.
+Selected metadata, workflow, and jailbox files are mounted read-only over that
+writable project mount.
 
 ## Release
 
@@ -305,10 +306,6 @@ When present, these paths are mounted read-only over the writable project mount:
 - `.gitea/workflows`
 - `.github/workflows`
 - `.jailbox`
-- `.ssh/config`
-- `.ssh/jailbox_key`
-- `.ssh/jailbox_key.pub`
-- `.ssh/known_hosts`
 - `jailbox`
 - `jailbox.conf`
 

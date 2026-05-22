@@ -15,10 +15,6 @@ configure_readonly_paths() {
         ".gitea/workflows"
         ".github/workflows"
         ".jailbox"
-        ".ssh/config"
-        ".ssh/jailbox_key"
-        ".ssh/jailbox_key.pub"
-        ".ssh/known_hosts"
         "jailbox"
         "jailbox.conf"
     )
@@ -52,8 +48,7 @@ clean_jailbox() {
     echo "🧹 Cleaning up..."
 
     # Remove the project's Include line from ~/.ssh/config.
-    local project_ssh_config="$PROJECT_DIR/.ssh/config"
-    local include_line="Include $project_ssh_config"
+    local include_line="Include $SSH_CONFIG"
     local global_config="$HOME/.ssh/config"
     (
         flock 200
@@ -74,6 +69,7 @@ clean_jailbox() {
     podman network rm "$NETWORK_NAME" 2>/dev/null || true
     podman network rm "${NETWORK_NAME}-internal" 2>/dev/null || true
     podman network rm "${NETWORK_NAME}-external" 2>/dev/null || true
+    rm -rf -- "$SSH_DIR"
     echo "✅ Done"
 }
 

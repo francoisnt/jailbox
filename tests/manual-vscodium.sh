@@ -61,12 +61,19 @@ jailbox_container_name() {
     printf 'jailbox-%s\n' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
 }
 
+jailbox_ssh_config() {
+    printf '%s/jailbox/%s/ssh_config\n' \
+        "${XDG_STATE_HOME:-$HOME/.local/state}" \
+        "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+}
+
 collect_failure_diagnostics() {
     local stage="$1"
     local project_dir="$2"
     local dev_user="$3"
     local ctr="$4"
-    local ssh_cfg="$project_dir/.ssh/config"
+    local ssh_cfg
+    ssh_cfg=$(jailbox_ssh_config "$project_dir")
     local listening_on local_probe_port tunnel_pid
 
     log ""

@@ -31,6 +31,12 @@ jailbox_container_name() {
     printf 'jailbox-%s\n' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
 }
 
+jailbox_ssh_config() {
+    printf '%s/jailbox/%s/ssh_config\n' \
+        "${XDG_STATE_HOME:-$HOME/.local/state}" \
+        "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+}
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [stage...]
@@ -381,7 +387,8 @@ EOF
     fi
 
     # ── Phase 2: headless assertions (container still running) ────────────────
-    local ssh_cfg="$project_dir/.ssh/config"
+    local ssh_cfg
+    ssh_cfg=$(jailbox_ssh_config "$project_dir")
     local ctr
     ctr=$(jailbox_container_name "$project_dir")
     local forward_port reh_probe_port
@@ -389,7 +396,7 @@ EOF
     reh_probe_port=$(stage_reh_probe_port "$stage")
 
     # Host-side: $HOME/.ssh/config must include the project config for VS Code.
-    if grep -qxF "Include $project_dir/.ssh/config" "$HOME/.ssh/config" 2>/dev/null; then
+    if grep -qxF "Include $ssh_cfg" "$HOME/.ssh/config" 2>/dev/null; then
         pass "$HOME/.ssh/config has Include (VS Code can resolve host)"
     else
         fail "$HOME/.ssh/config missing Include — VS Code cannot resolve host"

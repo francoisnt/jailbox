@@ -83,7 +83,8 @@ project_path_hash() {
 }
 
 initialize_project_names() {
-    PROJECT_RESOURCE_PREFIX="jailbox-$(project_path_hash)"
+    PROJECT_HASH=$(project_path_hash)
+    PROJECT_RESOURCE_PREFIX="jailbox-$PROJECT_HASH"
     PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
     JAILBOX_IMAGE="${PROJECT_RESOURCE_PREFIX}-image"
     CONTAINER_NAME="${PROJECT_RESOURCE_PREFIX}"
@@ -91,6 +92,10 @@ initialize_project_names() {
     PROXY_IMAGE="${PROJECT_RESOURCE_PREFIX}-proxy"
     VOLUME_NAME="${PROJECT_RESOURCE_PREFIX}-home"
     NETWORK_NAME="${PROJECT_RESOURCE_PREFIX}-net"
+    SSH_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/$PROJECT_HASH"
+    SSH_CONFIG="$SSH_DIR/ssh_config"
+    KNOWN_HOSTS="$SSH_DIR/known_hosts"
+    KEY_FILE="$SSH_DIR/key"
 }
 
 initialize_runtime_ids() {
