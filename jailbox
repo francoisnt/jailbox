@@ -42,6 +42,11 @@ SSH_DIR=""
 SSH_CONFIG=""
 KNOWN_HOSTS=""
 KEY_FILE=""
+VSCODE_SETTINGS=""
+JAILBOX_WORKSPACE=""
+JAILBOX_EDITOR_USER_DATA=""
+JAILBOX_EDITOR_USER_SETTINGS=""
+EDITOR_CONFIG_MODE=""
 READONLY_PATHS=()
 READONLY_MOUNTS=()
 GITCONFIG_MOUNT=()
@@ -83,12 +88,19 @@ main() {
         return 0
     fi
 
+    if [[ "${1:-}" == "doctor" ]]; then
+        initialize_runtime_ids
+        doctor_jailbox
+        return 0
+    fi
+
     if [[ "${1:-}" == "--clean" ]]; then
         clean_jailbox
         return 0
     fi
 
     initialize_runtime_ids
+    ensure_jailbox_gitignore
     build_or_select_dev_image
     validate_dev_image
     setup_ssh_keys

@@ -32,9 +32,30 @@ jailbox_container_name() {
 }
 
 jailbox_ssh_config() {
-    printf '%s/jailbox/%s/ssh_config\n' \
-        "${XDG_STATE_HOME:-$HOME/.local/state}" \
-        "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+    printf '%s/.jailbox/ssh_config\n' "$1"
+}
+
+write_jailbox_workspace_config() {
+    local project_dir="$1"
+    local ctr="$2"
+    local remote_path="$3"
+
+    mkdir -p "$project_dir/.jailbox"
+    chmod 700 "$project_dir/.jailbox"
+    printf '.jailbox/\n' > "$project_dir/.gitignore"
+    cat > "$project_dir/.jailbox/jailbox.code-workspace" << EOF
+{
+  "folders": [
+    {
+      "uri": "vscode-remote://ssh-remote+${ctr}${remote_path}"
+    }
+  ],
+  "settings": {
+    "remote.SSH.configFile": "${project_dir}/.jailbox/ssh_config"
+  }
+}
+EOF
+    chmod 600 "$project_dir/.jailbox/jailbox.code-workspace"
 }
 
 usage() {
@@ -305,7 +326,7 @@ REMOTE
 }
 
 # ── stub VS Code ──────────────────────────────────────────────────────────────
-# Minimal stub: just verify jailbox called open_editor with the right argument.
+# Minimal stub: verify jailbox called open_editor without SSH CLI options.
 # The real SSH assertions run after jailbox exits, while the container is up.
 
 setup_stub_editor() {
@@ -314,18 +335,39 @@ setup_stub_editor() {
 set -euo pipefail
 
 container=""
+workspace=""
+user_data_dir=""
 prev=""
 for arg in "$@"; do
     if [[ "$prev" == "--remote" ]]; then
         container="${arg#ssh-remote+}"
+    elif [[ "$prev" == "--user-data-dir" ]]; then
+        user_data_dir="$arg"
+    elif [[ "$prev" == "-F" ]]; then
+        echo "stub: unexpected SSH -F option passed to editor" >&2
+        exit 1
+    elif [[ "$arg" == */jailbox.code-workspace ]]; then
+        workspace="$arg"
     fi
     prev="$arg"
 done
 
 [[ -n "${JAILBOX_E2E_PROJECT:-}" ]] || { echo "stub: JAILBOX_E2E_PROJECT not set" >&2; exit 1; }
-[[ -n "$container" ]] || { echo "stub: no ssh-remote+<container> argument received" >&2; exit 1; }
+[[ -n "$user_data_dir" ]] || { echo "stub: no --user-data-dir argument received" >&2; exit 1; }
+[[ -f "$user_data_dir/User/settings.json" ]] || { echo "stub: user-data settings missing" >&2; exit 1; }
+grep -Fq '"remote.SSH.configFile":' "$user_data_dir/User/settings.json" || {
+    echo "stub: user-data settings missing remote.SSH.configFile" >&2
+    exit 1
+}
+if [[ -n "$workspace" ]]; then
+    [[ -f "$workspace" ]] || { echo "stub: workspace missing: $workspace" >&2; exit 1; }
+    grep -Fq '"remote.SSH.configFile":' "$workspace" || { echo "stub: workspace missing remote.SSH.configFile" >&2; exit 1; }
+elif [[ -z "$container" ]]; then
+    echo "stub: no ssh-remote+<container> or jailbox.code-workspace argument received" >&2
+    exit 1
+fi
 
-echo "stub: editor called for $container"
+echo "stub: editor called"
 STUB
     chmod +x "$stub_dir/code"
     ln -sf "$stub_dir/code" "$stub_dir/codium"
@@ -372,6 +414,7 @@ EOF
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=("api.ipify.org")\n' >> "$project_dir/jailbox.conf"
     fi
+    write_jailbox_workspace_config "$project_dir" "$(jailbox_container_name "$project_dir")" "/home/${dev_user}/project"
 
     export JAILBOX_E2E_PROJECT="$project_dir"
 

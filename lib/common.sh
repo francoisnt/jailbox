@@ -4,7 +4,7 @@ usage() {
     local flag
 
     cat <<EOF_USAGE
-Usage: $(basename "$0") [ssh-config|--clean|--help]
+Usage: $(basename "$0") [doctor|ssh-config|--clean|--help]
 
 Launch this project inside a hardened jailbox container.
 
@@ -92,10 +92,14 @@ initialize_project_names() {
     PROXY_IMAGE="${PROJECT_RESOURCE_PREFIX}-proxy"
     VOLUME_NAME="${PROJECT_RESOURCE_PREFIX}-home"
     NETWORK_NAME="${PROJECT_RESOURCE_PREFIX}-net"
-    SSH_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/$PROJECT_HASH"
+    SSH_DIR="$PROJECT_DIR/.jailbox"
     SSH_CONFIG="$SSH_DIR/ssh_config"
     KNOWN_HOSTS="$SSH_DIR/known_hosts"
     KEY_FILE="$SSH_DIR/key"
+    VSCODE_SETTINGS="$PROJECT_DIR/.vscode/settings.json"
+    JAILBOX_WORKSPACE="$SSH_DIR/jailbox.code-workspace"
+    JAILBOX_EDITOR_USER_DATA="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/editor-profiles/$PROJECT_HASH"
+    JAILBOX_EDITOR_USER_SETTINGS="$JAILBOX_EDITOR_USER_DATA/User/settings.json"
 }
 
 initialize_runtime_ids() {

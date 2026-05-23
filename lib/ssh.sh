@@ -11,11 +11,11 @@ setup_ssh_keys() {
     ssh-keygen -t ed25519 -f "$KEY_FILE" -N "" -q
     chmod 600 "$KEY_FILE"
 
-    write_ssh_config > "$SSH_CONFIG"
+    write_ssh_host_block > "$SSH_CONFIG"
     chmod 600 "$SSH_CONFIG"
 }
 
-write_ssh_config() {
+write_ssh_host_block() {
     cat <<SSHEOF
 Host $CONTAINER_NAME
     HostName localhost
@@ -36,12 +36,30 @@ print_ssh_config_instructions() {
 SSH config path:
   $SSH_CONFIG
 
+Host alias:
+  $CONTAINER_NAME
+
 Manual ~/.ssh/config include:
   Include $SSH_CONFIG
 
+VS Code/VSCodium setting:
+  remote.SSH.configFile = $SSH_CONFIG
+
 Host block:
 EOF_INSTRUCTIONS
-    write_ssh_config
+    write_ssh_host_block
+}
+
+print_editor_ssh_config_help() {
+    cat <<EOF_INSTRUCTIONS
+If the editor cannot connect to $CONTAINER_NAME, configure Remote SSH with one of these options:
+
+Option A - add this line manually to ~/.ssh/config:
+  Include $SSH_CONFIG
+
+Option B - set this VS Code/VSCodium project setting:
+  remote.SSH.configFile = $SSH_CONFIG
+EOF_INSTRUCTIONS
 }
 
 wait_for_ssh() {

@@ -30,12 +30,14 @@ CONFIG_DEFAULTS=(
 )
 
 CLI_FLAGS=(
+    doctor
     ssh-config
     --clean
     --help
 )
 
 CLI_HELP=(
+    "doctor=Report editor and SSH config integration for this project"
     "ssh-config=Print manual SSH config instructions for this project"
     "--clean=Stop/remove jailbox containers, networks, and home volume"
     "--help=Show this help"

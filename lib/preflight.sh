@@ -15,7 +15,7 @@ parse_args() {
 host_preflight() {
     require_command cksum
 
-    if [[ "${1:-}" == "ssh-config" ]]; then
+    if [[ "${1:-}" == "ssh-config" || "${1:-}" == "doctor" ]]; then
         return 0
     fi
 
