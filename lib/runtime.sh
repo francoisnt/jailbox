@@ -155,12 +155,6 @@ doctor_jailbox() {
         echo "Internal SSH works: no (missing ssh_config)"
     fi
 
-    if [ -f "$JAILBOX_WORKSPACE" ] && editor_config_has_ssh_config "$JAILBOX_WORKSPACE"; then
-        echo "Project editor config: .jailbox/jailbox.code-workspace -> .jailbox/ssh_config"
-    else
-        echo "Project editor config: missing"
-    fi
-
     if [ -f "$JAILBOX_EDITOR_USER_SETTINGS" ] && editor_config_has_ssh_config "$JAILBOX_EDITOR_USER_SETTINGS"; then
         echo "Project-local editor user-data config: yes"
     else

@@ -61,29 +61,6 @@ jailbox_ssh_config() {
     printf '%s/.jailbox/ssh_config\n' "$1"
 }
 
-write_jailbox_workspace_config() {
-    local project_dir="$1"
-    local ctr="$2"
-    local remote_path="$3"
-
-    mkdir -p "$project_dir/.jailbox"
-    chmod 700 "$project_dir/.jailbox"
-    printf '.jailbox/\n' > "$project_dir/.gitignore"
-    cat > "$project_dir/.jailbox/jailbox.code-workspace" << EOF
-{
-  "folders": [
-    {
-      "uri": "vscode-remote://ssh-remote+${ctr}${remote_path}"
-    }
-  ],
-  "settings": {
-    "remote.SSH.configFile": "${project_dir}/.jailbox/ssh_config"
-  }
-}
-EOF
-    chmod 600 "$project_dir/.jailbox/jailbox.code-workspace"
-}
-
 collect_failure_diagnostics() {
     local stage="$1"
     local project_dir="$2"
@@ -173,7 +150,6 @@ DEV_IMAGE=jailbox-test-$stage
 REMOTE_PATH=/home/jailbox/project
 EOF
     echo "jailbox manual test — $stage" > "$project_dir/README.txt"
-    write_jailbox_workspace_config "$project_dir" "$ctr" "/home/jailbox/project"
 
     # Ensure cleanup on Ctrl-C or error during this stage.
     local cleaned=0

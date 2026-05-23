@@ -137,7 +137,6 @@ user settings, or existing `.vscode/settings.json`.
   key
   key.pub
   known_hosts
-  jailbox.code-workspace
 ```
 
 The `.jailbox/` directory is local generated state for one user and one
@@ -154,16 +153,10 @@ print the generated config path and host block:
 jailbox ssh-config
 ```
 
-Configure VS Code/VSCodium Remote SSH with the generated workspace file:
-
-```bash
-codium .jailbox/jailbox.code-workspace
-```
-
 Editor config that contains an absolute `.jailbox/ssh_config` path is
 machine-local. Do not commit it unless your team explicitly wants checkout-local
-editor configuration. Jailbox therefore keeps that setting in generated
-`.jailbox/` state instead of mutating `.vscode/settings.json`.
+editor configuration. Jailbox therefore keeps that setting in the generated
+editor profile instead of mutating `.vscode/settings.json`.
 
 The normal `code --remote` / `codium --remote` command does not pass OpenSSH
 options through to Remote SSH resolution, so jailbox does not try to give the

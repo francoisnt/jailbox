@@ -35,29 +35,6 @@ jailbox_ssh_config() {
     printf '%s/.jailbox/ssh_config\n' "$1"
 }
 
-write_jailbox_workspace_config() {
-    local project_dir="$1"
-    local ctr="$2"
-    local remote_path="$3"
-
-    mkdir -p "$project_dir/.jailbox"
-    chmod 700 "$project_dir/.jailbox"
-    printf '.jailbox/\n' > "$project_dir/.gitignore"
-    cat > "$project_dir/.jailbox/jailbox.code-workspace" << EOF
-{
-  "folders": [
-    {
-      "uri": "vscode-remote://ssh-remote+${ctr}${remote_path}"
-    }
-  ],
-  "settings": {
-    "remote.SSH.configFile": "${project_dir}/.jailbox/ssh_config"
-  }
-}
-EOF
-    chmod 600 "$project_dir/.jailbox/jailbox.code-workspace"
-}
-
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [stage...]
@@ -331,7 +308,6 @@ setup_stub_editor() {
 set -euo pipefail
 
 container=""
-workspace=""
 user_data_dir=""
 prev=""
 for arg in "$@"; do
@@ -342,8 +318,6 @@ for arg in "$@"; do
     elif [[ "$prev" == "-F" ]]; then
         echo "stub: unexpected SSH -F option passed to editor" >&2
         exit 1
-    elif [[ "$arg" == */jailbox.code-workspace ]]; then
-        workspace="$arg"
     fi
     prev="$arg"
 done
@@ -355,11 +329,8 @@ grep -Fq '"remote.SSH.configFile":' "$user_data_dir/User/settings.json" || {
     echo "stub: user-data settings missing remote.SSH.configFile" >&2
     exit 1
 }
-if [[ -n "$workspace" ]]; then
-    [[ -f "$workspace" ]] || { echo "stub: workspace missing: $workspace" >&2; exit 1; }
-    grep -Fq '"remote.SSH.configFile":' "$workspace" || { echo "stub: workspace missing remote.SSH.configFile" >&2; exit 1; }
-elif [[ -z "$container" ]]; then
-    echo "stub: no ssh-remote+<container> or jailbox.code-workspace argument received" >&2
+if [[ -z "$container" ]]; then
+    echo "stub: no ssh-remote+<container> argument received" >&2
     exit 1
 fi
 
@@ -410,8 +381,6 @@ EOF
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/jailbox.conf"
     fi
-    write_jailbox_workspace_config "$project_dir" "$(jailbox_container_name "$project_dir")" "/home/jailbox/project"
-
     export JAILBOX_E2E_PROJECT="$project_dir"
 
     # ── Phase 1: full jailbox pipeline ────────────────────────────────────────
