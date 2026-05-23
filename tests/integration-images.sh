@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
-ALL_STAGES=(debian alpine fedora custom-user uid-mismatch)
+ALL_STAGES=(debian alpine fedora uid-owned-by-other-user user-conflict)
 
 PASSED=0
 FAILED=0
@@ -46,8 +46,8 @@ stage_port() {
         debian)       echo 22229 ;;
         alpine)       echo 22230 ;;
         fedora)       echo 22231 ;;
-        custom-user)  echo 22232 ;;
-        uid-mismatch) echo 22233 ;;
+        uid-owned-by-other-user) echo 22232 ;;
+        user-conflict)           echo 22233 ;;
         *) die "unknown stage: $1" ;;
     esac
 }
@@ -57,8 +57,8 @@ stage_forward_port() {
         debian)       echo 23229 ;;
         alpine)       echo 23230 ;;
         fedora)       echo 23231 ;;
-        custom-user)  echo 23232 ;;
-        uid-mismatch) echo 23233 ;;
+        uid-owned-by-other-user) echo 23232 ;;
+        user-conflict)           echo 23233 ;;
         *) die "unknown stage: $1" ;;
     esac
 }
@@ -66,7 +66,7 @@ stage_forward_port() {
 # ── SSH helpers ───────────────────────────────────────────────────────────────
 
 setup_ssh_keys() {
-    local ssh_dir="$1" dev_user="$2" port="$3"
+    local ssh_dir="$1" port="$2"
     local key="$ssh_dir/key"
     rm -f "$key" "$key.pub"
     ssh-keygen -t ed25519 -f "$key" -N "" -q
@@ -76,7 +76,7 @@ setup_ssh_keys() {
 Host jailbox-test
     HostName localhost
     Port $port
-    User $dev_user
+    User jailbox
     IdentityFile $key
     IdentitiesOnly yes
     PreferredAuthentications publickey
@@ -161,7 +161,7 @@ assert_local_forwarding() {
 run_case() {
     local stage="$1"
     local log_dir="$2"
-    local port forward_port dev_user test_build_args ctr
+    local port forward_port test_build_args ctr expect_wrapper_failure
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope. Initialize here so the trap can
     # always reference them safely under set -u.
@@ -170,13 +170,16 @@ run_case() {
 
     port=$(stage_port "$stage")
     forward_port=$(stage_forward_port "$stage")
-    dev_user="devuser"
     test_build_args=()
+    expect_wrapper_failure=false
 
     case "$stage" in
-        custom-user)
-            dev_user="appuser"
+        uid-owned-by-other-user)
             test_build_args=(--build-arg "HOST_UID=$(id -u)")
+            expect_wrapper_failure=true
+            ;;
+        user-conflict)
+            expect_wrapper_failure=true
             ;;
     esac
 
@@ -193,7 +196,7 @@ run_case() {
           podman rm   "'"$ctr"'" >/dev/null 2>&1 || true' EXIT
 
     echo ""
-    echo "── $stage (user: $dev_user, port: $port) ──────────────────────────────"
+    echo "── $stage (user: jailbox, port: $port) ──────────────────────────────"
 
     podman stop "$ctr" 2>/dev/null || true
     podman rm   "$ctr" 2>/dev/null || true
@@ -217,16 +220,23 @@ run_case() {
             --build-arg "DEV_IMAGE=${test_image}" \
             --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(jailbox_install_cache_bust)" \
             --build-arg "USER_ID=$(id -u)" \
-            --build-arg "DEV_USER=${dev_user}" \
             "$JAILBOX_DIR" > "$build_log" 2>&1; then
+        if [ "$expect_wrapper_failure" = true ] && grep -Eq "already exists in the dev image|already belongs to existing image user" "$build_log"; then
+            pass "wrapper image build rejects unsafe user conflict"
+            return 0
+        fi
         fail "wrapper image build"
         tail -20 "$build_log" >&2
+        return 1
+    fi
+    if [ "$expect_wrapper_failure" = true ]; then
+        fail "wrapper image build should reject managed user UID conflict"
         return 1
     fi
 
     pass "images build"
 
-    setup_ssh_keys "$ssh_dir" "$dev_user" "$port"
+    setup_ssh_keys "$ssh_dir" "$port"
 
     podman run -d \
         --name "$ctr" \
@@ -236,7 +246,7 @@ run_case() {
         --tmpfs /tmp:rw,size=64m \
         --tmpfs /run:rw,size=64m \
         -p "127.0.0.1:${port}:2222" \
-        -v "${ssh_dir}/key.pub:/home/${dev_user}/.ssh/authorized_keys:ro,Z" \
+        -v "${ssh_dir}/key.pub:/home/jailbox/.ssh/authorized_keys:ro,Z" \
         --cap-drop=ALL \
         --cap-add=DAC_OVERRIDE,SETUID,SETGID,SYS_CHROOT \
         --security-opt=no-new-privileges \
@@ -250,9 +260,9 @@ run_case() {
 
     pass "SSH ready"
 
-    assert_eq "whoami is ${dev_user}"  "$dev_user" "$(ssh_run "$ssh_dir/config" whoami 2>/dev/null || true)"
+    assert_eq "whoami is jailbox"      "jailbox" "$(ssh_run "$ssh_dir/config" whoami 2>/dev/null || true)"
     assert_eq "UID matches host"       "$(id -u)"  "$(ssh_run "$ssh_dir/config" id -u 2>/dev/null || true)"
-    assert_ssh "$ssh_dir/config" "home dir exists"  "test -d /home/${dev_user}"
+    assert_ssh "$ssh_dir/config" "home dir exists"  "test -d /home/jailbox"
     assert_ssh "$ssh_dir/config" "no docker socket" "! test -S /var/run/docker.sock"
     assert_ssh "$ssh_dir/config" "no podman socket"  "! test -S /run/podman/podman.sock"
     assert_local_forwarding "$ssh_dir/config" "$forward_port" "SSH local forwarding works"

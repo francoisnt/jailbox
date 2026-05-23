@@ -12,15 +12,15 @@ FROM alpine:3.21 AS alpine
 
 FROM fedora:41 AS fedora
 
-# ── DEV_USER ──────────────────────────────────────────────────────────────────
-# Simulates a project image that already has its own non-root user (appuser).
-# The wrapper must SSH in and install tools as appuser, not devuser.
-FROM debian:12 AS custom-user
+# ── Arbitrary existing user conflict ──────────────────────────────────────────
+# The host UID already belongs to a non-managed image user. setup.sh must fail
+# instead of renaming, reusing, or chowning that user's files.
+FROM debian:12 AS uid-owned-by-other-user
 ARG HOST_UID=1000
 RUN useradd -m -u "${HOST_UID}" -s /bin/bash appuser
 
-# ── UID mismatch ──────────────────────────────────────────────────────────────
-# devuser pre-exists at UID 1234. setup.sh must call usermod to align it with
-# the host UID before the container can be used.
-FROM debian:12 AS uid-mismatch
-RUN useradd -m -u 1234 -s /bin/sh devuser
+# ── Managed user conflict ────────────────────────────────────────────────────
+# jailbox pre-exists. setup.sh must fail clearly instead of reusing or mutating
+# that user.
+FROM debian:12 AS user-conflict
+RUN useradd -m -u 1234 -s /bin/sh jailbox

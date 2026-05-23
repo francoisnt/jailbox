@@ -20,7 +20,7 @@ write_ssh_host_block() {
 Host $CONTAINER_NAME
     HostName localhost
     Port $LOCAL_PORT
-    User $DEV_USER
+    User $MANAGED_USER
     IdentityFile $KEY_FILE
     IdentitiesOnly yes
     PreferredAuthentications publickey

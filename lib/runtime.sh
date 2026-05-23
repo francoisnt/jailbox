@@ -37,7 +37,7 @@ build_readonly_mounts() {
 
 configure_runtime_mounts() {
     GITCONFIG_MOUNT=()
-    [ -f ~/.gitconfig ] && GITCONFIG_MOUNT=(-v "$HOME/.gitconfig:/home/$DEV_USER/.gitconfig:ro")
+    [ -f ~/.gitconfig ] && GITCONFIG_MOUNT=(-v "$HOME/.gitconfig:/home/$MANAGED_USER/.gitconfig:ro")
 
     # The container root filesystem is always read-only. Project and home
     # writes go through explicit mounts; runtime state uses tmpfs mounts.
@@ -72,7 +72,7 @@ start_jailbox_container() {
     # Keep the runtime non-privileged, but restore the narrow privilege set
     # OpenSSH needs after --cap-drop=ALL: DAC_OVERRIDE for strict key and user
     # file checks across mounted homes, SETUID/SETGID for switching
-    # authenticated sessions from root sshd to DEV_USER, and SYS_CHROOT for
+    # authenticated sessions from root sshd to the managed user, and SYS_CHROOT for
     # sshd's privilege-separation path.
     podman run -d \
         --name "$CONTAINER_NAME" \
@@ -82,11 +82,11 @@ start_jailbox_container() {
         "${ROOTFS_FLAG[@]}" \
         --tmpfs /tmp:rw,size=512m,noexec \
         --tmpfs /run:rw,size=64m \
-        -v "$VOLUME_NAME":/home/$DEV_USER \
+        -v "$VOLUME_NAME":/home/$MANAGED_USER \
         "${GITCONFIG_MOUNT[@]}" \
         -p 127.0.0.1:"$LOCAL_PORT":2222 \
         -v "$PROJECT_DIR:$REMOTE_PATH:Z" \
-        -v "$KEY_FILE.pub:/home/$DEV_USER/.ssh/authorized_keys:ro,Z" \
+        -v "$KEY_FILE.pub:/home/$MANAGED_USER/.ssh/authorized_keys:ro,Z" \
         "${READONLY_MOUNTS[@]}" \
         "${PROXY_ENV[@]}" \
         --memory=4g \

@@ -16,8 +16,8 @@ post_start_validation() {
 }
 
 check_authorized_keys() {
-    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -f /home/$DEV_USER/.ssh/authorized_keys" 2>/dev/null; then
-        echo "  ⚠️  authorized_keys missing at /home/$DEV_USER/.ssh/authorized_keys"
+    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -f /home/$MANAGED_USER/.ssh/authorized_keys" 2>/dev/null; then
+        echo "  ⚠️  authorized_keys missing at /home/$MANAGED_USER/.ssh/authorized_keys"
         WARNINGS=$((WARNINGS + 1))
     fi
 }
@@ -26,9 +26,9 @@ check_project_write_access() {
     local qpath
     printf -v qpath '%q' "$REMOTE_PATH"
     if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -w $qpath" 2>/dev/null; then
-        echo "  ⚠️  $DEV_USER cannot write to $REMOTE_PATH"
+        echo "  ⚠️  $MANAGED_USER cannot write to $REMOTE_PATH"
         echo "     Likely cause: UID mismatch. Host UID is $MY_UID."
-        echo "     Fix: ensure $DEV_USER in the project image has UID $MY_UID, or run with --clean and rebuild."
+        echo "     Fix: ensure the managed jailbox user can use host UID $MY_UID, or run with --clean and rebuild."
         WARNINGS=$((WARNINGS + 1))
     fi
 }

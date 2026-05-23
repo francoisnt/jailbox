@@ -2,7 +2,6 @@ ARG DEV_IMAGE
 FROM ${DEV_IMAGE}
 
 ARG USER_ID=1000
-ARG DEV_USER="devuser"
 ARG JAILBOX_INSTALL_CACHE_BUST=""
 
 COPY install/ /tmp/jailbox-install/

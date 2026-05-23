@@ -61,12 +61,6 @@ load_project_config() {
     source "$config_file"
     validate_egress_allow
 
-    # If REMOTE_PATH was not explicitly set in jailbox.conf it still holds the
-    # default value which was hardcoded to devuser.  Re-derive it now that
-    # DEV_USER is final so both always agree.
-    if [ "$REMOTE_PATH" = "/home/devuser/project" ]; then
-        REMOTE_PATH="/home/$DEV_USER/project"
-    fi
 }
 
 validate_egress_allow() {

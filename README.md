@@ -89,9 +89,10 @@ jailbox
 On first launch, jailbox:
 
 1. Builds or selects the project development image.
-2. Builds a wrapper image with OpenSSH and editor prerequisites.
+2. Builds a wrapper image with OpenSSH, editor prerequisites, and a managed
+   `jailbox` user using your host UID.
 3. Starts the hardened Podman container.
-4. Writes per-project SSH runtime state under your XDG state directory.
+4. Writes per-project SSH runtime state under `.jailbox/`.
 5. Opens the project through VS Code or VSCodium Remote SSH.
 
 To remove the container, proxy sidecar, network, SSH runtime state, and
@@ -118,6 +119,11 @@ cat > jailbox.conf <<'EOF'
 DEV_IMAGE="node:22-bookworm"
 EOF
 ```
+
+Development images should install tools, language runtimes, and dependencies
+system-wide, or otherwise make them available on `PATH` for all users. Do not
+put required setup only in a username-specific home directory: jailbox creates
+and uses its own managed user at runtime.
 
 ## What jailbox changes in your project
 
@@ -241,9 +247,12 @@ scripts/build-tarball.sh v0.2.0
 ## Security defaults
 
 - The container root filesystem is always read-only (`--read-only`).
+- SSH sessions run as a jailbox-managed `jailbox` user with your host UID.
+  jailbox creates this user when wrapping the dev image and fails if that
+  username already exists with a different UID.
 - Project files are mounted at `REMOTE_PATH` and remain writable except for
   protected metadata/build files listed below.
-- `/home/$DEV_USER` is a persistent Podman volume.
+- `/home/jailbox` is a persistent Podman volume for the managed jailbox user.
 - `/tmp` and `/run` are writable tmpfs mounts.
 - SSH uses a fresh local Ed25519 keypair generated for each run.
 - SSH forwarding is restricted to local port forwarding (`AllowTcpForwarding local`);
@@ -350,22 +359,7 @@ Container path where the project is mounted and opened in the editor.
 REMOTE_PATH="/workspace/project"
 ```
 
-Default: `/home/$DEV_USER/project` (tracks `DEV_USER` automatically).
-
-### `DEV_USER`
-
-Username of the non-root user inside the container.
-
-```bash
-DEV_USER=appuser
-```
-
-Default: `devuser`. Set this when your project image already has a non-root user
-under a different name (e.g. `ubuntu`, `app`, `node`). jailbox will SSH into the
-container as this user.
-
-`REMOTE_PATH` defaults to `/home/$DEV_USER/project` and tracks `DEV_USER`
-automatically, so no extra update is needed when you change `DEV_USER`.
+Default: `/home/jailbox/project`.
 
 ## Protected read-only project paths
 

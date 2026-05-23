@@ -1,12 +1,22 @@
 #!/bin/sh
 set -e
 
+MANAGED_USER=jailbox
+
 # Portable /etc/passwd lookup — getent is absent on Alpine/busybox images.
 get_passwd_entry() {
     if command -v getent >/dev/null 2>&1; then
-        getent passwd "$DEV_USER"
+        getent passwd "$MANAGED_USER"
     else
-        grep "^${DEV_USER}:" /etc/passwd || true
+        grep "^${MANAGED_USER}:" /etc/passwd || true
+    fi
+}
+
+get_user_for_uid() {
+    if command -v getent >/dev/null 2>&1; then
+        getent passwd "$USER_ID" | cut -d: -f1
+    else
+        awk -F: -v uid="$USER_ID" '$3 == uid { print $1; exit }' /etc/passwd
     fi
 }
 
@@ -66,100 +76,97 @@ if ! command -v sshd >/dev/null 2>&1; then
     exit 1
 fi
 
-# ── dev user ──────────────────────────────────────────────────────────────────
+# ── managed user ──────────────────────────────────────────────────────────────
 # Prefer bash for the interactive shell; VS Code Remote SSH opens non-login
 # interactive shells so .bashrc (not .bash_profile) is what gets sourced.
 _PREFERRED_SHELL=$(command -v bash 2>/dev/null || echo /bin/sh)
-
-if id "$DEV_USER" >/dev/null 2>&1; then
-    existing_uid=$(id -u "$DEV_USER")
-    if [ "$existing_uid" != "$USER_ID" ]; then
-        echo "$DEV_USER exists with UID $existing_uid, expected $USER_ID — attempting to update..."
-        if command -v usermod >/dev/null 2>&1; then
-            usermod -u "$USER_ID" "$DEV_USER"
-            # Best-effort: update ownership in common writable/application paths.
-            for path in /home /root /var /opt /usr; do
-                if [ -d "$path" ]; then
-                    find "$path" -xdev -user "$existing_uid" -exec chown -h "$USER_ID" {} \; 2>/dev/null || true
-                fi
-            done
-        else
-            echo "Error: $DEV_USER has UID $existing_uid but USER_ID=$USER_ID, and usermod is not available." >&2
-            echo "Fix: use an image where $DEV_USER does not exist, or set USER_ID=$existing_uid in jailbox.conf." >&2
-            exit 1
-        fi
-    fi
+if id "$MANAGED_USER" >/dev/null 2>&1; then
+    existing_uid=$(id -u "$MANAGED_USER")
+    echo "Error: managed user '$MANAGED_USER' already exists in the dev image with UID $existing_uid." >&2
+    echo "Fix: remove or rename that user in the dev image. jailbox always creates its own managed user." >&2
+    exit 1
 else
+    existing_user_for_uid=$(get_user_for_uid)
+    if [ -n "$existing_user_for_uid" ]; then
+        echo "Error: host UID $USER_ID already belongs to existing image user '$existing_user_for_uid'." >&2
+        echo "jailbox will not mutate arbitrary existing users. Use a dev image where UID $USER_ID is free." >&2
+        exit 1
+    fi
+
     if command -v useradd >/dev/null 2>&1; then
-        useradd -m -u "$USER_ID" -s "$_PREFERRED_SHELL" "$DEV_USER"
+        useradd -m -u "$USER_ID" -s "$_PREFERRED_SHELL" "$MANAGED_USER"
     elif command -v adduser >/dev/null 2>&1; then
         # Alpine-style adduser
-        adduser -D -u "$USER_ID" -h "/home/$DEV_USER" -s "$_PREFERRED_SHELL" "$DEV_USER"
+        adduser -D -u "$USER_ID" -h "/home/$MANAGED_USER" -s "$_PREFERRED_SHELL" "$MANAGED_USER"
     else
-        echo "Error: cannot create $DEV_USER (no useradd or adduser)" >&2
+        echo "Error: cannot create $MANAGED_USER (no useradd or adduser)" >&2
         exit 1
     fi
 fi
 
 # Ensure a valid home directory
 PASSWD_ENTRY=$(get_passwd_entry)
-DEVUSER_HOME=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f6)
-[ -z "$DEVUSER_HOME" ] && DEVUSER_HOME="/home/$DEV_USER"
-mkdir -p "$DEVUSER_HOME"
-chown "$DEV_USER:$DEV_USER" "$DEVUSER_HOME" 2>/dev/null || true
-chmod 755 "$DEVUSER_HOME" 2>/dev/null || true
+MANAGED_HOME=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f6)
+[ -z "$MANAGED_HOME" ] && MANAGED_HOME="/home/$MANAGED_USER"
+mkdir -p "$MANAGED_HOME"
+chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME" 2>/dev/null || true
+chmod 755 "$MANAGED_HOME" 2>/dev/null || true
 
 # Ensure a usable login shell
-DEVUSER_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
-[ -z "$DEVUSER_SHELL" ] && DEVUSER_SHELL="/bin/sh"
-case "$DEVUSER_SHELL" in
+MANAGED_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
+[ -z "$MANAGED_SHELL" ] && MANAGED_SHELL="/bin/sh"
+case "$MANAGED_SHELL" in
     ""|/bin/sh|/bin/false|/sbin/nologin|/usr/sbin/nologin)
         # Upgrade sh → bash when available; VS Code Remote SSH requires bash
         # for its server install script and for terminal prompt support.
         if command -v usermod >/dev/null 2>&1; then
-            usermod -s "$_PREFERRED_SHELL" "$DEV_USER" 2>/dev/null || true
+            usermod -s "$_PREFERRED_SHELL" "$MANAGED_USER" 2>/dev/null || true
         fi
         ;;
 esac
 
 # Refresh after any shell update above.
 PASSWD_ENTRY=$(get_passwd_entry)
-DEVUSER_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
-[ -z "$DEVUSER_SHELL" ] && DEVUSER_SHELL="$_PREFERRED_SHELL"
-if ! [ -x "$DEVUSER_SHELL" ]; then
+MANAGED_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
+[ -z "$MANAGED_SHELL" ] && MANAGED_SHELL="$_PREFERRED_SHELL"
+if ! [ -x "$MANAGED_SHELL" ]; then
     if [ -x "$_PREFERRED_SHELL" ]; then
-        usermod -s "$_PREFERRED_SHELL" "$DEV_USER" 2>/dev/null || true
+        usermod -s "$_PREFERRED_SHELL" "$MANAGED_USER" 2>/dev/null || true
     elif [ -x /bin/sh ]; then
-        usermod -s /bin/sh "$DEV_USER" 2>/dev/null || true
+        usermod -s /bin/sh "$MANAGED_USER" 2>/dev/null || true
+    else
+        echo "Error: managed user '$MANAGED_USER' has unusable shell '$MANAGED_SHELL'." >&2
+        echo "Fix: use an image where '$MANAGED_USER' is absent, or configure that user with a valid shell." >&2
+        exit 1
     fi
 fi
 
-# Ensure account is not locked. Required for SSH key auth on systems where
-# OpenSSH is compiled without PAM support (e.g. Alpine). useradd and adduser -D
-# both set the shadow password field to "!" (locked); change it to "*" (no
-# password, not locked) so key-based auth succeeds without PAM.
+# Ensure a jailbox-created account is not locked. Required for SSH key auth on
+# systems where OpenSSH is compiled without PAM support (e.g. Alpine). useradd
+# and adduser -D both set the shadow password field to "!" (locked); change it
+# to "*" (no password, not locked) so key-based auth succeeds without PAM.
 if command -v usermod >/dev/null 2>&1; then
-    usermod -p '*' "$DEV_USER" 2>/dev/null || true
+    usermod -p '*' "$MANAGED_USER" 2>/dev/null || true
 fi
 
 # Provide a minimal prompt for interactive bash shells. VS Code Remote SSH opens
 # non-login interactive shells, so .bashrc is the right place for PS1.
-if [ ! -f "$DEVUSER_HOME/.bashrc" ]; then
-    cat > "$DEVUSER_HOME/.bashrc" << 'DOTBASHRC'
+if [ ! -f "$MANAGED_HOME/.bashrc" ]; then
+    cat > "$MANAGED_HOME/.bashrc" << 'DOTBASHRC'
 export PS1='\u@\h:\w\$ '
 DOTBASHRC
-    chown "$DEV_USER:$DEV_USER" "$DEVUSER_HOME/.bashrc"
-elif ! grep -q 'PS1=' "$DEVUSER_HOME/.bashrc"; then
-    cat >> "$DEVUSER_HOME/.bashrc" << 'DOTBASHRC'
+    chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME/.bashrc"
+elif ! grep -q 'PS1=' "$MANAGED_HOME/.bashrc"; then
+    cat >> "$MANAGED_HOME/.bashrc" << 'DOTBASHRC'
 export PS1='\u@\h:\w\$ '
 DOTBASHRC
-    chown "$DEV_USER:$DEV_USER" "$DEVUSER_HOME/.bashrc"
+    chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME/.bashrc"
 fi
 
 # SSH directory
-mkdir -p "$DEVUSER_HOME/.ssh"
-chmod 700 "$DEVUSER_HOME/.ssh"
-chown -R "$DEV_USER:$DEV_USER" "$DEVUSER_HOME/.ssh"
+mkdir -p "$MANAGED_HOME/.ssh"
+chmod 700 "$MANAGED_HOME/.ssh"
+chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME/.ssh"
 
 # ── sshd hardening ────────────────────────────────────────────────────────────
 # Generate host keys for any missing algorithm.
@@ -183,5 +190,5 @@ AllowTcpForwarding local
 AllowStreamLocalForwarding yes
 PermitTunnel no
 GatewayPorts no
-AllowUsers ${DEV_USER}
+AllowUsers ${MANAGED_USER}
 EOF

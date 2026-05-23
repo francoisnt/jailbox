@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
-ALL_STAGES=(debian alpine fedora custom-user uid-mismatch egress)
+ALL_STAGES=(debian alpine fedora egress)
 
 PASSED=0
 FAILED=0
@@ -116,9 +116,7 @@ stage_forward_port() {
         debian)       echo 24229 ;;
         alpine)       echo 24230 ;;
         fedora)       echo 24231 ;;
-        custom-user)  echo 24232 ;;
-        uid-mismatch) echo 24233 ;;
-        egress)       echo 24234 ;;
+        egress)             echo 24234 ;;
         *) die "unknown stage: $1" ;;
     esac
 }
@@ -128,9 +126,7 @@ stage_reh_probe_port() {
         debian)       echo 25229 ;;
         alpine)       echo 25230 ;;
         fedora)       echo 25231 ;;
-        custom-user)  echo 25232 ;;
-        uid-mismatch) echo 25233 ;;
-        egress)       echo 25234 ;;
+        egress)             echo 25234 ;;
         *) die "unknown stage: $1" ;;
     esac
 }
@@ -379,11 +375,6 @@ STUB
 run_e2e_case() {
     local stage="$1"
     local log_dir="$2"
-    local dev_user="devuser"
-
-    case "$stage" in
-        custom-user) dev_user="appuser" ;;
-    esac
 
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope.
@@ -396,25 +387,30 @@ run_e2e_case() {
           fi' EXIT
 
     echo ""
-    echo "── e2e: $stage (user: $dev_user) ─────────────────────────────────────"
+    echo "── e2e: $stage (user: jailbox) ─────────────────────────────────────"
 
     project_dir="/tmp/jailbox-e2e-${stage}"
     rm -rf "$project_dir"
     mkdir -p "$project_dir"
+    git -C "$project_dir" init -q
+    printf 'initial\n' > "$project_dir/README.txt"
+    git -C "$project_dir" add README.txt
+    git -C "$project_dir" \
+        -c user.name=jailbox-e2e \
+        -c user.email=jailbox-e2e@example.invalid \
+        commit -q -m "initial"
 
     local dev_image
     dev_image=$(stage_test_image "$stage")
 
     cat > "$project_dir/jailbox.conf" << EOF
 DEV_IMAGE=${dev_image}
-DEV_USER=${dev_user}
-REMOTE_PATH=/home/${dev_user}/project
+REMOTE_PATH=/home/jailbox/project
 EOF
-
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=("api.ipify.org")\n' >> "$project_dir/jailbox.conf"
     fi
-    write_jailbox_workspace_config "$project_dir" "$(jailbox_container_name "$project_dir")" "/home/${dev_user}/project"
+    write_jailbox_workspace_config "$project_dir" "$(jailbox_container_name "$project_dir")" "/home/jailbox/project"
 
     export JAILBOX_E2E_PROJECT="$project_dir"
 
@@ -440,7 +436,7 @@ EOF
 
     # Shell and tools
     assert_eq "login shell is bash" "bash" \
-        "$(e2e_ssh "$ssh_cfg" "$ctr" "basename \"\$(grep -m1 '^${dev_user}:' /etc/passwd | cut -d: -f7)\"" || true)"
+        "$(e2e_ssh "$ssh_cfg" "$ctr" "basename \"\$(grep -m1 '^jailbox:' /etc/passwd | cut -d: -f7)\"" || true)"
     assert_ssh "$ssh_cfg" "$ctr" ".bashrc sets PS1"     "grep -q PS1 ~/.bashrc"
     assert_ssh "$ssh_cfg" "$ctr" "bash available"       "command -v bash >/dev/null"
     assert_ssh "$ssh_cfg" "$ctr" "git available"        "git --version >/dev/null"
@@ -452,7 +448,11 @@ EOF
     # Mounts
     assert_ssh "$ssh_cfg" "$ctr" "home writable" "test -w \"\$HOME\""
     assert_ssh "$ssh_cfg" "$ctr" "project mount writable" \
-        "touch /home/${dev_user}/project/.e2e-test && rm /home/${dev_user}/project/.e2e-test"
+        "touch /home/jailbox/project/.e2e-test && rm /home/jailbox/project/.e2e-test"
+    assert_ssh "$ssh_cfg" "$ctr" "editor-style project write works with managed UID" \
+        "printf '%s\n' edited > /home/jailbox/project/editor-write.txt"
+    assert_ssh "$ssh_cfg" "$ctr" "git index write works with managed UID" \
+        "git -C /home/jailbox/project add editor-write.txt"
 
     # Security
     assert_ssh_fails "$ssh_cfg" "$ctr" "rootfs is read-only"  "touch /etc/.e2e-test"
@@ -504,6 +504,7 @@ main() {
     command -v ssh        >/dev/null 2>&1 || die "ssh is required"
     command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
     command -v curl       >/dev/null 2>&1 || die "curl is required"
+    command -v git        >/dev/null 2>&1 || die "git is required"
 
     local stages=("$@")
     [ ${#stages[@]} -eq 0 ] && stages=("${ALL_STAGES[@]}")

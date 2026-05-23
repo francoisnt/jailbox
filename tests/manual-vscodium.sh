@@ -11,7 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
-ALL_STAGES=(debian alpine fedora custom-user uid-mismatch)
+ALL_STAGES=(debian alpine fedora)
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat <<EOF
@@ -53,10 +53,6 @@ declare -A RESULTS=()   # stage → pass | fail | skip
 
 # ── per-stage helpers ─────────────────────────────────────────────────────────
 
-dev_user_for() {
-    [[ "$1" == "custom-user" ]] && echo "appuser" || echo "devuser"
-}
-
 jailbox_container_name() {
     printf 'jailbox-%s\n' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
 }
@@ -91,8 +87,7 @@ EOF
 collect_failure_diagnostics() {
     local stage="$1"
     local project_dir="$2"
-    local dev_user="$3"
-    local ctr="$4"
+    local ctr="$3"
     local ssh_cfg
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
     local listening_on local_probe_port tunnel_pid
@@ -115,7 +110,7 @@ collect_failure_diagnostics() {
         echo ""
         echo "### vscodium server direct tunnel probe"
         listening_on=$(ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "grep -E 'Extension host agent listening on .+' /home/$dev_user/.vscodium-server/.*.log 2>/dev/null | tail -1 | sed 's/.*Extension host agent listening on //'" 2>/dev/null || true)
+            "grep -E 'Extension host agent listening on .+' /home/jailbox/.vscodium-server/.*.log 2>/dev/null | tail -1 | sed 's/.*Extension host agent listening on //'" 2>/dev/null || true)
         if [[ -n "$listening_on" ]]; then
             local_probe_port=$(jailbox_pick_probe_port)
             ssh -F "$ssh_cfg" -N -L "127.0.0.1:${local_probe_port}:127.0.0.1:${listening_on}" "$ctr" >/dev/null 2>&1 &
@@ -135,7 +130,7 @@ collect_failure_diagnostics() {
         echo ""
         echo "### vscodium server logs"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "find /home/$dev_user/.vscodium-server -maxdepth 4 -type f -name '*.log' -print -exec sh -c 'echo --- \$1; tail -200 \"\$1\"' sh {} \\;" 2>&1 || true
+            "find /home/jailbox/.vscodium-server -maxdepth 4 -type f -name '*.log' -print -exec sh -c 'echo --- \$1; tail -200 \"\$1\"' sh {} \\;" 2>&1 || true
 
         echo ""
         echo "### alpine package check"
@@ -163,9 +158,8 @@ run_stage() {
     local stage="$1"
     local idx="$2"
     local total="$3"
-    local dev_user project_dir ctr
+    local project_dir ctr
 
-    dev_user=$(dev_user_for "$stage")
     project_dir="/tmp/jailbox-manual-$stage"
     ctr=$(jailbox_container_name "$project_dir")
 
@@ -176,11 +170,10 @@ run_stage() {
 
     cat > "$project_dir/jailbox.conf" << EOF
 DEV_IMAGE=jailbox-test-$stage
-DEV_USER=$dev_user
-REMOTE_PATH=/home/$dev_user/project
+REMOTE_PATH=/home/jailbox/project
 EOF
     echo "jailbox manual test — $stage" > "$project_dir/README.txt"
-    write_jailbox_workspace_config "$project_dir" "$ctr" "/home/$dev_user/project"
+    write_jailbox_workspace_config "$project_dir" "$ctr" "/home/jailbox/project"
 
     # Ensure cleanup on Ctrl-C or error during this stage.
     local cleaned=0
@@ -201,9 +194,9 @@ EOF
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     printf  "  Stage %d/%d  ·  %s  ·  user: %s  ·  UID: %s\n" \
-        "$idx" "$total" "$stage" "$dev_user" "$(id -u)"
+        "$idx" "$total" "$stage" "jailbox" "$(id -u)"
     printf  "  Host project dir  →  %s\n" "$project_dir"
-    printf  "  Container mount   →  /home/%s/project\n" "$dev_user"
+    printf  "  Container mount   →  /home/jailbox/project\n"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "  Headless checks (shell, tools, mounts, security) are covered by"
@@ -212,7 +205,7 @@ EOF
     echo "    □ VSCodium opens and the bottom-left badge shows"
     echo "      SSH: <container-name>  (not 'local')"
     echo "    □ A terminal (Ctrl+\`) opens inside the container:"
-    echo "      prompt shows  $dev_user@<container>:~/project\$"
+    echo "      prompt shows  jailbox@<container>:~/project\$"
     echo ""
     read -rp "  Press Enter to launch jailbox and open VSCodium..."
     echo ""
@@ -247,7 +240,7 @@ EOF
     RESULTS[$stage]="$result"
 
     if [[ "$result" == "fail" ]]; then
-        collect_failure_diagnostics "$stage" "$project_dir" "$dev_user" "$ctr"
+        collect_failure_diagnostics "$stage" "$project_dir" "$ctr"
     fi
 
     # ── cleanup ───────────────────────────────────────────────────────────────

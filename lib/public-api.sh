@@ -12,7 +12,6 @@ CONFIG_SCALAR_KEYS=(
     DEV_BUILD_CONTEXT
     DEV_TARGET_STAGE
     REMOTE_PATH
-    DEV_USER
 )
 
 CONFIG_ARRAY_KEYS=(
@@ -24,8 +23,7 @@ CONFIG_DEFAULTS=(
     "DEV_CONTAINERFILE="
     "DEV_BUILD_CONTEXT="
     "DEV_TARGET_STAGE="
-    "REMOTE_PATH=/home/devuser/project"  # sentinel: re-derived from DEV_USER in load_project_config
-    "DEV_USER=devuser"
+    "REMOTE_PATH=/home/jailbox/project"
     "EGRESS_ALLOW="
 )
 

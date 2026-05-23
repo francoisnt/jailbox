@@ -88,7 +88,6 @@ build_jailbox_image() {
         --build-arg DEV_IMAGE="$PROJECT_DEV_IMAGE" \
         --build-arg JAILBOX_INSTALL_CACHE_BUST="$install_cache_bust" \
         --build-arg USER_ID="$MY_UID" \
-        --build-arg DEV_USER="$DEV_USER" \
         "$SCRIPT_DIR"; then
         echo ""
         echo "Error: jailbox image build failed."
