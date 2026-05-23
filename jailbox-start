@@ -1,37 +1,7 @@
 #!/bin/sh
-# Container entrypoint — starts sshd with proxy env vars forwarded into sessions.
-#
-# When EGRESS_ALLOW is set, jailbox puts this container on an internal Podman
-# network (no external routes) and starts a tinyproxy sidecar on both the
-# internal and external networks. The internal network blocks all direct TCP to
-# the internet; tinyproxy is the only path out. HTTP_PROXY/HTTPS_PROXY tell
-# HTTP clients (curl, pip, npm, Claude CLI, ...) to send requests to tinyproxy
-# rather than trying to connect directly — which would be blocked anyway.
-#
-# The problem: `podman run --env` sets vars in PID 1's environment, but sshd
-# builds a fresh environment for every session and drops them. AI tools running
-# inside an SSH session therefore never see HTTP_PROXY and cannot reach even
-# allowed hosts through the proxy.
-#
-# The fix: at startup, copy the static sshd config into /run/sshd/ (writable
-# tmpfs, since the container rootfs is read-only) and append a single SetEnv
-# directive with all proxy vars as space-separated NAME="VALUE" pairs. sshd
-# then injects them into every session.
-#
-# Multiple separate SetEnv lines are silently dropped by some OpenSSH versions
-# (only the first takes effect). A single line with all pairs is reliable.
-#
-# When EGRESS_ALLOW is empty no proxy vars are set, the line is not written, and
-# behaviour is identical to a plain `exec sshd` entrypoint.
+# Container entrypoint — starts sshd with jailbox's static server config.
 set -e
 mkdir -p /var/run/sshd /run/sshd
 SSHD=$(command -v sshd)
 [ -n "$SSHD" ] || { echo 'sshd not found'; exit 1; }
-cp /etc/ssh/jailbox_sshd_config /run/sshd/sshd_config
-_setenv=""
-for _v in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy; do
-    _val=$(printenv "$_v" 2>/dev/null || true)
-    [ -n "$_val" ] && _setenv="${_setenv} ${_v}=\"${_val}\""
-done
-[ -n "$_setenv" ] && printf 'SetEnv%s\n' "$_setenv" >> /run/sshd/sshd_config
-exec "$SSHD" -D -e -f /run/sshd/sshd_config
+exec "$SSHD" -D -e -f /etc/ssh/jailbox_sshd_config

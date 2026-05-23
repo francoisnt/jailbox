@@ -10,7 +10,7 @@ configure_network() {
     else
         podman network exists "$NETWORK_NAME" 2>/dev/null || podman network create "$NETWORK_NAME"
         JAILBOX_NETWORK="$NETWORK_NAME"
-        PROXY_ENV=()
+        SSH_SESSION_ENV=()
     fi
 }
 
@@ -58,13 +58,17 @@ configure_proxy_network() {
 
     JAILBOX_NETWORK="$internal_net"
     JAILBOX_INTERNAL_NETWORK="$internal_net"
-    PROXY_ENV=(
-        --env "HTTP_PROXY=http://$PROXY_NAME:8888"
-        --env "HTTPS_PROXY=http://$PROXY_NAME:8888"
-        --env "http_proxy=http://$PROXY_NAME:8888"
-        --env "https_proxy=http://$PROXY_NAME:8888"
-        --env "NO_PROXY=localhost,127.0.0.1"
-        --env "no_proxy=localhost,127.0.0.1"
+    configure_proxy_env
+}
+
+configure_proxy_env() {
+    SSH_SESSION_ENV=(
+        "HTTP_PROXY=http://$PROXY_NAME:8888"
+        "HTTPS_PROXY=http://$PROXY_NAME:8888"
+        "http_proxy=http://$PROXY_NAME:8888"
+        "https_proxy=http://$PROXY_NAME:8888"
+        "NO_PROXY=localhost,127.0.0.1"
+        "no_proxy=localhost,127.0.0.1"
     )
 }
 

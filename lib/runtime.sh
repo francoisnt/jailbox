@@ -88,7 +88,6 @@ start_jailbox_container() {
         -v "$PROJECT_DIR:$REMOTE_PATH:Z" \
         -v "$KEY_FILE.pub:/home/$MANAGED_USER/.ssh/authorized_keys:ro,Z" \
         "${READONLY_MOUNTS[@]}" \
-        "${PROXY_ENV[@]}" \
         --memory=4g \
         --cpus=2 \
         --pids-limit=256 \
@@ -106,23 +105,9 @@ open_editor() {
         return 1
     fi
 
-    if ! ensure_project_editor_config; then
-        return 0
-    fi
+    write_jailbox_workspace
     echo "🚀 Connecting..."
-    case "$EDITOR_CONFIG_MODE" in
-        workspace)
-            write_jailbox_workspace
-            launch_editor_remote
-            ;;
-        vscode-settings)
-            launch_editor_remote
-            ;;
-        *)
-            echo "Error: internal editor config mode was not selected." >&2
-            return 1
-            ;;
-    esac
+    launch_editor_remote
 }
 
 launch_editor_remote() {
@@ -159,145 +144,12 @@ gitignore_has_entry() {
     [ -f "$gitignore_file" ] && grep -Fxq "$entry" "$gitignore_file"
 }
 
-is_git_tracked() {
-    local path
-
-    path="$1"
-    git -C "$PROJECT_DIR" ls-files --error-unmatch "$path" >/dev/null 2>&1
-}
-
-ensure_project_editor_config() {
-    local answer
-
-    EDITOR_CONFIG_MODE=""
-
-    if [ -f "$VSCODE_SETTINGS" ]; then
-        if editor_config_has_ssh_config "$VSCODE_SETTINGS"; then
-            EDITOR_CONFIG_MODE="vscode-settings"
-            warn_vscode_settings_commit_risk
-            return 0
-        fi
-
-        if editor_config_has_other_ssh_config "$VSCODE_SETTINGS"; then
-            echo "Project VS Code settings already define remote.SSH.configFile:"
-            echo "  $VSCODE_SETTINGS"
-            echo "Jailbox will not overwrite it. Add this line to that configured SSH config:"
-            echo "  Include $SSH_CONFIG"
-            echo "Or update remote.SSH.configFile manually to point at $SSH_CONFIG."
-            return 1
-        fi
-
-        warn_machine_local_editor_config
-        if [ -t 0 ]; then
-            printf 'Add remote.SSH.configFile to .vscode/settings.json? [y/N] ' >&2
-            if ! read -r answer; then
-                answer=""
-            fi
-            case "$answer" in
-                y|Y|yes|YES|Yes)
-                    write_editor_ssh_config_setting "$VSCODE_SETTINGS"
-                    ensure_gitignore_entry ".vscode/settings.json"
-                    EDITOR_CONFIG_MODE="vscode-settings"
-                    warn_vscode_settings_commit_risk
-                    return 0
-                    ;;
-            esac
-            printf 'Generate .jailbox/jailbox.code-workspace instead? [Y/n] ' >&2
-            if ! read -r answer; then
-                answer=""
-            fi
-            case "$answer" in
-                n|N|no|NO|No)
-                    print_editor_ssh_config_help
-                    return 1
-                    ;;
-                *)
-                    write_jailbox_workspace
-                    EDITOR_CONFIG_MODE="workspace"
-                    return 0
-                    ;;
-            esac
-        fi
-
-        print_editor_ssh_config_help
-        return 1
-    fi
-
-    if [ -f "$JAILBOX_WORKSPACE" ] && editor_config_has_ssh_config "$JAILBOX_WORKSPACE"; then
-        EDITOR_CONFIG_MODE="workspace"
-        return 0
-    fi
-
-    if [ ! -t 0 ]; then
-        print_editor_ssh_config_help
-        return 1
-    fi
-
-    warn_machine_local_editor_config
-    echo "No project VS Code settings file exists."
-    printf 'Generate .jailbox/jailbox.code-workspace? [Y/n] ' >&2
-    if ! read -r answer; then
-        answer=""
-    fi
-    case "$answer" in
-        n|N|no|NO|No)
-            ;;
-        *)
-            write_jailbox_workspace
-            EDITOR_CONFIG_MODE="workspace"
-            return 0
-            ;;
-    esac
-
-    printf 'Create .vscode/settings.json with remote.SSH.configFile? [y/N] ' >&2
-    if ! read -r answer; then
-        answer=""
-    fi
-    case "$answer" in
-        y|Y|yes|YES|Yes)
-            write_editor_ssh_config_setting "$VSCODE_SETTINGS"
-            ensure_gitignore_entry ".vscode/settings.json"
-            EDITOR_CONFIG_MODE="vscode-settings"
-            warn_vscode_settings_commit_risk
-            return 0
-            ;;
-    esac
-
-    print_editor_ssh_config_help
-    return 1
-}
-
-warn_machine_local_editor_config() {
-    cat <<EOF_WARNING
-Jailbox editor config is machine-local. It contains this checkout's local path:
-  $SSH_CONFIG
-
-Do not commit it unless your team explicitly wants this host-local setting.
-EOF_WARNING
-}
-
-warn_vscode_settings_commit_risk() {
-    if is_git_tracked ".vscode/settings.json"; then
-        echo "Warning: .vscode/settings.json is tracked and contains jailbox-local editor config." >&2
-    elif ! gitignore_has_entry ".vscode/settings.json"; then
-        echo "Warning: .vscode/settings.json is not gitignored; do not commit jailbox-local settings by accident." >&2
-    fi
-}
-
 editor_config_has_ssh_config() {
     local config_file
 
     config_file="$1"
     [ -f "$config_file" ] || return 1
     grep -Fq "\"remote.SSH.configFile\": \"$SSH_CONFIG\"" "$config_file"
-}
-
-editor_config_has_other_ssh_config() {
-    local config_file
-
-    config_file="$1"
-    [ -f "$config_file" ] || return 1
-    grep -Eq '"remote\.SSH\.configFile"[[:space:]]*:' "$config_file"
 }
 
 write_jailbox_workspace() {
@@ -325,66 +177,6 @@ write_jailbox_editor_user_settings() {
 }
 EOF_SETTINGS
     chmod 600 "$JAILBOX_EDITOR_USER_SETTINGS"
-}
-
-write_editor_ssh_config_setting() {
-    local settings_file settings_dir escaped_config tmp existed
-
-    settings_file="$1"
-    settings_dir=$(dirname "$settings_file")
-    mkdir -p "$settings_dir"
-    existed=false
-    [ -f "$settings_file" ] && existed=true
-
-    escaped_config=$(printf '%s' "$SSH_CONFIG" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    if [ "$existed" = false ]; then
-        printf '{\n  "remote.SSH.configFile": "%s"\n}\n' "$escaped_config" > "$settings_file"
-    else
-        tmp=$(mktemp)
-        if ! awk -v config="$escaped_config" '
-            ! inserted && /^[[:space:]]*\{[[:space:]]*\}[[:space:]]*$/ {
-                print "{"
-                print "  \"remote.SSH.configFile\": \"" config "\""
-                print "}"
-                inserted = 1
-                next
-            }
-            ! inserted && /^[[:space:]]*\{[[:space:]]*$/ {
-                print
-                after_open = 1
-                next
-            }
-            after_open && /^[[:space:]]*$/ {
-                blank = blank $0 ORS
-                next
-            }
-            after_open && /^[[:space:]]*\}[[:space:]]*$/ {
-                print "  \"remote.SSH.configFile\": \"" config "\""
-                printf "%s", blank
-                print
-                inserted = 1
-                after_open = 0
-                next
-            }
-            after_open {
-                print "  \"remote.SSH.configFile\": \"" config "\","
-                printf "%s", blank
-                print
-                inserted = 1
-                after_open = 0
-                next
-            }
-            { print }
-            END { exit inserted ? 0 : 1 }
-        ' "$settings_file" > "$tmp"; then
-            rm -f "$tmp"
-            echo "Could not update editor settings automatically: $settings_file" >&2
-            return 1
-        fi
-        mv "$tmp" "$settings_file"
-    fi
-    [ "$existed" = false ] && chmod 600 "$settings_file"
-    echo "Set remote.SSH.configFile in $settings_file"
 }
 
 doctor_jailbox() {
@@ -417,17 +209,8 @@ doctor_jailbox() {
         echo "Internal SSH works: no (missing ssh_config)"
     fi
 
-    if [ -f "$VSCODE_SETTINGS" ] && editor_config_has_ssh_config "$VSCODE_SETTINGS"; then
-        echo "Project editor config: .vscode/settings.json -> .jailbox/ssh_config"
-        if is_git_tracked ".vscode/settings.json"; then
-            echo "Warning: .vscode/settings.json is tracked and contains jailbox-local settings"
-        elif ! gitignore_has_entry ".vscode/settings.json"; then
-            echo "Warning: .vscode/settings.json is not gitignored and contains jailbox-local settings"
-        fi
-    elif [ -f "$JAILBOX_WORKSPACE" ] && editor_config_has_ssh_config "$JAILBOX_WORKSPACE"; then
+    if [ -f "$JAILBOX_WORKSPACE" ] && editor_config_has_ssh_config "$JAILBOX_WORKSPACE"; then
         echo "Project editor config: .jailbox/jailbox.code-workspace -> .jailbox/ssh_config"
-    elif [ -f "$VSCODE_SETTINGS" ] && editor_config_has_other_ssh_config "$VSCODE_SETTINGS"; then
-        echo "Project editor config: .vscode/settings.json points to a different SSH config"
     else
         echo "Project editor config: missing"
     fi

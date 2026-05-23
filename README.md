@@ -128,8 +128,8 @@ and uses its own managed user at runtime.
 ## What jailbox changes in your project
 
 Jailbox keeps generated SSH runtime state in a project-local ignored directory
-and never modifies your user-level `~/.ssh/config`, VS Code/VSCodium user
-settings, or existing `.vscode/settings.json` without consent.
+and never modifies your user-level `~/.ssh/config`, normal VS Code/VSCodium
+user settings, or existing `.vscode/settings.json`.
 
 ```text
 .jailbox/
@@ -154,33 +154,16 @@ print the generated config path and host block:
 jailbox ssh-config
 ```
 
-Configure VS Code/VSCodium Remote SSH with one of these project-local options:
-
-Option A: use the generated workspace file:
+Configure VS Code/VSCodium Remote SSH with the generated workspace file:
 
 ```bash
 codium .jailbox/jailbox.code-workspace
 ```
 
-Option B: set the project setting:
-
-```json
-{
-  "remote.SSH.configFile": "/absolute/path/to/project/.jailbox/ssh_config"
-}
-```
-
-If `.vscode/settings.json` already exists, jailbox inspects it. If it already
-points to `.jailbox/ssh_config`, jailbox proceeds. If the setting is missing,
-jailbox asks before adding it and adds `.vscode/settings.json` to `.gitignore`
-when it writes host-local config. If the setting points elsewhere, jailbox does
-not overwrite it and prints manual instructions. If `.vscode/settings.json`
-does not exist, jailbox offers to generate `.jailbox/jailbox.code-workspace` as
-the safer default, or create `.vscode/settings.json` only with explicit consent.
-
 Editor config that contains an absolute `.jailbox/ssh_config` path is
 machine-local. Do not commit it unless your team explicitly wants checkout-local
-editor configuration.
+editor configuration. Jailbox therefore keeps that setting in generated
+`.jailbox/` state instead of mutating `.vscode/settings.json`.
 
 The normal `code --remote` / `codium --remote` command does not pass OpenSSH
 options through to Remote SSH resolution, so jailbox does not try to give the
@@ -203,6 +186,34 @@ include the project config from `~/.ssh/config`:
 ```sshconfig
 Include /absolute/path/to/project/.jailbox/ssh_config
 ```
+
+### SSH architecture
+
+SSH is only the Remote SSH compatibility transport. Jailbox uses a static
+container-side `sshd_config` and puts project-specific connection details in the
+generated `.jailbox/ssh_config`: host alias, localhost port, key path,
+known-hosts path, and any proxy `SetEnv` values required by `EGRESS_ALLOW`.
+
+What remains unavoidable:
+
+- An OpenSSH server is still required for VS Code/VSCodium Remote SSH.
+- A generated SSH config is still required because the port, key, host alias,
+  and optional proxy environment are checkout-local.
+- The editor still needs `remote.SSH.configFile`; the `code --remote` /
+  `codium --remote` CLI does not pass `ssh -F` through host resolution.
+- `sshd` still needs narrow runtime capabilities for key auth, privilege
+  separation, and switching authenticated sessions to the managed user.
+
+What jailbox avoids:
+
+- No dynamic `sshd_config` rewriting at container startup.
+- No server-side proxy `SetEnv` generation.
+- No shell profile or `.bashrc` mutation.
+- No automatic mutation of `.vscode/settings.json`.
+
+Longer-term replacements could use a purpose-built editor transport, a Dev
+Containers integration, or a non-editor `podman exec` workflow. Those would
+reduce OpenSSH-specific requirements, but would no longer be plain Remote SSH.
 
 Check the current project's integration state with:
 
@@ -333,8 +344,9 @@ package manager.
 ### `EGRESS_ALLOW`
 
 Array of allowed HTTP(S) hosts. If non-empty, jailbox starts a tinyproxy sidecar,
-puts the jailbox container on an internal network, and exports proxy environment
-variables into the jailbox container.
+puts the jailbox container on an internal network, and writes proxy environment
+variables into the generated SSH host config so Remote SSH sessions inherit
+them explicitly.
 
 ```text
 EGRESS_ALLOW=claude.ai,github.com,api.github.com

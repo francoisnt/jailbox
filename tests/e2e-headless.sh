@@ -435,11 +435,10 @@ EOF
     reh_probe_port=$(stage_reh_probe_port "$stage")
 
     # Shell and tools
-    assert_eq "login shell is bash" "bash" \
-        "$(e2e_ssh "$ssh_cfg" "$ctr" "basename \"\$(grep -m1 '^jailbox:' /etc/passwd | cut -d: -f7)\"" || true)"
-    assert_ssh "$ssh_cfg" "$ctr" ".bashrc sets PS1"     "grep -q PS1 ~/.bashrc"
-    assert_ssh "$ssh_cfg" "$ctr" "bash available"       "command -v bash >/dev/null"
-    assert_ssh "$ssh_cfg" "$ctr" "git available"        "git --version >/dev/null"
+    assert_ssh "$ssh_cfg" "$ctr" "login shell is executable" \
+        "shell=\$(grep -m1 '^jailbox:' /etc/passwd | cut -d: -f7); test -x \"\$shell\""
+    assert_ssh "$ssh_cfg" "$ctr" "bash available" "command -v bash >/dev/null"
+    assert_ssh "$ssh_cfg" "$ctr" "git available"  "git --version >/dev/null"
     assert_local_forwarding "$ssh_cfg" "$ctr" "$forward_port" "SSH local forwarding works"
     if [[ "$stage" == "alpine" ]]; then
         assert_vscodium_reh_probe "$ssh_cfg" "$ctr" "$reh_probe_port" "VSCodium REH reachable through OpenSSH tunnel"
@@ -465,6 +464,11 @@ EOF
 
         assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
             "[ -n \"\$HTTPS_PROXY\" ]"
+        if grep -Fq "HTTPS_PROXY=http://${proxy_ctr}:8888" "$ssh_cfg"; then
+            pass "generated SSH config carries proxy environment"
+        else
+            fail "generated SSH config carries proxy environment"
+        fi
         assert_ssh_fails "$ssh_cfg" "$ctr" "direct HTTP(S) bypassing proxy is blocked" \
             "curl --noproxy '*' --connect-timeout 5 --max-time 5 -fs https://example.com"
         assert_ssh_fails "$ssh_cfg" "$ctr" "raw TCP to external IP is blocked" \
@@ -480,9 +484,8 @@ EOF
         echo "  [diag] proxy env vars in SSH session:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
             "env | grep -i proxy || echo '(none)'" 2>/dev/null || true
-        echo "  [diag] SetEnv lines in /run/sshd/sshd_config:"
-        ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "grep -i setenv /run/sshd/sshd_config 2>/dev/null || echo '(none)'" 2>/dev/null || true
+        echo "  [diag] SetEnv lines in generated SSH config:"
+        grep -i setenv "$ssh_cfg" 2>/dev/null || echo "(none)"
         echo "  [diag] proxy direct reach (wget api.ipify.org, bypassing tinyproxy):"
         podman exec "$proxy_ctr" wget -qO- --timeout=5 http://api.ipify.org 2>&1 || echo "(wget failed)"
         echo "  [diag] curl verbose via proxy (inside jailbox):"

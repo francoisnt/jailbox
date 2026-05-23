@@ -98,7 +98,7 @@ check_proxy_env_in_session() {
     val=$(ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
         "printf '%s' \"\$HTTPS_PROXY\"" 2>/dev/null || true)
     if [ -z "$val" ]; then
-        echo "  ⚠️  HTTPS_PROXY is not set in SSH sessions — jailbox-start SetEnv may have failed"
+        echo "  ⚠️  HTTPS_PROXY is not set in SSH sessions — generated SSH SetEnv may be missing or rejected"
         WARNINGS=$((WARNINGS + 1))
     else
         echo "  ✅ HTTPS_PROXY is set in SSH sessions ($val)"

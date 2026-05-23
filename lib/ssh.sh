@@ -16,6 +16,9 @@ setup_ssh_keys() {
 }
 
 write_ssh_host_block() {
+    local env_pair setenv_line
+    setenv_line=""
+
     cat <<SSHEOF
 Host $CONTAINER_NAME
     HostName localhost
@@ -29,6 +32,13 @@ Host $CONTAINER_NAME
     UserKnownHostsFile $KNOWN_HOSTS
     BatchMode yes
 SSHEOF
+
+    for env_pair in "${SSH_SESSION_ENV[@]}"; do
+        setenv_line="${setenv_line:+$setenv_line }$env_pair"
+    done
+    if [ -n "$setenv_line" ]; then
+        printf '    SetEnv %s\n' "$setenv_line"
+    fi
 }
 
 print_ssh_config_instructions() {
@@ -48,18 +58,6 @@ VS Code/VSCodium setting:
 Host block:
 EOF_INSTRUCTIONS
     write_ssh_host_block
-}
-
-print_editor_ssh_config_help() {
-    cat <<EOF_INSTRUCTIONS
-If the editor cannot connect to $CONTAINER_NAME, configure Remote SSH with one of these options:
-
-Option A - add this line manually to ~/.ssh/config:
-  Include $SSH_CONFIG
-
-Option B - set this VS Code/VSCodium project setting:
-  remote.SSH.configFile = $SSH_CONFIG
-EOF_INSTRUCTIONS
 }
 
 wait_for_ssh() {

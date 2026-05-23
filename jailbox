@@ -43,11 +43,9 @@ SSH_DIR=""
 SSH_CONFIG=""
 KNOWN_HOSTS=""
 KEY_FILE=""
-VSCODE_SETTINGS=""
 JAILBOX_WORKSPACE=""
 JAILBOX_EDITOR_USER_DATA=""
 JAILBOX_EDITOR_USER_SETTINGS=""
-EDITOR_CONFIG_MODE=""
 READONLY_PATHS=()
 READONLY_MOUNTS=()
 GITCONFIG_MOUNT=()
@@ -55,7 +53,7 @@ ROOTFS_FLAG=()
 FILTER_FILE=""
 JAILBOX_NETWORK=""
 JAILBOX_INTERNAL_NETWORK=""
-PROXY_ENV=()
+SSH_SESSION_ENV=()
 
 # shellcheck source=lib/public-api.sh
 source "$SCRIPT_DIR/lib/public-api.sh"
@@ -85,6 +83,9 @@ main() {
 
     if [[ "${1:-}" == "ssh-config" ]]; then
         initialize_runtime_ids
+        if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+            configure_proxy_env
+        fi
         print_ssh_config_instructions
         return 0
     fi
@@ -104,11 +105,11 @@ main() {
     ensure_jailbox_gitignore
     build_or_select_dev_image
     validate_dev_image
-    setup_ssh_keys
     build_jailbox_image
-    build_readonly_mounts
     configure_runtime_mounts
     configure_network
+    setup_ssh_keys
+    build_readonly_mounts
     ensure_home_volume
     start_jailbox_container
     wait_for_ssh

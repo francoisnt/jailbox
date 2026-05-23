@@ -77,8 +77,8 @@ if ! command -v sshd >/dev/null 2>&1; then
 fi
 
 # ── managed user ──────────────────────────────────────────────────────────────
-# Prefer bash for the interactive shell; VS Code Remote SSH opens non-login
-# interactive shells so .bashrc (not .bash_profile) is what gets sourced.
+# Prefer bash for the managed user because VS Code Remote SSH and many dev
+# tools assume it exists, but keep shell startup files under user control.
 _PREFERRED_SHELL=$(command -v bash 2>/dev/null || echo /bin/sh)
 if id "$MANAGED_USER" >/dev/null 2>&1; then
     existing_uid=$(id -u "$MANAGED_USER")
@@ -112,33 +112,13 @@ mkdir -p "$MANAGED_HOME"
 chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME" 2>/dev/null || true
 chmod 755 "$MANAGED_HOME" 2>/dev/null || true
 
-# Ensure a usable login shell
-MANAGED_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
-[ -z "$MANAGED_SHELL" ] && MANAGED_SHELL="/bin/sh"
-case "$MANAGED_SHELL" in
-    ""|/bin/sh|/bin/false|/sbin/nologin|/usr/sbin/nologin)
-        # Upgrade sh → bash when available; VS Code Remote SSH requires bash
-        # for its server install script and for terminal prompt support.
-        if command -v usermod >/dev/null 2>&1; then
-            usermod -s "$_PREFERRED_SHELL" "$MANAGED_USER" 2>/dev/null || true
-        fi
-        ;;
-esac
-
-# Refresh after any shell update above.
-PASSWD_ENTRY=$(get_passwd_entry)
+# Ensure the managed account has an executable shell.
 MANAGED_SHELL=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f7)
 [ -z "$MANAGED_SHELL" ] && MANAGED_SHELL="$_PREFERRED_SHELL"
 if ! [ -x "$MANAGED_SHELL" ]; then
-    if [ -x "$_PREFERRED_SHELL" ]; then
-        usermod -s "$_PREFERRED_SHELL" "$MANAGED_USER" 2>/dev/null || true
-    elif [ -x /bin/sh ]; then
-        usermod -s /bin/sh "$MANAGED_USER" 2>/dev/null || true
-    else
-        echo "Error: managed user '$MANAGED_USER' has unusable shell '$MANAGED_SHELL'." >&2
-        echo "Fix: use an image where '$MANAGED_USER' is absent, or configure that user with a valid shell." >&2
-        exit 1
-    fi
+    echo "Error: managed user '$MANAGED_USER' has unusable shell '$MANAGED_SHELL'." >&2
+    echo "Fix: use an image with bash or /bin/sh available." >&2
+    exit 1
 fi
 
 # Ensure a jailbox-created account is not locked. Required for SSH key auth on
@@ -147,20 +127,6 @@ fi
 # to "*" (no password, not locked) so key-based auth succeeds without PAM.
 if command -v usermod >/dev/null 2>&1; then
     usermod -p '*' "$MANAGED_USER" 2>/dev/null || true
-fi
-
-# Provide a minimal prompt for interactive bash shells. VS Code Remote SSH opens
-# non-login interactive shells, so .bashrc is the right place for PS1.
-if [ ! -f "$MANAGED_HOME/.bashrc" ]; then
-    cat > "$MANAGED_HOME/.bashrc" << 'DOTBASHRC'
-export PS1='\u@\h:\w\$ '
-DOTBASHRC
-    chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME/.bashrc"
-elif ! grep -q 'PS1=' "$MANAGED_HOME/.bashrc"; then
-    cat >> "$MANAGED_HOME/.bashrc" << 'DOTBASHRC'
-export PS1='\u@\h:\w\$ '
-DOTBASHRC
-    chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME/.bashrc"
 fi
 
 # SSH directory
@@ -190,5 +156,6 @@ AllowTcpForwarding local
 AllowStreamLocalForwarding yes
 PermitTunnel no
 GatewayPorts no
+AcceptEnv HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy
 AllowUsers ${MANAGED_USER}
 EOF
