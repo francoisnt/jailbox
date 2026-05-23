@@ -145,12 +145,12 @@ ssh-keygen -A
 # KbdInteractiveAuthentication (8.7+) are set to cover all OpenSSH versions.
 cat > /etc/ssh/jailbox_sshd_config << EOF
 Port 2222
-PidFile /home/${MANAGED_USER}/.jailbox-sshd/sshd.pid
-HostKey /home/${MANAGED_USER}/.jailbox-sshd/ssh_host_ed25519_key
+PidFile /run/jailbox-sshd/sshd.pid
+HostKey /run/jailbox-sshd/ssh_host_ed25519_key
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes
-AuthorizedKeysFile /home/${MANAGED_USER}/.jailbox-sshd/authorized_keys
+AuthorizedKeysFile /run/jailbox-sshd/authorized_keys
 ChallengeResponseAuthentication no
 KbdInteractiveAuthentication no
 PermitEmptyPasswords no

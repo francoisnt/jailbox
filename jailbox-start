@@ -3,16 +3,21 @@
 set -e
 SSHD=$(command -v sshd)
 [ -n "$SSHD" ] || { echo 'sshd not found'; exit 1; }
+SSHD_RUNTIME_DIR=/run/jailbox-sshd
 if [ ! -s /etc/ssh/jailbox_authorized_keys.source ]; then
     echo 'authorized_keys source missing or empty' >&2
     exit 1
 fi
-rm -rf /home/jailbox/.jailbox-sshd
-mkdir -p /home/jailbox/.jailbox-sshd
-chmod 0700 /home/jailbox/.jailbox-sshd
-cp /etc/ssh/jailbox_authorized_keys.source /home/jailbox/.jailbox-sshd/authorized_keys
-chmod 0600 /home/jailbox/.jailbox-sshd/authorized_keys
-ssh-keygen -t ed25519 -f /home/jailbox/.jailbox-sshd/ssh_host_ed25519_key -N "" -q
-chmod 0600 /home/jailbox/.jailbox-sshd/ssh_host_ed25519_key
+mkdir -p "$SSHD_RUNTIME_DIR"
+rm -f \
+    "$SSHD_RUNTIME_DIR/authorized_keys" \
+    "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" \
+    "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub" \
+    "$SSHD_RUNTIME_DIR/sshd.pid"
+chmod 0700 "$SSHD_RUNTIME_DIR"
+cp /etc/ssh/jailbox_authorized_keys.source "$SSHD_RUNTIME_DIR/authorized_keys"
+chmod 0600 "$SSHD_RUNTIME_DIR/authorized_keys"
+ssh-keygen -t ed25519 -f "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" -N "" -q
+chmod 0600 "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key"
 "$SSHD" -t -f /etc/ssh/jailbox_sshd_config
 exec "$SSHD" -D -e -f /etc/ssh/jailbox_sshd_config

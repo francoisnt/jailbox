@@ -69,9 +69,8 @@ ensure_home_volume() {
 
 start_jailbox_container() {
     echo "🚢 Starting jailbox..."
-    # Keep the runtime non-privileged. SSH auth state is copied into the managed
-    # home at startup so sshd does not need permission-bypass capabilities for
-    # mounted host key files.
+    # Keep the runtime non-privileged. SSH auth state is copied into a
+    # user-owned runtime directory mounted at /run/jailbox-sshd.
     podman run -d \
         --name "$CONTAINER_NAME" \
         --replace \
@@ -80,6 +79,7 @@ start_jailbox_container() {
         "${ROOTFS_FLAG[@]}" \
         --tmpfs /tmp:rw,size=512m,noexec \
         --tmpfs /run:rw,size=64m \
+        -v "$SSHD_RUNTIME_DIR:/run/jailbox-sshd:Z" \
         -v "$VOLUME_NAME":/home/$MANAGED_USER \
         "${GITCONFIG_MOUNT[@]}" \
         -p 127.0.0.1:"$LOCAL_PORT":2222 \

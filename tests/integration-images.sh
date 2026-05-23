@@ -168,6 +168,8 @@ run_case() {
     # point local variables are out of scope. Initialize here so the trap can
     # always reference them safely under set -u.
     ssh_dir=""
+    home_dir=""
+    sshd_runtime_dir=""
     build_log=""
 
     port=$(stage_port "$stage")
@@ -189,11 +191,15 @@ run_case() {
     local wrapper_image="jailbox-wrapper-${stage}"
     ctr="jailbox-test-${stage}-ctr"
     ssh_dir=$(mktemp -d)
+    home_dir=$(mktemp -d)
+    sshd_runtime_dir=$(mktemp -d)
     build_log="$log_dir/${stage}.build.log"
 
     # Fires when the subshell exits — cleans up regardless of success/failure.
     trap 'echo "$PASSED $FAILED" > "'"$log_dir"'/'"$stage"'.counts"
           rm -rf "$ssh_dir"
+          rm -rf "$home_dir"
+          rm -rf "$sshd_runtime_dir"
           podman stop "'"$ctr"'" >/dev/null 2>&1 || true
           podman rm   "'"$ctr"'" >/dev/null 2>&1 || true' EXIT
 
@@ -240,19 +246,23 @@ run_case() {
 
     setup_ssh_keys "$ssh_dir" "$port"
 
-    podman run -d \
+    if ! podman run -d \
         --name "$ctr" \
         --replace \
         --userns=keep-id \
         --read-only \
-        --tmpfs "/home/jailbox:rw,size=64m,uid=$(id -u),gid=$(id -g),mode=755" \
         --tmpfs /tmp:rw,size=64m \
         --tmpfs /run:rw,size=64m \
         -p "127.0.0.1:${port}:2222" \
+        -v "${home_dir}:/home/jailbox:Z" \
+        -v "${sshd_runtime_dir}:/run/jailbox-sshd:Z" \
         -v "${ssh_dir}/key.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
-        "$wrapper_image" >/dev/null
+        "$wrapper_image" >/dev/null; then
+        fail "container starts"
+        return 1
+    fi
 
     if ! wait_for_ssh "$ssh_dir/config"; then
         fail "SSH ready"

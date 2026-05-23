@@ -198,6 +198,7 @@ initialize_project_names() {
     SSH_CONFIG="$SSH_DIR/ssh_config"
     KNOWN_HOSTS="$SSH_DIR/known_hosts"
     KEY_FILE="$SSH_DIR/key"
+    SSHD_RUNTIME_DIR="$SSH_DIR/sshd-runtime"
     JAILBOX_EDITOR_USER_DATA="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/editor-profiles/$PROJECT_HASH"
     JAILBOX_EDITOR_USER_SETTINGS="$JAILBOX_EDITOR_USER_DATA/User/settings.json"
 }

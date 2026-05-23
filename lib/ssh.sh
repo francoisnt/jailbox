@@ -3,6 +3,9 @@
 setup_ssh_keys() {
     mkdir -p "$SSH_DIR"
     chmod 700 "$SSH_DIR"
+    rm -rf "$SSHD_RUNTIME_DIR"
+    mkdir -p "$SSHD_RUNTIME_DIR"
+    chmod 700 "$SSHD_RUNTIME_DIR"
     touch "$KNOWN_HOSTS"
     chmod 600 "$KNOWN_HOSTS"
 
