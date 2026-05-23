@@ -1,462 +1,161 @@
 # jailbox
 
-`jailbox` wraps a project's development image with SSH access, then launches it
-as a hardened Podman container for AI-assisted development.
+**Hardened Remote SSH development environments for your existing dev containers.**
 
-It is designed for projects that already have, or can build, a development
-container image. jailbox adds the editor/SSH layer around that image without
-mounting container runtime sockets into the AI environment. The project image
-owns any AI tools the team wants to provide.
+jailbox wraps your project's development image with OpenSSH and runs it as a **hardened, rootless Podman container**. It provides safer default isolation for running tools — especially AI coding agents — with access to your project's full toolchain while reducing host exposure.
 
-## Requirements
+---
 
-`jailbox` is currently Linux-first. Installation uses ordinary Unix shell
-tools, but running jailbox requires Linux container behavior from Podman.
+## Why jailbox matters
 
-Required host tools:
+AI coding tools can execute and modify code autonomously, which introduces new risks when they have broad access to your machine. jailbox addresses this by running everything inside a container that follows strict defaults:
 
-- `podman`
-- `ssh`
-- `ssh-keygen`
-- `cksum`
-- `realpath`
-- VSCodium or VS Code with the Remote SSH extension and a `codium` or `code`
-  CLI in `PATH`
+- Read-only root filesystem
+- Zero Linux capabilities
+- No Docker/Podman sockets
+- Controlled egress (optional)
+- Clean separation between project files and runtime state
 
-macOS may work with Podman Machine, but it is not currently a tested runtime
-target.
+This gives you the convenience of Remote SSH development with a significantly reduced attack surface compared to running agents directly on the host.
 
-## Install
+---
 
-Download a release tarball, unpack it, and run the installer:
+## Quick Start
+
+### 1. Install
 
 ```bash
-curl -fsSLO https://github.com/francoisnt/jailbox/releases/download/v0.1.0/jailbox-v0.1.0.tar.gz
+curl -fsSLO https://github.com/francoisnt/jailbox/releases/latest/download/jailbox-v0.1.0.tar.gz
 tar -xzf jailbox-v0.1.0.tar.gz
 cd jailbox-v0.1.0
 ./install.sh
 ```
 
-First release tarball:
-[francoisnt/jailbox](https://github.com/francoisnt/jailbox/releases/download/v0.1.0/jailbox-v0.1.0.tar.gz)
-
-By default, this installs jailbox assets to:
-
-```text
-~/.local/share/jailbox
-```
-
-and creates this command symlink:
-
-```text
-~/.local/bin/jailbox
-```
-
-Make sure `~/.local/bin` is in your `PATH`.
-
-To install somewhere else:
+### 2. Use
 
 ```bash
-PREFIX="$HOME/.local" ./install.sh
-```
-
-or set exact locations:
-
-```bash
-JAILBOX_INSTALL_DIR="$HOME/tools/jailbox" JAILBOX_BIN_DIR="$HOME/bin" ./install.sh
-```
-
-To uninstall:
-
-```bash
-./install.sh --uninstall
-```
-
-## Quick start
-
-Run `jailbox` from the root of a project that has one of these files:
-
-- `Containerfile`
-- `Dockerfile`
-- `.devcontainer/Containerfile`
-- `.devcontainer/Dockerfile`
-
-```bash
-cd /path/to/project
+cd /path/to/your/project
 jailbox
 ```
 
-On first launch, jailbox:
+jailbox will discover or build your dev image, start the container, and open the project in VS Code or VSCodium via Remote SSH.
 
-1. Builds or selects the project development image.
-2. Builds a wrapper image with OpenSSH, editor prerequisites, and a managed
-   `jailbox` user using your host UID.
-3. Starts the hardened Podman container.
-4. Writes per-project SSH runtime state under `.jailbox/`.
-5. Opens the project through VS Code or VSCodium Remote SSH.
+---
 
-To remove the container, proxy sidecar, network, SSH runtime state, and
-persistent home volume for the current project:
+## Important: Project Image Requirements
+
+Your development image **must** meet these requirements:
+
+- **Do not** create or rely on a custom user. Jailbox always creates and runs as its own managed user called `jailbox` (with your host UID).
+- Install all tools, language runtimes, and dependencies **globally** (system-wide) so they are available to the `jailbox` user.
+- Include `bash` (preferred) or a working `/bin/sh`.
+- Provide a supported package manager (`apt-get`, `apk`, `dnf`, or `yum`).
+
+If your final stage is distroless or production-only, use `DEV_TARGET_STAGE` to target a proper development stage.
+
+---
+
+## Command Reference
 
 ```bash
-jailbox --clean
+jailbox              # Launch the environment (default)
+jailbox doctor       # Check SSH and editor integration status
+jailbox ssh-config   # Show SSH configuration instructions
+jailbox --clean      # Remove container, volume, networks and .jailbox/ state
 ```
 
-If the final stage of your Dockerfile is production-only or distroless, point
-jailbox at a development stage:
+---
 
-```bash
-cat > jailbox.conf <<'EOF'
+## Why not Dev Containers?
+
+jailbox is **not** a replacement for Microsoft's Dev Containers specification.
+
+**Dev Containers** excel at team collaboration, standardized onboarding, and rich configuration through `devcontainer.json`.
+
+**jailbox** provides more **opinionated, hardened runtime defaults** focused on reducing risk when running untrusted code (particularly AI agents). It works with plain `Containerfile`/`Dockerfile` setups and adds egress control by default.
+
+**Many teams use both**:
+- Dev Containers for regular development and consistency
+- jailbox for AI-assisted coding sessions that benefit from stronger containment
+
+---
+
+## Configuration (`jailbox.conf`)
+
+Optional `jailbox.conf` in project root:
+
+```conf
+DEV_IMAGE=node:22-bookworm
+
+# Or build from source:
 DEV_CONTAINERFILE=./Dockerfile
 DEV_TARGET_STAGE=dev
-EOF
-```
 
-Or use an existing image directly:
+EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com,claude.ai
 
-```bash
-cat > jailbox.conf <<'EOF'
-DEV_IMAGE=node:22-bookworm
-EOF
-```
-
-Development images should install tools, language runtimes, and dependencies
-system-wide, or otherwise make them available on `PATH` for all users. Do not
-put required setup only in a username-specific home directory: jailbox creates
-and uses its own managed user at runtime.
-
-## What jailbox changes in your project
-
-Jailbox keeps generated SSH runtime state in a project-local ignored directory
-and never modifies your user-level `~/.ssh/config`, normal VS Code/VSCodium
-user settings, or existing `.vscode/settings.json`.
-
-```text
-.jailbox/
-  ssh_config
-  key
-  key.pub
-  known_hosts
-```
-
-The `.jailbox/` directory is local generated state for one user and one
-checkout. Jailbox ensures this entry exists in `.gitignore`:
-
-```text
-.jailbox/
-```
-
-Some editors resolve SSH hosts only through your default SSH config. If needed,
-print the generated config path and host block:
-
-```bash
-jailbox ssh-config
-```
-
-Editor config that contains an absolute `.jailbox/ssh_config` path is
-machine-local. Do not commit it unless your team explicitly wants checkout-local
-editor configuration. Jailbox therefore keeps that setting in the generated
-editor profile instead of mutating `.vscode/settings.json`.
-
-The normal `code --remote` / `codium --remote` command does not pass OpenSSH
-options through to Remote SSH resolution, so jailbox does not try to give the
-editor `ssh -F`. For automatic launches, jailbox uses a generated editor
-profile under
-`${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/editor-profiles/<project-hash>/`
-and launches the editor with `--user-data-dir` so Remote SSH sees
-`remote.SSH.configFile` before it resolves the host. This keeps VSCodium cache
-files out of the project tree and does not touch your normal VS Code/VSCodium
-user settings. Jailbox's own validation still uses:
-
-```bash
-ssh -F .jailbox/ssh_config <host> true
-```
-
-If Remote SSH still fails to resolve the generated host, manually set
-`remote.SSH.configFile` to the absolute `.jailbox/ssh_config` path, or manually
-include the project config from `~/.ssh/config`:
-
-```sshconfig
-Include /absolute/path/to/project/.jailbox/ssh_config
-```
-
-### SSH architecture
-
-SSH is only the Remote SSH compatibility transport. Jailbox uses a static
-container-side `sshd_config` and puts project-specific connection details in the
-generated `.jailbox/ssh_config`: host alias, localhost port, key path,
-known-hosts path, and any proxy `SetEnv` values required by `EGRESS_ALLOW`.
-
-What remains unavoidable:
-
-- An OpenSSH server is still required for VS Code/VSCodium Remote SSH.
-- A generated SSH config is still required because the port, key, host alias,
-  and optional proxy environment are checkout-local.
-- The editor still needs `remote.SSH.configFile`; the `code --remote` /
-  `codium --remote` CLI does not pass `ssh -F` through host resolution.
-
-What jailbox avoids:
-
-- No dynamic `sshd_config` rewriting at container startup.
-- No server-side proxy `SetEnv` generation.
-- No shell profile or `.bashrc` mutation.
-- No automatic mutation of `.vscode/settings.json`.
-
-Longer-term replacements could use a purpose-built editor transport, a Dev
-Containers integration, or a non-editor `podman exec` workflow. Those would
-reduce OpenSSH-specific requirements, but would no longer be plain Remote SSH.
-
-Check the current project's integration state with:
-
-```bash
-jailbox doctor
-```
-
-Other generated state:
-
-- Podman image, container, volume, and network names derived from a hash of the
-  full project path
-
-Project files remain mounted writable inside the container at `REMOTE_PATH`.
-Selected metadata, workflow, and jailbox files are mounted read-only over that
-writable project mount.
-
-## Release
-
-Maintainers can create and push a release tag with `scripts/release.sh`.
-
-The release script suggests a semantic version, asks for confirmation, creates
-an annotated git tag, and pushes it to `origin`. Pushing a tag starts the GitHub
-Actions release workflow, which builds `dist/jailbox-vX.Y.Z.tar.gz` from that
-tagged checkout and uploads it to the GitHub Release.
-
-Before `v1.0.0`, added or removed public API items suggest a minor bump, and
-other changes suggest a patch bump. Use `--first-major` when the project is
-ready for its first stable major release. After `v1.0.0`, removed config keys
-or CLI flags suggest a major bump, added keys or flags suggest a minor bump, and
-other changes suggest a patch bump.
-
-Useful forms:
-
-```bash
-scripts/release.sh
-scripts/release.sh --yes
-scripts/release.sh --yes --dry-run
-scripts/release.sh --first-major
-scripts/build-tarball.sh v0.2.0
-```
-
-## Security defaults
-
-- The container root filesystem is always read-only (`--read-only`).
-- SSH sessions run as a jailbox-managed `jailbox` user with your host UID.
-  jailbox creates this user when wrapping the dev image and fails if that
-  username already exists with a different UID.
-- Project files are mounted at `REMOTE_PATH` and remain writable except for
-  protected metadata/build files listed below.
-- `/home/jailbox` is a persistent Podman volume for the managed jailbox user.
-- `/tmp` and `/run` are writable tmpfs mounts.
-- SSH uses a fresh local Ed25519 keypair generated for each run.
-- SSH forwarding is restricted to local port forwarding (`AllowTcpForwarding local`);
-  remote forwarding, tunnel devices, and gateway ports are disabled.
-- The container drops all Linux capabilities, disables new privileges, and
-  applies CPU, memory, and PID limits.
-
-## Configuration file
-
-If present, `jailbox.conf` in the project root is loaded before launch.
-
-The file is not shell and is never sourced. It uses one setting per line:
-
-```text
-KEY=value
-KEY="value"
-KEY='value'
-```
-
-Arrays use comma-separated values:
-
-```text
-EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com
-```
-
-Matching single or double quotes around a value are allowed and stripped.
-Unknown keys, duplicate keys, spaces around `=`, command substitutions,
-redirects, pipes, semicolons, mismatched or embedded quotes, and other
-unsupported syntax are rejected.
-
-Comments and blank lines are allowed.
-
-## Supported `jailbox.conf` settings
-
-### `DEV_IMAGE`
-
-Use an existing image as the project dev image instead of building one.
-
-```text
-DEV_IMAGE=node:22-bookworm
-```
-
-Default: empty.
-
-### `DEV_CONTAINERFILE`
-
-Explicit container build file to use for the project dev image.
-
-```text
-DEV_CONTAINERFILE=./Dockerfile
-```
-
-If unset, jailbox discovers the first existing file in this order:
-
-1. `Containerfile`
-2. `Dockerfile`
-3. `.devcontainer/Containerfile`
-4. `.devcontainer/Dockerfile`
-
-### `DEV_BUILD_CONTEXT`
-
-Build context passed to `podman build`.
-
-```text
-DEV_BUILD_CONTEXT=.
-```
-
-Default: project root.
-
-### `DEV_TARGET_STAGE`
-
-Build a specific stage from a multi-stage container file.
-
-```text
-DEV_TARGET_STAGE=dev
-```
-
-Use this when the final stage is production/distroless and lacks a shell or
-package manager.
-
-### `EGRESS_ALLOW`
-
-Array of allowed HTTP(S) hosts. If non-empty, jailbox starts a tinyproxy sidecar,
-puts the jailbox container on an internal network, and writes proxy environment
-variables into the generated SSH host config so Remote SSH sessions inherit
-them explicitly.
-
-```text
-EGRESS_ALLOW=claude.ai,github.com,githubusercontent.com,api.github.com
-```
-
-Entries must be plain hostnames, not URLs, wildcards, or regexes. Each entry
-allows the exact hostname and its subdomains.
-
-Default: empty, which means normal outbound network access.
-
-Direct egress is blocked by the internal Podman network. Outbound HTTP(S) is
-brokered through a tinyproxy sidecar. In rootless, zero-capability Podman,
-hostname-aware transparent filtering would require privileged routing,
-firewall, or TUN-style mechanisms that jailbox intentionally avoids. The
-remaining limitation is that enforcement depends on the proxy's
-protocol/domain filtering, not on per-packet domain-aware firewalling.
-
-Enforcement model: enforced at the network-route layer for direct egress;
-allowlist enforcement is proxy-mediated and limited to HTTP(S).
-
-When `EGRESS_ALLOW` is set, jailbox configures egress in four places:
-
-- An internal-only network blocks direct container egress.
-- A tinyproxy sidecar allows HTTP(S) only to configured hostnames.
-- The generated SSH config uses `SetEnv` so normal SSH sessions receive
-  `HTTP_PROXY` and `HTTPS_PROXY`.
-- The generated editor profile sets `terminal.integrated.env.linux` so
-  VS Code/VSCodium integrated terminals and shell tasks receive the same proxy
-  variables.
-- The managed `jailbox` home gets marked proxy blocks in `~/.curlrc` and
-  `~/.wgetrc`. This covers first-run VS Code/VSCodium Remote SSH bootstrap,
-  whose server downloader may run before it reliably uses SSH session
-  environment variables.
-
-The allowlist still has to include the hosts the downloader actually contacts.
-For VSCodium first-run Remote SSH bootstrap, that commonly means both
-`github.com` and GitHub release asset hosts such as `githubusercontent.com`.
-
-The downloader files are modified only in the managed `jailbox` home volume,
-never in the project tree or your host home. Jailbox preserves all existing
-content outside marked blocks:
-
-```text
-# >>> jailbox managed proxy >>>
-...
-# <<< jailbox managed proxy <<<
-```
-
-If `EGRESS_ALLOW` is later disabled, jailbox removes only those managed blocks.
-This does not make egress transparent: tools that ignore proxy environment and
-curl/wget config may still fail, and non-HTTP protocols remain blocked by lack
-of direct routing.
-
-Not protected against:
-
-- Malicious proxy bypasses if tinyproxy has a bug.
-- DNS/CDN/IP drift ambiguity (domain A records can change; IP-based connections
-  bypass the allowlist entirely).
-- Non-HTTP protocols unless blocked by lack of routing.
-- Traffic to services reachable on the internal Podman network.
-
-### `REMOTE_PATH`
-
-Container path where the project is mounted and opened in the editor.
-
-```text
 REMOTE_PATH=/workspace/project
 ```
 
-Default: `/home/jailbox/project`.
+---
 
-## Protected read-only project paths
+## Security & Threat Model
 
-When present, these paths are mounted read-only over the writable project mount:
+### What jailbox does well
+- Read-only root filesystem
+- Zero capabilities + no-new-privileges
+- Rootless Podman containers (`--userns=keep-id`)
+- Fresh SSH keypair per launch
+- No container runtime sockets mounted
+- Strict sshd configuration (key auth only, local forwarding only)
 
-- `Containerfile`
-- `Dockerfile`
-- `.devcontainer/Containerfile`
-- `.devcontainer/Dockerfile`
-- `.git/config`
-- `.git/config.lock`
-- `.git/hooks`
-- `.gitignore`
-- `.gitmodules`
-- `.env`
-- `.gitea/workflows`
-- `.github/workflows`
-- `.jailbox`
-- `jailbox`
-- `jailbox.conf`
+### Important realities
+- The container runs with your **host UID**, so it can read and write your project files
+- Project files are mounted writable. Selected paths like `.git/config`, `.github/workflows`, and `Containerfile` are mounted read-only over the writable project mount.
+- The AI (or any code running in the container) can still exfiltrate or destroy project contents
+- You still share the kernel and container runtime trust boundary
 
-If `jailbox` itself lives inside the project, that subdirectory is also mounted
-read-only.
+jailbox focuses on reducing accidental host exposure and limiting common container escape vectors, not defending against a determined kernel- or runtime-level attacker. It provides much better defaults than running agents directly on the host or in privileged containers, but it is **not** a full sandbox.
 
-## Example configs
+---
 
-Use a discovered local `Containerfile`:
+## How It Works
 
-No `jailbox.conf` is required.
+jailbox follows a clean layered approach:
 
-Use an existing Node image:
+1. **Dev Image** — Uses or builds from your existing `Containerfile`/`Dockerfile`
+2. **Wrapper Image** — Adds OpenSSH server, creates the managed `jailbox` user, and installs hardened sshd config
+3. **Runtime** — Project mounted at `REMOTE_PATH` (writable) with selected paths overlaid read-only, plus a persistent home volume for the jailbox user
+4. **SSH & Editor** — Generates a project-specific SSH config and VS Code/VSCodium user profile (under `~/.local/state/jailbox/editor-profiles/`)
 
-```text
-DEV_IMAGE=node:22-bookworm
-```
+**What remains unavoidable** (due to Remote SSH limitations):
+- An OpenSSH server is still required
+- A generated SSH config is needed for dynamic ports and proxy settings
+- Jailbox uses per-project editor profiles to avoid mutating your normal VS Code settings
 
-Use a dev stage from a multi-stage Dockerfile:
+**What jailbox avoids**:
+- Mutating host `~/.ssh/config`
+- Mounting runtime sockets
+- Dynamic sshd_config rewriting
+- Overwriting `.vscode/settings.json`
 
-```text
-DEV_CONTAINERFILE=./Dockerfile
-DEV_TARGET_STAGE=dev
-DEV_BUILD_CONTEXT=.
-```
+---
 
-Restrict HTTP(S) egress:
+## Requirements
 
-```text
-EGRESS_ALLOW=claude.ai,github.com,githubusercontent.com,api.github.com
-```
+- Linux with **Podman** (rootless preferred)
+- `podman`, `ssh`, `ssh-keygen`
+- VS Code or VSCodium with **Remote - SSH** extension
+
+---
+
+## Project Status
+
+jailbox is usable today for real projects and is actively maintained, but still evolving.
+
+**Repository**: https://github.com/francoisnt/jailbox
+
+---
+
+## License
+
+MIT
