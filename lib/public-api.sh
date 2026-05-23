@@ -11,7 +11,6 @@ CONFIG_SCALAR_KEYS=(
     DEV_CONTAINERFILE
     DEV_BUILD_CONTEXT
     DEV_TARGET_STAGE
-    REMOTE_PATH
 )
 
 CONFIG_ARRAY_KEYS=(
@@ -23,7 +22,6 @@ CONFIG_DEFAULTS=(
     "DEV_CONTAINERFILE="
     "DEV_BUILD_CONTEXT="
     "DEV_TARGET_STAGE="
-    "REMOTE_PATH=/home/jailbox/project"
     "EGRESS_ALLOW="
 )
 
@@ -72,7 +70,6 @@ apply_config_defaults() {
             DEV_CONTAINERFILE) DEV_CONTAINERFILE="$value" ;;
             DEV_BUILD_CONTEXT) DEV_BUILD_CONTEXT="$value" ;;
             DEV_TARGET_STAGE) DEV_TARGET_STAGE="$value" ;;
-            REMOTE_PATH) REMOTE_PATH="$value" ;;
             EGRESS_ALLOW)
                 EGRESS_ALLOW=()
                 ;;

@@ -123,7 +123,6 @@ write_fixture() {
     mkdir -p "$project_dir/.vscode"
     cat > "$project_dir/jailbox.conf" <<EOF
 DEV_IMAGE=${dev_image}
-REMOTE_PATH=/home/jailbox/project
 EOF
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=api.ipify.org,github.com,githubusercontent.com\n' >> "$project_dir/jailbox.conf"

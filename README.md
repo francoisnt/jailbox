@@ -1,14 +1,14 @@
-# jAIlbox
+# jAilbox
 
 **Hardened Remote SSH development environments for your existing dev containers.**
 
-jAIlbox wraps your project's development image with OpenSSH and runs it as a **hardened, rootless Podman container**. It provides safer default isolation for running tools — especially AI coding agents — with access to your project's full toolchain while reducing host exposure.
+jAilbox wraps your project's development image with OpenSSH and runs it as a **hardened, rootless Podman container**. It provides safer default isolation for running tools — especially AI coding agents — with access to your project's full toolchain while reducing host exposure.
 
 ---
 
-## Why jAIlbox matters
+## Why jAilbox matters
 
-AI coding tools can execute and modify code autonomously, which introduces new risks when they have broad access to your machine. jAIlbox addresses this by running everything inside a container that follows strict defaults:
+AI coding tools can execute and modify code autonomously, which introduces new risks when they have broad access to your machine. jAilbox addresses this by running everything inside a container that follows strict defaults:
 
 - Read-only root filesystem
 - Zero Linux capabilities
@@ -38,7 +38,7 @@ cd /path/to/your/project
 jailbox
 ```
 
-jAIlbox will discover or build your dev image, start the container, and open the project in VS Code or VSCodium via Remote SSH.
+jAilbox will discover or build your dev image, start the container, and open the project in VS Code or VSCodium via Remote SSH.
 
 ---
 
@@ -46,7 +46,7 @@ jAIlbox will discover or build your dev image, start the container, and open the
 
 Your development image **must** meet these requirements:
 
-- **Do not** create or rely on a custom user. jAIlbox always creates and runs as its own managed user called `jailbox` (with your host UID).
+- **Do not** create or rely on a custom user. jAilbox always creates and runs as its own managed user called `jailbox` (with your host UID).
 - Install all tools, language runtimes, and dependencies **globally** (system-wide) so they are available to the `jailbox` user.
 - Include `bash` (preferred) or a working `/bin/sh`.
 - Provide a supported package manager (`apt-get`, `apk`, `dnf`, or `yum`).
@@ -68,15 +68,15 @@ jailbox --clean      # Remove container, volume, networks and .jailbox/ state
 
 ## Why not Dev Containers?
 
-jAIlbox is **not** a replacement for Microsoft's Dev Containers specification.
+jAilbox is **not** a replacement for Microsoft's Dev Containers specification.
 
 **Dev Containers** excel at team collaboration, standardized onboarding, and rich configuration through `devcontainer.json`.
 
-**jAIlbox** provides more **opinionated, hardened runtime defaults** focused on reducing risk when running untrusted code (particularly AI agents). It works with plain `Containerfile`/`Dockerfile` setups and adds egress control by default.
+**jAilbox** provides more **opinionated, hardened runtime defaults** focused on reducing risk when running untrusted code (particularly AI agents). It works with plain `Containerfile`/`Dockerfile` setups and adds egress control by default.
 
 **Many teams use both**:
 - Dev Containers for regular development and consistency
-- jAIlbox for AI-assisted coding sessions that benefit from stronger containment
+- jAilbox for AI-assisted coding sessions that benefit from stronger containment
 
 ---
 
@@ -92,15 +92,13 @@ DEV_CONTAINERFILE=./Dockerfile
 DEV_TARGET_STAGE=dev
 
 EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com,claude.ai
-
-REMOTE_PATH=/workspace/project
 ```
 
 ---
 
 ## Security & Threat Model
 
-### What jAIlbox does well
+### What jAilbox does well
 - Read-only root filesystem
 - Zero capabilities + no-new-privileges
 - Rootless Podman containers (`--userns=keep-id`)
@@ -114,25 +112,25 @@ REMOTE_PATH=/workspace/project
 - The AI (or any code running in the container) can still exfiltrate or destroy project contents
 - You still share the kernel and container runtime trust boundary
 
-jAIlbox focuses on reducing accidental host exposure and limiting common container escape vectors, not defending against a determined kernel- or runtime-level attacker. It provides much better defaults than running agents directly on the host or in privileged containers, but it is **not** a full sandbox.
+jAilbox focuses on reducing accidental host exposure and limiting common container escape vectors, not defending against a determined kernel- or runtime-level attacker. It provides much better defaults than running agents directly on the host or in privileged containers, but it is **not** a full sandbox.
 
 ---
 
 ## How It Works
 
-jAIlbox follows a clean layered approach:
+jAilbox follows a clean layered approach:
 
 1. **Dev Image** — Uses or builds from your existing `Containerfile`/`Dockerfile`
 2. **Wrapper Image** — Adds OpenSSH server, creates the managed `jailbox` user, and installs hardened sshd config
-3. **Runtime** — Project mounted at `REMOTE_PATH` (writable) with selected paths overlaid read-only, plus a persistent home volume for the jailbox user
+3. **Runtime** — Project mounted at `/home/jailbox/project` (writable) with selected paths overlaid read-only, plus a persistent home volume for the jailbox user
 4. **SSH & Editor** — Generates a project-specific SSH config and VS Code/VSCodium user profile (under `~/.local/state/jailbox/editor-profiles/`)
 
 **What remains unavoidable** (due to Remote SSH limitations):
 - An OpenSSH server is still required
 - A generated SSH config is needed for dynamic ports and proxy settings
-- jAIlbox uses per-project editor profiles to avoid mutating your normal VS Code settings
+- jAilbox uses per-project editor profiles to avoid mutating your normal VS Code settings
 
-**What jAIlbox avoids**:
+**What jAilbox avoids**:
 - Mutating host `~/.ssh/config`
 - Mounting runtime sockets
 - Dynamic sshd_config rewriting
@@ -150,7 +148,7 @@ jAIlbox follows a clean layered approach:
 
 ## Project Status
 
-jAIlbox is usable today for real projects and is actively maintained, but still evolving.
+jAilbox is usable today for real projects and is actively maintained, but still evolving.
 
 **Repository**: https://github.com/francoisnt/jailbox
 

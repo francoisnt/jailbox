@@ -160,7 +160,6 @@ parse_config_scalar() {
         DEV_CONTAINERFILE) DEV_CONTAINERFILE="$value" ;;
         DEV_BUILD_CONTEXT) DEV_BUILD_CONTEXT="$value" ;;
         DEV_TARGET_STAGE) DEV_TARGET_STAGE="$value" ;;
-        REMOTE_PATH) REMOTE_PATH="$value" ;;
     esac
 }
 
@@ -204,11 +203,6 @@ set_config_array() {
 }
 
 validate_config() {
-    # Validation stays separate from parsing: the parser only recognizes shape,
-    # while validators enforce setting-specific meaning.
-    if [ -n "$REMOTE_PATH" ] && [[ "$REMOTE_PATH" != /* ]]; then
-        die "invalid REMOTE_PATH '$REMOTE_PATH' (must be an absolute container path)"
-    fi
     validate_egress_allow
 }
 

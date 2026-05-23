@@ -11,7 +11,7 @@
 # CONFIGURATION
 #   jailbox.conf in the project root is parsed if present. Supported settings:
 #     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
-#     EGRESS_ALLOW, REMOTE_PATH.
+#     EGRESS_ALLOW.
 #
 # REQUIREMENTS
 #   podman, ssh, ssh-keygen, VSCodium/VSCode with open-remote-ssh extension
@@ -34,6 +34,7 @@ NETWORK_NAME=""
 
 # Runtime state populated by modules
 MANAGED_USER="jailbox"
+REMOTE_PATH="/home/jailbox/project"
 EDITOR_BIN=""
 LOCAL_PORT=""
 MY_UID=""

@@ -374,7 +374,6 @@ run_e2e_case() {
 
     cat > "$project_dir/jailbox.conf" << EOF
 DEV_IMAGE=${dev_image}
-REMOTE_PATH=/home/jailbox/project
 EOF
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/jailbox.conf"
