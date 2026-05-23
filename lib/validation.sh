@@ -74,13 +74,32 @@ check_readonly_mounts() {
 
 validate_egress_policy() {
     if [ "${#EGRESS_ALLOW[@]}" -eq 0 ]; then
+        check_downloader_proxy_config_absent
         return 0
     fi
 
     check_internal_network_flag
     check_proxy_env_in_session
+    check_downloader_proxy_config
     check_direct_egress_blocked
     check_proxy_egress_allowed
+}
+
+check_downloader_proxy_config_absent() {
+    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "bash -s" <<'REMOTE' 2>/dev/null
+set -euo pipefail
+for file in "$HOME/.curlrc" "$HOME/.wgetrc"; do
+    if [[ -f "$file" ]] && grep -Fqx "# >>> jailbox managed proxy >>>" "$file"; then
+        exit 1
+    fi
+done
+REMOTE
+    then
+        return 0
+    fi
+
+    echo "  ⚠️  Stale downloader proxy config remains in non-egress mode"
+    WARNINGS=$((WARNINGS + 1))
 }
 
 check_internal_network_flag() {
@@ -105,6 +124,43 @@ check_proxy_env_in_session() {
     fi
 }
 
+check_downloader_proxy_config() {
+    local proxy_url
+
+    proxy_url="http://$PROXY_NAME:8888"
+    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "PROXY_URL='$proxy_url' bash -s" <<'REMOTE' 2>/dev/null
+set -euo pipefail
+
+check_block() {
+    local file="$1"
+    local expected="$2"
+    local actual
+
+    actual=$(awk '
+        $0 == "# >>> jailbox managed proxy >>>" { in_block = 1; next }
+        $0 == "# <<< jailbox managed proxy <<<" { in_block = 0; found = 1; next }
+        in_block { block = block $0 "\n" }
+        END {
+            if (!found) exit 1
+            printf "%s", block
+        }
+    ' "$file")
+    [[ "$actual" == "$expected" ]]
+}
+
+check_block "$HOME/.curlrc" "proxy = \"$PROXY_URL\""
+check_block "$HOME/.wgetrc" "use_proxy = on
+http_proxy = $PROXY_URL
+https_proxy = $PROXY_URL"
+REMOTE
+    then
+        echo "  ✅ Downloader proxy config is managed"
+    else
+        echo "  ⚠️  Downloader proxy config is missing or stale"
+        WARNINGS=$((WARNINGS + 1))
+    fi
+}
+
 check_direct_egress_blocked() {
     if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "command -v curl >/dev/null 2>&1" 2>/dev/null; then
         echo "  ⚠️  Cannot validate direct egress blocking: curl is not available in jailbox"
@@ -113,7 +169,7 @@ check_direct_egress_blocked() {
     fi
 
     if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-        "env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy curl -fsS --connect-timeout 3 --max-time 5 https://example.com >/dev/null" \
+        "env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy curl -q --noproxy '*' -fsS --connect-timeout 3 --max-time 5 https://example.com >/dev/null" \
         2>/dev/null; then
         echo "  ⚠️  Direct egress succeeded without proxy env — egress policy is not enforced"
         WARNINGS=$((WARNINGS + 1))
@@ -138,6 +194,15 @@ check_proxy_egress_allowed() {
         echo "  ✅ Proxy egress to $validation_domain succeeded"
     else
         echo "  ⚠️  Proxy egress to $validation_domain failed"
+        WARNINGS=$((WARNINGS + 1))
+    fi
+
+    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+        "if command -v wget >/dev/null 2>&1; then wget -qO- --timeout=10 'https://$validation_domain' >/dev/null; fi" \
+        2>/dev/null; then
+        :
+    else
+        echo "  ⚠️  wget proxy egress to $validation_domain failed"
         WARNINGS=$((WARNINGS + 1))
     fi
 }

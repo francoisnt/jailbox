@@ -22,8 +22,8 @@ shellcheck --shell=bash "$@" \
     install.sh \
     tests/config-parser.sh \
     tests/e2e-headless.sh \
-    tests/integration-images.sh \
-    tests/manual-vscodium.sh
+    tests/editor-smoke.sh \
+    tests/integration-images.sh
 
 # POSIX sh scripts
 echo "shellcheck: install/ and jailbox-start"

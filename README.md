@@ -277,7 +277,7 @@ KEY='value'
 Arrays use comma-separated values:
 
 ```text
-EGRESS_ALLOW=github.com,api.github.com
+EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com
 ```
 
 Matching single or double quotes around a value are allowed and stripped.
@@ -343,7 +343,7 @@ variables into the generated SSH host config so Remote SSH sessions inherit
 them explicitly.
 
 ```text
-EGRESS_ALLOW=claude.ai,github.com,api.github.com
+EGRESS_ALLOW=claude.ai,github.com,githubusercontent.com,api.github.com
 ```
 
 Entries must be plain hostnames, not URLs, wildcards, or regexes. Each entry
@@ -352,12 +352,47 @@ allows the exact hostname and its subdomains.
 Default: empty, which means normal outbound network access.
 
 Direct egress is blocked by the internal Podman network. Outbound HTTP(S) is
-brokered through a tinyproxy sidecar. The remaining limitation is that
-enforcement depends on the proxy's protocol/domain filtering, not on per-packet
-domain-aware firewalling.
+brokered through a tinyproxy sidecar. In rootless, zero-capability Podman,
+hostname-aware transparent filtering would require privileged routing,
+firewall, or TUN-style mechanisms that jailbox intentionally avoids. The
+remaining limitation is that enforcement depends on the proxy's
+protocol/domain filtering, not on per-packet domain-aware firewalling.
 
 Enforcement model: enforced at the network-route layer for direct egress;
 allowlist enforcement is proxy-mediated and limited to HTTP(S).
+
+When `EGRESS_ALLOW` is set, jailbox configures egress in four places:
+
+- An internal-only network blocks direct container egress.
+- A tinyproxy sidecar allows HTTP(S) only to configured hostnames.
+- The generated SSH config uses `SetEnv` so normal SSH sessions receive
+  `HTTP_PROXY` and `HTTPS_PROXY`.
+- The generated editor profile sets `terminal.integrated.env.linux` so
+  VS Code/VSCodium integrated terminals and shell tasks receive the same proxy
+  variables.
+- The managed `jailbox` home gets marked proxy blocks in `~/.curlrc` and
+  `~/.wgetrc`. This covers first-run VS Code/VSCodium Remote SSH bootstrap,
+  whose server downloader may run before it reliably uses SSH session
+  environment variables.
+
+The allowlist still has to include the hosts the downloader actually contacts.
+For VSCodium first-run Remote SSH bootstrap, that commonly means both
+`github.com` and GitHub release asset hosts such as `githubusercontent.com`.
+
+The downloader files are modified only in the managed `jailbox` home volume,
+never in the project tree or your host home. Jailbox preserves all existing
+content outside marked blocks:
+
+```text
+# >>> jailbox managed proxy >>>
+...
+# <<< jailbox managed proxy <<<
+```
+
+If `EGRESS_ALLOW` is later disabled, jailbox removes only those managed blocks.
+This does not make egress transparent: tools that ignore proxy environment and
+curl/wget config may still fail, and non-HTTP protocols remain blocked by lack
+of direct routing.
 
 Not protected against:
 
@@ -423,5 +458,5 @@ DEV_BUILD_CONTEXT=.
 Restrict HTTP(S) egress:
 
 ```text
-EGRESS_ALLOW=claude.ai,github.com,api.github.com
+EGRESS_ALLOW=claude.ai,github.com,githubusercontent.com,api.github.com
 ```

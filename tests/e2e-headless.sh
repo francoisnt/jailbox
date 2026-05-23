@@ -151,7 +151,7 @@ assert_vscodium_reh_probe() {
     local config="$1" ctr="$2" port="$3" desc="$4"
     local remote_output remote_output_file remote_rc listening_on tunnel_pid=""
 
-    # Mirrors the current VSCodium/Open Remote SSH server used in manual tests.
+    # Mirrors the current VSCodium/Open Remote SSH server used in editor smoke tests.
     # Keep these overridable so CI can follow VSCodium release bumps without
     # editing the test script first.
     local reh_release="${JAILBOX_E2E_REH_RELEASE:-1.116.02821}"
@@ -419,6 +419,10 @@ EOF
         "printf '%s\n' edited > /home/jailbox/project/editor-write.txt"
     assert_ssh "$ssh_cfg" "$ctr" "git index write works with managed UID" \
         "git -C /home/jailbox/project add editor-write.txt"
+    if [[ "$stage" != "egress" ]]; then
+        assert_ssh "$ssh_cfg" "$ctr" "no stale managed downloader proxy blocks" \
+            "! { { test -f \"\$HOME/.curlrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\"; } || { test -f \"\$HOME/.wgetrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\"; }; }"
+    fi
 
     # Security
     assert_ssh_fails "$ssh_cfg" "$ctr" "rootfs is read-only"  "touch /etc/.e2e-test"
@@ -433,6 +437,10 @@ EOF
 
         assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
             "[ -n \"\$HTTPS_PROXY\" ]"
+        assert_ssh "$ssh_cfg" "$ctr" "curl downloader proxy block is managed" \
+            "grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\" && grep -Fqx 'proxy = \"http://${proxy_ctr}:8888\"' \"\$HOME/.curlrc\" && grep -Fqx '# <<< jailbox managed proxy <<<' \"\$HOME/.curlrc\""
+        assert_ssh "$ssh_cfg" "$ctr" "wget downloader proxy block is managed" \
+            "grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\" && grep -Fqx 'use_proxy = on' \"\$HOME/.wgetrc\" && grep -Fqx 'http_proxy = http://${proxy_ctr}:8888' \"\$HOME/.wgetrc\" && grep -Fqx 'https_proxy = http://${proxy_ctr}:8888' \"\$HOME/.wgetrc\" && grep -Fqx '# <<< jailbox managed proxy <<<' \"\$HOME/.wgetrc\""
         if grep -Fq "HTTPS_PROXY=http://${proxy_ctr}:8888" "$ssh_cfg"; then
             pass "generated SSH config carries proxy environment"
         else
@@ -444,6 +452,8 @@ EOF
             "timeout 5 bash -c 'exec 3<>/dev/tcp/8.8.8.8/443' 2>/dev/null"
         assert_ssh "$ssh_cfg" "$ctr" "curl via proxy to allowed host (api.ipify.org) succeeds" \
             "curl -fsS --connect-timeout 5 --max-time 10 https://api.ipify.org >/dev/null"
+        assert_ssh "$ssh_cfg" "$ctr" "wget via managed proxy config to allowed host succeeds when available" \
+            "if command -v wget >/dev/null 2>&1; then wget -qO- --timeout=10 https://api.ipify.org >/dev/null; fi"
         assert_ssh_fails "$ssh_cfg" "$ctr" "curl via proxy to disallowed host fails" \
             "curl --connect-timeout 10 --max-time 10 -fs http://not-in-allowlist.example.org"
         assert_ssh_fails "$ssh_cfg" "$ctr" "proxy rejects CONNECT to non-443 port" \
@@ -455,6 +465,10 @@ EOF
             "env | grep -i proxy || echo '(none)'" 2>/dev/null || true
         echo "  [diag] SetEnv lines in generated SSH config:"
         grep -i setenv "$ssh_cfg" 2>/dev/null || echo "(none)"
+        echo "  [diag] managed downloader proxy blocks:"
+        ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+            "for f in \"\$HOME/.curlrc\" \"\$HOME/.wgetrc\"; do echo --- \$f; if [ -f \"\$f\" ]; then sed -n '/# >>> jailbox managed proxy >>>/,/# <<< jailbox managed proxy <<</p' \"\$f\"; else echo '(missing)'; fi; done" \
+            2>/dev/null || true
         echo "  [diag] proxy direct reach (wget api.ipify.org, bypassing tinyproxy):"
         podman exec "$proxy_ctr" wget -qO- --timeout=5 http://api.ipify.org 2>&1 || echo "(wget failed)"
         echo "  [diag] curl verbose via proxy (inside jailbox):"

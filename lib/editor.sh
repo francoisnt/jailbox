@@ -28,10 +28,26 @@ editor_config_has_ssh_config() {
 
 write_jailbox_editor_user_settings() {
     mkdir -p "$(dirname "$JAILBOX_EDITOR_USER_SETTINGS")"
-    cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
+    if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+        cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
+{
+  "remote.SSH.configFile": "$SSH_CONFIG",
+  "terminal.integrated.env.linux": {
+    "HTTP_PROXY": "http://$PROXY_NAME:8888",
+    "HTTPS_PROXY": "http://$PROXY_NAME:8888",
+    "http_proxy": "http://$PROXY_NAME:8888",
+    "https_proxy": "http://$PROXY_NAME:8888",
+    "NO_PROXY": "localhost,127.0.0.1",
+    "no_proxy": "localhost,127.0.0.1"
+  }
+}
+EOF_SETTINGS
+    else
+        cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
 {
   "remote.SSH.configFile": "$SSH_CONFIG"
 }
 EOF_SETTINGS
+    fi
     chmod 600 "$JAILBOX_EDITOR_USER_SETTINGS"
 }
