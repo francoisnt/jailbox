@@ -69,11 +69,8 @@ ensure_home_volume() {
 
 start_jailbox_container() {
     echo "🚢 Starting jailbox..."
-    # Keep the runtime non-privileged, but restore the narrow privilege set
-    # OpenSSH needs after --cap-drop=ALL: DAC_OVERRIDE for strict key and user
-    # file checks across mounted homes, SETUID/SETGID for switching
-    # authenticated sessions from root sshd to the managed user, and SYS_CHROOT for
-    # sshd's privilege-separation path.
+    # Keep the runtime non-privileged, but restore the narrow privilege OpenSSH
+    # still needs for strict key and user file checks across mounted homes.
     podman run -d \
         --name "$CONTAINER_NAME" \
         --replace \
@@ -93,7 +90,7 @@ start_jailbox_container() {
         --pids-limit=256 \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
-        --cap-add=DAC_OVERRIDE,SETUID,SETGID,SYS_CHROOT \
+        --cap-add=DAC_OVERRIDE \
         "$JAILBOX_IMAGE"
 }
 

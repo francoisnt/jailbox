@@ -248,8 +248,8 @@ run_case() {
         -p "127.0.0.1:${port}:2222" \
         -v "${ssh_dir}/key.pub:/home/jailbox/.ssh/authorized_keys:ro,Z" \
         --cap-drop=ALL \
-        --cap-add=DAC_OVERRIDE,SETUID,SETGID,SYS_CHROOT \
         --security-opt=no-new-privileges \
+        --cap-add=DAC_OVERRIDE \
         "$wrapper_image" >/dev/null
 
     if ! wait_for_ssh "$ssh_dir/config"; then
