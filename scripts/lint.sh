@@ -20,11 +20,12 @@ shellcheck --shell=bash "$@" \
     scripts/public-api-diff.sh \
     scripts/release.sh \
     install.sh \
-    tests/config-parser.sh \
-    tests/e2e-headless.sh \
-    tests/editor-smoke.sh \
-    tests/integration-images.sh \
-    tests/proxy-bootstrap.sh \
+    tests/unit/config-parser.sh \
+    tests/unit/proxy-bootstrap.sh \
+    tests/integration/images.sh \
+    tests/integration/runtime-security.sh \
+    tests/e2e/headless.sh \
+    tests/e2e/editor-smoke.sh \
     tests/run-all.sh
 
 # Bash scripts in install/ (bash justified: container always installs bash)

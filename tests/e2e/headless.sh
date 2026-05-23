@@ -2,18 +2,18 @@
 # E2E test for jailbox.
 #
 # For each stage: runs the full jailbox CLI, then while the container is still
-# up runs headless SSH assertions covering security, tools, shell, and mounts.
+# up runs headless SSH assertions covering tools, shell, mounts, and egress.
 # All stages run in parallel; output is buffered and printed in defined order.
 #
-# Prerequisites: run tests/integration-images.sh first to build the jailbox-test-* images.
+# Prerequisites: run tests/integration/images.sh first to build the jailbox-test-* images.
 #
-# Usage: tests/e2e-headless.sh [stage...]
+# Usage: tests/e2e/headless.sh [stage...]
 # Env:   JAILBOX_E2E_REH_RELEASE / JAILBOX_E2E_REH_COMMIT
 #                              VSCodium REH build to smoke-test on Alpine
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
+JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ALL_STAGES=(debian alpine fedora egress)
 
@@ -40,9 +40,9 @@ usage() {
 Usage: $(basename "$0") [stage...]
 
 End-to-end jailbox tests. Runs the full CLI pipeline then verifies
-security, tools, shell, and mounts via SSH.
+tools, shell, mounts, and egress via SSH.
 
-Run tests/integration-images.sh first to build the jailbox-test-* images.
+Run tests/integration/images.sh first to build the jailbox-test-* images.
 
 Stages: ${ALL_STAGES[*]}
 
@@ -424,13 +424,6 @@ EOF
             "! { { test -f \"\$HOME/.curlrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\"; } || { test -f \"\$HOME/.wgetrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\"; }; }"
     fi
 
-    # Security
-    assert_ssh_fails "$ssh_cfg" "$ctr" "rootfs is read-only"  "touch /etc/.e2e-test"
-    assert_ssh       "$ssh_cfg" "$ctr" "no docker socket"     "! test -S /var/run/docker.sock"
-    assert_ssh       "$ssh_cfg" "$ctr" "no podman socket"     "! test -S /run/podman/podman.sock"
-    assert_ssh       "$ssh_cfg" "$ctr" "container starts with zero effective capabilities" \
-        "awk '/^CapEff:/ { exit (\$2 == \"0000000000000000\" ? 0 : 1) }' /proc/1/status"
-
     # Editor settings (host-side file written by jailbox before launching editor)
     local settings_hash settings_path
     settings_hash=$(printf '%s' "$project_dir" | cksum | cut -d' ' -f1)
@@ -525,7 +518,7 @@ main() {
     for stage in "${stages[@]}"; do
         required_image=$(stage_test_image "$stage")
         podman image exists "$required_image" 2>/dev/null || \
-            die "$required_image not found — run tests/integration-images.sh first"
+            die "$required_image not found - run tests/integration/images.sh first"
     done
 
     local log_dir

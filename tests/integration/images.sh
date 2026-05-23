@@ -11,11 +11,11 @@
 # Each stage gets its own SSH port so all stages can run simultaneously.
 # Output is buffered per stage and printed in order once all finish.
 #
-# Usage: tests/integration-images.sh [stage...]
+# Usage: tests/integration/images.sh [stage...]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
+JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ALL_STAGES=(debian alpine fedora uid-owned-by-other-user user-conflict)
 
@@ -115,36 +115,9 @@ assert_ssh() {
     fi
 }
 
-assert_runtime_dir_valid() {
-    local config="$1" desc="$2"
+# shellcheck source=tests/integration/runtime-security.sh
+source "$SCRIPT_DIR/runtime-security.sh"
 
-    # shellcheck disable=SC2016  # remote script expands inside the container
-    if ssh_run "$config" '
-        set -e
-
-        test -d /run/jailbox-sshd
-        test -w /run/jailbox-sshd
-
-        runtime_uid=$(
-            stat -c "%u" /run/jailbox-sshd 2>/dev/null ||
-            stat -f "%u" /run/jailbox-sshd
-        )
-        test "$runtime_uid" = "$(id -u)"
-
-        runtime_mode=$(
-            stat -c "%a" /run/jailbox-sshd 2>/dev/null ||
-            stat -f "%Lp" /run/jailbox-sshd
-        )
-        case "$runtime_mode" in
-            700|1700) ;;
-            *) exit 1 ;;
-        esac
-    ' 2>/dev/null; then
-        pass "$desc"
-    else
-        fail "$desc"
-    fi
-}
 
 assert_eq() {
     local desc="$1" expected="$2" actual="$3"
@@ -185,53 +158,6 @@ assert_local_forwarding() {
     kill "$forward_pid" >/dev/null 2>&1 || true
     wait "$forward_pid" 2>/dev/null || true
     fail "$desc"
-}
-
-assert_bad_runtime_dir_fails() {
-    local wrapper_image="$1" ssh_dir="$2" desc="$3"
-    local bad_ctr bad_home bad_runtime bad_uid logs rc
-
-    bad_ctr="${ctr}-bad-runtime"
-    bad_home=$(mktemp -d)
-    bad_runtime=$(mktemp -d)
-    bad_uid=$(( $(id -u) + 10000 ))
-    logs=""
-    rc=0
-
-    podman rm -f "$bad_ctr" >/dev/null 2>&1 || true
-
-    if podman run -d \
-        --name "$bad_ctr" \
-        --replace \
-        --userns=keep-id \
-        --user "${bad_uid}:${bad_uid}" \
-        --read-only \
-        --tmpfs /tmp:rw,size=64m \
-        --tmpfs /run:rw,size=64m \
-        -v "${bad_home}:/home/jailbox:Z" \
-        -v "${bad_runtime}:/run/jailbox-sshd:Z" \
-        -v "${ssh_dir}/key.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
-        --cap-drop=ALL \
-        --security-opt=no-new-privileges \
-        "$wrapper_image" >/dev/null; then
-        podman wait "$bad_ctr" >/dev/null 2>&1 || true
-        rc=$(podman inspect "$bad_ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo 0)
-        logs=$(podman logs "$bad_ctr" 2>&1 || true)
-    else
-        rc=1
-        logs=$(podman logs "$bad_ctr" 2>&1 || true)
-    fi
-
-    podman rm -f "$bad_ctr" >/dev/null 2>&1 || true
-    rm -rf "$bad_home" "$bad_runtime"
-
-    if [ "$rc" -ne 0 ] && grep -Fq "sshd runtime directory" <<< "$logs"; then
-        pass "$desc"
-    else
-        fail "$desc"
-        echo "  Bad runtime diagnostic (exit $rc):" >&2
-        printf '%s\n' "$logs" | sed 's/^/    /' >&2
-    fi
 }
 
 # ── run_case ──────────────────────────────────────────────────────────────────
@@ -323,7 +249,7 @@ run_case() {
     pass "images build"
 
     setup_ssh_keys "$ssh_dir" "$port"
-    assert_bad_runtime_dir_fails "$wrapper_image" "$ssh_dir" "bad sshd runtime directory fails clearly before sshd"
+    assert_bad_runtime_dir_fails "$wrapper_image" "$ssh_dir" "$ctr" "bad sshd runtime directory fails clearly before sshd"
 
     # Mirror production's /run/jailbox-sshd bind mount. A plain tmpfs at that
     # path is root-owned under Podman, while a world-writable /run breaks
@@ -360,8 +286,9 @@ run_case() {
     assert_eq "UID matches host"       "$(id -u)"  "$(ssh_run "$ssh_dir/config" id -u 2>/dev/null || true)"
     assert_runtime_dir_valid "$ssh_dir/config" "sshd runtime directory is writable, private, and owned by runtime UID"
     assert_ssh "$ssh_dir/config" "home dir exists"  "test -d /home/jailbox"
-    assert_ssh "$ssh_dir/config" "no docker socket" "! test -S /var/run/docker.sock"
-    assert_ssh "$ssh_dir/config" "no podman socket"  "! test -S /run/podman/podman.sock"
+    assert_rootfs_read_only "$ssh_dir/config" "rootfs is read-only"
+    assert_host_container_sockets_absent "$ssh_dir/config"
+    assert_zero_effective_capabilities "$ssh_dir/config"
     assert_local_forwarding "$ssh_dir/config" "$forward_port" "SSH local forwarding works"
 }
 

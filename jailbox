@@ -80,33 +80,7 @@ source "$SCRIPT_DIR/lib/runtime.sh"
 # shellcheck source=lib/validation.sh
 source "$SCRIPT_DIR/lib/validation.sh"
 
-main() {
-    load_project_config
-    parse_args "$@"
-    host_preflight "$@"
-    initialize_project_names
-    configure_readonly_paths
-
-    if [[ "${1:-}" == "ssh-config" ]]; then
-        initialize_runtime_ids
-        if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
-            configure_proxy_env
-        fi
-        print_ssh_config_instructions
-        return 0
-    fi
-
-    if [[ "${1:-}" == "doctor" ]]; then
-        initialize_runtime_ids
-        doctor_jailbox
-        return 0
-    fi
-
-    if [[ "${1:-}" == "--clean" ]]; then
-        clean_jailbox
-        return 0
-    fi
-
+run_launch() {
     initialize_runtime_ids
     ensure_jailbox_gitignore
     build_or_select_dev_image
@@ -122,6 +96,50 @@ main() {
     configure_downloader_proxy
     post_start_validation
     open_editor
+}
+
+run_doctor() {
+    initialize_runtime_ids
+    doctor_jailbox
+}
+
+run_ssh_config() {
+    initialize_runtime_ids
+    if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+        configure_proxy_env
+    fi
+    print_ssh_config_instructions
+}
+
+run_clean() {
+    clean_jailbox
+}
+
+initialize_common_state() {
+    initialize_project_names
+    configure_readonly_paths
+}
+
+main() {
+    load_project_config
+    parse_args "$@"
+    host_preflight "$@"
+    initialize_common_state
+
+    case "${1:-}" in
+        doctor)
+            run_doctor
+            ;;
+        ssh-config)
+            run_ssh_config
+            ;;
+        --clean)
+            run_clean
+            ;;
+        *)
+            run_launch
+            ;;
+    esac
 }
 
 main "$@"

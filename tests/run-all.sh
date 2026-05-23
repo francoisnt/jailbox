@@ -1,12 +1,10 @@
 #!/bin/bash
 # Run all jailbox test suites in fast-fail order.
 #
-# Ordering rationale — most likely to fail first:
-#   1. proxy-bootstrap  unit test  (pure shell, covers recently added code)
-#   2. config-parser    unit test  (pure shell, covers core parsing logic)
-#   3. integration-images          (builds wrapper image; exercises setup.sh)
-#   4. e2e-headless                (full jailbox CLI; needs images from step 3)
-#   5. editor-smoke                (requires a running editor; skipped if absent)
+# Ordering:
+#   1. unit tests        pure shell, no Podman
+#   2. integration tests build/run containers, no editor GUI
+#   3. e2e tests         full jailbox workflow and editor smoke
 #
 # Suites that require podman are skipped automatically when podman is absent.
 # The editor suite is skipped when neither codium nor code is in PATH.
@@ -47,7 +45,13 @@ suite_skip()  {
 }
 
 have_podman() { command -v podman >/dev/null 2>&1; }
-have_editor() { command -v codium >/dev/null 2>&1 || command -v code >/dev/null 2>&1; }
+have_editor() {
+    command -v codium >/dev/null 2>&1 || command -v code >/dev/null 2>&1
+}
+
+have_display() {
+    [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
+}
 
 run_suite() {
     local label="$1"; shift
@@ -84,11 +88,11 @@ Options:
   --help          Show this help
 
 Suites (in order):
-  proxy-bootstrap    unit test — install/manage-proxy-bootstrap.sh
-  config-parser      unit test — lib/public-api.sh config parsing
-  integration-images build jailbox-test-* wrapper images and run assertions
-  e2e-headless       full jailbox CLI end-to-end (headless)
-  editor-smoke       launch VSCodium/VS Code and verify Remote SSH task
+  unit/config-parser        lib/public-api.sh config parsing
+  unit/proxy-bootstrap      install/manage-proxy-bootstrap.sh
+  integration/images        build images and run container/runtime/security assertions
+  e2e/headless              full jailbox CLI end-to-end, headless editor stub
+  e2e/editor-smoke          launch VSCodium/VS Code and verify Remote SSH task
 EOF
 }
 
@@ -109,11 +113,9 @@ echo "jailbox test runner"
 echo "Working directory: $JAILBOX_DIR"
 echo ""
 
-# 1. proxy-bootstrap unit test (pure shell; most recently added code)
-run_suite "proxy-bootstrap" bash "$SCRIPT_DIR/proxy-bootstrap.sh"
-
-# 2. config-parser unit test (pure shell; covers core parsing invariants)
-run_suite "config-parser" bash "$SCRIPT_DIR/config-parser.sh"
+# 1. Unit tests: pure shell, no Podman.
+run_suite "unit/config-parser" bash "$SCRIPT_DIR/unit/config-parser.sh"
+run_suite "unit/proxy-bootstrap" bash "$SCRIPT_DIR/unit/proxy-bootstrap.sh"
 
 if [[ "$UNIT_ONLY" == true ]]; then
     echo ""
@@ -122,29 +124,30 @@ if [[ "$UNIT_ONLY" == true ]]; then
     exit 0
 fi
 
-# 3. integration-images (podman required; builds jailbox-test-* images used by
-#    e2e and editor suites — must run before them)
+# 2. Integration tests: Podman required, no editor GUI. The images suite also
+#    runs runtime/security assertions during its existing container launches.
 if ! have_podman; then
-    suite_skip "integration-images" "podman not found"
-    suite_skip "e2e-headless"       "podman not found"
-    suite_skip "editor-smoke"       "podman not found"
+    suite_skip "integration/images" "podman not found"
+    suite_skip "e2e/headless"       "podman not found"
+    suite_skip "e2e/editor-smoke"   "podman not found"
     print_summary
     exit 0
 fi
 
-run_suite "integration-images" bash "$SCRIPT_DIR/integration-images.sh"
+run_suite "integration/images" bash "$SCRIPT_DIR/integration/images.sh"
 
-# 4. e2e-headless (podman required; runs full jailbox CLI against the images
-#    built in the previous step)
-run_suite "e2e-headless" bash "$SCRIPT_DIR/e2e-headless.sh"
+# 3. E2E tests: full jailbox workflow. Headless uses an editor stub; editor
+#    smoke requires a real VSCodium/VS Code CLI.
+run_suite "e2e/headless" bash "$SCRIPT_DIR/e2e/headless.sh"
 
-# 5. editor-smoke (podman + editor required; most environment-specific)
 if [[ "$SKIP_EDITOR" == true ]]; then
-    suite_skip "editor-smoke" "--skip-editor"
+    suite_skip "e2e/editor-smoke" "--skip-editor"
 elif ! have_editor; then
-    suite_skip "editor-smoke" "neither codium nor code found in PATH"
+    suite_skip "e2e/editor-smoke" "neither codium nor code found in PATH"
+elif ! have_display; then
+    suite_skip "e2e/editor-smoke" "no graphical display session found"
 else
-    run_suite "editor-smoke" bash "$SCRIPT_DIR/editor-smoke.sh"
+    run_suite "e2e/editor-smoke" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
 fi
 
 print_summary

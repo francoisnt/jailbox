@@ -6,15 +6,15 @@
 # opens the Remote SSH workspace with automatic tasks enabled, and verifies the
 # proof file from the host.
 #
-# Prerequisites: run tests/integration-images.sh first to build the jailbox-test-* images.
+# Prerequisites: run tests/integration/images.sh first to build the jailbox-test-* images.
 #
-# Usage: tests/editor-smoke.sh [stage...]
+# Usage: tests/e2e/editor-smoke.sh [stage...]
 # Env:   JAILBOX_EDITOR_TIMEOUT seconds to wait for the proof file (default: 20)
 #        JAILBOX_KEEP_FAILED=1 keeps failed temp projects/containers for diagnosis
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
+JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ALL_STAGES=(debian alpine fedora egress)
 PROOF_FILE=".jailbox-editor-proof"
@@ -66,7 +66,7 @@ Stages: ${ALL_STAGES[*]}
 Default: all stages in order.
 
 Requires: podman, ssh, ssh-keygen, VSCodium or VS Code CLI.
-Run tests/integration-images.sh first to build the jailbox-test-* images.
+Run tests/integration/images.sh first to build the jailbox-test-* images.
 
 Environment:
   JAILBOX_EDITOR_TIMEOUT  Seconds to wait for $PROOF_FILE (default: 20)
@@ -106,6 +106,10 @@ editor_bin() {
     else
         return 1
     fi
+}
+
+have_display() {
+    [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
 }
 
 write_fixture() {
@@ -456,6 +460,7 @@ main() {
     command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
     command -v cksum      >/dev/null 2>&1 || die "cksum is required"
     editor_bin >/dev/null || die "neither 'codium' nor 'code' was found in PATH"
+    have_display || die "no graphical display session found; run with tests/run-all.sh --skip-editor on headless hosts"
     [[ "$EDITOR_TIMEOUT" =~ ^[0-9]+$ ]] || die "JAILBOX_EDITOR_TIMEOUT must be a positive integer"
     [[ "$EDITOR_TIMEOUT" -gt 0 ]] || die "JAILBOX_EDITOR_TIMEOUT must be greater than zero"
 
@@ -474,7 +479,7 @@ main() {
     for stage in "${stages[@]}"; do
         required_image=$(stage_test_image "$stage")
         podman image exists "$required_image" 2>/dev/null || \
-            die "$required_image not found - run tests/integration-images.sh first"
+            die "$required_image not found - run tests/integration/images.sh first"
     done
 
     setup_logging

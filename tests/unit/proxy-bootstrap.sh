@@ -4,11 +4,11 @@
 # Tests are run with a temporary HOME directory so the script operates on
 # isolated dotfiles without touching the developer's actual home.
 #
-# Usage: tests/proxy-bootstrap.sh
+# Usage: tests/unit/proxy-bootstrap.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
+JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 MANAGE_PROXY="$JAILBOX_DIR/install/manage-proxy-bootstrap.sh"
 
 PASSED=0
