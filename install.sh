@@ -27,6 +27,7 @@ REQUIRED_PATHS=(
     "jailbox"
     "lib/common.sh"
     "lib/dev-image.sh"
+    "lib/editor.sh"
     "lib/network.sh"
     "lib/preflight.sh"
     "lib/public-api.sh"

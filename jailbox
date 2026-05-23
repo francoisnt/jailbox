@@ -69,6 +69,8 @@ source "$SCRIPT_DIR/lib/dev-image.sh"
 source "$SCRIPT_DIR/lib/ssh.sh"
 # shellcheck source=lib/network.sh
 source "$SCRIPT_DIR/lib/network.sh"
+# shellcheck source=lib/editor.sh
+source "$SCRIPT_DIR/lib/editor.sh"
 # shellcheck source=lib/runtime.sh
 source "$SCRIPT_DIR/lib/runtime.sh"
 # shellcheck source=lib/validation.sh

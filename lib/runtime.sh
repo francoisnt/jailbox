@@ -1,4 +1,4 @@
-# Read-only mounts, persistent home, cleanup, container start, and editor launch.
+# Read-only mounts, persistent home, cleanup, and container launch.
 
 configure_readonly_paths() {
     READONLY_PATHS=(
@@ -97,25 +97,6 @@ start_jailbox_container() {
         "$JAILBOX_IMAGE"
 }
 
-open_editor() {
-    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" true 2>/dev/null; then
-        echo "Error: jailbox could not verify SSH before opening the editor." >&2
-        echo "SSH config: $SSH_CONFIG" >&2
-        echo "Host alias: $CONTAINER_NAME" >&2
-        return 1
-    fi
-
-    write_jailbox_workspace
-    echo "🚀 Connecting..."
-    launch_editor_remote
-}
-
-launch_editor_remote() {
-    write_jailbox_editor_user_settings
-    "$EDITOR_BIN" --user-data-dir "$JAILBOX_EDITOR_USER_DATA" \
-        --remote "ssh-remote+$CONTAINER_NAME" "$REMOTE_PATH"
-}
-
 ensure_jailbox_gitignore() {
     ensure_gitignore_entry ".jailbox/"
 }
@@ -142,41 +123,6 @@ gitignore_has_entry() {
     entry="$1"
     gitignore_file="$PROJECT_DIR/.gitignore"
     [ -f "$gitignore_file" ] && grep -Fxq "$entry" "$gitignore_file"
-}
-
-editor_config_has_ssh_config() {
-    local config_file
-
-    config_file="$1"
-    [ -f "$config_file" ] || return 1
-    grep -Fq "\"remote.SSH.configFile\": \"$SSH_CONFIG\"" "$config_file"
-}
-
-write_jailbox_workspace() {
-    mkdir -p "$SSH_DIR"
-    cat > "$JAILBOX_WORKSPACE" <<EOF_WORKSPACE
-{
-  "folders": [
-    {
-      "uri": "vscode-remote://ssh-remote+$CONTAINER_NAME$REMOTE_PATH"
-    }
-  ],
-  "settings": {
-    "remote.SSH.configFile": "$SSH_CONFIG"
-  }
-}
-EOF_WORKSPACE
-    chmod 600 "$JAILBOX_WORKSPACE"
-}
-
-write_jailbox_editor_user_settings() {
-    mkdir -p "$(dirname "$JAILBOX_EDITOR_USER_SETTINGS")"
-    cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
-{
-  "remote.SSH.configFile": "$SSH_CONFIG"
-}
-EOF_SETTINGS
-    chmod 600 "$JAILBOX_EDITOR_USER_SETTINGS"
 }
 
 doctor_jailbox() {
