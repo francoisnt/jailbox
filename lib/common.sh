@@ -198,6 +198,9 @@ initialize_project_names() {
     SSH_CONFIG="$SSH_DIR/ssh_config"
     KNOWN_HOSTS="$SSH_DIR/known_hosts"
     KEY_FILE="$SSH_DIR/key"
+    # Host-side backing store for sshd runtime state. It is bind-mounted to
+    # /run/jailbox-sshd so the container path remains ephemeral daemon state,
+    # while ownership still matches the non-root keep-id entrypoint.
     SSHD_RUNTIME_DIR="$SSH_DIR/sshd-runtime"
     JAILBOX_EDITOR_USER_DATA="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/editor-profiles/$PROJECT_HASH"
     JAILBOX_EDITOR_USER_SETTINGS="$JAILBOX_EDITOR_USER_DATA/User/settings.json"

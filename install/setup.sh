@@ -129,11 +129,6 @@ if command -v usermod >/dev/null 2>&1; then
     usermod -p '*' "$MANAGED_USER" 2>/dev/null || true
 fi
 
-# SSH directory
-mkdir -p "$MANAGED_HOME/.ssh"
-chmod 700 "$MANAGED_HOME/.ssh"
-chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME/.ssh"
-
 # ── sshd hardening ────────────────────────────────────────────────────────────
 # Generate host keys for any missing algorithm.
 ssh-keygen -A
@@ -143,6 +138,11 @@ ssh-keygen -A
 #
 # Both ChallengeResponseAuthentication (pre-8.7) and
 # KbdInteractiveAuthentication (8.7+) are set to cover all OpenSSH versions.
+#
+# Runtime auth and host-key files are generated under /run/jailbox-sshd. That
+# path is backed by a strict, user-owned bind mount so sshd can satisfy
+# StrictModes under rootless Podman/userns without permission-bypass
+# capabilities.
 cat > /etc/ssh/jailbox_sshd_config << EOF
 Port 2222
 PidFile /run/jailbox-sshd/sshd.pid

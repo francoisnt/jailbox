@@ -8,6 +8,12 @@ if [ ! -s /etc/ssh/jailbox_authorized_keys.source ]; then
     echo 'authorized_keys source missing or empty' >&2
     exit 1
 fi
+# The source key is a read-only bind mount from the host. Copy it before handing
+# control to sshd so the file sshd validates has ordinary ownership/mode bits
+# inside a StrictModes-safe directory, rather than bind-mount metadata.
+# Runtime SSH files live under /run inside the container, backed by a fresh
+# user-owned host directory. This keeps regenerated host/auth state out of the
+# persistent home volume while satisfying OpenSSH StrictModes.
 mkdir -p "$SSHD_RUNTIME_DIR"
 rm -f \
     "$SSHD_RUNTIME_DIR/authorized_keys" \

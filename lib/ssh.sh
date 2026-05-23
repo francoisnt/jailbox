@@ -3,6 +3,10 @@
 setup_ssh_keys() {
     mkdir -p "$SSH_DIR"
     chmod 700 "$SSH_DIR"
+    # Recreate the backing directory on each launch. OpenSSH StrictModes
+    # rejects AuthorizedKeysFile paths below world-writable parents, and Podman
+    # tmpfs mounts are root-owned here, so this user-owned bind mount gives
+    # /run/jailbox-sshd strict permissions without requiring capabilities.
     rm -rf "$SSHD_RUNTIME_DIR"
     mkdir -p "$SSHD_RUNTIME_DIR"
     chmod 700 "$SSHD_RUNTIME_DIR"

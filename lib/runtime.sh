@@ -70,7 +70,10 @@ ensure_home_volume() {
 start_jailbox_container() {
     echo "🚢 Starting jailbox..."
     # Keep the runtime non-privileged. SSH auth state is copied into a
-    # user-owned runtime directory mounted at /run/jailbox-sshd.
+    # user-owned runtime directory mounted at /run/jailbox-sshd. Do not make
+    # /run itself world-writable: OpenSSH StrictModes rejects that parent path.
+    # The public key is mounted only as an inert source file; jailbox-start
+    # copies it into /run/jailbox-sshd with strict ownership before sshd starts.
     podman run -d \
         --name "$CONTAINER_NAME" \
         --replace \

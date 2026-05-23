@@ -246,6 +246,11 @@ run_case() {
 
     setup_ssh_keys "$ssh_dir" "$port"
 
+    # Mirror production's /run/jailbox-sshd bind mount. A plain tmpfs at that
+    # path is root-owned under Podman, while a world-writable /run breaks
+    # OpenSSH StrictModes for AuthorizedKeysFile.
+    # The public key is mounted as a source file and copied by jailbox-start,
+    # matching production's generated runtime auth state.
     if ! podman run -d \
         --name "$ctr" \
         --replace \
