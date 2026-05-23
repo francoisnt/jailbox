@@ -408,7 +408,7 @@ DEV_IMAGE=${dev_image}
 REMOTE_PATH=/home/jailbox/project
 EOF
     if [[ "$stage" == "egress" ]]; then
-        printf 'EGRESS_ALLOW=("api.ipify.org")\n' >> "$project_dir/jailbox.conf"
+        printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/jailbox.conf"
     fi
     write_jailbox_workspace_config "$project_dir" "$(jailbox_container_name "$project_dir")" "/home/jailbox/project"
 

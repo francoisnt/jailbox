@@ -41,26 +41,14 @@ CLI_HELP=(
     "--help=Show this help"
 )
 
-public_api_join_by_pipe() {
-    local item output
+is_config_scalar_key() {
+    local key scalar_key
 
-    output=""
-    for item in "$@"; do
-        if [ -z "$output" ]; then
-            output="$item"
-        else
-            output="$output|$item"
-        fi
+    key="$1"
+    for scalar_key in "${CONFIG_SCALAR_KEYS[@]}"; do
+        [ "$key" = "$scalar_key" ] && return 0
     done
-    printf '%s\n' "$output"
-}
-
-config_scalar_key_regex() {
-    public_api_join_by_pipe "${CONFIG_SCALAR_KEYS[@]}"
-}
-
-config_array_key_regex() {
-    public_api_join_by_pipe "${CONFIG_ARRAY_KEYS[@]}"
+    return 1
 }
 
 is_config_array_key() {
@@ -79,27 +67,17 @@ apply_config_defaults() {
     for entry in "${CONFIG_DEFAULTS[@]}"; do
         key="${entry%%=*}"
         value="${entry#*=}"
-        if is_config_array_key "$key"; then
-            set_config_array_default "$key" "$value"
-        else
-            printf -v "$key" '%s' "$value"
-        fi
+        case "$key" in
+            DEV_IMAGE) DEV_IMAGE="$value" ;;
+            DEV_CONTAINERFILE) DEV_CONTAINERFILE="$value" ;;
+            DEV_BUILD_CONTEXT) DEV_BUILD_CONTEXT="$value" ;;
+            DEV_TARGET_STAGE) DEV_TARGET_STAGE="$value" ;;
+            REMOTE_PATH) REMOTE_PATH="$value" ;;
+            EGRESS_ALLOW)
+                EGRESS_ALLOW=()
+                ;;
+        esac
     done
-}
-
-set_config_array_default() {
-    local key value
-
-    key="$1"
-    value="$2"
-
-    if [ -z "$value" ]; then
-        # shellcheck disable=SC2229,SC2294  # dynamic array init; key is repo-controlled
-        eval "$key=()"
-    else
-        # shellcheck disable=SC2229,SC2294  # values are repo-controlled defaults
-        eval "$key=($value)"
-    fi
 }
 
 is_cli_flag_allowed() {

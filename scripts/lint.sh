@@ -20,6 +20,7 @@ shellcheck --shell=bash "$@" \
     scripts/public-api-diff.sh \
     scripts/release.sh \
     install.sh \
+    tests/config-parser.sh \
     tests/e2e-headless.sh \
     tests/integration-images.sh \
     tests/manual-vscodium.sh

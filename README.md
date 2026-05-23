@@ -107,8 +107,8 @@ jailbox at a development stage:
 
 ```bash
 cat > jailbox.conf <<'EOF'
-DEV_CONTAINERFILE="./Dockerfile"
-DEV_TARGET_STAGE="dev"
+DEV_CONTAINERFILE=./Dockerfile
+DEV_TARGET_STAGE=dev
 EOF
 ```
 
@@ -116,7 +116,7 @@ Or use an existing image directly:
 
 ```bash
 cat > jailbox.conf <<'EOF'
-DEV_IMAGE="node:22-bookworm"
+DEV_IMAGE=node:22-bookworm
 EOF
 ```
 
@@ -265,10 +265,20 @@ scripts/build-tarball.sh v0.2.0
 
 If present, `jailbox.conf` in the project root is loaded before launch.
 
-The file uses simple Bash assignment syntax, but jailbox validates every
-non-comment line against an allowlist before sourcing it. Arbitrary shell code,
-unknown keys, command substitutions, redirects, pipes, semicolons, and other
-unsupported syntax are rejected.
+The file is not shell and is never sourced. It uses one setting per line:
+
+```text
+KEY=value
+```
+
+Arrays use comma-separated values:
+
+```text
+EGRESS_ALLOW=github.com,api.github.com
+```
+
+Unknown keys, duplicate keys, spaces around `=`, command substitutions,
+redirects, pipes, semicolons, and other unsupported syntax are rejected.
 
 Comments and blank lines are allowed.
 
@@ -278,8 +288,8 @@ Comments and blank lines are allowed.
 
 Use an existing image as the project dev image instead of building one.
 
-```bash
-DEV_IMAGE="node:22-bookworm"
+```text
+DEV_IMAGE=node:22-bookworm
 ```
 
 Default: empty.
@@ -288,8 +298,8 @@ Default: empty.
 
 Explicit container build file to use for the project dev image.
 
-```bash
-DEV_CONTAINERFILE="./Dockerfile"
+```text
+DEV_CONTAINERFILE=./Dockerfile
 ```
 
 If unset, jailbox discovers the first existing file in this order:
@@ -303,8 +313,8 @@ If unset, jailbox discovers the first existing file in this order:
 
 Build context passed to `podman build`.
 
-```bash
-DEV_BUILD_CONTEXT="."
+```text
+DEV_BUILD_CONTEXT=.
 ```
 
 Default: project root.
@@ -313,8 +323,8 @@ Default: project root.
 
 Build a specific stage from a multi-stage container file.
 
-```bash
-DEV_TARGET_STAGE="dev"
+```text
+DEV_TARGET_STAGE=dev
 ```
 
 Use this when the final stage is production/distroless and lacks a shell or
@@ -326,8 +336,8 @@ Array of allowed HTTP(S) hosts. If non-empty, jailbox starts a tinyproxy sidecar
 puts the jailbox container on an internal network, and exports proxy environment
 variables into the jailbox container.
 
-```bash
-EGRESS_ALLOW=("claude.ai" "github.com" "api.github.com")
+```text
+EGRESS_ALLOW=claude.ai,github.com,api.github.com
 ```
 
 Entries must be plain hostnames, not URLs, wildcards, or regexes. Each entry
@@ -355,8 +365,8 @@ Not protected against:
 
 Container path where the project is mounted and opened in the editor.
 
-```bash
-REMOTE_PATH="/workspace/project"
+```text
+REMOTE_PATH=/workspace/project
 ```
 
 Default: `/home/jailbox/project`.
@@ -392,20 +402,20 @@ No `jailbox.conf` is required.
 
 Use an existing Node image:
 
-```bash
-DEV_IMAGE="node:22-bookworm"
+```text
+DEV_IMAGE=node:22-bookworm
 ```
 
 Use a dev stage from a multi-stage Dockerfile:
 
-```bash
-DEV_CONTAINERFILE="./Dockerfile"
-DEV_TARGET_STAGE="dev"
-DEV_BUILD_CONTEXT="."
+```text
+DEV_CONTAINERFILE=./Dockerfile
+DEV_TARGET_STAGE=dev
+DEV_BUILD_CONTEXT=.
 ```
 
 Restrict HTTP(S) egress:
 
-```bash
-EGRESS_ALLOW=("claude.ai" "github.com" "api.github.com")
+```text
+EGRESS_ALLOW=claude.ai,github.com,api.github.com
 ```
