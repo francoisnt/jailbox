@@ -424,6 +424,8 @@ EOF
     assert_ssh_fails "$ssh_cfg" "$ctr" "rootfs is read-only"  "touch /etc/.e2e-test"
     assert_ssh       "$ssh_cfg" "$ctr" "no docker socket"     "! test -S /var/run/docker.sock"
     assert_ssh       "$ssh_cfg" "$ctr" "no podman socket"     "! test -S /run/podman/podman.sock"
+    assert_ssh       "$ssh_cfg" "$ctr" "container starts with zero effective capabilities" \
+        "awk '/^CapEff:/ { exit (\$2 == \"0000000000000000\" ? 0 : 1) }' /proc/1/status"
 
     # Egress policy (only run for the egress stage)
     if [[ "$stage" == "egress" ]]; then

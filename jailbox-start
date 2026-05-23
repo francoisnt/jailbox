@@ -4,6 +4,70 @@ set -e
 SSHD=$(command -v sshd)
 [ -n "$SSHD" ] || { echo 'sshd not found'; exit 1; }
 SSHD_RUNTIME_DIR=/run/jailbox-sshd
+
+stat_uid() {
+    if stat -c '%u' "$1" >/dev/null 2>&1; then
+        stat -c '%u' "$1"
+    elif stat -f '%u' "$1" >/dev/null 2>&1; then
+        stat -f '%u' "$1"
+    else
+        return 1
+    fi
+}
+
+stat_mode() {
+    if stat -c '%a' "$1" >/dev/null 2>&1; then
+        stat -c '%a' "$1"
+    elif stat -f '%Lp' "$1" >/dev/null 2>&1; then
+        stat -f '%Lp' "$1"
+    else
+        return 1
+    fi
+}
+
+validate_sshd_runtime_dir() {
+    runtime_dir="$1"
+
+    if [ ! -d "$runtime_dir" ]; then
+        echo "sshd runtime directory missing: $runtime_dir" >&2
+        exit 1
+    fi
+
+    if [ ! -w "$runtime_dir" ]; then
+        echo "sshd runtime directory is not writable by uid $(id -u): $runtime_dir" >&2
+        exit 1
+    fi
+
+    runtime_uid=$(stat_uid "$runtime_dir") || runtime_uid=""
+    if [ -n "$runtime_uid" ]; then
+        current_uid=$(id -u)
+        if [ "$runtime_uid" != "$current_uid" ]; then
+            echo "sshd runtime directory owner uid $runtime_uid does not match runtime uid $current_uid: $runtime_dir" >&2
+            exit 1
+        fi
+    else
+        # stat format support varies across small base images. If neither the
+        # GNU nor BSD/BusyBox forms work, keep the startup portable by relying
+        # on the write test plus the chmod below to catch unsafe directories.
+        echo "warning: cannot verify sshd runtime directory owner uid with stat: $runtime_dir" >&2
+    fi
+
+    runtime_mode=$(stat_mode "$runtime_dir") || runtime_mode=""
+    if [ -n "$runtime_mode" ]; then
+        case "$runtime_mode" in
+            700|1700) ;;
+            *)
+                echo "sshd runtime directory mode $runtime_mode is not private enough: $runtime_dir" >&2
+                exit 1
+                ;;
+        esac
+    else
+        # chmod 0700 above is the portable enforcement step; mode verification
+        # is best-effort because stat format flags are not fully standardized.
+        echo "warning: cannot verify sshd runtime directory mode with stat: $runtime_dir" >&2
+    fi
+}
+
 if [ ! -s /etc/ssh/jailbox_authorized_keys.source ]; then
     echo 'authorized_keys source missing or empty' >&2
     exit 1
@@ -17,13 +81,26 @@ fi
 # Runtime SSH files live under /run inside the container, backed by a fresh
 # user-owned host directory. This keeps regenerated host/auth state out of the
 # persistent home volume while satisfying OpenSSH StrictModes.
-mkdir -p "$SSHD_RUNTIME_DIR"
+mkdir -p "$SSHD_RUNTIME_DIR" || {
+    echo "failed to create sshd runtime directory: $SSHD_RUNTIME_DIR" >&2
+    exit 1
+}
+chmod 0700 "$SSHD_RUNTIME_DIR" || {
+    runtime_uid=$(stat_uid "$SSHD_RUNTIME_DIR") || runtime_uid=""
+    current_uid=$(id -u)
+    if [ -n "$runtime_uid" ] && [ "$runtime_uid" != "$current_uid" ]; then
+        echo "sshd runtime directory owner uid $runtime_uid does not match runtime uid $current_uid: $SSHD_RUNTIME_DIR" >&2
+    else
+        echo "failed to make sshd runtime directory private for uid $current_uid: $SSHD_RUNTIME_DIR" >&2
+    fi
+    exit 1
+}
+validate_sshd_runtime_dir "$SSHD_RUNTIME_DIR"
 rm -f \
     "$SSHD_RUNTIME_DIR/authorized_keys" \
     "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" \
     "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub" \
     "$SSHD_RUNTIME_DIR/sshd.pid"
-chmod 0700 "$SSHD_RUNTIME_DIR"
 cp /etc/ssh/jailbox_authorized_keys.source "$SSHD_RUNTIME_DIR/authorized_keys"
 chmod 0600 "$SSHD_RUNTIME_DIR/authorized_keys"
 ssh-keygen -t ed25519 -f "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" -N "" -q
