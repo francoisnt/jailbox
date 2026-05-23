@@ -360,9 +360,7 @@ run_e2e_case() {
     echo ""
     echo "── e2e: $stage (user: jailbox) ─────────────────────────────────────"
 
-    project_dir="/tmp/jailbox-e2e-${stage}"
-    rm -rf "$project_dir"
-    mkdir -p "$project_dir"
+    project_dir=$(mktemp -d "/tmp/jailbox-e2e-${stage}.XXXXXX")
     git -C "$project_dir" init -q
     printf 'initial\n' > "$project_dir/README.txt"
     git -C "$project_dir" add README.txt
