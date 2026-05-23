@@ -27,7 +27,6 @@ shellcheck --shell=bash "$@" \
 # POSIX sh scripts
 echo "shellcheck: install/ and jailbox-start"
 shellcheck --shell=sh "$@" \
-    install/run-as-devuser.sh \
     install/setup.sh \
     jailbox-start
 

@@ -33,7 +33,6 @@ REQUIRED_PATHS=(
     "lib/runtime.sh"
     "lib/ssh.sh"
     "lib/validation.sh"
-    "install/run-as-devuser.sh"
     "install/setup.sh"
     "Containerfile.proxy"
     "Containerfile.wrapper"
