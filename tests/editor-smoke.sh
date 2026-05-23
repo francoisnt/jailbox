@@ -157,40 +157,22 @@ EOF
 
 write_editor_test_settings() {
     local project_dir="$1"
-    local user_data settings ssh_cfg
-    local proxy_ctr
+    local user_data settings base
 
     user_data=$(jailbox_editor_user_data "$project_dir")
     settings="$user_data/User/settings.json"
-    ssh_cfg=$(jailbox_ssh_config "$project_dir")
 
-    mkdir -p "$(dirname "$settings")"
-    if grep -Fq "EGRESS_ALLOW=" "$project_dir/jailbox.conf"; then
-        proxy_ctr=$(jailbox_container_name "$project_dir")-proxy
-        cat > "$settings" <<EOF
-{
-  "remote.SSH.configFile": "$ssh_cfg",
-  "security.workspace.trust.enabled": false,
-  "task.allowAutomaticTasks": "on",
-  "terminal.integrated.env.linux": {
-    "HTTP_PROXY": "http://$proxy_ctr:8888",
-    "HTTPS_PROXY": "http://$proxy_ctr:8888",
-    "http_proxy": "http://$proxy_ctr:8888",
-    "https_proxy": "http://$proxy_ctr:8888",
-    "NO_PROXY": "localhost,127.0.0.1",
-    "no_proxy": "localhost,127.0.0.1"
-  }
-}
-EOF
-    else
-        cat > "$settings" <<EOF
-{
-  "remote.SSH.configFile": "$ssh_cfg",
-  "security.workspace.trust.enabled": false,
-  "task.allowAutomaticTasks": "on"
-}
-EOF
-    fi
+    # Extend jailbox's generated settings rather than replace them. Jailbox
+    # already wrote the SSH config path, proxy settings, etc. The smoke test
+    # only adds what the product deliberately omits: test-harness-specific keys
+    # that enable automatic task execution and disable the trust prompt.
+    base=$(head -n -1 "$settings")
+    {
+        printf '%s,\n' "$base"
+        printf '  "security.workspace.trust.enabled": false,\n'
+        printf '  "task.allowAutomaticTasks": "on"\n'
+        printf '}\n'
+    } > "${settings}.tmp" && mv "${settings}.tmp" "$settings"
     chmod 600 "$settings"
 }
 

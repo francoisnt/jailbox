@@ -54,6 +54,8 @@ FILTER_FILE=""
 JAILBOX_NETWORK=""
 JAILBOX_INTERNAL_NETWORK=""
 SSH_SESSION_ENV=()
+PROXY_URL=""
+PROXY_NO_PROXY=""
 
 # shellcheck source=lib/public-api.sh
 source "$SCRIPT_DIR/lib/public-api.sh"

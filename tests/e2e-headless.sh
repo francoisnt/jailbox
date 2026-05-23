@@ -431,9 +431,29 @@ EOF
     assert_ssh       "$ssh_cfg" "$ctr" "container starts with zero effective capabilities" \
         "awk '/^CapEff:/ { exit (\$2 == \"0000000000000000\" ? 0 : 1) }' /proc/1/status"
 
+    # Editor settings (host-side file written by jailbox before launching editor)
+    local settings_hash settings_path
+    settings_hash=$(printf '%s' "$project_dir" | cksum | cut -d' ' -f1)
+    settings_path="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/editor-profiles/$settings_hash/User/settings.json"
+    if [[ "$stage" != "egress" ]]; then
+        if [[ -f "$settings_path" ]] && ! grep -Fq '"terminal.integrated.env.linux"' "$settings_path"; then
+            pass "editor settings have no terminal proxy env"
+        else
+            fail "editor settings have no terminal proxy env"
+        fi
+    fi
+
     # Egress policy (only run for the egress stage)
     if [[ "$stage" == "egress" ]]; then
         local proxy_ctr="${ctr}-proxy"
+
+        if [[ -f "$settings_path" ]] && \
+           grep -Fq '"terminal.integrated.env.linux"' "$settings_path" && \
+           grep -Fq "\"HTTPS_PROXY\": \"http://${proxy_ctr}:8888\"" "$settings_path"; then
+            pass "editor settings include terminal proxy env"
+        else
+            fail "editor settings include terminal proxy env"
+        fi
 
         assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
             "[ -n \"\$HTTPS_PROXY\" ]"

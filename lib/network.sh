@@ -11,6 +11,8 @@ configure_network() {
         podman network exists "$NETWORK_NAME" 2>/dev/null || podman network create "$NETWORK_NAME"
         JAILBOX_NETWORK="$NETWORK_NAME"
         SSH_SESSION_ENV=()
+        PROXY_URL=""
+        PROXY_NO_PROXY=""
     fi
 }
 
@@ -76,16 +78,21 @@ configure_proxy_network() {
 }
 
 configure_proxy_env() {
-    # These are rendered into the generated SSH Host block, not passed only to
-    # podman. sshd creates fresh session environments, so client-side SetEnv is
-    # the reliable way to expose proxy settings to editor terminals and tools.
+    # Single source for the proxy URL and no-proxy list. All other modules
+    # (editor settings, downloader bootstrap) reference these globals rather
+    # than reconstructing http://$PROXY_NAME:8888 independently.
+    PROXY_URL="http://$PROXY_NAME:8888"
+    PROXY_NO_PROXY="localhost,127.0.0.1"
+    # Rendered into the generated SSH Host block via SetEnv. sshd creates fresh
+    # session environments, so client-side SetEnv is the reliable way to expose
+    # proxy settings to editor terminals and tools.
     SSH_SESSION_ENV=(
-        "HTTP_PROXY=http://$PROXY_NAME:8888"
-        "HTTPS_PROXY=http://$PROXY_NAME:8888"
-        "http_proxy=http://$PROXY_NAME:8888"
-        "https_proxy=http://$PROXY_NAME:8888"
-        "NO_PROXY=localhost,127.0.0.1"
-        "no_proxy=localhost,127.0.0.1"
+        "HTTP_PROXY=$PROXY_URL"
+        "HTTPS_PROXY=$PROXY_URL"
+        "http_proxy=$PROXY_URL"
+        "https_proxy=$PROXY_URL"
+        "NO_PROXY=$PROXY_NO_PROXY"
+        "no_proxy=$PROXY_NO_PROXY"
     )
 }
 

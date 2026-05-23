@@ -10,12 +10,9 @@
 # project tree or host home. Non-jailbox content in these files is preserved.
 
 configure_downloader_proxy() {
-    local proxy_url
-
     if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
-        proxy_url="http://$PROXY_NAME:8888"
         echo "🔧 Configuring downloader proxy compatibility..."
-        ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "JAILBOX_PROXY_URL='$proxy_url' bash -s" <<'REMOTE'
+        ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "JAILBOX_PROXY_URL='$PROXY_URL' bash -s" <<'REMOTE'
 set -euo pipefail
 
 begin="# >>> jailbox managed proxy >>>"
