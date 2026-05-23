@@ -71,6 +71,9 @@ ensure_home_volume() {
 }
 
 start_jailbox_container() {
+    if podman container exists "$CONTAINER_NAME" 2>/dev/null; then
+        echo "Replacing existing jailbox container: $CONTAINER_NAME"
+    fi
     echo "🚢 Starting jailbox..."
     # Keep the runtime non-privileged. SSH auth state is copied into a
     # user-owned runtime directory mounted at /run/jailbox-sshd. Do not make

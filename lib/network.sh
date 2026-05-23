@@ -15,6 +15,18 @@ configure_network() {
 }
 
 configure_proxy_network() {
+    # Egress enforcement model: direct container egress is blocked by an
+    # internal-only Podman network (no external route). Outbound HTTP(S) is
+    # brokered exclusively through the tinyproxy sidecar, which enforces the
+    # EGRESS_ALLOW domain allowlist. Enforcement is proxy-mediated
+    # (protocol/domain filter), not per-packet or firewall-level.
+    #
+    # Rootless, zero-capability Podman intentionally avoids NET_ADMIN,
+    # iptables/nftables, and TUN/TProxy interception. Hostname-aware
+    # transparent filtering would require one of those mechanisms. The chosen
+    # topology trades transparent filtering for a simpler, capability-free
+    # model: tools must cooperate with proxy configuration (HTTP_PROXY /
+    # HTTPS_PROXY env, curlrc, wgetrc) to reach allowed hosts.
     local domain internal_net external_net
 
     FILTER_FILE=$(mktemp)
@@ -37,9 +49,12 @@ configure_proxy_network() {
     podman network exists "$internal_net" 2>/dev/null || podman network create --internal "$internal_net"
     podman network exists "$external_net" 2>/dev/null || podman network create "$external_net"
 
+    if podman container exists "$PROXY_NAME" 2>/dev/null; then
+        echo "Replacing existing proxy container: $PROXY_NAME"
+    fi
     echo "🔒 Starting egress proxy (${#EGRESS_ALLOW[@]} allowed hosts)..."
     # Attach both networks at start time so external_net remains the primary
-    # (default-route) interface.  A subsequent `podman network connect` can
+    # (default-route) interface. A subsequent `podman network connect` can
     # replace the default route with the newly-added interface, which would
     # cut off the proxy's outbound internet access.
     podman run -d \
@@ -54,7 +69,6 @@ configure_proxy_network() {
         --security-opt=no-new-privileges \
         -v "$FILTER_FILE:/etc/tinyproxy/filter:ro" \
         "$PROXY_IMAGE"
-    echo "🔒 Direct egress blocked by internal network. Outbound HTTP(S) brokered through tinyproxy sidecar. Enforcement is proxy-mediated (protocol/domain filter), not per-packet."
 
     JAILBOX_NETWORK="$internal_net"
     JAILBOX_INTERNAL_NETWORK="$internal_net"

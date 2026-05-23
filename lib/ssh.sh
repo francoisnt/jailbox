@@ -45,9 +45,12 @@ SSHEOF
         setenv_line="${setenv_line:+$setenv_line }$env_pair"
     done
     if [ -n "$setenv_line" ]; then
-        # Remote SSH does not inherit podman env from sshd automatically.
-        # Put proxy variables in the client Host block so every SSH session,
-        # including editor-launched sessions, receives the same egress config.
+        # All proxy vars on one SetEnv line. OpenSSH processes only the first
+        # SetEnv directive per Host block; multiple SetEnv lines silently drop
+        # all but the first. Space-separated vars on one directive is the
+        # only portable form. sshd creates fresh session environments, so
+        # client-side SetEnv is the reliable way to expose proxy settings to
+        # editor terminals and tools.
         printf '    SetEnv %s\n' "$setenv_line"
     fi
 }
