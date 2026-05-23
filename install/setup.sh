@@ -171,3 +171,7 @@ GatewayPorts no
 AcceptEnv HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy
 AllowUsers ${MANAGED_USER}
 EOF
+
+# ── jailbox runtime helpers ───────────────────────────────────────────────────
+cp /tmp/jailbox-install/manage-proxy-bootstrap.sh /usr/local/bin/jailbox-manage-proxy
+chmod 755 /usr/local/bin/jailbox-manage-proxy

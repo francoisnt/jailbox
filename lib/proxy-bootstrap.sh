@@ -12,84 +12,10 @@
 configure_downloader_proxy() {
     if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
         echo "🔧 Configuring downloader proxy compatibility..."
-        ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "JAILBOX_PROXY_URL='$PROXY_URL' bash -s" <<'REMOTE'
-set -euo pipefail
-
-begin="# >>> jailbox managed proxy >>>"
-end="# <<< jailbox managed proxy <<<"
-
-update_managed_block() {
-    local file="$1"
-    local content="$2"
-    local tmp existed
-
-    existed=0
-    [[ -f "$file" ]] && existed=1
-
-    tmp=$(mktemp)
-    if [[ $existed -eq 1 ]]; then
-        awk -v begin="$begin" -v end="$end" '
-            $0 == begin { in_block = 1; next }
-            $0 == end { in_block = 0; next }
-            !in_block { print }
-        ' "$file" > "$tmp"
-    fi
-
-    {
-        cat "$tmp"
-        if [[ -s "$tmp" ]]; then
-            printf '\n'
-        fi
-        printf '%s\n' "$begin"
-        printf '%s\n' "$content"
-        printf '%s\n' "$end"
-    } > "$file"
-    # Preserve the original mode on existing files; apply 600 only to new ones.
-    if [[ $existed -eq 0 ]]; then
-        chmod 600 "$file"
-    fi
-    rm -f "$tmp"
-}
-
-update_managed_block "$HOME/.curlrc" "proxy = \"$JAILBOX_PROXY_URL\""
-update_managed_block "$HOME/.wgetrc" "use_proxy = on
-http_proxy = $JAILBOX_PROXY_URL
-https_proxy = $JAILBOX_PROXY_URL"
-REMOTE
+        ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+            "jailbox-manage-proxy enable '$PROXY_URL'"
     else
-        ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "bash -s" <<'REMOTE'
-set -euo pipefail
-
-begin="# >>> jailbox managed proxy >>>"
-end="# <<< jailbox managed proxy <<<"
-
-remove_managed_block() {
-    local file="$1"
-    local tmp
-
-    [[ -f "$file" ]] || return 0
-    grep -Fqx "$begin" "$file" || return 0
-
-    tmp=$(mktemp)
-    awk -v begin="$begin" -v end="$end" '
-        $0 == begin { in_block = 1; next }
-        $0 == end { in_block = 0; next }
-        !in_block { print }
-    ' "$file" > "$tmp"
-
-    # Remove the file entirely if only whitespace remains; avoids leaving a
-    # zero-byte or blank dotfile that the user did not create.
-    if [[ ! -s "$tmp" ]] || ! grep -qv '^[[:space:]]*$' "$tmp"; then
-        rm -f "$file" "$tmp"
-        return 0
-    fi
-
-    cat "$tmp" > "$file"
-    rm -f "$tmp"
-}
-
-remove_managed_block "$HOME/.curlrc"
-remove_managed_block "$HOME/.wgetrc"
-REMOTE
+        ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+            "jailbox-manage-proxy disable"
     fi
 }

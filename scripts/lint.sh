@@ -23,7 +23,14 @@ shellcheck --shell=bash "$@" \
     tests/config-parser.sh \
     tests/e2e-headless.sh \
     tests/editor-smoke.sh \
-    tests/integration-images.sh
+    tests/integration-images.sh \
+    tests/proxy-bootstrap.sh \
+    tests/run-all.sh
+
+# Bash scripts in install/ (bash justified: container always installs bash)
+echo "shellcheck: install/manage-proxy-bootstrap.sh"
+shellcheck --shell=bash "$@" \
+    install/manage-proxy-bootstrap.sh
 
 # POSIX sh scripts
 echo "shellcheck: install/ and jailbox-start"
