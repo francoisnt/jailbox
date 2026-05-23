@@ -31,6 +31,9 @@ load_project_config() {
     config_file="$PROJECT_DIR/jailbox.conf"
     [ -f "$config_file" ] || return 0
 
+    # jailbox.conf is deliberately data, not shell. Parse a tiny KEY=value
+    # grammar explicitly so user config can never execute code through source,
+    # command substitution, arithmetic expansion, or shell metacharacters.
     parse_config_file "$config_file"
     validate_config
 }
@@ -56,6 +59,9 @@ parse_config_file() {
         [ -z "$trimmed" ] && continue
         [[ "$trimmed" == \#* ]] && continue
 
+        # Keep the grammar intentionally narrow: KEY=value, comments only as
+        # full lines, no quoting, no escapes. This makes malformed config fail
+        # predictably and keeps parser behavior easy to audit.
         if [[ "$trimmed" != *=* ]]; then
             die "invalid jailbox.conf line $line_no: expected KEY=value"
         fi
@@ -98,9 +104,14 @@ validate_config_value() {
     value="$1"
     line_no="$2"
 
+    # Values are atoms. Paths, image refs, stage names, and hostnames currently
+    # do not need spaces; rejecting whitespace avoids quote/escape semantics.
     if [[ "$value" =~ [[:space:]] ]]; then
         die "invalid jailbox.conf line $line_no: values cannot contain whitespace"
     fi
+    # Reject shell metacharacters even though values are not evaluated. This
+    # keeps config visually unambiguous and prevents future call sites from
+    # accidentally inheriting dangerous-looking strings.
     case "$value" in
         *'"'*|*'`'*|*'$'*|*';'*|*'&'*|*'|'*|*'<'*|*'>'*|*'('*|*')'*|*'{'*|*'}'*|*'['*|*']'*)
             die "invalid jailbox.conf line $line_no: unsupported character in value"
@@ -142,6 +153,8 @@ parse_config_array() {
         return 0
     fi
 
+    # Arrays are comma-separated data, not Bash arrays. That keeps the only
+    # list syntax independent of shell parsing while remaining easy to edit.
     IFS=',' read -ra parts <<< "$raw_value"
     for item in "${parts[@]}"; do
         item=$(trim "$item")
@@ -165,6 +178,8 @@ set_config_array() {
 }
 
 validate_config() {
+    # Validation stays separate from parsing: the parser only recognizes shape,
+    # while validators enforce setting-specific meaning.
     if [ -n "$REMOTE_PATH" ] && [[ "$REMOTE_PATH" != /* ]]; then
         die "invalid REMOTE_PATH '$REMOTE_PATH' (must be an absolute container path)"
     fi

@@ -45,6 +45,9 @@ SSHEOF
         setenv_line="${setenv_line:+$setenv_line }$env_pair"
     done
     if [ -n "$setenv_line" ]; then
+        # Remote SSH does not inherit podman env from sshd automatically.
+        # Put proxy variables in the client Host block so every SSH session,
+        # including editor-launched sessions, receives the same egress config.
         printf '    SetEnv %s\n' "$setenv_line"
     fi
 }

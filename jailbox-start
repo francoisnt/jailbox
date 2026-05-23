@@ -8,6 +8,9 @@ if [ ! -s /etc/ssh/jailbox_authorized_keys.source ]; then
     echo 'authorized_keys source missing or empty' >&2
     exit 1
 fi
+# jailbox-start runs as the keep-id managed user, not root. That is why it
+# prepares only user-owned runtime files and then execs sshd directly; the image
+# build already wrote the static sshd policy under /etc/ssh.
 # The source key is a read-only bind mount from the host. Copy it before handing
 # control to sshd so the file sshd validates has ordinary ownership/mode bits
 # inside a StrictModes-safe directory, rather than bind-mount metadata.

@@ -62,6 +62,9 @@ configure_proxy_network() {
 }
 
 configure_proxy_env() {
+    # These are rendered into the generated SSH Host block, not passed only to
+    # podman. sshd creates fresh session environments, so client-side SetEnv is
+    # the reliable way to expose proxy settings to editor terminals and tools.
     SSH_SESSION_ENV=(
         "HTTP_PROXY=http://$PROXY_NAME:8888"
         "HTTPS_PROXY=http://$PROXY_NAME:8888"

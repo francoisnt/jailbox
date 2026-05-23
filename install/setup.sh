@@ -77,6 +77,10 @@ if ! command -v sshd >/dev/null 2>&1; then
 fi
 
 # ── managed user ──────────────────────────────────────────────────────────────
+# The wrapper image owns the runtime user model. Dev images should install tools
+# system-wide; they must not require a pre-existing app-specific user or home
+# directory. Failing on conflicts is safer than mutating arbitrary image users
+# and avoids recursive ownership repair across system paths.
 # Prefer bash for the managed user because VS Code Remote SSH and many dev
 # tools assume it exists, but keep shell startup files under user control.
 _PREFERRED_SHELL=$(command -v bash 2>/dev/null || echo /bin/sh)
@@ -108,6 +112,9 @@ fi
 PASSWD_ENTRY=$(get_passwd_entry)
 MANAGED_HOME=$(printf '%s\n' "$PASSWD_ENTRY" | cut -d: -f6)
 [ -z "$MANAGED_HOME" ] && MANAGED_HOME="/home/$MANAGED_USER"
+# Only files created as part of the managed jailbox account are chowned here.
+# The project mount and persistent home volume are handled by keep-id/Podman,
+# not by changing ownership inside the dev image.
 mkdir -p "$MANAGED_HOME"
 chown "$MANAGED_USER:$MANAGED_USER" "$MANAGED_HOME" 2>/dev/null || true
 chmod 755 "$MANAGED_HOME" 2>/dev/null || true
@@ -130,7 +137,9 @@ if command -v usermod >/dev/null 2>&1; then
 fi
 
 # ── sshd hardening ────────────────────────────────────────────────────────────
-# Generate host keys for any missing algorithm.
+# Distro package post-install scripts may expect host keys to exist. jailbox's
+# actual sshd HostKey below is regenerated per launch under /run/jailbox-sshd,
+# so these image-level keys are only baseline compatibility state.
 ssh-keygen -A
 
 # Write jailbox settings to a dedicated sshd config. The wrapper starts sshd
