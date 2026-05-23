@@ -1,7 +1,24 @@
 #!/bin/sh
 # Container entrypoint — starts sshd with jailbox's static server config.
 set -e
-mkdir -p /var/run/sshd /run/sshd
 SSHD=$(command -v sshd)
 [ -n "$SSHD" ] || { echo 'sshd not found'; exit 1; }
+echo "jailbox-start: uid=$(id -u) gid=$(id -g) user=$(id -un 2>/dev/null || echo unknown)" >&2
+echo "jailbox-start: runtime dirs:" >&2
+ls -ld /tmp /run /etc/ssh /home/jailbox 2>&1 >&2 || true
+if [ ! -s /etc/ssh/jailbox_authorized_keys.source ]; then
+    echo 'authorized_keys source missing or empty' >&2
+    exit 1
+fi
+rm -rf /home/jailbox/.jailbox-sshd
+mkdir -p /home/jailbox/.jailbox-sshd
+chmod 0700 /home/jailbox/.jailbox-sshd
+cp /etc/ssh/jailbox_authorized_keys.source /home/jailbox/.jailbox-sshd/authorized_keys
+chmod 0600 /home/jailbox/.jailbox-sshd/authorized_keys
+ssh-keygen -t ed25519 -f /home/jailbox/.jailbox-sshd/ssh_host_ed25519_key -N "" -q
+chmod 0600 /home/jailbox/.jailbox-sshd/ssh_host_ed25519_key
+echo "jailbox-start: ssh runtime state:" >&2
+ls -ld /home /home/jailbox /home/jailbox/.jailbox-sshd 2>&1 >&2 || true
+ls -l /home/jailbox/.jailbox-sshd 2>&1 >&2 || true
+"$SSHD" -t -f /etc/ssh/jailbox_sshd_config
 exec "$SSHD" -D -e -f /etc/ssh/jailbox_sshd_config

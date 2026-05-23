@@ -10,6 +10,7 @@ setup_ssh_keys() {
     rm -f "$KEY_FILE" "$KEY_FILE.pub"
     ssh-keygen -t ed25519 -f "$KEY_FILE" -N "" -q
     chmod 600 "$KEY_FILE"
+    chmod 644 "$KEY_FILE.pub"
 
     write_ssh_host_block > "$SSH_CONFIG"
     chmod 600 "$SSH_CONFIG"
@@ -77,6 +78,7 @@ wait_for_ssh() {
     if [ "$SSH_READY" = false ]; then
         echo "Error: sshd did not become ready in time. Check container logs:" >&2
         echo "  podman logs $CONTAINER_NAME"
+        podman logs "$CONTAINER_NAME" >&2 || true
         exit 1
     fi
 }

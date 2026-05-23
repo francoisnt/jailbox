@@ -70,6 +70,8 @@ setup_ssh_keys() {
     local key="$ssh_dir/key"
     rm -f "$key" "$key.pub"
     ssh-keygen -t ed25519 -f "$key" -N "" -q
+    chmod 600 "$key"
+    chmod 644 "$key.pub"
     : > "$ssh_dir/known_hosts"
     chmod 600 "$ssh_dir/known_hosts"
     cat > "$ssh_dir/config" <<EOF
@@ -243,13 +245,13 @@ run_case() {
         --replace \
         --userns=keep-id \
         --read-only \
+        --tmpfs "/home/jailbox:rw,size=64m,uid=$(id -u),gid=$(id -g),mode=755" \
         --tmpfs /tmp:rw,size=64m \
         --tmpfs /run:rw,size=64m \
         -p "127.0.0.1:${port}:2222" \
-        -v "${ssh_dir}/key.pub:/home/jailbox/.ssh/authorized_keys:ro,Z" \
+        -v "${ssh_dir}/key.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
-        --cap-add=DAC_OVERRIDE \
         "$wrapper_image" >/dev/null
 
     if ! wait_for_ssh "$ssh_dir/config"; then

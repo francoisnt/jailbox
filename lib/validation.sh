@@ -16,8 +16,8 @@ post_start_validation() {
 }
 
 check_authorized_keys() {
-    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -f /home/$MANAGED_USER/.ssh/authorized_keys" 2>/dev/null; then
-        echo "  ⚠️  authorized_keys missing at /home/$MANAGED_USER/.ssh/authorized_keys"
+    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -f /home/$MANAGED_USER/.jailbox-sshd/authorized_keys" 2>/dev/null; then
+        echo "  ⚠️  authorized_keys missing at /home/$MANAGED_USER/.jailbox-sshd/authorized_keys"
         WARNINGS=$((WARNINGS + 1))
     fi
 }

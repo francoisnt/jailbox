@@ -194,8 +194,6 @@ What remains unavoidable:
   and optional proxy environment are checkout-local.
 - The editor still needs `remote.SSH.configFile`; the `code --remote` /
   `codium --remote` CLI does not pass `ssh -F` through host resolution.
-- `sshd` still needs narrow runtime capabilities for key auth, privilege
-  separation, and switching authenticated sessions to the managed user.
 
 What jailbox avoids:
 
@@ -261,9 +259,8 @@ scripts/build-tarball.sh v0.2.0
 - SSH uses a fresh local Ed25519 keypair generated for each run.
 - SSH forwarding is restricted to local port forwarding (`AllowTcpForwarding local`);
   remote forwarding, tunnel devices, and gateway ports are disabled.
-- The container drops all Linux capabilities except a minimal set required for
-  OpenSSH privilege separation and user session switching, disables new
-  privileges, and applies CPU, memory, and PID limits.
+- The container drops all Linux capabilities, disables new privileges, and
+  applies CPU, memory, and PID limits.
 
 ## Configuration file
 

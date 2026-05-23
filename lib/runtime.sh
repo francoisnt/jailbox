@@ -69,8 +69,9 @@ ensure_home_volume() {
 
 start_jailbox_container() {
     echo "🚢 Starting jailbox..."
-    # Keep the runtime non-privileged, but restore the narrow privilege OpenSSH
-    # still needs for strict key and user file checks across mounted homes.
+    # Keep the runtime non-privileged. SSH auth state is copied into the managed
+    # home at startup so sshd does not need permission-bypass capabilities for
+    # mounted host key files.
     podman run -d \
         --name "$CONTAINER_NAME" \
         --replace \
@@ -83,14 +84,13 @@ start_jailbox_container() {
         "${GITCONFIG_MOUNT[@]}" \
         -p 127.0.0.1:"$LOCAL_PORT":2222 \
         -v "$PROJECT_DIR:$REMOTE_PATH:Z" \
-        -v "$KEY_FILE.pub:/home/$MANAGED_USER/.ssh/authorized_keys:ro,Z" \
+        -v "$KEY_FILE.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
         "${READONLY_MOUNTS[@]}" \
         --memory=4g \
         --cpus=2 \
         --pids-limit=256 \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
-        --cap-add=DAC_OVERRIDE \
         "$JAILBOX_IMAGE"
 }
 
