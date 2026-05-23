@@ -34,7 +34,7 @@ load_project_config() {
     # jailbox.conf is deliberately data, not shell. Parse a tiny KEY=value
     # grammar explicitly so user config can never execute code through source,
     # command substitution, arithmetic expansion, or shell metacharacters.
-    parse_config_file "$config_file"
+    parse_config_file "$config_file" || return $?
     validate_config
 }
 
@@ -60,8 +60,9 @@ parse_config_file() {
         [[ "$trimmed" == \#* ]] && continue
 
         # Keep the grammar intentionally narrow: KEY=value, comments only as
-        # full lines, no quoting, no escapes. This makes malformed config fail
-        # predictably and keeps parser behavior easy to audit.
+        # full lines, optional matching quotes around values, no escapes. This
+        # makes malformed config fail predictably and keeps parser behavior
+        # easy to audit.
         if [[ "$trimmed" != *=* ]]; then
             die "invalid jailbox.conf line $line_no: expected KEY=value"
         fi
@@ -81,9 +82,9 @@ parse_config_file() {
         CONFIG_SEEN_KEYS+=("$key")
 
         if is_config_array_key "$key"; then
-            parse_config_array "$key" "$value" "$line_no"
+            parse_config_array "$key" "$value" "$line_no" || return $?
         else
-            parse_config_scalar "$key" "$value" "$line_no"
+            parse_config_scalar "$key" "$value" "$line_no" || return $?
         fi
     done < "$config_file"
 }
@@ -119,6 +120,28 @@ validate_config_value() {
     esac
 }
 
+unquote_config_value() {
+    local value line_no first last
+
+    value="$1"
+    line_no="$2"
+    first="${value:0:1}"
+    last="${value: -1}"
+
+    if [ "${#value}" -ge 2 ] && { { [ "$first" = '"' ] && [ "$last" = '"' ]; } || { [ "$first" = "'" ] && [ "$last" = "'" ]; }; }; then
+        printf '%s\n' "${value:1:${#value}-2}"
+        return 0
+    fi
+
+    case "$value" in
+        *'"'*|*"'"*)
+            die "invalid jailbox.conf line $line_no: mismatched or embedded quote in value"
+            ;;
+    esac
+
+    printf '%s\n' "$value"
+}
+
 parse_config_scalar() {
     local key value line_no
 
@@ -126,6 +149,7 @@ parse_config_scalar() {
     value="$2"
     line_no="$3"
 
+    value=$(unquote_config_value "$value" "$line_no") || return $?
     validate_config_value "$value" "$line_no"
     if [[ "$value" == *,* ]]; then
         die "invalid jailbox.conf line $line_no: scalar setting '$key' cannot contain a comma"
@@ -141,11 +165,12 @@ parse_config_scalar() {
 }
 
 parse_config_array() {
-    local key raw_value line_no item items
+    local key raw_value line_no item items parts
 
     key="$1"
     raw_value="$2"
     line_no="$3"
+    raw_value=$(unquote_config_value "$raw_value" "$line_no") || return $?
     items=()
 
     if [ -z "$raw_value" ]; then
@@ -159,6 +184,7 @@ parse_config_array() {
     for item in "${parts[@]}"; do
         item=$(trim "$item")
         [ -n "$item" ] || die "invalid jailbox.conf line $line_no: empty list item for '$key'"
+        item=$(unquote_config_value "$item" "$line_no") || return $?
         validate_config_value "$item" "$line_no"
         items+=("$item")
     done

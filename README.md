@@ -270,6 +270,8 @@ The file is not shell and is never sourced. It uses one setting per line:
 
 ```text
 KEY=value
+KEY="value"
+KEY='value'
 ```
 
 Arrays use comma-separated values:
@@ -278,8 +280,10 @@ Arrays use comma-separated values:
 EGRESS_ALLOW=github.com,api.github.com
 ```
 
+Matching single or double quotes around a value are allowed and stripped.
 Unknown keys, duplicate keys, spaces around `=`, command substitutions,
-redirects, pipes, semicolons, and other unsupported syntax are rejected.
+redirects, pipes, semicolons, mismatched or embedded quotes, and other
+unsupported syntax are rejected.
 
 Comments and blank lines are allowed.
 

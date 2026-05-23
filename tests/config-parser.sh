@@ -78,17 +78,18 @@ test_values() {
 
     dir=$(with_config '
 # Scalars
-DEV_IMAGE=docker.io/library/debian:slim
-DEV_CONTAINERFILE=./Dockerfile
+DEV_IMAGE="docker.io/library/debian:slim"
+DEV_CONTAINERFILE='\''./Dockerfile'\''
 DEV_BUILD_CONTEXT=.
 DEV_TARGET_STAGE=dev
 REMOTE_PATH=/workspace/project
 
 # Arrays
-EGRESS_ALLOW=github.com,api.github.com
+EGRESS_ALLOW="github.com,api.github.com"
 ')
     load_config_from_dir "$dir"
     assert_eq "scalar value parsed" "docker.io/library/debian:slim" "$DEV_IMAGE"
+    assert_eq "single-quoted scalar value parsed" "./Dockerfile" "$DEV_CONTAINERFILE"
     assert_eq "remote path parsed" "/workspace/project" "$REMOTE_PATH"
     assert_eq "array length parsed" "2" "${#EGRESS_ALLOW[@]}"
     assert_eq "array item parsed" "api.github.com" "${EGRESS_ALLOW[1]}"
@@ -116,7 +117,9 @@ main() {
     test_values
 
     assert_rejects "spaces around = rejected" "DEV_IMAGE = node:22"
-    assert_rejects "quoted value rejected" 'DEV_IMAGE="node:22"'
+    assert_loads "quoted value loads" 'DEV_IMAGE="node:22"'
+    assert_rejects "mismatched quoted value rejected" 'DEV_IMAGE="node:22'
+    assert_rejects "embedded quoted value rejected" 'DEV_IMAGE=node"22'
     assert_rejects "unknown key rejected" "UNKNOWN=value"
     assert_rejects "duplicate key rejected" $'DEV_IMAGE=a\nDEV_IMAGE=b'
     assert_rejects "relative remote path rejected" "REMOTE_PATH=workspace"
