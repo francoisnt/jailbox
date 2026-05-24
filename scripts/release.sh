@@ -13,6 +13,9 @@ Usage: scripts/release.sh [options]
 
 Choose the next version, create an annotated git tag, and push it.
 GitHub Actions publishes the release tarball from the pushed tag.
+Real releases always run the full local validation suite before tagging:
+  - scripts/lint.sh
+  - tests/run-all.sh
 
 Options:
   --yes              Accept defaults without prompting
@@ -26,6 +29,10 @@ EOF_USAGE
 die() {
     echo "Error: $*" >&2
     exit 1
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
 # Parse release flags. Version selection itself is policy-driven later.
@@ -87,7 +94,8 @@ latest_tag() {
 # Fetch remote tags so local release decisions include published releases.
 refresh_tags() {
     if git -C "$ROOT_DIR" remote get-url origin >/dev/null 2>&1; then
-        git -C "$ROOT_DIR" fetch --tags origin >/dev/null
+        git -C "$ROOT_DIR" fetch --tags origin >/dev/null || \
+            echo "Warning: could not fetch tags from origin; using local tags only." >&2
     fi
 }
 
@@ -107,10 +115,20 @@ ensure_clean_tree() {
         die "working tree is not clean (commit or stash changes before releasing)"
 }
 
-# Run low-cost syntax checks before tagging.
-run_checks() {
-    bash -n "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox" "$ROOT_DIR"/lib/*.sh "$ROOT_DIR"/scripts/*.sh
-    sh -n "$ROOT_DIR"/install/*.sh
+# Require the remote used for fetching tags and pushing release tags.
+ensure_origin_remote() {
+    git -C "$ROOT_DIR" remote get-url origin >/dev/null 2>&1 || \
+        die "origin remote is required for releases"
+}
+
+# Run mandatory release validation before any confirmation, tag, or push.
+run_validation() {
+    echo "Running release validation:"
+    echo "  scripts/lint.sh"
+    bash "$ROOT_DIR/scripts/lint.sh"
+    echo "  tests/run-all.sh"
+    bash "$ROOT_DIR/tests/run-all.sh"
+    echo "Release validation passed."
 }
 
 # Map public API diff status to the release bump policy.
@@ -157,7 +175,7 @@ confirm_release() {
     local answer
 
     [ "$YES" = false ] || return 0
-    printf "Create and push tag %s to origin? [Y/n]: " "$SELECTED_VERSION"
+    printf "Create and push tag %s to origin? This will trigger GitHub Actions release publication. [Y/n]: " "$SELECTED_VERSION"
     read -r answer
     case "$answer" in
         ""|y|Y|yes|YES) ;;
@@ -169,8 +187,9 @@ confirm_release() {
 tag_and_push() {
     git -C "$ROOT_DIR" tag -a "$SELECTED_VERSION" -m "Release $SELECTED_VERSION"
     echo "Created tag $SELECTED_VERSION"
+    echo "Pushing tag $SELECTED_VERSION to origin. GitHub Actions will publish the release artifact from this tag."
     git -C "$ROOT_DIR" push origin "$SELECTED_VERSION"
-    echo "Pushed tag $SELECTED_VERSION. GitHub Actions will publish the release artifact."
+    echo "Pushed tag $SELECTED_VERSION."
 }
 
 # Coordinate validation, version selection, confirmation, and tag push.
@@ -178,10 +197,12 @@ main() {
     local latest api_change
 
     parse_args "$@"
+    require_command git
+    require_command bash
     if [ "$DRY_RUN" != true ]; then
         ensure_clean_tree
+        ensure_origin_remote
     fi
-    run_checks
 
     refresh_tags
     latest="$(latest_tag)"
@@ -195,7 +216,7 @@ main() {
         select_version "$latest" "$api_change"
     fi
     echo "Selected version: $SELECTED_VERSION"
-    echo "Reason:"
+    echo "Bump reason:"
     printf '%s\n' "$BUMP_REASON" | sed 's/^/  /'
 
     if [ "$DRY_RUN" = true ]; then
@@ -203,6 +224,7 @@ main() {
         return 0
     fi
 
+    run_validation
     confirm_release
     tag_and_push
 }
