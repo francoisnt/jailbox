@@ -72,12 +72,12 @@ source "$SCRIPT_DIR/host/dev-image.sh"
 source "$SCRIPT_DIR/host/ssh.sh"
 # shellcheck source=host/network.sh
 source "$SCRIPT_DIR/host/network.sh"
-# shellcheck source=host/proxy-bootstrap.sh
-source "$SCRIPT_DIR/host/proxy-bootstrap.sh"
+# shellcheck source=host/downloader-proxy.sh
+source "$SCRIPT_DIR/host/downloader-proxy.sh"
 # shellcheck source=host/editor.sh
 source "$SCRIPT_DIR/host/editor.sh"
-# shellcheck source=host/runtime.sh
-source "$SCRIPT_DIR/host/runtime.sh"
+# shellcheck source=host/container-runtime.sh
+source "$SCRIPT_DIR/host/container-runtime.sh"
 # shellcheck source=host/validation.sh
 source "$SCRIPT_DIR/host/validation.sh"
 

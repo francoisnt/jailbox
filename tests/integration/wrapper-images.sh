@@ -1,7 +1,7 @@
 #!/bin/bash
 # Integration test runner for jailbox.
 #
-# For each stage in tests/integration/Containerfile, in parallel:
+# For each stage in tests/integration/dev-images.Containerfile, in parallel:
 #   1. Build the stage as a dev image
 #   2. Build container/Containerfile.wrapper against it
 #   3. Start the container with SSH
@@ -11,7 +11,7 @@
 # Each stage gets its own SSH port so all stages can run simultaneously.
 # Output is buffered per stage and printed in order once all finish.
 #
-# Usage: tests/integration/images.sh [stage...]
+# Usage: tests/integration/wrapper-images.sh [stage...]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -218,7 +218,7 @@ run_case() {
             --target "$stage" \
             "${test_build_args[@]}" \
             -t "$test_image" \
-            -f "$JAILBOX_DIR/tests/integration/Containerfile" \
+            -f "$JAILBOX_DIR/tests/integration/dev-images.Containerfile" \
             "$JAILBOX_DIR" > "$build_log" 2>&1; then
         fail "test image build"
         tail -20 "$build_log" >&2

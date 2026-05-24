@@ -21,17 +21,17 @@ shellcheck --shell=bash "$@" \
     scripts/release.sh \
     install.sh \
     tests/unit/config-parser.sh \
-    tests/unit/proxy-bootstrap.sh \
-    tests/integration/images.sh \
+    tests/unit/downloader-proxy.sh \
+    tests/integration/wrapper-images.sh \
     tests/integration/runtime-security.sh \
     tests/e2e/headless.sh \
     tests/e2e/editor-smoke.sh \
     tests/run-all.sh
 
 # Bash scripts in container/ (bash justified: container always installs bash)
-echo "shellcheck: container/proxy-bootstrap-manager.sh"
+echo "shellcheck: container/downloader-proxy-manager.sh"
 shellcheck --shell=bash "$@" \
-    container/proxy-bootstrap-manager.sh
+    container/downloader-proxy-manager.sh
 
 # POSIX sh scripts
 echo "shellcheck: container/ and container/entrypoint.sh"

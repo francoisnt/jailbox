@@ -135,7 +135,7 @@ jAilbox follows a clean layered approach:
 │   ├── Containerfile.wrapper
 │   ├── entrypoint.sh        # Wrapper container runtime entrypoint
 │   ├── setup.sh             # Wrapper image setup script
-│   ├── proxy-bootstrap-manager.sh
+│   ├── downloader-proxy-manager.sh
 │   └── tinyproxy/
 ├── scripts/                 # Repository tooling
 ├── tests/                   # Unit, integration, and e2e tests

@@ -1,15 +1,15 @@
 #!/bin/bash
-# Unit tests for container/proxy-bootstrap-manager.sh.
+# Unit tests for container/downloader-proxy-manager.sh.
 #
 # Tests are run with a temporary HOME directory so the script operates on
 # isolated dotfiles without touching the developer's actual home.
 #
-# Usage: tests/unit/proxy-bootstrap.sh
+# Usage: tests/unit/downloader-proxy.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MANAGE_PROXY="$JAILBOX_DIR/container/proxy-bootstrap-manager.sh"
+MANAGE_PROXY="$JAILBOX_DIR/container/downloader-proxy-manager.sh"
 
 PASSED=0
 FAILED=0
@@ -233,7 +233,7 @@ test_enable_without_url_fails() {
 main() {
     [[ -f "$MANAGE_PROXY" ]] || { echo "Script not found: $MANAGE_PROXY" >&2; exit 1; }
 
-    echo "proxy-bootstrap tests"
+    echo "downloader-proxy tests"
     echo ""
 
     test_enable_creates_curlrc
@@ -253,9 +253,9 @@ main() {
 
     echo ""
     if [[ "$FAILED" -eq 0 ]]; then
-        echo "proxy-bootstrap tests: $PASSED passed"
+        echo "downloader-proxy tests: $PASSED passed"
     else
-        echo "proxy-bootstrap tests: $PASSED passed, $FAILED failed"
+        echo "downloader-proxy tests: $PASSED passed, $FAILED failed"
         exit 1
     fi
 }

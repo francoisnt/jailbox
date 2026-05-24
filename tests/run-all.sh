@@ -89,8 +89,8 @@ Options:
 
 Suites (in order):
   unit/config-parser        host/public-api.sh config parsing
-  unit/proxy-bootstrap      container/proxy-bootstrap-manager.sh
-  integration/images        build images and run container/runtime/security assertions
+  unit/downloader-proxy      container/downloader-proxy-manager.sh
+  integration/wrapper-images        build images and run container/runtime/security assertions
   e2e/headless              full jailbox CLI end-to-end, headless editor stub
   e2e/editor-smoke          launch VSCodium/VS Code and verify Remote SSH task
 EOF
@@ -115,7 +115,7 @@ echo ""
 
 # 1. Unit tests: pure shell, no Podman.
 run_suite "unit/config-parser" bash "$SCRIPT_DIR/unit/config-parser.sh"
-run_suite "unit/proxy-bootstrap" bash "$SCRIPT_DIR/unit/proxy-bootstrap.sh"
+run_suite "unit/downloader-proxy" bash "$SCRIPT_DIR/unit/downloader-proxy.sh"
 
 if [[ "$UNIT_ONLY" == true ]]; then
     echo ""
@@ -127,14 +127,14 @@ fi
 # 2. Integration tests: Podman required, no editor GUI. The images suite also
 #    runs runtime/security assertions during its existing container launches.
 if ! have_podman; then
-    suite_skip "integration/images" "podman not found"
+    suite_skip "integration/wrapper-images" "podman not found"
     suite_skip "e2e/headless"       "podman not found"
     suite_skip "e2e/editor-smoke"   "podman not found"
     print_summary
     exit 0
 fi
 
-run_suite "integration/images" bash "$SCRIPT_DIR/integration/images.sh"
+run_suite "integration/wrapper-images" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
 
 # 3. E2E tests: full jailbox workflow. Headless uses an editor stub; editor
 #    smoke requires a real VSCodium/VS Code CLI.

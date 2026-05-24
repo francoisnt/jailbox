@@ -6,7 +6,7 @@
 # opens the Remote SSH workspace with automatic tasks enabled, and verifies the
 # proof file from the host.
 #
-# Prerequisites: run tests/integration/images.sh first to build the jailbox-test-* images.
+# Prerequisites: run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
 #
 # Usage: tests/e2e/editor-smoke.sh [stage...]
 # Env:   JAILBOX_EDITOR_TIMEOUT seconds to wait for the proof file (default: 20)
@@ -66,7 +66,7 @@ Stages: ${ALL_STAGES[*]}
 Default: all stages in order.
 
 Requires: podman, ssh, ssh-keygen, VSCodium or VS Code CLI.
-Run tests/integration/images.sh first to build the jailbox-test-* images.
+Run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
 
 Environment:
   JAILBOX_EDITOR_TIMEOUT  Seconds to wait for $PROOF_FILE (default: 20)
@@ -478,7 +478,7 @@ main() {
     for stage in "${stages[@]}"; do
         required_image=$(stage_test_image "$stage")
         podman image exists "$required_image" 2>/dev/null || \
-            die "$required_image not found - run tests/integration/images.sh first"
+            die "$required_image not found - run tests/integration/wrapper-images.sh first"
     done
 
     setup_logging

@@ -5,7 +5,7 @@
 # up runs headless SSH assertions covering tools, shell, mounts, and egress.
 # All stages run in parallel; output is buffered and printed in defined order.
 #
-# Prerequisites: run tests/integration/images.sh first to build the jailbox-test-* images.
+# Prerequisites: run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
 #
 # Usage: tests/e2e/headless.sh [stage...]
 # Env:   JAILBOX_E2E_REH_RELEASE / JAILBOX_E2E_REH_COMMIT
@@ -42,7 +42,7 @@ Usage: $(basename "$0") [stage...]
 End-to-end jailbox tests. Runs the full CLI pipeline then verifies
 tools, shell, mounts, and egress via SSH.
 
-Run tests/integration/images.sh first to build the jailbox-test-* images.
+Run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
 
 Stages: ${ALL_STAGES[*]}
 
@@ -517,7 +517,7 @@ main() {
     for stage in "${stages[@]}"; do
         required_image=$(stage_test_image "$stage")
         podman image exists "$required_image" 2>/dev/null || \
-            die "$required_image not found - run tests/integration/images.sh first"
+            die "$required_image not found - run tests/integration/wrapper-images.sh first"
     done
 
     local log_dir

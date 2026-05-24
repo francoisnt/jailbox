@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runtime and security assertions used by integration tests.
 #
-# This file is sourced by tests/integration/images.sh so these checks run
+# This file is sourced by tests/integration/wrapper-images.sh so these checks run
 # during the existing integration container launch instead of starting another
 # Podman-heavy suite.
 
