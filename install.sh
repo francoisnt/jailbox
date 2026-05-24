@@ -25,28 +25,27 @@ LINK_PATH="$BIN_DIR/$APP_NAME"
 
 REQUIRED_PATHS=(
     "jailbox"
-    "lib/common.sh"
-    "lib/dev-image.sh"
-    "lib/editor.sh"
-    "lib/network.sh"
-    "lib/preflight.sh"
-    "lib/public-api.sh"
-    "lib/runtime.sh"
-    "lib/ssh.sh"
-    "lib/validation.sh"
-    "install/setup.sh"
-    "Containerfile.proxy"
-    "Containerfile.wrapper"
-    "tinyproxy.conf"
+    "host/common.sh"
+    "host/dev-image.sh"
+    "host/editor.sh"
+    "host/network.sh"
+    "host/preflight.sh"
+    "host/public-api.sh"
+    "host/runtime.sh"
+    "host/ssh.sh"
+    "host/validation.sh"
+    "container/setup.sh"
+    "container/proxy-bootstrap-manager.sh"
+    "container/entrypoint.sh"
+    "container/tinyproxy/Containerfile"
+    "container/Containerfile.wrapper"
+    "container/tinyproxy/tinyproxy.conf"
 )
 
 INSTALL_PATHS=(
     "jailbox"
-    "lib"
-    "install"
-    "Containerfile.proxy"
-    "Containerfile.wrapper"
-    "tinyproxy.conf"
+    "host"
+    "container"
     "README.md"
     "install.sh"
 )
@@ -122,7 +121,7 @@ copy_bundle() {
     done
 
     chmod 755 "$tmp_dir/jailbox"
-    for script in "$tmp_dir"/install/*.sh; do
+    for script in "$tmp_dir"/container/*.sh; do
         [ -f "$script" ] || continue
         chmod 755 "$script"
     done

@@ -1,0 +1,14 @@
+ARG DEV_IMAGE
+FROM ${DEV_IMAGE}
+
+ARG USER_ID=1000
+ARG JAILBOX_INSTALL_CACHE_BUST=""
+
+COPY setup.sh proxy-bootstrap-manager.sh /tmp/jailbox-container/
+RUN : "$JAILBOX_INSTALL_CACHE_BUST" && sh /tmp/jailbox-container/setup.sh && rm -rf /tmp/jailbox-container
+
+COPY entrypoint.sh /usr/local/bin/jailbox-start
+RUN chmod +x /usr/local/bin/jailbox-start
+
+EXPOSE 2222
+CMD ["/usr/local/bin/jailbox-start"]

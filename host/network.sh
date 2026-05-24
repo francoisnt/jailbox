@@ -43,7 +43,7 @@ configure_proxy_network() {
     done
 
     echo "📦 Building proxy image..."
-    podman build -t "$PROXY_IMAGE" -f "$SCRIPT_DIR/Containerfile.proxy" "$SCRIPT_DIR"
+    podman build -t "$PROXY_IMAGE" -f "$SCRIPT_DIR/container/tinyproxy/Containerfile" "$SCRIPT_DIR/container/tinyproxy"
 
     internal_net="${NETWORK_NAME}-internal"
     external_net="${NETWORK_NAME}-external"

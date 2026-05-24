@@ -125,6 +125,28 @@ jAilbox follows a clean layered approach:
 3. **Runtime** — Project mounted at `/home/jailbox/project` (writable) with selected paths overlaid read-only, plus a persistent home volume for the jailbox user
 4. **SSH & Editor** — Generates a project-specific SSH config and VS Code/VSCodium user profile (under `~/.local/state/jailbox/editor-profiles/`)
 
+## Repository Layout
+
+```text
+.
+├── jailbox                  # Host-side CLI entrypoint
+├── host/                    # Host orchestration modules sourced by jailbox
+├── container/               # Files copied into wrapper/proxy images
+│   ├── Containerfile.wrapper
+│   ├── entrypoint.sh        # Wrapper container runtime entrypoint
+│   ├── setup.sh             # Wrapper image setup script
+│   ├── proxy-bootstrap-manager.sh
+│   └── tinyproxy/
+├── scripts/                 # Repository tooling
+├── tests/                   # Unit, integration, and e2e tests
+├── install.sh               # Installer for the jailbox bundle
+└── README.md
+```
+
+The `host/` tree runs on the developer machine. The `container/` tree is copied
+into images or executed inside containers. Repository maintenance commands stay
+under `scripts/`, and test suites stay under `tests/`.
+
 **What remains unavoidable** (due to Remote SSH limitations):
 - An OpenSSH server is still required
 - A generated SSH config is needed for dynamic ports and proxy settings

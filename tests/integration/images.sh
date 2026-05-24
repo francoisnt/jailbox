@@ -1,9 +1,9 @@
 #!/bin/bash
 # Integration test runner for jailbox.
 #
-# For each stage in Containerfile.test, in parallel:
+# For each stage in tests/integration/Containerfile, in parallel:
 #   1. Build the stage as a dev image
-#   2. Build Containerfile.wrapper against it
+#   2. Build container/Containerfile.wrapper against it
 #   3. Start the container with SSH
 #   4. Run assertions
 #   5. Tear down
@@ -218,7 +218,7 @@ run_case() {
             --target "$stage" \
             "${test_build_args[@]}" \
             -t "$test_image" \
-            -f "$JAILBOX_DIR/Containerfile.test" \
+            -f "$JAILBOX_DIR/tests/integration/Containerfile" \
             "$JAILBOX_DIR" > "$build_log" 2>&1; then
         fail "test image build"
         tail -20 "$build_log" >&2
@@ -228,11 +228,11 @@ run_case() {
     # Build jailbox wrapper
     if ! podman build \
             -t "$wrapper_image" \
-            -f "$JAILBOX_DIR/Containerfile.wrapper" \
+            -f "$JAILBOX_DIR/container/Containerfile.wrapper" \
             --build-arg "DEV_IMAGE=${test_image}" \
             --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(jailbox_install_cache_bust)" \
             --build-arg "USER_ID=$(id -u)" \
-            "$JAILBOX_DIR" > "$build_log" 2>&1; then
+            "$JAILBOX_DIR/container" > "$build_log" 2>&1; then
         if [ "$expect_wrapper_failure" = true ] && grep -Eq "already exists in the dev image|already belongs to existing image user" "$build_log"; then
             pass "wrapper image build rejects unsafe user conflict"
             return 0
@@ -254,7 +254,7 @@ run_case() {
     # Mirror production's /run/jailbox-sshd bind mount. A plain tmpfs at that
     # path is root-owned under Podman, while a world-writable /run breaks
     # OpenSSH StrictModes for AuthorizedKeysFile.
-    # The public key is mounted as a source file and copied by jailbox-start,
+    # The public key is mounted as a source file and copied by container/entrypoint.sh,
     # matching production's generated runtime auth state.
     if ! podman run -d \
         --name "$ctr" \
@@ -293,7 +293,7 @@ run_case() {
 }
 
 jailbox_install_cache_bust() {
-    find "$JAILBOX_DIR/install" -type f -print0 \
+    find "$JAILBOX_DIR/container" -type f -print0 \
         | sort -z \
         | xargs -0 cksum \
         | cksum \

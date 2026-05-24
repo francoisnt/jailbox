@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$(dirname "$SCRIPT_DIR")"
 
 # jailbox (bash) — checked with --external-sources so shellcheck follows every
-# sourced lib/*.sh file in context, resolving cross-file variable references.
-echo "shellcheck: jailbox (+ sourced lib/*.sh)"
+# sourced host/*.sh file in context, resolving cross-file variable references.
+echo "shellcheck: jailbox (+ sourced host/*.sh)"
 shellcheck --external-sources --shell=bash "$@" jailbox
 
 # Standalone bash scripts
@@ -28,15 +28,15 @@ shellcheck --shell=bash "$@" \
     tests/e2e/editor-smoke.sh \
     tests/run-all.sh
 
-# Bash scripts in install/ (bash justified: container always installs bash)
-echo "shellcheck: install/manage-proxy-bootstrap.sh"
+# Bash scripts in container/ (bash justified: container always installs bash)
+echo "shellcheck: container/proxy-bootstrap-manager.sh"
 shellcheck --shell=bash "$@" \
-    install/manage-proxy-bootstrap.sh
+    container/proxy-bootstrap-manager.sh
 
 # POSIX sh scripts
-echo "shellcheck: install/ and jailbox-start"
+echo "shellcheck: container/ and container/entrypoint.sh"
 shellcheck --shell=sh "$@" \
-    install/setup.sh \
-    jailbox-start
+    container/setup.sh \
+    container/entrypoint.sh
 
 echo "shellcheck: all clean"

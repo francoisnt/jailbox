@@ -5,9 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/lib/public-api.sh"
+source "$JAILBOX_DIR/host/public-api.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/lib/common.sh"
+source "$JAILBOX_DIR/host/common.sh"
 
 PASSED=0
 FAILED=0

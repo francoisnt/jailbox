@@ -88,8 +88,8 @@ Options:
   --help          Show this help
 
 Suites (in order):
-  unit/config-parser        lib/public-api.sh config parsing
-  unit/proxy-bootstrap      install/manage-proxy-bootstrap.sh
+  unit/config-parser        host/public-api.sh config parsing
+  unit/proxy-bootstrap      container/proxy-bootstrap-manager.sh
   integration/images        build images and run container/runtime/security assertions
   e2e/headless              full jailbox CLI end-to-end, headless editor stub
   e2e/editor-smoke          launch VSCodium/VS Code and verify Remote SSH task

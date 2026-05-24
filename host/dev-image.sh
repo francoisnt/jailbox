@@ -84,11 +84,11 @@ build_jailbox_image() {
     echo "📦 Building jailbox image..."
     if ! podman build \
         -t "$JAILBOX_IMAGE" \
-        -f "$SCRIPT_DIR/Containerfile.wrapper" \
+        -f "$SCRIPT_DIR/container/Containerfile.wrapper" \
         --build-arg DEV_IMAGE="$PROJECT_DEV_IMAGE" \
         --build-arg JAILBOX_INSTALL_CACHE_BUST="$install_cache_bust" \
         --build-arg USER_ID="$MY_UID" \
-        "$SCRIPT_DIR"; then
+        "$SCRIPT_DIR/container"; then
         echo ""
         echo "Error: jailbox image build failed."
         printf "  Dev image:       %s\n" "$PROJECT_DEV_IMAGE"
@@ -104,7 +104,7 @@ build_jailbox_image() {
 }
 
 jailbox_install_cache_bust() {
-    find "$SCRIPT_DIR/install" -type f -print0 \
+    find "$SCRIPT_DIR/container" -type f -print0 \
         | sort -z \
         | xargs -0 cksum \
         | cksum \

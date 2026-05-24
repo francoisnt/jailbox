@@ -78,7 +78,7 @@ start_jailbox_container() {
     # Keep the runtime non-privileged. SSH auth state is copied into a
     # user-owned runtime directory mounted at /run/jailbox-sshd. Do not make
     # /run itself world-writable: OpenSSH StrictModes rejects that parent path.
-    # The public key is mounted only as an inert source file; jailbox-start
+    # The public key is mounted only as an inert source file; container/entrypoint.sh
     # copies it into /run/jailbox-sshd with strict ownership before sshd starts.
     podman run -d \
         --name "$CONTAINER_NAME" \

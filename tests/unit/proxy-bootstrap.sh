@@ -1,5 +1,5 @@
 #!/bin/bash
-# Unit tests for install/manage-proxy-bootstrap.sh.
+# Unit tests for container/proxy-bootstrap-manager.sh.
 #
 # Tests are run with a temporary HOME directory so the script operates on
 # isolated dotfiles without touching the developer's actual home.
@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MANAGE_PROXY="$JAILBOX_DIR/install/manage-proxy-bootstrap.sh"
+MANAGE_PROXY="$JAILBOX_DIR/container/proxy-bootstrap-manager.sh"
 
 PASSED=0
 FAILED=0

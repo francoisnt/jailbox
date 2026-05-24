@@ -173,5 +173,5 @@ AllowUsers ${MANAGED_USER}
 EOF
 
 # ── jailbox runtime helpers ───────────────────────────────────────────────────
-cp /tmp/jailbox-install/manage-proxy-bootstrap.sh /usr/local/bin/jailbox-manage-proxy
+cp /tmp/jailbox-container/proxy-bootstrap-manager.sh /usr/local/bin/jailbox-manage-proxy
 chmod 755 /usr/local/bin/jailbox-manage-proxy

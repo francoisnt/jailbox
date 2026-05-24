@@ -58,28 +58,28 @@ SSH_SESSION_ENV=()
 PROXY_URL=""
 PROXY_NO_PROXY=""
 
-# shellcheck source=lib/public-api.sh
-source "$SCRIPT_DIR/lib/public-api.sh"
+# shellcheck source=host/public-api.sh
+source "$SCRIPT_DIR/host/public-api.sh"
 # Defaults overridden by jailbox.conf
 apply_config_defaults
-# shellcheck source=lib/common.sh
-source "$SCRIPT_DIR/lib/common.sh"
-# shellcheck source=lib/preflight.sh
-source "$SCRIPT_DIR/lib/preflight.sh"
-# shellcheck source=lib/dev-image.sh
-source "$SCRIPT_DIR/lib/dev-image.sh"
-# shellcheck source=lib/ssh.sh
-source "$SCRIPT_DIR/lib/ssh.sh"
-# shellcheck source=lib/network.sh
-source "$SCRIPT_DIR/lib/network.sh"
-# shellcheck source=lib/proxy-bootstrap.sh
-source "$SCRIPT_DIR/lib/proxy-bootstrap.sh"
-# shellcheck source=lib/editor.sh
-source "$SCRIPT_DIR/lib/editor.sh"
-# shellcheck source=lib/runtime.sh
-source "$SCRIPT_DIR/lib/runtime.sh"
-# shellcheck source=lib/validation.sh
-source "$SCRIPT_DIR/lib/validation.sh"
+# shellcheck source=host/common.sh
+source "$SCRIPT_DIR/host/common.sh"
+# shellcheck source=host/preflight.sh
+source "$SCRIPT_DIR/host/preflight.sh"
+# shellcheck source=host/dev-image.sh
+source "$SCRIPT_DIR/host/dev-image.sh"
+# shellcheck source=host/ssh.sh
+source "$SCRIPT_DIR/host/ssh.sh"
+# shellcheck source=host/network.sh
+source "$SCRIPT_DIR/host/network.sh"
+# shellcheck source=host/proxy-bootstrap.sh
+source "$SCRIPT_DIR/host/proxy-bootstrap.sh"
+# shellcheck source=host/editor.sh
+source "$SCRIPT_DIR/host/editor.sh"
+# shellcheck source=host/runtime.sh
+source "$SCRIPT_DIR/host/runtime.sh"
+# shellcheck source=host/validation.sh
+source "$SCRIPT_DIR/host/validation.sh"
 
 run_launch() {
     initialize_runtime_ids

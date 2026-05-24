@@ -10,11 +10,8 @@ RELEASE_PATHS=(
     "install.sh"
     "README.md"
     "scripts"
-    "lib"
-    "install"
-    "Containerfile.proxy"
-    "Containerfile.wrapper"
-    "tinyproxy.conf"
+    "host"
+    "container"
 )
 
 usage() {
@@ -40,8 +37,8 @@ release_name="$APP_NAME-$version"
 stage_dir="$DIST_DIR/$release_name"
 tarball="$DIST_DIR/$release_name.tar.gz"
 
-bash -n "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox" "$ROOT_DIR"/lib/*.sh "$ROOT_DIR"/scripts/*.sh
-sh -n "$ROOT_DIR"/install/*.sh
+bash -n "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox" "$ROOT_DIR"/host/*.sh "$ROOT_DIR"/scripts/*.sh
+sh -n "$ROOT_DIR"/container/*.sh
 
 rm -rf "$stage_dir" "$tarball"
 mkdir -p "$stage_dir"
@@ -53,7 +50,7 @@ done
 
 # Ensure entry-point scripts remain executable after copying into the stage dir.
 chmod 755 "$stage_dir/jailbox" "$stage_dir/install.sh"
-chmod 755 "$stage_dir"/install/*.sh
+chmod 755 "$stage_dir"/container/*.sh
 
 # Build from inside dist so the archive has a clean top-level directory.
 (cd "$DIST_DIR" && tar -czf "$release_name.tar.gz" "$release_name")

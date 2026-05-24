@@ -5,7 +5,7 @@
 #   jailbox-manage-proxy enable <proxy-url>
 #   jailbox-manage-proxy disable
 #
-# Justification for bash: the container always installs bash (install/setup.sh)
+# Justification for bash: the container always installs bash (container/setup.sh)
 # and the original inline remote scripts required bash for local, [[]], and
 # set -euo pipefail. Requires bash for function-local variables and pipefail.
 set -euo pipefail

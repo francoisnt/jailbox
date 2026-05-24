@@ -1,10 +1,11 @@
 # Test dev images for the jailbox integration test suite.
 # Each stage is a plain OS base that tests/integration/images.sh wraps with
-# Containerfile.wrapper and exercises a distinct scenario.
+# container/Containerfile.wrapper and exercises a distinct scenario.
 
 # ── OS matrix ────────────────────────────────────────────────────────────────
-# These three stages verify that setup.sh works across all supported package
-# managers (apt-get, apk, dnf). No user is pre-created; setup.sh creates one.
+# These three stages verify that container/setup.sh works across all supported
+# package managers (apt-get, apk, dnf). No user is pre-created; setup.sh creates
+# one.
 
 FROM debian:12 AS debian
 
@@ -13,14 +14,14 @@ FROM alpine:3.21 AS alpine
 FROM fedora:41 AS fedora
 
 # ── Arbitrary existing user conflict ──────────────────────────────────────────
-# The host UID already belongs to a non-managed image user. setup.sh must fail
-# instead of renaming, reusing, or chowning that user's files.
+# The host UID already belongs to a non-managed image user. container/setup.sh
+# must fail instead of renaming, reusing, or chowning that user's files.
 FROM debian:12 AS uid-owned-by-other-user
 ARG HOST_UID=1000
 RUN useradd -m -u "${HOST_UID}" -s /bin/bash appuser
 
 # ── Managed user conflict ────────────────────────────────────────────────────
-# jailbox pre-exists. setup.sh must fail clearly instead of reusing or mutating
-# that user.
+# jailbox pre-exists. container/setup.sh must fail clearly instead of reusing
+# or mutating that user.
 FROM debian:12 AS user-conflict
 RUN useradd -m -u 1234 -s /bin/sh jailbox

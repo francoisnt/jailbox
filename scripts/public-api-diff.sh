@@ -14,11 +14,17 @@ file_at_ref() {
     fi
 }
 
-# Extract one array from lib/public-api.sh as a sorted list of values.
+# Extract one array from host/public-api.sh as a sorted list of values.
 public_api_values() {
     local ref="$1" array_name="$2"
+    local api_file
 
-    file_at_ref "$ref" "lib/public-api.sh" |
+    api_file="$(file_at_ref "$ref" "host/public-api.sh")"
+    if [ -z "$api_file" ]; then
+        api_file="$(file_at_ref "$ref" "lib/public-api.sh")"
+    fi
+
+    printf '%s\n' "$api_file" |
         awk -v array="$array_name" '
             $0 ~ "^[[:space:]]*" array "=[(]" { in_array = 1; next }
             in_array && /^[[:space:]]*[)]/ { in_array = 0; next }
