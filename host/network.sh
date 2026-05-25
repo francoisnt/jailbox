@@ -29,10 +29,11 @@ configure_proxy_network() {
     # topology trades transparent filtering for a simpler, capability-free
     # model: tools must cooperate with proxy configuration (HTTP_PROXY /
     # HTTPS_PROXY env, curlrc, wgetrc) to reach allowed hosts.
-    local domain internal_net external_net
+    local domain internal_net external_net effective_egress_allow
 
     FILTER_FILE=$(mktemp)
-    for domain in "${EGRESS_ALLOW[@]}"; do
+    mapfile -t effective_egress_allow < <(effective_egress_allowlist)
+    for domain in "${effective_egress_allow[@]}"; do
         local escaped
         escaped="$(tinyproxy_escape_host "$domain")"
         # Two patterns per domain: exact match and subdomain match.
@@ -54,7 +55,7 @@ configure_proxy_network() {
     if podman container exists "$PROXY_NAME" 2>/dev/null; then
         echo "Replacing existing proxy container: $PROXY_NAME"
     fi
-    echo "🔒 Starting egress proxy (${#EGRESS_ALLOW[@]} allowed hosts)..."
+    echo "🔒 Starting egress proxy (${#effective_egress_allow[@]} allowed hosts)..."
     # Attach both networks at start time so external_net remains the primary
     # (default-route) interface. A subsequent `podman network connect` can
     # replace the default route with the newly-added interface, which would
@@ -75,6 +76,30 @@ configure_proxy_network() {
     JAILBOX_NETWORK="$internal_net"
     JAILBOX_INTERNAL_NETWORK="$internal_net"
     configure_proxy_env
+}
+
+effective_egress_allowlist() {
+    local hosts=("${EGRESS_ALLOW[@]}")
+
+    if [[ -n "$EDITOR_BIN" ]]; then
+        case "$(basename "$EDITOR_BIN")" in
+            code)
+                hosts+=(
+                    update.code.visualstudio.com
+                    vscode.download.prss.microsoft.com
+                    vo.msecnd.net
+                )
+                ;;
+            codium)
+                hosts+=(
+                    github.com
+                    githubusercontent.com
+                )
+                ;;
+        esac
+    fi
+
+    printf '%s\n' "${hosts[@]}" | awk 'NF && !seen[$0]++'
 }
 
 configure_proxy_env() {

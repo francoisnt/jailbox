@@ -148,17 +148,6 @@ editor_server_dirs() {
     esac
 }
 
-editor_egress_allow() {
-    case "$(editor_name)" in
-        code)
-            printf '%s\n' "api.ipify.org,github.com,githubusercontent.com,update.code.visualstudio.com,vscode.download.prss.microsoft.com"
-            ;;
-        *)
-            printf '%s\n' "api.ipify.org,github.com,githubusercontent.com"
-            ;;
-    esac
-}
-
 default_editor_stages() {
     if [[ "$(editor_name)" == "code" ]]; then
         printf '%s\n' "${VSCODE_STAGES[@]}"
@@ -184,7 +173,7 @@ write_fixture() {
 DEV_IMAGE=${dev_image}
 EOF
     if [[ "$stage" == "egress" ]]; then
-        printf 'EGRESS_ALLOW=%s\n' "$(editor_egress_allow)" >> "$project_dir/jailbox.conf"
+        printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/jailbox.conf"
     fi
 
     cat > "$project_dir/README.txt" <<EOF

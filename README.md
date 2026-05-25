@@ -97,6 +97,12 @@ EDITOR=codium
 EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com,claude.ai
 ```
 
+When `EGRESS_ALLOW` is configured, jAilbox automatically adds the selected
+editor's Remote SSH bootstrap hosts so the editor can install its remote server:
+
+- `EDITOR=code`: `update.code.visualstudio.com`, `vscode.download.prss.microsoft.com`, `vo.msecnd.net`
+- `EDITOR=codium`: `github.com`, `githubusercontent.com`
+
 ---
 
 ## Security & Threat Model
