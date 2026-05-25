@@ -383,6 +383,7 @@ collect_failure_diagnostics() {
 
     echo ""
     echo "  Host editor profile logs:"
+    echo "    Profile: $user_data"
     if [[ -d "$user_data/logs" ]]; then
         find "$user_data/logs" -maxdepth 5 -type f \
             \( -name '*.log' -o -name 'exthost*.txt' -o -name 'remoteagent*.txt' \) \
@@ -391,6 +392,20 @@ collect_failure_diagnostics() {
     else
         echo "    (missing: $user_data/logs)"
     fi
+
+    echo ""
+    echo "  Host editor profile tree:"
+    if [[ -d "$user_data" ]]; then
+        find "$user_data" -maxdepth 4 -print | sed -n '1,200p' | sed 's/^/    /' || true
+    else
+        echo "    (missing: $user_data)"
+    fi
+
+    echo ""
+    echo "  Host editor processes:"
+    ps -eo pid=,ppid=,args= |
+        awk '/(^|[ /])(codium|code)( |$)|open-remote-ssh|remote-ssh/ { print }' |
+        sed 's/^/    /' || true
 
     if [[ -f "$ssh_cfg" ]]; then
         echo ""
