@@ -209,41 +209,6 @@ EOF
 EOF
 }
 
-write_editor_test_settings() {
-    local project_dir="$1"
-    local user_data settings base
-
-    user_data=$(jailbox_editor_user_data "$project_dir")
-    settings="$user_data/User/settings.json"
-
-    # Extend jailbox's generated settings rather than replace them. Jailbox
-    # already wrote the SSH config path, proxy settings, etc. The smoke test
-    # only adds what the product deliberately omits: test-harness-specific keys
-    # that enable automatic task execution and disable the trust prompt.
-    base=$(head -n -1 "$settings")
-    {
-        printf '%s,\n' "$base"
-        printf '  "security.workspace.trust.enabled": false,\n'
-        printf '  "task.allowAutomaticTasks": "on"\n'
-        printf '}\n'
-    } > "${settings}.tmp" && mv "${settings}.tmp" "$settings"
-    chmod 600 "$settings"
-}
-
-launch_editor_workspace() {
-    local project_dir="$1"
-    local ctr="$2"
-    local bin user_data
-
-    bin=$(editor_bin) || return 1
-    user_data=$(jailbox_editor_user_data "$project_dir")
-
-    "$bin" --user-data-dir "$user_data" \
-        --new-window \
-        --remote "ssh-remote+$ctr" \
-        /home/jailbox/project
-}
-
 close_editor_workspace() {
     local project_dir="$1"
     local ctr="$2"
@@ -485,27 +450,13 @@ run_stage() {
 
     if (
         cd "$project_dir"
-        "$JAILBOX_DIR/jailbox"
+        JAILBOX_EDITOR_SMOKE_TEST_SETTINGS=1 "$JAILBOX_DIR/jailbox"
     ) 2>&1; then
         pass "jailbox launched editor workspace"
         editor_opened=1
     else
         fail "jailbox launched editor workspace"
         rc=1
-    fi
-
-    if [[ "$rc" -eq 0 ]]; then
-        write_editor_test_settings "$project_dir"
-        # jailbox opens the workspace once before test-only settings are added.
-        # Close that bootstrap window, then reopen in a fresh window so the
-        # folder-open task runs with the smoke test profile settings.
-        cleanup_editor_workspace "$project_dir" "$ctr"
-        if launch_editor_workspace "$project_dir" "$ctr" 2>&1; then
-            pass "opened editor workspace for automatic task: $TASK_LABEL"
-        else
-            fail "opened editor workspace for automatic task: $TASK_LABEL"
-            rc=1
-        fi
     fi
 
     if [[ "$rc" -eq 0 ]]; then

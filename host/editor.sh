@@ -31,7 +31,7 @@ write_jailbox_editor_user_settings() {
     if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
         cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
 {
-  "remote.SSH.configFile": "$SSH_CONFIG",
+  "remote.SSH.configFile": "$SSH_CONFIG"$(jailbox_editor_test_settings_json),
   "terminal.integrated.env.linux": {
     "HTTP_PROXY": "$PROXY_URL",
     "HTTPS_PROXY": "$PROXY_URL",
@@ -45,9 +45,15 @@ EOF_SETTINGS
     else
         cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
 {
-  "remote.SSH.configFile": "$SSH_CONFIG"
+  "remote.SSH.configFile": "$SSH_CONFIG"$(jailbox_editor_test_settings_json)
 }
 EOF_SETTINGS
     fi
     chmod 600 "$JAILBOX_EDITOR_USER_SETTINGS"
+}
+
+jailbox_editor_test_settings_json() {
+    if [ "${JAILBOX_EDITOR_SMOKE_TEST_SETTINGS:-}" = "1" ]; then
+        printf ',\n  "security.workspace.trust.enabled": false,\n  "task.allowAutomaticTasks": "on"'
+    fi
 }
