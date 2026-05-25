@@ -177,6 +177,20 @@ under `scripts/`, and test suites stay under `tests/`.
 
 ---
 
+## Tested Configurations
+
+Every release is gated on CI runs covering this matrix:
+
+| Container OS | VS Code | VSCodium |
+|---|---|---|
+| Debian 12 (bookworm) | ✅ | ✅ |
+| Alpine 3.21 | — | ✅ |
+| Fedora 41 | ✅ | ✅ |
+
+VS Code Remote SSH does not support Alpine SSH hosts; that combination is covered by VSCodium only.
+
+---
+
 ## Project Status
 
 jAilbox is usable today for real projects and is actively maintained, but still evolving.
