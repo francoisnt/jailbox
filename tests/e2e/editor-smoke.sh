@@ -348,10 +348,11 @@ collect_failure_diagnostics() {
     local stage="$1"
     local project_dir="$2"
     local ctr="$3"
-    local proof_path ssh_cfg server_dir find_expr
+    local proof_path ssh_cfg server_dir find_expr proxy_ctr
 
     proof_path="$project_dir/$PROOF_FILE"
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
+    proxy_ctr="${ctr}-proxy"
     find_expr=""
     while read -r server_dir; do
         [[ -n "$server_dir" ]] || continue
@@ -409,6 +410,12 @@ collect_failure_diagnostics() {
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
             "find /home/jailbox -maxdepth 8 \\( $find_expr \\) -type f \\( -name '*.log' -o -name 'log.txt' \\) -print -exec sh -c 'echo --- \$1; tail -160 \"\$1\"' sh {} \\;" \
             2>&1 | sed 's/^/    /' || true
+    fi
+
+    if [[ "$stage" == "egress" ]]; then
+        echo ""
+        echo "  Egress proxy logs:"
+        podman logs "$proxy_ctr" 2>&1 | tail -200 | sed 's/^/    /' || true
     fi
 }
 
