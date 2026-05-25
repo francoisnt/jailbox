@@ -15,7 +15,7 @@ shellcheck --external-sources --shell=bash "$@" jailbox
 
 # Standalone bash scripts
 echo "shellcheck: scripts/ and tests/"
-shellcheck --shell=bash "$@" \
+shellcheck --external-sources --shell=bash "$@" \
     scripts/build-tarball.sh \
     scripts/public-api-diff.sh \
     scripts/release.sh \

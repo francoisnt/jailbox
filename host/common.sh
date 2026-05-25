@@ -1,5 +1,8 @@
 # Common helpers and configuration loading.
 
+# shellcheck source=host/project-id.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
+
 usage() {
     local flag
 
@@ -228,7 +231,7 @@ validate_egress_allow() {
 }
 
 project_path_hash() {
-    printf '%s' "$PROJECT_DIR" | cksum | cut -d' ' -f1
+    jailbox_project_hash_for_path "$PROJECT_DIR"
 }
 
 initialize_project_names() {
@@ -255,6 +258,6 @@ initialize_project_names() {
 
 initialize_runtime_ids() {
     # Stable port derived from the full project path (49152-65534).
-    LOCAL_PORT=$(( 49152 + $(project_path_hash) % 16383 ))
+    LOCAL_PORT=$(( 49152 + $(jailbox_project_hash_port_offset "$PROJECT_HASH") ))
     MY_UID=$(id -u)
 }

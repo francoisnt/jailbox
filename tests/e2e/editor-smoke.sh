@@ -16,6 +16,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# shellcheck source=host/project-id.sh
+source "$JAILBOX_DIR/host/project-id.sh"
+
 ALL_STAGES=(debian alpine fedora egress)
 VSCODE_STAGES=(debian fedora egress)
 PROOF_FILE=".jailbox-editor-proof"
@@ -34,7 +37,7 @@ pass()  { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail()  { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 jailbox_container_name() {
-    printf 'jailbox-%s\n' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+    printf 'jailbox-%s\n' "$(jailbox_project_hash_for_path "$1")"
 }
 
 jailbox_ssh_config() {
@@ -45,7 +48,7 @@ jailbox_editor_user_data() {
     local project_dir="$1"
     local hash
 
-    hash=$(printf '%s' "$project_dir" | cksum | cut -d' ' -f1)
+    hash=$(jailbox_project_hash_for_path "$project_dir")
     printf '%s/jailbox/editor-profiles/%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "$hash"
 }
 
@@ -550,7 +553,6 @@ main() {
     command -v podman     >/dev/null 2>&1 || die "podman is required"
     command -v ssh        >/dev/null 2>&1 || die "ssh is required"
     command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
-    command -v cksum      >/dev/null 2>&1 || die "cksum is required"
     editor_bin >/dev/null || die "neither 'codium' nor 'code' was found in PATH"
     have_display || die "no graphical display session found; run with tests/run-all.sh --skip-editor on headless hosts"
     [[ "$EDITOR_TIMEOUT" =~ ^[0-9]+$ ]] || die "JAILBOX_EDITOR_TIMEOUT must be a positive integer"

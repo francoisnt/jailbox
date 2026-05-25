@@ -15,6 +15,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# shellcheck source=host/project-id.sh
+source "$JAILBOX_DIR/host/project-id.sh"
+
 ALL_STAGES=(debian alpine fedora egress)
 
 PASSED=0
@@ -28,7 +31,7 @@ pass()  { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail()  { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 jailbox_container_name() {
-    printf 'jailbox-%s\n' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+    printf 'jailbox-%s\n' "$(jailbox_project_hash_for_path "$1")"
 }
 
 jailbox_ssh_config() {
@@ -425,7 +428,7 @@ EOF
 
     # Editor settings (host-side file written by jailbox before launching editor)
     local settings_hash settings_path
-    settings_hash=$(printf '%s' "$project_dir" | cksum | cut -d' ' -f1)
+    settings_hash=$(jailbox_project_hash_for_path "$project_dir")
     settings_path="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/editor-profiles/$settings_hash/User/settings.json"
     if [[ "$stage" != "egress" ]]; then
         if [[ -f "$settings_path" ]] && ! grep -Fq '"terminal.integrated.env.linux"' "$settings_path"; then

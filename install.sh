@@ -30,6 +30,7 @@ REQUIRED_PATHS=(
     "host/editor.sh"
     "host/network.sh"
     "host/preflight.sh"
+    "host/project-id.sh"
     "host/public-api.sh"
     "host/container-runtime.sh"
     "host/ssh.sh"
