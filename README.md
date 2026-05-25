@@ -103,6 +103,10 @@ editor's Remote SSH bootstrap hosts so the editor can install its remote server:
 - `EDITOR=code`: `update.code.visualstudio.com`, `vscode.download.prss.microsoft.com`, `vo.msecnd.net`
 - `EDITOR=codium`: `github.com`, `githubusercontent.com`
 
+**How egress enforcement works:** When `EGRESS_ALLOW` is set, jAilbox places the jailbox container on an internal-only Podman network — a network created with no external route. A tinyproxy sidecar is attached to both that internal network and a separate external-facing network, and acts as the sole outbound gateway. Applications inside the jailbox container that ignore `HTTP_PROXY`/`HTTPS_PROXY` cannot reach the public internet directly: the internal network has no gateway, so outbound connections fail at the network level regardless of proxy cooperation. tinyproxy enforces the domain allowlist for all HTTP and HTTPS traffic that passes through it, and restricts HTTPS CONNECT tunnels to port 443.
+
+Without `EGRESS_ALLOW`, the container runs on a standard Podman network with unrestricted outbound internet access.
+
 ---
 
 ## Security & Threat Model
@@ -114,12 +118,15 @@ editor's Remote SSH bootstrap hosts so the editor can install its remote server:
 - Fresh SSH keypair per launch
 - No container runtime sockets mounted
 - Strict sshd configuration (key auth only, local forwarding only)
+- Optional egress control: when `EGRESS_ALLOW` is set, the container is placed on an internal-only network with no direct external route; a tinyproxy sidecar is the only outbound gateway and enforces the domain allowlist for HTTP/HTTPS
 
 ### Important realities
 - The container runs with your **host UID**, so it can read and write your project files
 - Project files are mounted writable. Selected paths like `.git/config`, `.github/workflows`, and `Containerfile` are mounted read-only over the writable project mount.
 - The AI (or any code running in the container) can still exfiltrate or destroy project contents
 - You still share the kernel and container runtime trust boundary
+- Without `EGRESS_ALLOW`, the container has unrestricted outbound internet access
+- Egress enforcement is proxy-mediated (HTTP/HTTPS domain filter), not packet-level: tinyproxy only filters traffic that passes through it and cannot inspect TLS payload; allowed endpoints can still receive exfiltrated data; this is not equivalent to a firewall, VM network isolation, or kernel-enforced packet filtering
 
 jAilbox focuses on reducing accidental host exposure and limiting common container escape vectors, not defending against a determined kernel- or runtime-level attacker. It provides much better defaults than running agents directly on the host or in privileged containers, but it is **not** a full sandbox.
 
