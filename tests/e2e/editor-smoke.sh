@@ -348,11 +348,12 @@ collect_failure_diagnostics() {
     local stage="$1"
     local project_dir="$2"
     local ctr="$3"
-    local proof_path ssh_cfg server_dir find_expr proxy_ctr
+    local proof_path ssh_cfg server_dir find_expr proxy_ctr user_data
 
     proof_path="$project_dir/$PROOF_FILE"
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
     proxy_ctr="${ctr}-proxy"
+    user_data=$(jailbox_editor_user_data "$project_dir")
     find_expr=""
     while read -r server_dir; do
         [[ -n "$server_dir" ]] || continue
@@ -379,6 +380,17 @@ collect_failure_diagnostics() {
     echo ""
     echo "  Task fixture:"
     sed 's/^/    /' "$project_dir/.vscode/tasks.json" || true
+
+    echo ""
+    echo "  Host editor profile logs:"
+    if [[ -d "$user_data/logs" ]]; then
+        find "$user_data/logs" -maxdepth 5 -type f \
+            \( -name '*.log' -o -name 'exthost*.txt' -o -name 'remoteagent*.txt' \) \
+            -print -exec sh -c 'echo --- "$1"; tail -160 "$1"' sh {} \; \
+            2>&1 | sed 's/^/    /' || true
+    else
+        echo "    (missing: $user_data/logs)"
+    fi
 
     if [[ -f "$ssh_cfg" ]]; then
         echo ""

@@ -32,7 +32,6 @@ write_jailbox_editor_user_settings() {
         cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
 {
   "remote.SSH.configFile": "$SSH_CONFIG",
-  "http.proxy": "$PROXY_URL",
   "terminal.integrated.env.linux": {
     "HTTP_PROXY": "$PROXY_URL",
     "HTTPS_PROXY": "$PROXY_URL",
