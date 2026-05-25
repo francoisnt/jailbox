@@ -44,7 +44,6 @@ jobs:
   editor-smoke:
     name: editor smoke (${{ matrix.editor }})
     runs-on: ubuntu-24.04
-    needs: core-tests
     timeout-minutes: 60
     strategy:
       fail-fast: false
