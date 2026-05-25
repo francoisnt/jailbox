@@ -17,6 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ALL_STAGES=(debian alpine fedora egress)
+VSCODE_STAGES=(debian fedora egress)
 PROOF_FILE=".jailbox-editor-proof"
 TASK_LABEL="jailbox: validate remote session"
 EDITOR_TIMEOUT="${JAILBOX_EDITOR_TIMEOUT:-20}"
@@ -64,6 +65,7 @@ $PROOF_FILE in a temporary workspace.
 
 Stages: ${ALL_STAGES[*]}
 Default: all stages in order.
+VS Code default: ${VSCODE_STAGES[*]} (VS Code Remote SSH does not support Alpine SSH hosts).
 
 Requires: podman, ssh, ssh-keygen, VSCodium or VS Code CLI.
 Run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
@@ -108,6 +110,50 @@ editor_bin() {
     fi
 }
 
+editor_name() {
+    local bin
+
+    bin=$(editor_bin) || return 1
+    case "$(basename "$bin")" in
+        codium) echo "codium" ;;
+        code)   echo "code" ;;
+        *)      basename "$bin" ;;
+    esac
+}
+
+editor_server_dirs() {
+    case "$(editor_name)" in
+        codium)
+            printf '%s\n' ".vscodium-server" ".vscode-server"
+            ;;
+        code)
+            printf '%s\n' ".vscode-server" ".vscodium-server"
+            ;;
+        *)
+            printf '%s\n' ".vscode-server" ".vscodium-server"
+            ;;
+    esac
+}
+
+editor_egress_allow() {
+    case "$(editor_name)" in
+        code)
+            printf '%s\n' "api.ipify.org,github.com,githubusercontent.com,update.code.visualstudio.com,vscode.download.prss.microsoft.com"
+            ;;
+        *)
+            printf '%s\n' "api.ipify.org,github.com,githubusercontent.com"
+            ;;
+    esac
+}
+
+default_editor_stages() {
+    if [[ "$(editor_name)" == "code" ]]; then
+        printf '%s\n' "${VSCODE_STAGES[@]}"
+    else
+        printf '%s\n' "${ALL_STAGES[@]}"
+    fi
+}
+
 have_display() {
     [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
 }
@@ -125,7 +171,7 @@ write_fixture() {
 DEV_IMAGE=${dev_image}
 EOF
     if [[ "$stage" == "egress" ]]; then
-        printf 'EGRESS_ALLOW=api.ipify.org,github.com,githubusercontent.com\n' >> "$project_dir/jailbox.conf"
+        printf 'EGRESS_ALLOW=%s\n' "$(editor_egress_allow)" >> "$project_dir/jailbox.conf"
     fi
 
     cat > "$project_dir/README.txt" <<EOF
@@ -300,10 +346,15 @@ collect_failure_diagnostics() {
     local stage="$1"
     local project_dir="$2"
     local ctr="$3"
-    local proof_path ssh_cfg
+    local proof_path ssh_cfg server_dir find_expr
 
     proof_path="$project_dir/$PROOF_FILE"
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
+    find_expr=""
+    while read -r server_dir; do
+        [[ -n "$server_dir" ]] || continue
+        find_expr="${find_expr:+$find_expr -o }-path '/home/jailbox/${server_dir}/*'"
+    done < <(editor_server_dirs)
 
     echo ""
     echo "  Diagnostics for failed stage: $stage"
@@ -346,9 +397,15 @@ collect_failure_diagnostics() {
             2>&1 | sed 's/^/    /' || true
 
         echo ""
-        echo "  VSCodium/VS Code server logs:"
+        echo "  Editor server directories:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "find /home/jailbox -maxdepth 5 \\( -path '/home/jailbox/.vscodium-server/*' -o -path '/home/jailbox/.vscode-server/*' \\) -type f -name '*.log' -print -exec sh -c 'echo --- \$1; tail -120 \"\$1\"' sh {} \\;" \
+            "for d in /home/jailbox/.vscode-server /home/jailbox/.vscodium-server; do echo --- \$d; if [ -e \"\$d\" ]; then find \"\$d\" -maxdepth 3 -print | sed -n '1,120p'; else echo '(missing)'; fi; done" \
+            2>&1 | sed 's/^/    /' || true
+
+        echo ""
+        echo "  VS Code/VSCodium server logs:"
+        ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+            "find /home/jailbox -maxdepth 8 \\( $find_expr \\) -type f \\( -name '*.log' -o -name 'log.txt' \\) -print -exec sh -c 'echo --- \$1; tail -160 \"\$1\"' sh {} \\;" \
             2>&1 | sed 's/^/    /' || true
     fi
 }
@@ -464,7 +521,9 @@ main() {
     [[ "$EDITOR_TIMEOUT" -gt 0 ]] || die "JAILBOX_EDITOR_TIMEOUT must be greater than zero"
 
     local stages=("$@")
-    [[ ${#stages[@]} -eq 0 ]] && stages=("${ALL_STAGES[@]}")
+    if [[ ${#stages[@]} -eq 0 ]]; then
+        mapfile -t stages < <(default_editor_stages)
+    fi
 
     for s in "${stages[@]}"; do
         local valid=0
@@ -472,6 +531,9 @@ main() {
             [[ "$s" == "$a" ]] && valid=1 && break
         done
         [[ "$valid" -eq 1 ]] || die "unknown stage '$s'. Valid: ${ALL_STAGES[*]}"
+        if [[ "$(editor_name)" == "code" && "$s" == "alpine" ]]; then
+            die "VS Code Remote SSH does not support Alpine SSH hosts; use codium to test the alpine stage"
+        fi
     done
 
     local required_image
@@ -487,6 +549,8 @@ main() {
     log_run "Stages : ${stages[*]}"
     log_run "Task   : $TASK_LABEL"
     log_run "Timeout: ${EDITOR_TIMEOUT}s"
+    log_run "Editor : $(editor_name)"
+    [[ -z "${JAILBOX_EDITOR_UNDER_TEST:-}" ]] || log_run "Matrix : $JAILBOX_EDITOR_UNDER_TEST"
     log_run "Logs   : $LOG_DIR"
     log_run ""
     log_run "This test opens a graphical editor window and automates validation after launch."

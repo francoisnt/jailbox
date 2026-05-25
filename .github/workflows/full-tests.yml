@@ -6,8 +6,15 @@ on:
 
 jobs:
   full-tests:
+    name: full-tests (${{ matrix.editor }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        editor:
+          - vscode
+          - vscodium
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -20,6 +27,7 @@ jobs:
             ca-certificates \
             curl \
             fuse-overlayfs \
+            gnupg \
             openssh-client \
             podman \
             shellcheck \
@@ -29,19 +37,45 @@ jobs:
             xauth \
             xvfb
 
+      - name: Install VS Code
+        if: matrix.editor == 'vscode'
+        run: |
+          set -euo pipefail
           curl -fsSL \
             https://update.code.visualstudio.com/latest/linux-deb-x64/stable \
             -o /tmp/code.deb
           sudo apt-get install -y /tmp/code.deb
           code --install-extension ms-vscode-remote.remote-ssh --force
 
+      - name: Install VSCodium
+        if: matrix.editor == 'vscodium'
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            https://repo.vscodium.dev/vscodium.gpg \
+            | gpg --dearmor \
+            | sudo dd of=/usr/share/keyrings/vscodium.gpg
+          sudo curl --output-dir /etc/apt/sources.list.d \
+            -LO https://repo.vscodium.dev/vscodium.sources
+          sudo apt-get update
+          sudo apt-get install -y codium
+          codium --install-extension jeanp413.open-remote-ssh --force
+
       - name: Verify toolchain
         run: |
           set -euo pipefail
           podman info
           ssh -V
-          code --version
-          code --list-extensions | grep -Fx ms-vscode-remote.remote-ssh
+          case "${{ matrix.editor }}" in
+            vscode)
+              code --version
+              code --list-extensions | grep -Fx ms-vscode-remote.remote-ssh
+              ;;
+            vscodium)
+              codium --version
+              codium --list-extensions | grep -Fx jeanp413.open-remote-ssh
+              ;;
+          esac
 
       - name: Lint
         run: scripts/lint.sh
@@ -49,4 +83,5 @@ jobs:
       - name: Run full test suite
         env:
           JAILBOX_EDITOR_TIMEOUT: "60"
+          JAILBOX_EDITOR_UNDER_TEST: ${{ matrix.editor }}
         run: xvfb-run -a tests/run-all.sh
