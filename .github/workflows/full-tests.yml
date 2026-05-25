@@ -13,30 +13,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install test dependencies
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            ca-certificates \
-            curl \
-            fuse-overlayfs \
-            gnupg \
-            openssh-client \
-            podman \
-            shellcheck \
-            slirp4netns \
-            uidmap \
-            wget \
-            xauth \
-            xvfb
+      - name: Set up test environment
+        uses: ./.github/actions/setup-test-env
 
-      - name: Verify core toolchain
-        run: |
-          set -euo pipefail
-          podman info
-          ssh -V
-          shellcheck --version
+      - name: Verify shellcheck
+        run: shellcheck --version
 
       - name: Run core test suite
         run: tests/run-all.sh --skip-editor
@@ -57,22 +38,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install editor smoke dependencies
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            ca-certificates \
-            curl \
-            fuse-overlayfs \
-            gnupg \
-            openssh-client \
-            podman \
-            slirp4netns \
-            uidmap \
-            wget \
-            xauth \
-            xvfb
+      - name: Set up test environment
+        uses: ./.github/actions/setup-test-env
 
       - name: Install VS Code
         if: matrix.editor == 'vscode'
@@ -98,11 +65,9 @@ jobs:
           sudo apt-get install -y codium
           codium --install-extension jeanp413.open-remote-ssh --force
 
-      - name: Verify editor toolchain
+      - name: Verify editor install
         run: |
           set -euo pipefail
-          podman info
-          ssh -V
           case "${{ matrix.editor }}" in
             vscode)
               code --version
