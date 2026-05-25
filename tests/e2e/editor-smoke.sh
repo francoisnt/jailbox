@@ -72,6 +72,7 @@ Run tests/integration/wrapper-images.sh first to build the jailbox-test-* images
 
 Environment:
   JAILBOX_EDITOR_TIMEOUT  Seconds to wait for $PROOF_FILE (default: 20)
+  JAILBOX_EDITOR          Editor CLI to test: codium or code (default: auto)
   JAILBOX_KEEP_FAILED=1   Keep failed temp workspaces/containers for diagnosis
 EOF
 }
@@ -101,6 +102,18 @@ run_stage_logged() {
 }
 
 editor_bin() {
+    case "${JAILBOX_EDITOR:-}" in
+        "")
+            ;;
+        codium|code)
+            command -v "$JAILBOX_EDITOR"
+            return $?
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
     if command -v codium >/dev/null 2>&1; then
         command -v codium
     elif command -v code >/dev/null 2>&1; then
@@ -550,7 +563,6 @@ main() {
     log_run "Task   : $TASK_LABEL"
     log_run "Timeout: ${EDITOR_TIMEOUT}s"
     log_run "Editor : $(editor_name)"
-    [[ -z "${JAILBOX_EDITOR_UNDER_TEST:-}" ]] || log_run "Matrix : $JAILBOX_EDITOR_UNDER_TEST"
     log_run "Logs   : $LOG_DIR"
     log_run ""
     log_run "This test opens a graphical editor window and automates validation after launch."

@@ -82,6 +82,7 @@ DEV_IMAGE="docker.io/library/debian:slim"
 DEV_CONTAINERFILE='\''./Dockerfile'\''
 DEV_BUILD_CONTEXT=.
 DEV_TARGET_STAGE=dev
+EDITOR=code
 
 # Arrays
 EGRESS_ALLOW="github.com,api.github.com"
@@ -89,6 +90,7 @@ EGRESS_ALLOW="github.com,api.github.com"
     load_config_from_dir "$dir"
     assert_eq "scalar value parsed" "docker.io/library/debian:slim" "$DEV_IMAGE"
     assert_eq "single-quoted scalar value parsed" "./Dockerfile" "$DEV_CONTAINERFILE"
+    assert_eq "editor value parsed" "code" "$EDITOR"
     assert_eq "array length parsed" "2" "${#EGRESS_ALLOW[@]}"
     assert_eq "array item parsed" "api.github.com" "${EGRESS_ALLOW[1]}"
     rm -rf "$dir"
@@ -121,6 +123,7 @@ main() {
     assert_rejects "unknown key rejected" "UNKNOWN=value"
     assert_rejects "duplicate key rejected" $'DEV_IMAGE=a\nDEV_IMAGE=b'
     assert_rejects "remote path config rejected" "REMOTE_PATH=/workspace/project"
+    assert_rejects "bad editor rejected" "EDITOR=vim"
     assert_rejects "bad egress host rejected" "EGRESS_ALLOW=https://github.com"
     assert_rejects "whitespace in value rejected" "DEV_IMAGE=node 22"
     test_injection_rejected

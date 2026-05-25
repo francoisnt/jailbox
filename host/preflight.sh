@@ -29,6 +29,22 @@ host_preflight() {
     require_command ssh-keygen
     require_command realpath
 
+    local requested_editor
+
+    requested_editor="${JAILBOX_EDITOR:-$EDITOR}"
+    case "$requested_editor" in
+        "")
+            ;;
+        codium|code)
+            EDITOR_BIN=$(command -v "$requested_editor" 2>/dev/null || true)
+            [ -n "$EDITOR_BIN" ] || die "EDITOR=$requested_editor was requested, but '$requested_editor' was not found in PATH"
+            return 0
+            ;;
+        *)
+            die "invalid EDITOR='$requested_editor' (expected 'codium' or 'code')"
+            ;;
+    esac
+
     if command -v codium >/dev/null 2>&1; then
         EDITOR_BIN=$(command -v codium)
     elif command -v code >/dev/null 2>&1; then

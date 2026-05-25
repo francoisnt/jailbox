@@ -160,6 +160,7 @@ parse_config_scalar() {
         DEV_CONTAINERFILE) DEV_CONTAINERFILE="$value" ;;
         DEV_BUILD_CONTEXT) DEV_BUILD_CONTEXT="$value" ;;
         DEV_TARGET_STAGE) DEV_TARGET_STAGE="$value" ;;
+        EDITOR) EDITOR="$value" ;;
     esac
 }
 
@@ -203,7 +204,18 @@ set_config_array() {
 }
 
 validate_config() {
+    validate_editor_config
     validate_egress_allow
+}
+
+validate_editor_config() {
+    case "$EDITOR" in
+        ""|codium|code)
+            ;;
+        *)
+            die "invalid EDITOR '$EDITOR' (use 'codium' or 'code')"
+            ;;
+    esac
 }
 
 validate_egress_allow() {

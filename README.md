@@ -91,6 +91,9 @@ DEV_IMAGE=node:22-bookworm
 DEV_CONTAINERFILE=./Dockerfile
 DEV_TARGET_STAGE=dev
 
+# Optional editor preference. Defaults to codium when available, then code.
+EDITOR=codium
+
 EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com,claude.ai
 ```
 

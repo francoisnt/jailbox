@@ -9,10 +9,11 @@
 # Suites that require podman are skipped automatically when podman is absent.
 # The editor suite is skipped when neither codium nor code is in PATH.
 #
-# Usage: tests/run-all.sh [--unit-only] [--skip-editor] [--help]
+# Usage: tests/run-all.sh [--unit-only] [--skip-editor] [--editor-only] [--help]
 #
 #   --unit-only     Run only the unit tests (no podman required)
 #   --skip-editor   Skip the editor smoke test
+#   --editor-only   Run only the editor smoke test
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,6 +21,7 @@ JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
 UNIT_ONLY=false
 SKIP_EDITOR=false
+EDITOR_ONLY=false
 
 SUITES_PASSED=0
 SUITES_FAILED=0
@@ -78,13 +80,14 @@ print_summary() {
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [--unit-only] [--skip-editor] [--help]
+Usage: $(basename "$0") [--unit-only] [--skip-editor] [--editor-only] [--help]
 
 Run all jailbox test suites in fast-fail order.
 
 Options:
   --unit-only     Run only the two unit tests (no podman required)
   --skip-editor   Skip the editor smoke test
+  --editor-only   Run only the editor smoke test
   --help          Show this help
 
 Suites (in order):
@@ -102,6 +105,7 @@ for arg in "$@"; do
     case "$arg" in
         --unit-only)    UNIT_ONLY=true ;;
         --skip-editor)  SKIP_EDITOR=true ;;
+        --editor-only)  EDITOR_ONLY=true ;;
         --help|-h)      usage; exit 0 ;;
         *) die "unknown option: $arg" ;;
     esac
@@ -112,6 +116,30 @@ done
 echo "jailbox test runner"
 echo "Working directory: $JAILBOX_DIR"
 echo ""
+
+if [[ "$UNIT_ONLY" == true && "$EDITOR_ONLY" == true ]]; then
+    die "--unit-only and --editor-only cannot be used together"
+fi
+if [[ "$SKIP_EDITOR" == true && "$EDITOR_ONLY" == true ]]; then
+    die "--skip-editor and --editor-only cannot be used together"
+fi
+
+if [[ "$EDITOR_ONLY" == true ]]; then
+    if ! have_podman; then
+        die "podman is required for --editor-only"
+    fi
+    if ! have_editor; then
+        die "VSCodium or VS Code CLI is required for --editor-only"
+    fi
+    if ! have_display; then
+        die "graphical display session is required for --editor-only"
+    fi
+
+    run_suite "e2e/editor-smoke" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
+    print_summary
+    [[ "$SUITES_FAILED" -eq 0 ]]
+    exit $?
+fi
 
 # 1. Unit tests: pure shell, no Podman.
 run_suite "unit/config-parser" bash "$SCRIPT_DIR/unit/config-parser.sh"

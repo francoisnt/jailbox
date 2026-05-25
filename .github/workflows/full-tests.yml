@@ -6,15 +6,9 @@ on:
 
 jobs:
   full-tests:
-    name: full-tests (${{ matrix.editor }})
+    name: full tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        editor:
-          - vscode
-          - vscodium
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -37,8 +31,17 @@ jobs:
             xauth \
             xvfb
 
+      - name: Verify core toolchain
+        run: |
+          set -euo pipefail
+          podman info
+          ssh -V
+          shellcheck --version
+
+      - name: Run core test suite
+        run: tests/run-all.sh --skip-editor
+
       - name: Install VS Code
-        if: matrix.editor == 'vscode'
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -47,8 +50,19 @@ jobs:
           sudo apt-get install -y /tmp/code.deb
           code --install-extension ms-vscode-remote.remote-ssh --force
 
+      - name: Verify VS Code
+        run: |
+          set -euo pipefail
+          code --version
+          code --list-extensions | grep -Fx ms-vscode-remote.remote-ssh
+
+      - name: Run VS Code editor smoke
+        env:
+          JAILBOX_EDITOR: code
+          JAILBOX_EDITOR_TIMEOUT: "60"
+        run: xvfb-run -a tests/run-all.sh --editor-only
+
       - name: Install VSCodium
-        if: matrix.editor == 'vscodium'
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -61,27 +75,14 @@ jobs:
           sudo apt-get install -y codium
           codium --install-extension jeanp413.open-remote-ssh --force
 
-      - name: Verify toolchain
+      - name: Verify VSCodium
         run: |
           set -euo pipefail
-          podman info
-          ssh -V
-          case "${{ matrix.editor }}" in
-            vscode)
-              code --version
-              code --list-extensions | grep -Fx ms-vscode-remote.remote-ssh
-              ;;
-            vscodium)
-              codium --version
-              codium --list-extensions | grep -Fx jeanp413.open-remote-ssh
-              ;;
-          esac
+          codium --version
+          codium --list-extensions | grep -Fx jeanp413.open-remote-ssh
 
-      - name: Lint
-        run: scripts/lint.sh
-
-      - name: Run full test suite
+      - name: Run VSCodium editor smoke
         env:
+          JAILBOX_EDITOR: codium
           JAILBOX_EDITOR_TIMEOUT: "60"
-          JAILBOX_EDITOR_UNDER_TEST: ${{ matrix.editor }}
-        run: xvfb-run -a tests/run-all.sh
+        run: xvfb-run -a tests/run-all.sh --editor-only
