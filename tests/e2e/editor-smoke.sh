@@ -185,6 +185,9 @@ jailbox editor smoke fixture for $stage
 EOF
     printf '%s\n' "$run_id" > "$project_dir/.jailbox-editor-run-id"
 
+    cp "$SCRIPT_DIR/editor-validate.sh" "$project_dir/.vscode/jailbox-validate.sh"
+    chmod +x "$project_dir/.vscode/jailbox-validate.sh"
+
     cat > "$project_dir/.vscode/tasks.json" <<'EOF'
 {
   "version": "2.0.0",
@@ -192,7 +195,7 @@ EOF
     {
       "label": "jailbox: validate remote session",
       "type": "shell",
-      "command": "set -eu; proof=.jailbox-editor-proof; run_id=$(cat .jailbox-editor-run-id); test -n \"$run_id\"; write_probe=.jailbox-editor-write-check; : > \"$write_probe\"; { echo \"run_id=$run_id\"; echo \"whoami=$(whoami)\"; echo \"uid=$(id -u)\"; echo \"hostname=$(hostname)\"; echo \"pwd=$(pwd)\"; echo \"date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; echo \"REMOTE_CONTAINERS=${REMOTE_CONTAINERS:-}\"; echo \"VSCODE_IPC_HOOK_CLI=${VSCODE_IPC_HOOK_CLI:-}\"; test -f /run/jailbox-sshd/authorized_keys && echo \"authorized_keys=present\"; test -w . && echo \"workspace_writable=yes\"; echo \"HTTP_PROXY=${HTTP_PROXY:-}\"; echo \"HTTPS_PROXY=${HTTPS_PROXY:-}\"; echo \"NO_PROXY=${NO_PROXY:-}\"; if [ -n \"${HTTPS_PROXY:-}\" ]; then echo \"proxy_configured=yes\"; else echo \"proxy_configured=no\"; fi; } > \"$proof\"; rm -f \"$write_probe\"; test \"$(whoami)\" = jailbox; test -f /run/jailbox-sshd/authorized_keys; test -w .; echo \"jailbox editor task validation passed\"",
+      "command": "bash .vscode/jailbox-validate.sh",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -308,6 +311,11 @@ validate_proof() {
 
     if [[ "$stage" == "egress" ]]; then
         assert_proof_contains "$proof_path" "proxy_configured=yes" "proxy env visible when EGRESS_ALLOW is configured" || rc=1
+    fi
+
+    if [[ "$rc" -ne 0 ]]; then
+        echo "  Proof file:"
+        sed 's/^/    /' "$proof_path"
     fi
 
     return "$rc"

@@ -39,7 +39,7 @@ section() {
 
 syntax_check() {
     section "syntax"
-    bash -n jailbox install.sh host/*.sh scripts/*.sh tests/ci/*.sh tests/portable/*.sh tests/unit/*.sh tests/run
+    bash -n jailbox install.sh host/*.sh scripts/*.sh tests/ci/*.sh tests/e2e/*.sh tests/portable/*.sh tests/unit/*.sh tests/run
     bash -n container/downloader-proxy-manager.sh
     sh -n container/setup.sh container/entrypoint.sh
 }

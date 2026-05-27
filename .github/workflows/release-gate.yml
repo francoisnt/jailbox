@@ -63,3 +63,11 @@ jobs:
           JAILBOX_EDITOR: ${{ matrix.editor_cli }}
           JAILBOX_EDITOR_TIMEOUT: "60"
         run: bash tests/run --editor-smoke
+
+      - name: Upload editor smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-smoke-logs-${{ matrix.editor_cli }}
+          path: testlog/editor-*/
+          retention-days: 7
