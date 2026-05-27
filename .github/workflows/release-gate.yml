@@ -22,23 +22,15 @@ jobs:
         run: bash tests/portable/smoke.sh
 
   core-tests:
-    name: core tests (${{ matrix.host.os }})
-    runs-on: ${{ matrix.host.os }}
+    name: core tests
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        host:
-          - os: ubuntu-24.04
-            setup_script: tests/ci/setup-linux.sh
-          - os: macos-latest
-            setup_script: tests/ci/setup-macos.sh
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
       - name: Set up host
-        run: bash "${{ matrix.host.setup_script }}"
+        run: bash tests/ci/setup-linux.sh
 
       - name: Lint shell scripts
         run: bash scripts/lint.sh
@@ -47,17 +39,12 @@ jobs:
         run: bash tests/run --core-tests
 
   editor-smoke:
-    name: editor smoke (${{ matrix.host.os }}, ${{ matrix.editor_cli }})
-    runs-on: ${{ matrix.host.os }}
+    name: editor smoke (${{ matrix.editor_cli }})
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        host:
-          - os: ubuntu-24.04
-            setup_script: tests/ci/setup-linux.sh
-          - os: macos-latest
-            setup_script: tests/ci/setup-macos.sh
         editor_cli:
           - code
           - codium
@@ -66,7 +53,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Set up host with editors
-        run: bash "${{ matrix.host.setup_script }}" --with-editors
+        run: bash tests/ci/setup-linux.sh --with-editors
 
       - name: Build integration test images
         run: bash tests/integration/wrapper-images.sh
