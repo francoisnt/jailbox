@@ -37,7 +37,7 @@ wait_for_podman_machine() {
 
 start_podman_machine() {
     if ! podman machine inspect "$PODMAN_MACHINE_NAME" >/dev/null 2>&1; then
-        podman machine init --cpus 2 --memory 4096 --disk-size 30 --provider qemu "$PODMAN_MACHINE_NAME"
+        CONTAINERS_MACHINE_PROVIDER=qemu podman machine init --cpus 2 --memory 4096 --disk-size 30 "$PODMAN_MACHINE_NAME"
     fi
 
     if podman machine inspect "$PODMAN_MACHINE_NAME" --format '{{.State}}' 2>/dev/null | grep -qi running; then
