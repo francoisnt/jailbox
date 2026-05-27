@@ -258,6 +258,19 @@ cleanup_editor_workspace() {
     terminate_editor_profile "$project_dir"
 }
 
+prune_stale_jailbox_resources() {
+    local ctrs nets
+
+    ctrs=$(podman ps -aq --filter 'name=jailbox-' 2>/dev/null || true)
+    nets=$(podman network ls -q --filter 'name=jailbox-' 2>/dev/null || true)
+
+    if [[ -n "$ctrs" || -n "$nets" ]]; then
+        echo "Pruning stale jailbox containers/networks from a previous run..."
+        [[ -n "$ctrs" ]] && printf '%s\n' "$ctrs" | xargs podman rm -f >/dev/null 2>&1 || true
+        [[ -n "$nets" ]] && printf '%s\n' "$nets" | xargs podman network rm >/dev/null 2>&1 || true
+    fi
+}
+
 wait_for_proof() {
     local proof_path="$1"
     local deadline
@@ -447,7 +460,23 @@ run_stage() {
     local stage="$1"
     local idx="$2"
     local total="$3"
-    local project_dir ctr proof_path run_id rc editor_opened
+    local proof_path run_id rc
+
+    # Not declared local: the EXIT trap fires after this function returns, at
+    # which point local variables are out of scope.
+    project_dir=""
+    ctr=""
+    editor_opened=0
+    rc=0
+
+    trap '
+        if [[ -n "$project_dir" ]]; then
+            [[ "$editor_opened" -eq 1 ]] && \
+                cleanup_editor_workspace "$project_dir" "$ctr" 2>/dev/null || true
+            cleanup_stage "$project_dir" 2>/dev/null || true
+            project_dir=""
+        fi
+    ' EXIT
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -458,8 +487,6 @@ run_stage() {
     ctr=$(jailbox_container_name "$project_dir")
     proof_path="$project_dir/$PROOF_FILE"
     run_id="$(date +%s)-$$-$stage"
-    rc=0
-    editor_opened=0
 
     write_fixture "$project_dir" "$stage" "$run_id"
 
@@ -505,6 +532,7 @@ run_stage() {
         cleanup_editor_workspace "$project_dir" "$ctr"
     fi
     cleanup_stage "$project_dir"
+    project_dir=""  # disarm the EXIT trap — cleanup already done
     return "$rc"
 }
 
@@ -550,6 +578,7 @@ main() {
             die "$required_image not found - run tests/integration/wrapper-images.sh first"
     done
 
+    prune_stale_jailbox_resources
     setup_logging
 
     log_run "jailbox editor smoke test"
