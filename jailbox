@@ -18,7 +18,23 @@
 # =============================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+resolve_script_path() {
+    local source dir target
+
+    source="${BASH_SOURCE[0]}"
+    while [ -L "$source" ]; do
+        dir="$(cd -P "$(dirname "$source")" && pwd)"
+        target="$(readlink "$source")"
+        case "$target" in
+            /*) source="$target" ;;
+            *) source="$dir/$target" ;;
+        esac
+    done
+
+    cd -P "$(dirname "$source")" && pwd
+}
+
+SCRIPT_DIR="$(resolve_script_path)"
 PROJECT_DIR=$(pwd -P)
 
 # Image, container, volume, and network names

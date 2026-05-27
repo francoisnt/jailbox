@@ -18,7 +18,7 @@ usage() {
     cat <<EOF_USAGE
 Usage: scripts/build-tarball.sh VERSION
 
-Build dist/jailbox-VERSION.tar.gz from the current checkout.
+Build dist/jailbox-VERSION.tar.gz and dist/jailbox-latest.tar.gz from the current checkout.
 VERSION must look like vMAJOR.MINOR.PATCH.
 EOF_USAGE
 }
@@ -36,11 +36,12 @@ version="${1:-}"
 release_name="$APP_NAME-$version"
 stage_dir="$DIST_DIR/$release_name"
 tarball="$DIST_DIR/$release_name.tar.gz"
+latest_tarball="$DIST_DIR/$APP_NAME-latest.tar.gz"
 
 bash -n "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox" "$ROOT_DIR"/host/*.sh "$ROOT_DIR"/scripts/*.sh
 sh -n "$ROOT_DIR"/container/*.sh
 
-rm -rf "$stage_dir" "$tarball"
+rm -rf "$stage_dir" "$tarball" "$latest_tarball"
 mkdir -p "$stage_dir"
 
 for path in "${RELEASE_PATHS[@]}"; do
@@ -54,6 +55,7 @@ chmod 755 "$stage_dir"/container/*.sh
 
 # Build from inside dist so the archive has a clean top-level directory.
 (cd "$DIST_DIR" && tar -czf "$release_name.tar.gz" "$release_name")
+cp "$tarball" "$latest_tarball"
 rm -rf "$stage_dir"
 
 echo "$tarball"

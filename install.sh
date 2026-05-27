@@ -27,6 +27,7 @@ REQUIRED_PATHS=(
     "jailbox"
     "host/common.sh"
     "host/dev-image.sh"
+    "host/downloader-proxy.sh"
     "host/editor.sh"
     "host/network.sh"
     "host/preflight.sh"
@@ -105,6 +106,18 @@ assert_managed_target_dir() {
     fi
 }
 
+assert_replaceable_target_dir() {
+    if [ -f "$TARGET_DIR/$MARKER_FILE" ]; then
+        return 0
+    fi
+
+    if [ -z "$(find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+        return 0
+    fi
+
+    die "refusing to replace unmanaged install directory: $TARGET_DIR"
+}
+
 validate_source_tree() {
     local path
 
@@ -166,6 +179,7 @@ install_jailbox() {
     fi
 
     if [ -d "$TARGET_DIR" ]; then
+        assert_replaceable_target_dir
         backup_dir="$(mktemp -d "$parent_dir/.${APP_NAME}.backup.XXXXXX")"
         rmdir "$backup_dir"
         mv "$TARGET_DIR" "$backup_dir"

@@ -25,9 +25,10 @@ This gives you the convenience of Remote SSH development with a significantly re
 ### 1. Install
 
 ```bash
-curl -fsSLO https://github.com/francoisnt/jailbox/releases/latest/download/jailbox-v0.1.0.tar.gz
-tar -xzf jailbox-v0.1.0.tar.gz
-cd jailbox-v0.1.0
+curl -fsSLO https://github.com/francoisnt/jailbox/releases/latest/download/jailbox-latest.tar.gz
+release_dir="$(tar -tzf jailbox-latest.tar.gz | head -1 | cut -d/ -f1)"
+tar -xzf jailbox-latest.tar.gz
+cd "$release_dir"
 ./install.sh
 ```
 

@@ -25,4 +25,6 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/jailbox-${{ github.ref_name }}.tar.gz
+          files: |
+            dist/jailbox-${{ github.ref_name }}.tar.gz
+            dist/jailbox-latest.tar.gz
