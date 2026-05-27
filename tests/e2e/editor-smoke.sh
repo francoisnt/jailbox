@@ -266,8 +266,12 @@ prune_stale_jailbox_resources() {
 
     if [[ -n "$ctrs" || -n "$nets" ]]; then
         echo "Pruning stale jailbox containers/networks from a previous run..."
-        [[ -n "$ctrs" ]] && printf '%s\n' "$ctrs" | xargs podman rm -f >/dev/null 2>&1 || true
-        [[ -n "$nets" ]] && printf '%s\n' "$nets" | xargs podman network rm >/dev/null 2>&1 || true
+        if [[ -n "$ctrs" ]]; then
+            printf '%s\n' "$ctrs" | xargs podman rm -f >/dev/null 2>&1 || true
+        fi
+        if [[ -n "$nets" ]]; then
+            printf '%s\n' "$nets" | xargs podman network rm >/dev/null 2>&1 || true
+        fi
     fi
 }
 
