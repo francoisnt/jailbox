@@ -2,12 +2,27 @@ name: Release Gate
 
 on:
   workflow_dispatch:
+    inputs:
+      os:
+        description: "OS to test on"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - ubuntu
+          - macos
   workflow_call:
 
 jobs:
   portable-smoke:
     name: portable smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.os == 'all' ||
+      (inputs.os == 'ubuntu' && startsWith(matrix.os, 'ubuntu')) ||
+      (inputs.os == 'macos' && startsWith(matrix.os, 'macos'))
     strategy:
       fail-fast: false
       matrix:
@@ -16,7 +31,7 @@ jobs:
           - macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Run portable smoke suite
         run: bash tests/portable/smoke.sh
@@ -25,6 +40,11 @@ jobs:
     name: core tests (${{ matrix.host.os }})
     runs-on: ${{ matrix.host.os }}
     timeout-minutes: 90
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.os == 'all' ||
+      (inputs.os == 'ubuntu' && startsWith(matrix.host.os, 'ubuntu')) ||
+      (inputs.os == 'macos' && startsWith(matrix.host.os, 'macos'))
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +55,7 @@ jobs:
             setup_script: tests/ci/setup-macos.sh
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up host
         run: bash "${{ matrix.host.setup_script }}"
@@ -50,6 +70,11 @@ jobs:
     name: editor smoke (${{ matrix.host.os }}, ${{ matrix.editor_cli }})
     runs-on: ${{ matrix.host.os }}
     timeout-minutes: 60
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.os == 'all' ||
+      (inputs.os == 'ubuntu' && startsWith(matrix.host.os, 'ubuntu')) ||
+      (inputs.os == 'macos' && startsWith(matrix.host.os, 'macos'))
     strategy:
       fail-fast: false
       matrix:
@@ -63,7 +88,7 @@ jobs:
           - codium
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up host with editors
         run: bash "${{ matrix.host.setup_script }}" --with-editors

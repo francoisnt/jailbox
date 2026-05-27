@@ -17,7 +17,7 @@ jobs:
     needs: release-gate
     steps:
       - name: Check out tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build release tarball
         run: scripts/build-tarball.sh "${GITHUB_REF_NAME}"
