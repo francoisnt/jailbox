@@ -160,6 +160,7 @@ default_editor_stages() {
 }
 
 have_display() {
+    [[ "$(uname -s)" == "Darwin" ]] && return 0
     [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
 }
 
@@ -505,13 +506,16 @@ main() {
     command -v ssh        >/dev/null 2>&1 || die "ssh is required"
     command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
     editor_bin >/dev/null || die "neither 'codium' nor 'code' was found in PATH"
-    have_display || die "no graphical display session found; run with tests/run-all.sh --skip-editor on headless hosts"
+    have_display || die "no graphical display session found; run with tests/run --core-tests on headless hosts"
     [[ "$EDITOR_TIMEOUT" =~ ^[0-9]+$ ]] || die "JAILBOX_EDITOR_TIMEOUT must be a positive integer"
     [[ "$EDITOR_TIMEOUT" -gt 0 ]] || die "JAILBOX_EDITOR_TIMEOUT must be greater than zero"
 
     local stages=("$@")
     if [[ ${#stages[@]} -eq 0 ]]; then
-        mapfile -t stages < <(default_editor_stages)
+        stages=()
+        while IFS= read -r stage; do
+            stages+=("$stage")
+        done < <(default_editor_stages)
     fi
 
     for s in "${stages[@]}"; do

@@ -1,0 +1,78 @@
+name: Release Gate
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  portable-smoke:
+    name: portable smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run portable smoke suite
+        run: bash tests/portable/smoke.sh
+
+  core-tests:
+    name: core tests (${{ matrix.host.os }})
+    runs-on: ${{ matrix.host.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - os: ubuntu-24.04
+            setup_script: tests/ci/setup-linux.sh
+          - os: macos-latest
+            setup_script: tests/ci/setup-macos.sh
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up host
+        run: bash "${{ matrix.host.setup_script }}"
+
+      - name: Lint shell scripts
+        run: bash scripts/lint.sh
+
+      - name: Run core test suite
+        run: bash tests/run --core-tests
+
+  editor-smoke:
+    name: editor smoke (${{ matrix.host.os }}, ${{ matrix.editor_cli }})
+    runs-on: ${{ matrix.host.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - os: ubuntu-24.04
+            setup_script: tests/ci/setup-linux.sh
+          - os: macos-latest
+            setup_script: tests/ci/setup-macos.sh
+        editor_cli:
+          - code
+          - codium
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up host with editors
+        run: bash "${{ matrix.host.setup_script }}" --with-editors
+
+      - name: Build integration test images
+        run: bash tests/integration/wrapper-images.sh
+
+      - name: Run editor smoke
+        env:
+          JAILBOX_EDITOR: ${{ matrix.editor_cli }}
+          JAILBOX_EDITOR_TIMEOUT: "60"
+        run: bash tests/run --editor-smoke

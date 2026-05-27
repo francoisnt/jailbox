@@ -15,7 +15,7 @@ Choose the next version, create an annotated git tag, and push it.
 GitHub Actions publishes the release tarball from the pushed tag.
 Real releases always run the full local validation suite before tagging:
   - scripts/lint.sh
-  - tests/run-all.sh
+  - tests/run
 
 Options:
   --yes              Accept defaults without prompting
@@ -126,8 +126,8 @@ run_validation() {
     echo "Running release validation:"
     echo "  scripts/lint.sh"
     bash "$ROOT_DIR/scripts/lint.sh"
-    echo "  tests/run-all.sh"
-    bash "$ROOT_DIR/tests/run-all.sh"
+    echo "  tests/run"
+    bash "$ROOT_DIR/tests/run"
     echo "Release validation passed."
 }
 

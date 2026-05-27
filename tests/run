@@ -1,27 +1,24 @@
 #!/bin/bash
-# Run all jailbox test suites in fast-fail order.
+# Run jailbox test suites.
 #
-# Ordering:
-#   1. unit tests        pure shell, no Podman
-#   2. integration tests build/run containers, no editor GUI
-#   3. e2e tests         full jailbox workflow and editor smoke
+# Suites run in dependency order (unit → integration → e2e). Each suite is
+# skipped automatically when its prerequisites are absent.
 #
-# Suites that require podman are skipped automatically when podman is absent.
-# The editor suite is skipped when neither codium nor code is in PATH.
+# Usage: tests/run [--unit-tests] [--core-tests] [--editor-smoke] [--help]
 #
-# Usage: tests/run-all.sh [--unit-only] [--skip-editor] [--editor-only] [--help]
+#   --unit-tests    Unit tests only (no Podman required)
+#   --core-tests    Unit + integration + e2e headless (no editor)
+#   --editor-smoke  Editor smoke only
 #
-#   --unit-only     Run only the unit tests (no podman required)
-#   --skip-editor   Skip the editor smoke test
-#   --editor-only   Run only the editor smoke test
+# With no flag, all suites run (editor included when available).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
-UNIT_ONLY=false
-SKIP_EDITOR=false
-EDITOR_ONLY=false
+UNIT_TESTS_ONLY=false
+CORE_TESTS_ONLY=false
+EDITOR_SMOKE_ONLY=false
 
 SUITES_PASSED=0
 SUITES_FAILED=0
@@ -52,7 +49,16 @@ have_editor() {
 }
 
 have_display() {
+    [[ "$(uname -s)" == "Darwin" ]] && return 0
     [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
+}
+
+rerun_with_xvfb_if_needed() {
+    [[ "$(uname -s)" == "Linux" ]] || return 1
+    [[ "${JAILBOX_UNDER_XVFB:-}" != "1" ]] || return 1
+    command -v xvfb-run >/dev/null 2>&1 || return 1
+
+    JAILBOX_UNDER_XVFB=1 exec xvfb-run -a bash "$0" "$@"
 }
 
 run_suite() {
@@ -80,22 +86,22 @@ print_summary() {
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [--unit-only] [--skip-editor] [--editor-only] [--help]
+Usage: $(basename "$0") [--unit-tests] [--core-tests] [--editor-smoke] [--help]
 
-Run all jailbox test suites in fast-fail order.
+Run jailbox test suites. Flags correspond to CI job names.
 
 Options:
-  --unit-only     Run only the two unit tests (no podman required)
-  --skip-editor   Skip the editor smoke test
-  --editor-only   Run only the editor smoke test
+  --unit-tests    Unit tests only (no Podman required)
+  --core-tests    Unit + integration + e2e headless (no editor)
+  --editor-smoke  Editor smoke only
   --help          Show this help
 
 Suites (in order):
-  unit/config-parser        host/public-api.sh config parsing
-  unit/downloader-proxy      container/downloader-proxy-manager.sh
-  integration/wrapper-images        build images and run container/runtime/security assertions
-  e2e/headless              full jailbox CLI end-to-end, headless editor stub
-  e2e/editor-smoke          launch VSCodium/VS Code and verify Remote SSH task
+  unit/config-parser          host/public-api.sh config parsing
+  unit/downloader-proxy       container/downloader-proxy-manager.sh
+  integration/wrapper-images  build images and run container/runtime/security assertions
+  e2e/headless                full jailbox CLI end-to-end, headless editor stub
+  e2e/editor-smoke            launch VSCodium/VS Code and verify Remote SSH task
 EOF
 }
 
@@ -103,9 +109,9 @@ EOF
 
 for arg in "$@"; do
     case "$arg" in
-        --unit-only)    UNIT_ONLY=true ;;
-        --skip-editor)  SKIP_EDITOR=true ;;
-        --editor-only)  EDITOR_ONLY=true ;;
+        --unit-tests)   UNIT_TESTS_ONLY=true ;;
+        --core-tests)   CORE_TESTS_ONLY=true ;;
+        --editor-smoke) EDITOR_SMOKE_ONLY=true ;;
         --help|-h)      usage; exit 0 ;;
         *) die "unknown option: $arg" ;;
     esac
@@ -117,22 +123,23 @@ echo "jailbox test runner"
 echo "Working directory: $JAILBOX_DIR"
 echo ""
 
-if [[ "$UNIT_ONLY" == true && "$EDITOR_ONLY" == true ]]; then
-    die "--unit-only and --editor-only cannot be used together"
+if [[ "$UNIT_TESTS_ONLY" == true && "$EDITOR_SMOKE_ONLY" == true ]]; then
+    die "--unit-tests and --editor-smoke cannot be used together"
 fi
-if [[ "$SKIP_EDITOR" == true && "$EDITOR_ONLY" == true ]]; then
-    die "--skip-editor and --editor-only cannot be used together"
+if [[ "$CORE_TESTS_ONLY" == true && "$EDITOR_SMOKE_ONLY" == true ]]; then
+    die "--core-tests and --editor-smoke cannot be used together"
 fi
 
-if [[ "$EDITOR_ONLY" == true ]]; then
+if [[ "$EDITOR_SMOKE_ONLY" == true ]]; then
     if ! have_podman; then
-        die "podman is required for --editor-only"
+        die "podman is required for --editor-smoke"
     fi
     if ! have_editor; then
-        die "VSCodium or VS Code CLI is required for --editor-only"
+        die "VSCodium or VS Code CLI is required for --editor-smoke"
     fi
     if ! have_display; then
-        die "graphical display session is required for --editor-only"
+        rerun_with_xvfb_if_needed "$@"
+        die "graphical display session is required for --editor-smoke"
     fi
 
     run_suite "e2e/editor-smoke" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
@@ -142,35 +149,38 @@ if [[ "$EDITOR_ONLY" == true ]]; then
 fi
 
 # 1. Unit tests: pure shell, no Podman.
-run_suite "unit/config-parser" bash "$SCRIPT_DIR/unit/config-parser.sh"
+run_suite "unit/config-parser"  bash "$SCRIPT_DIR/unit/config-parser.sh"
 run_suite "unit/downloader-proxy" bash "$SCRIPT_DIR/unit/downloader-proxy.sh"
 
-if [[ "$UNIT_ONLY" == true ]]; then
+if [[ "$UNIT_TESTS_ONLY" == true ]]; then
     echo ""
-    echo "Stopping after unit tests (--unit-only)."
+    echo "Stopping after unit tests (--unit-tests)."
     print_summary
     exit 0
 fi
 
-# 2. Integration tests: Podman required, no editor GUI. The images suite also
-#    runs runtime/security assertions during its existing container launches.
+# 2. Integration tests: Podman required, no editor GUI.
 if ! have_podman; then
     suite_skip "integration/wrapper-images" "podman not found"
-    suite_skip "e2e/headless"       "podman not found"
-    suite_skip "e2e/editor-smoke"   "podman not found"
+    suite_skip "e2e/headless"               "podman not found"
+    suite_skip "e2e/editor-smoke"           "podman not found"
     print_summary
     exit 0
 fi
 
 run_suite "integration/wrapper-images" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
 
-# 3. E2E tests: full jailbox workflow. Headless uses an editor stub; editor
-#    smoke requires a real VSCodium/VS Code CLI.
+# 3. E2E tests: full jailbox workflow.
 run_suite "e2e/headless" bash "$SCRIPT_DIR/e2e/headless.sh"
 
-if [[ "$SKIP_EDITOR" == true ]]; then
-    suite_skip "e2e/editor-smoke" "--skip-editor"
-elif ! have_editor; then
+if [[ "$CORE_TESTS_ONLY" == true ]]; then
+    echo ""
+    echo "Stopping after core tests (--core-tests)."
+    print_summary
+    exit 0
+fi
+
+if ! have_editor; then
     suite_skip "e2e/editor-smoke" "neither codium nor code found in PATH"
 elif ! have_display; then
     suite_skip "e2e/editor-smoke" "no graphical display session found"

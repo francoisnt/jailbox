@@ -32,7 +32,10 @@ configure_proxy_network() {
     local domain internal_net external_net effective_egress_allow
 
     FILTER_FILE=$(mktemp)
-    mapfile -t effective_egress_allow < <(effective_egress_allowlist)
+    effective_egress_allow=()
+    while IFS= read -r domain; do
+        effective_egress_allow+=("$domain")
+    done < <(effective_egress_allowlist)
     for domain in "${effective_egress_allow[@]}"; do
         local escaped
         escaped="$(tinyproxy_escape_host "$domain")"

@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release-gate:
-    uses: ./.github/workflows/full-tests.yml
+    uses: ./.github/workflows/release-gate.yml
 
   publish:
     runs-on: ubuntu-24.04

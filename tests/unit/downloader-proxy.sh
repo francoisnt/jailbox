@@ -53,7 +53,11 @@ assert_not_contains() {
 assert_mode() {
     local name="$1" file="$2" expected="$3"
     local actual
-    actual=$(stat -c '%a' "$file")
+    if actual=$(stat -c '%a' "$file" 2>/dev/null); then
+        :
+    else
+        actual=$(stat -f '%Lp' "$file")
+    fi
     if [[ "$actual" == "$expected" ]]; then
         pass "$name"
     else

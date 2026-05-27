@@ -20,13 +20,17 @@ shellcheck --external-sources --shell=bash "$@" \
     scripts/public-api-diff.sh \
     scripts/release.sh \
     install.sh \
+    tests/ci/setup-common.sh \
+    tests/ci/setup-linux.sh \
+    tests/ci/setup-macos.sh \
+    tests/portable/smoke.sh \
     tests/unit/config-parser.sh \
     tests/unit/downloader-proxy.sh \
     tests/integration/wrapper-images.sh \
     tests/integration/runtime-security.sh \
     tests/e2e/headless.sh \
     tests/e2e/editor-smoke.sh \
-    tests/run-all.sh
+    tests/run
 
 # Bash scripts in container/ (bash justified: container always installs bash)
 echo "shellcheck: container/downloader-proxy-manager.sh"
