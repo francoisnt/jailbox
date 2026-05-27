@@ -127,6 +127,7 @@ run_validation() {
     echo "  scripts/lint.sh"
     bash "$ROOT_DIR/scripts/lint.sh"
     echo "  tests/run"
+    require_command podman
     bash "$ROOT_DIR/tests/run"
     echo "Release validation passed."
 }

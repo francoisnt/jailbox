@@ -1,16 +1,15 @@
 #!/bin/bash
 # Run jailbox test suites.
 #
-# Suites run in dependency order (unit → integration → e2e). Each suite is
-# skipped automatically when its prerequisites are absent.
+# Suites run in dependency order (unit → integration → e2e). With no flag,
+# all suites run and all prerequisites (Podman, editor, display) are required.
+# Use a scoping flag to run a subset that fits your environment.
 #
 # Usage: tests/run [--unit-tests] [--core-tests] [--editor-smoke] [--help]
 #
 #   --unit-tests    Unit tests only (no Podman required)
-#   --core-tests    Unit + integration + e2e headless (no editor)
+#   --core-tests    Unit + integration + e2e headless (no editor required)
 #   --editor-smoke  Editor smoke only
-#
-# With no flag, all suites run (editor included when available).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -88,11 +87,13 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [--unit-tests] [--core-tests] [--editor-smoke] [--help]
 
-Run jailbox test suites. Flags correspond to CI job names.
+Run jailbox test suites. With no flag, all suites run and all prerequisites
+(Podman, editor CLI, display) are required. Use a scoping flag to run a
+subset that fits your environment.
 
 Options:
   --unit-tests    Unit tests only (no Podman required)
-  --core-tests    Unit + integration + e2e headless (no editor)
+  --core-tests    Unit + integration + e2e headless (no editor required)
   --editor-smoke  Editor smoke only
   --help          Show this help
 
@@ -161,11 +162,7 @@ fi
 
 # 2. Integration tests: Podman required, no editor GUI.
 if ! have_podman; then
-    suite_skip "integration/wrapper-images" "podman not found"
-    suite_skip "e2e/headless"               "podman not found"
-    suite_skip "e2e/editor-smoke"           "podman not found"
-    print_summary
-    exit 0
+    die "podman is required (use --unit-tests to run without podman)"
 fi
 
 run_suite "integration/wrapper-images" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
@@ -181,9 +178,10 @@ if [[ "$CORE_TESTS_ONLY" == true ]]; then
 fi
 
 if ! have_editor; then
-    suite_skip "e2e/editor-smoke" "neither codium nor code found in PATH"
+    die "VSCodium or VS Code CLI is required (use --core-tests to skip editor smoke)"
 elif ! have_display; then
-    suite_skip "e2e/editor-smoke" "no graphical display session found"
+    rerun_with_xvfb_if_needed "$@"
+    die "graphical display session is required (use --core-tests to skip editor smoke)"
 else
     run_suite "e2e/editor-smoke" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
 fi
