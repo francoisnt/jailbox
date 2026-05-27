@@ -14,8 +14,30 @@ open_editor() {
 
 launch_editor_remote() {
     write_jailbox_editor_user_settings
+    write_remote_editor_smoke_settings
     "$EDITOR_BIN" --user-data-dir "$JAILBOX_EDITOR_USER_DATA" \
         --remote "ssh-remote+$CONTAINER_NAME" "$REMOTE_PATH"
+}
+
+# Standalone JSON object with smoke test settings — single source of truth.
+editor_smoke_settings_json_object() {
+    printf '{\n'
+    printf '  "security.workspace.trust.enabled": false,\n'
+    printf '  "task.allowAutomaticTasks": "on"\n'
+    printf '}'
+}
+
+# Pre-populate the remote server's Machine settings so task.allowAutomaticTasks
+# is in effect before the extension host starts. Without this, the remote host
+# falls back to the default "prompt" value and folderOpen tasks never fire.
+write_remote_editor_smoke_settings() {
+    [ "${JAILBOX_EDITOR_SMOKE_TEST_SETTINGS:-}" = "1" ] || return 0
+
+    editor_smoke_settings_json_object | ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" '
+        mkdir -p "$HOME/.vscodium-server/data/Machine" "$HOME/.vscode-server/data/Machine"
+        tee "$HOME/.vscodium-server/data/Machine/settings.json" \
+            > "$HOME/.vscode-server/data/Machine/settings.json"
+    '
 }
 
 editor_config_has_ssh_config() {
@@ -53,7 +75,8 @@ EOF_SETTINGS
 }
 
 jailbox_editor_test_settings_json() {
-    if [ "${JAILBOX_EDITOR_SMOKE_TEST_SETTINGS:-}" = "1" ]; then
-        printf ',\n  "security.workspace.trust.enabled": false,\n  "task.allowAutomaticTasks": "on"'
-    fi
+    [ "${JAILBOX_EDITOR_SMOKE_TEST_SETTINGS:-}" = "1" ] || return 0
+    local content
+    content=$(editor_smoke_settings_json_object | grep -v '^[{}]$')
+    printf ',\n%s' "$content"
 }

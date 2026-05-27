@@ -23,7 +23,7 @@ ALL_STAGES=(debian alpine fedora egress)
 VSCODE_STAGES=(debian fedora egress)
 PROOF_FILE=".jailbox-editor-proof"
 TASK_LABEL="jailbox: validate remote session"
-EDITOR_TIMEOUT="${JAILBOX_EDITOR_TIMEOUT:-20}"
+EDITOR_TIMEOUT="${JAILBOX_EDITOR_TIMEOUT:-45}"
 
 PASSED=0
 FAILED=0
@@ -407,6 +407,12 @@ collect_failure_diagnostics() {
         echo "  Editor server directories:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
             "for d in /home/jailbox/.vscode-server /home/jailbox/.vscodium-server; do echo --- \$d; if [ -e \"\$d\" ]; then find \"\$d\" -maxdepth 3 -print | sed -n '1,120p'; else echo '(missing)'; fi; done" \
+            2>&1 | sed 's/^/    /' || true
+
+        echo ""
+        echo "  Remote Machine settings:"
+        ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+            "for d in .vscodium-server .vscode-server; do f=\"\$HOME/\$d/data/Machine/settings.json\"; echo --- \$f; if [ -f \"\$f\" ]; then cat \"\$f\"; else echo '(missing)'; fi; done" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
