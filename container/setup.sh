@@ -1,5 +1,7 @@
 #!/bin/sh
-set -e
+set -eu
+# shellcheck disable=SC3040
+(set -o pipefail) 2>/dev/null && set -o pipefail
 
 MANAGED_USER=jailbox
 
@@ -14,7 +16,7 @@ get_passwd_entry() {
 
 get_user_for_uid() {
     if command -v getent >/dev/null 2>&1; then
-        getent passwd "$USER_ID" | cut -d: -f1
+        getent passwd "$USER_ID" 2>/dev/null | cut -d: -f1 || true
     else
         awk -F: -v uid="$USER_ID" '$3 == uid { print $1; exit }' /etc/passwd
     fi

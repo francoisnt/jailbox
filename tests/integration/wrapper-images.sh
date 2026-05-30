@@ -341,6 +341,8 @@ main() {
     # Poll every 300ms; print a result line as each stage finishes.
     # Completion is signalled by the EXIT trap writing $stage.counts.
     local -A reported=()
+    local last_progress
+    last_progress=$SECONDS
     while [[ ${#reported[@]} -lt ${#stages[@]} ]]; do
         for stage in "${stages[@]}"; do
             [[ "${reported[$stage]+_}" ]] && continue
@@ -351,14 +353,24 @@ main() {
                     printf "  ✅ %-16s (%d passed)\n" "$stage" "$p"
                 else
                     printf "  ❌ %-16s (%d passed, %d failed)\n" "$stage" "$p" "$f"
+                    sed 's/^/      /' "$log_dir/${stage}.log" 2>/dev/null || true
                 fi
                 reported[$stage]=1
             elif ! kill -0 "${stage_pids[$stage]}" 2>/dev/null; then
                 # Process exited without writing counts (early crash).
                 printf "  ❌ %-16s (crashed)\n" "$stage"
+                sed 's/^/      /' "$log_dir/${stage}.log" 2>/dev/null || true
                 reported[$stage]=1
             fi
         done
+        if [[ ${#reported[@]} -lt ${#stages[@]} && $((SECONDS - last_progress)) -ge 30 ]]; then
+            printf "  … still running:"
+            for stage in "${stages[@]}"; do
+                [[ "${reported[$stage]+_}" ]] || printf " %s" "$stage"
+            done
+            printf "\n"
+            last_progress=$SECONDS
+        fi
         [[ ${#reported[@]} -lt ${#stages[@]} ]] && sleep 0.3
     done
     echo ""

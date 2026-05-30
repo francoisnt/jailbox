@@ -102,6 +102,7 @@ run_launch() {
     ensure_jailbox_gitignore
     build_or_select_dev_image
     validate_dev_image
+    warn_if_alpine_dev_image_with_vscode
     build_jailbox_image
     configure_runtime_mounts
     configure_network

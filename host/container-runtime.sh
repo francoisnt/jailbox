@@ -11,6 +11,9 @@ configure_readonly_paths() {
         ".git/hooks"
         ".gitignore"
         ".gitmodules"
+        # Intentionally narrow: protect only the exact .env file, not
+        # .env.local, .env.production, .env.*.local, or other Node/Next.js
+        # variants that projects may expect to edit during development.
         ".env"
         ".gitea/workflows"
         ".github/workflows"
@@ -132,11 +135,25 @@ gitignore_has_entry() {
 }
 
 doctor_jailbox() {
+    local container_status container_os_release
+
     echo "Project jailbox state: $SSH_DIR"
     if [ -d "$SSH_DIR" ]; then
         echo ".jailbox exists: yes"
     else
         echo ".jailbox exists: no"
+    fi
+
+    if command -v podman >/dev/null 2>&1; then
+        container_status=$(podman container inspect "$CONTAINER_NAME" --format '{{.State.Status}}' 2>/dev/null || true)
+        if [ -n "$container_status" ]; then
+            echo "Container status: $container_status"
+        else
+            echo "Container status: missing"
+        fi
+    else
+        container_status=""
+        echo "Container status: unknown (podman not found)"
     fi
 
     if gitignore_has_entry ".jailbox/"; then
@@ -165,5 +182,21 @@ doctor_jailbox() {
         echo "Project-local editor user-data config: yes"
     else
         echo "Project-local editor user-data config: no"
+    fi
+
+    if [ "$container_status" = "running" ]; then
+        container_os_release=$(ssh -F "$SSH_CONFIG" -o ConnectTimeout=1 "$CONTAINER_NAME" \
+            "cat /etc/os-release" 2>/dev/null || true)
+        # doctor does not run host_preflight, so EDITOR_BIN is usually unset
+        # here. editor_profile_uses_code then falls back to command -v checks
+        # against the PATH used for this doctor invocation. That is acceptable
+        # for a warning: false negatives are better than blocking doctor, but
+        # the warning may not fire if code/codium are absent from PATH now.
+        if printf '%s\n' "$container_os_release" | grep -Eq '^ID="?alpine"?$' &&
+            [ -f "$JAILBOX_EDITOR_USER_SETTINGS" ] &&
+            editor_config_has_ssh_config "$JAILBOX_EDITOR_USER_SETTINGS" &&
+            editor_profile_uses_code; then
+            echo "Warning: VS Code Remote SSH does not support Alpine SSH hosts; set EDITOR=codium in jailbox.conf."
+        fi
     fi
 }

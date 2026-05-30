@@ -26,6 +26,7 @@ shellcheck --external-sources --shell=bash "$@" \
     tests/portable/smoke.sh \
     tests/unit/config-parser.sh \
     tests/unit/downloader-proxy.sh \
+    tests/unit/network.sh \
     tests/integration/wrapper-images.sh \
     tests/integration/runtime-security.sh \
     tests/e2e/headless.sh \

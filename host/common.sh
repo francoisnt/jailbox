@@ -225,7 +225,9 @@ validate_egress_allow() {
     local host
 
     for host in "${EGRESS_ALLOW[@]}"; do
-        [[ "$host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$ ]] || \
+        # Single-label names such as localhost or proxy are intentionally
+        # rejected: this allowlist is for internet-routable domain names only.
+        [[ "$host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] || \
             die "invalid EGRESS_ALLOW host '$host' (use hostnames like github.com, without URLs, wildcards, or regex)"
     done
 }

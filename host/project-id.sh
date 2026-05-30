@@ -15,6 +15,10 @@ jailbox_project_hash_port_offset() {
 
     hash="$1"
     [ -n "$hash" ] || hash=0
+    # Branches are mutually exclusive: cksum returns pure decimal digits, while
+    # sha256sum/shasum return hexadecimal. The hex branch uses the first 8
+    # characters of the 12-character project hash because 32 bits is enough for
+    # the 0-16382 port-offset range and stays inside shell arithmetic limits.
     if [[ "$hash" =~ ^[0-9]+$ && "${#hash}" -le 10 ]]; then
         printf '%s\n' "$((hash % 16383))"
     else

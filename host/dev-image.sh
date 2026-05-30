@@ -76,6 +76,18 @@ validate_dev_image() {
     echo "  Package manager: $PKG_MANAGER"
 }
 
+warn_if_alpine_dev_image_with_vscode() {
+    local os_release
+
+    [ "$(basename "$EDITOR_BIN")" = "code" ] || return 0
+
+    os_release=$(podman run --rm "$PROJECT_DEV_IMAGE" "$USABLE_SHELL" -c 'cat /etc/os-release' 2>/dev/null || true)
+    if printf '%s\n' "$os_release" | grep -Eq '^ID="?alpine"?$'; then
+        echo "⚠️  VS Code Remote SSH does not support Alpine SSH hosts."
+        echo "   This dev image appears to be Alpine-based; set EDITOR=codium in jailbox.conf."
+    fi
+}
+
 build_jailbox_image() {
     local install_cache_bust
 

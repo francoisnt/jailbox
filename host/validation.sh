@@ -44,10 +44,11 @@ check_runtime_sockets_absent() {
 }
 
 check_readonly_mounts() {
-    local ro_path checked failed qpath qro
+    local ro_path checked failed qpath qro marker
     checked=0
     failed=0
     printf -v qpath '%q' "$REMOTE_PATH"
+    marker=".jailbox-ro-check-$$"
 
     for ro_path in "${READONLY_PATHS[@]}"; do
         if [ -f "$PROJECT_DIR/$ro_path" ]; then
@@ -59,14 +60,37 @@ check_readonly_mounts() {
                 echo "  ⚠️  Read-only mount appears writable: $ro_path"
                 failed=$((failed + 1))
             fi
+        elif [ -d "$PROJECT_DIR/$ro_path" ]; then
+            checked=$((checked + 1))
+            printf -v qro '%q' "$ro_path"
+            if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+                "REMOTE_PATH=$qpath RO_PATH=$qro MARKER=$(printf '%q' "$marker") bash -s" <<'REMOTE' 2>/dev/null | grep -q "^writable"; then
+set -euo pipefail
+marker_dir="$REMOTE_PATH/.jailbox"
+marker_src="$marker_dir/$MARKER"
+marker_target="$REMOTE_PATH/$RO_PATH/$MARKER"
+cleanup_marker() {
+    rm -f -- "$marker_src" "$marker_target"
+}
+trap cleanup_marker EXIT
+
+mkdir -p -- "$marker_dir"
+touch -- "$marker_src"
+if cp -- "$marker_src" "$marker_target" 2>/dev/null; then
+    echo writable
+fi
+REMOTE
+                echo "  ⚠️  Read-only mount appears writable: $ro_path"
+                failed=$((failed + 1))
+            fi
         fi
     done
 
     if [ "$checked" -eq 0 ]; then
-        echo "  ⚠️  No file read-only mounts were available to validate"
+        echo "  ⚠️  No read-only mounts were available to validate"
         WARNINGS=$((WARNINGS + 1))
     elif [ "$failed" -eq 0 ]; then
-        echo "  ✅ Read-only mounts validated ($checked files checked)"
+        echo "  ✅ Read-only mounts validated ($checked entries checked)"
     else
         WARNINGS=$((WARNINGS + failed))
     fi

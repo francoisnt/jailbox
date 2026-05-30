@@ -261,8 +261,8 @@ cleanup_editor_workspace() {
 prune_stale_jailbox_resources() {
     local ctrs nets
 
-    ctrs=$(podman ps -aq --filter 'name=jailbox-' 2>/dev/null || true)
-    nets=$(podman network ls -q --filter 'name=jailbox-' 2>/dev/null || true)
+    ctrs=$(podman ps -aq --filter 'name=^jailbox-' 2>/dev/null || true)
+    nets=$(podman network ls -q --filter 'name=^jailbox-' 2>/dev/null || true)
 
     if [[ -n "$ctrs" || -n "$nets" ]]; then
         echo "Pruning stale jailbox containers/networks from a previous run..."

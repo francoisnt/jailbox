@@ -98,6 +98,10 @@ EDITOR=codium
 EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com,claude.ai
 ```
 
+Alpine-based dev images require `EDITOR=codium`: VS Code Remote SSH does not
+support Alpine SSH hosts. See the [tested configurations](#tested-configurations)
+matrix for the supported editor/OS combinations.
+
 When `EGRESS_ALLOW` is configured, jAilbox automatically adds the selected
 editor's Remote SSH bootstrap hosts so the editor can install its remote server:
 

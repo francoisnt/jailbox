@@ -1,4 +1,6 @@
-FROM alpine:latest
+# Intentionally pinned: update this Alpine minor version deliberately rather
+# than floating on latest, and keep it aligned with the integration test image.
+FROM alpine:3.21
 RUN apk add --no-cache tinyproxy
 COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
 EXPOSE 8888

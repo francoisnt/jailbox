@@ -125,6 +125,7 @@ main() {
     assert_rejects "remote path config rejected" "REMOTE_PATH=/workspace/project"
     assert_rejects "bad editor rejected" "EDITOR=vim"
     assert_rejects "bad egress host rejected" "EGRESS_ALLOW=https://github.com"
+    assert_rejects "single-label egress host rejected" "EGRESS_ALLOW=localhost"
     assert_rejects "whitespace in value rejected" "DEV_IMAGE=node 22"
     test_injection_rejected
 

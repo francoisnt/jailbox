@@ -27,6 +27,14 @@ editor_smoke_settings_json_object() {
     printf '}'
 }
 
+editor_smoke_profile_settings_json() {
+    [ "${JAILBOX_EDITOR_SMOKE_TEST_SETTINGS:-}" = "1" ] || return 0
+
+    printf ',\n'
+    printf '  "security.workspace.trust.enabled": false,\n'
+    printf '  "task.allowAutomaticTasks": "on"'
+}
+
 # Pre-populate the remote server's Machine settings so task.allowAutomaticTasks
 # is in effect before the extension host starts. Without this, the remote host
 # falls back to the default "prompt" value and folderOpen tasks never fire.
@@ -48,12 +56,30 @@ editor_config_has_ssh_config() {
     grep -Fq "\"remote.SSH.configFile\": \"$SSH_CONFIG\"" "$config_file"
 }
 
+editor_profile_uses_code() {
+    local requested_editor
+
+    requested_editor="${JAILBOX_EDITOR:-$EDITOR}"
+    if [ "$requested_editor" = "code" ]; then
+        return 0
+    fi
+    if [ -n "$EDITOR_BIN" ]; then
+        [ "$(basename "$EDITOR_BIN")" = "code" ]
+        return $?
+    fi
+    [ -z "$requested_editor" ] && ! command -v codium >/dev/null 2>&1 && command -v code >/dev/null 2>&1
+}
+
 write_jailbox_editor_user_settings() {
-    mkdir -p "$(dirname "$JAILBOX_EDITOR_USER_SETTINGS")"
+    local settings_dir settings_tmp
+
+    settings_dir="$(dirname "$JAILBOX_EDITOR_USER_SETTINGS")"
+    mkdir -p "$settings_dir"
+    settings_tmp=$(mktemp "$settings_dir/settings.json.tmp.XXXXXX")
     if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
-        cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
+        cat > "$settings_tmp" <<EOF_SETTINGS
 {
-  "remote.SSH.configFile": "$SSH_CONFIG"$(jailbox_editor_test_settings_json),
+  "remote.SSH.configFile": "$SSH_CONFIG"$(editor_smoke_profile_settings_json),
   "terminal.integrated.env.linux": {
     "HTTP_PROXY": "$PROXY_URL",
     "HTTPS_PROXY": "$PROXY_URL",
@@ -65,18 +91,12 @@ write_jailbox_editor_user_settings() {
 }
 EOF_SETTINGS
     else
-        cat > "$JAILBOX_EDITOR_USER_SETTINGS" <<EOF_SETTINGS
+        cat > "$settings_tmp" <<EOF_SETTINGS
 {
-  "remote.SSH.configFile": "$SSH_CONFIG"$(jailbox_editor_test_settings_json)
+  "remote.SSH.configFile": "$SSH_CONFIG"$(editor_smoke_profile_settings_json)
 }
 EOF_SETTINGS
     fi
-    chmod 600 "$JAILBOX_EDITOR_USER_SETTINGS"
-}
-
-jailbox_editor_test_settings_json() {
-    [ "${JAILBOX_EDITOR_SMOKE_TEST_SETTINGS:-}" = "1" ] || return 0
-    local content
-    content=$(editor_smoke_settings_json_object | grep -v '^[{}]$')
-    printf ',\n%s' "$content"
+    chmod 600 "$settings_tmp"
+    mv "$settings_tmp" "$JAILBOX_EDITOR_USER_SETTINGS"
 }
