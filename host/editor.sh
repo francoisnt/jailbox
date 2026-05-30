@@ -31,8 +31,7 @@ editor_smoke_profile_settings_json() {
     [ "${JAILBOX_EDITOR_SMOKE_TEST_SETTINGS:-}" = "1" ] || return 0
 
     printf ',\n'
-    printf '  "security.workspace.trust.enabled": false,\n'
-    printf '  "task.allowAutomaticTasks": "on"'
+    editor_smoke_settings_json_object | sed '1d; $d'
 }
 
 # Pre-populate the remote server's Machine settings so task.allowAutomaticTasks
