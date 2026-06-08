@@ -23,6 +23,15 @@ setup_ssh_keys() {
     chmod 600 "$SSH_CONFIG"
 }
 
+ssh_config_quote() {
+    local value
+
+    value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '"%s"' "$value"
+}
+
 write_ssh_host_block() {
     local env_pair setenv_line
     setenv_line=""
@@ -32,12 +41,12 @@ Host $CONTAINER_NAME
     HostName localhost
     Port $LOCAL_PORT
     User $MANAGED_USER
-    IdentityFile $KEY_FILE
+    IdentityFile $(ssh_config_quote "$KEY_FILE")
     IdentitiesOnly yes
     PreferredAuthentications publickey
     PasswordAuthentication no
     StrictHostKeyChecking no
-    UserKnownHostsFile $KNOWN_HOSTS
+    UserKnownHostsFile $(ssh_config_quote "$KNOWN_HOSTS")
     BatchMode yes
 SSHEOF
 

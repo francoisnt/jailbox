@@ -139,6 +139,10 @@ initialize_common_state() {
 }
 
 main() {
+    if [[ "${1:-}" == "--help" ]]; then
+        parse_args "$@"
+    fi
+
     load_project_config
     parse_args "$@"
     host_preflight "$@"

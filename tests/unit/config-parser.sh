@@ -111,6 +111,18 @@ test_injection_rejected() {
     fi
 }
 
+test_help_ignores_invalid_config() {
+    local dir
+
+    dir=$(with_config "UNKNOWN=value")
+    if (cd "$dir" && "$JAILBOX_DIR/jailbox" --help) >/dev/null 2>&1; then
+        pass "--help ignores invalid project config"
+    else
+        fail "--help ignores invalid project config"
+    fi
+    rm -rf "$dir"
+}
+
 main() {
     assert_loads "empty config loads" ""
     assert_loads "comments load" $'# comment\n\nDEV_IMAGE=node:22'
@@ -128,6 +140,7 @@ main() {
     assert_rejects "single-label egress host rejected" "EGRESS_ALLOW=localhost"
     assert_rejects "whitespace in value rejected" "DEV_IMAGE=node 22"
     test_injection_rejected
+    test_help_ignores_invalid_config
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then
