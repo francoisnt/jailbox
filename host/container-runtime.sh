@@ -28,6 +28,24 @@ configure_readonly_paths() {
         submodule_rel="${SCRIPT_DIR#$PROJECT_DIR/}"
         READONLY_PATHS=("$submodule_rel" "${READONLY_PATHS[@]}")
     fi
+
+    # READONLY_EXTRA is additive only: project config can extend the protected
+    # set but never remove or replace the built-in defaults. Skip entries
+    # already in the list so podman never sees duplicate mount destinations.
+    local extra
+    for extra in "${READONLY_EXTRA[@]}"; do
+        readonly_paths_contain "$extra" || READONLY_PATHS+=("$extra")
+    done
+}
+
+readonly_paths_contain() {
+    local path candidate
+
+    candidate="$1"
+    for path in "${READONLY_PATHS[@]}"; do
+        [ "$path" = "$candidate" ] && return 0
+    done
+    return 1
 }
 
 build_readonly_mounts() {
@@ -35,6 +53,15 @@ build_readonly_mounts() {
     READONLY_MOUNTS=()
     for path in "${READONLY_PATHS[@]}"; do
         [ -e "$PROJECT_DIR/$path" ] && READONLY_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,ro")
+    done
+
+    # Default paths are skipped silently when absent, but READONLY_EXTRA was
+    # requested explicitly — a missing path gets no read-only mount and could
+    # be created writable from inside the container, so surface that.
+    for path in "${READONLY_EXTRA[@]}"; do
+        if [ ! -e "$PROJECT_DIR/$path" ]; then
+            echo "⚠️  READONLY_EXTRA path does not exist and is not protected: $path"
+        fi
     done
 }
 

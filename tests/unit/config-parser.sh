@@ -86,6 +86,7 @@ EDITOR=code
 
 # Arrays
 EGRESS_ALLOW="github.com,api.github.com"
+READONLY_EXTRA="Makefile,.husky,scripts/deploy.sh"
 ')
     load_config_from_dir "$dir"
     assert_eq "scalar value parsed" "docker.io/library/debian:slim" "$DEV_IMAGE"
@@ -93,6 +94,8 @@ EGRESS_ALLOW="github.com,api.github.com"
     assert_eq "editor value parsed" "code" "$EDITOR"
     assert_eq "array length parsed" "2" "${#EGRESS_ALLOW[@]}"
     assert_eq "array item parsed" "api.github.com" "${EGRESS_ALLOW[1]}"
+    assert_eq "readonly extra length parsed" "3" "${#READONLY_EXTRA[@]}"
+    assert_eq "readonly extra item parsed" "scripts/deploy.sh" "${READONLY_EXTRA[2]}"
     rm -rf "$dir"
 }
 
@@ -138,6 +141,12 @@ main() {
     assert_rejects "bad editor rejected" "EDITOR=vim"
     assert_rejects "bad egress host rejected" "EGRESS_ALLOW=https://github.com"
     assert_rejects "single-label egress host rejected" "EGRESS_ALLOW=localhost"
+    assert_loads "readonly extra loads" "READONLY_EXTRA=Makefile,.husky"
+    assert_rejects "absolute readonly extra rejected" "READONLY_EXTRA=/etc/passwd"
+    assert_rejects "traversing readonly extra rejected" "READONLY_EXTRA=../outside"
+    assert_rejects "embedded dotdot readonly extra rejected" "READONLY_EXTRA=docs/../.git"
+    assert_rejects "dot readonly extra rejected" "READONLY_EXTRA=."
+    assert_rejects "trailing slash readonly extra rejected" "READONLY_EXTRA=.husky/"
     assert_rejects "whitespace in value rejected" "DEV_IMAGE=node 22"
     test_injection_rejected
     test_help_ignores_invalid_config

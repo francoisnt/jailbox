@@ -96,6 +96,10 @@ DEV_TARGET_STAGE=dev
 EDITOR=codium
 
 EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com,claude.ai
+
+# Additional project paths to mount read-only inside the container, on top of
+# the built-in protected set. Comma-separated, relative to the project root.
+READONLY_EXTRA=Makefile,.husky,scripts/deploy.sh
 ```
 
 Alpine-based dev images require `EDITOR=codium`: VS Code Remote SSH does not
@@ -127,7 +131,7 @@ Without `EGRESS_ALLOW`, the container runs on a standard Podman network with unr
 
 ### Important realities
 - The container runs with your **host UID**, so it can read and write your project files
-- Project files are mounted writable. Selected paths like `.git/config`, `.github/workflows`, and `Containerfile` are mounted read-only over the writable project mount.
+- Project files are mounted writable. Selected paths like `.git/config`, `.github/workflows`, and `Containerfile` are mounted read-only over the writable project mount. The built-in list is illustrative, not exhaustive — anything the host or CI later executes (`Makefile`, `.envrc`, `package.json` scripts, editor task files, …) is writable unless you add it via `READONLY_EXTRA`, which extends the built-in set but can never remove from it. Paths that do not exist at launch are not protected.
 - The AI (or any code running in the container) can still exfiltrate or destroy project contents
 - You still share the kernel and container runtime trust boundary
 - Without `EGRESS_ALLOW`, the container has unrestricted outbound internet access

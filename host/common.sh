@@ -203,12 +203,14 @@ set_config_array() {
 
     case "$key" in
         EGRESS_ALLOW) EGRESS_ALLOW=("$@") ;;
+        READONLY_EXTRA) READONLY_EXTRA=("$@") ;;
     esac
 }
 
 validate_config() {
     validate_editor_config
     validate_egress_allow
+    validate_readonly_extra
 }
 
 validate_editor_config() {
@@ -229,6 +231,28 @@ validate_egress_allow() {
         # rejected: this allowlist is for internet-routable domain names only.
         [[ "$host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] || \
             die "invalid EGRESS_ALLOW host '$host' (use hostnames like github.com, without URLs, wildcards, or regex)"
+    done
+}
+
+validate_readonly_extra() {
+    local path
+
+    for path in "${READONLY_EXTRA[@]}"; do
+        # Paths are mounted as "$PROJECT_DIR/$path", so only plain relative
+        # paths make sense; absolute or traversing paths could target host
+        # locations outside the project tree. Trailing slashes are rejected so
+        # each path has one canonical spelling for duplicate detection.
+        case "$path" in
+            /*)
+                die "invalid READONLY_EXTRA path '$path' (use paths relative to the project root)"
+                ;;
+            .|..|./*|../*|*/.|*/..|*/./*|*/../*)
+                die "invalid READONLY_EXTRA path '$path' ('.' and '..' segments are not allowed)"
+                ;;
+            */)
+                die "invalid READONLY_EXTRA path '$path' (remove the trailing slash)"
+                ;;
+        esac
     done
 }
 
