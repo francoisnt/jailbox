@@ -443,11 +443,13 @@ EOF
 
     # Egress policy (only run for the egress stage)
     if [[ "$stage" == "egress" ]]; then
-        local proxy_ctr="${ctr}-proxy"
+        local proxy_ctr="${ctr}-proxy" proxy_url
+
+        proxy_url=$(grep -Eo 'HTTPS_PROXY=[^ ]+' "$ssh_cfg" | head -1 | cut -d= -f2-)
 
         if [[ -f "$settings_path" ]] && \
            grep -Fq '"terminal.integrated.env.linux"' "$settings_path" && \
-           grep -Fq "\"HTTPS_PROXY\": \"http://${proxy_ctr}:8888\"" "$settings_path"; then
+           grep -Fq "\"HTTPS_PROXY\": \"$proxy_url\"" "$settings_path"; then
             pass "editor settings include terminal proxy env"
         else
             fail "editor settings include terminal proxy env"
@@ -456,14 +458,17 @@ EOF
         assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
             "[ -n \"\$HTTPS_PROXY\" ]"
         assert_ssh "$ssh_cfg" "$ctr" "curl downloader proxy block is managed" \
-            "grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\" && grep -Fqx 'proxy = \"http://${proxy_ctr}:8888\"' \"\$HOME/.curlrc\" && grep -Fqx '# <<< jailbox managed proxy <<<' \"\$HOME/.curlrc\""
+            "grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\" && grep -Fqx 'proxy = \"$proxy_url\"' \"\$HOME/.curlrc\" && grep -Fqx '# <<< jailbox managed proxy <<<' \"\$HOME/.curlrc\""
         assert_ssh "$ssh_cfg" "$ctr" "wget downloader proxy block is managed" \
-            "grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\" && grep -Fqx 'use_proxy = on' \"\$HOME/.wgetrc\" && grep -Fqx 'http_proxy = http://${proxy_ctr}:8888' \"\$HOME/.wgetrc\" && grep -Fqx 'https_proxy = http://${proxy_ctr}:8888' \"\$HOME/.wgetrc\" && grep -Fqx '# <<< jailbox managed proxy <<<' \"\$HOME/.wgetrc\""
-        if grep -Fq "HTTPS_PROXY=http://${proxy_ctr}:8888" "$ssh_cfg"; then
+            "grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\" && grep -Fqx 'use_proxy = on' \"\$HOME/.wgetrc\" && grep -Fqx 'http_proxy = $proxy_url' \"\$HOME/.wgetrc\" && grep -Fqx 'https_proxy = $proxy_url' \"\$HOME/.wgetrc\" && grep -Fqx '# <<< jailbox managed proxy <<<' \"\$HOME/.wgetrc\""
+        if [[ "$proxy_url" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:8888$ ]] &&
+            grep -Fq "HTTPS_PROXY=$proxy_url" "$ssh_cfg"; then
             pass "generated SSH config carries proxy environment"
         else
             fail "generated SSH config carries proxy environment"
         fi
+        assert_ssh_fails "$ssh_cfg" "$ctr" "DNS resolution is disabled on egress network when getent is available" \
+            "command -v getent >/dev/null 2>&1 && getent hosts api.ipify.org"
         assert_ssh_fails "$ssh_cfg" "$ctr" "direct HTTP(S) bypassing proxy is blocked" \
             "curl --noproxy '*' --connect-timeout 5 --max-time 5 -fs https://example.com"
         assert_ssh_fails "$ssh_cfg" "$ctr" "raw TCP to external IP is blocked" \

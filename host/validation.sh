@@ -153,7 +153,7 @@ check_proxy_env_in_session() {
 check_downloader_proxy_config() {
     local proxy_url
 
-    proxy_url="http://$PROXY_NAME:8888"
+    proxy_url="$PROXY_URL"
     if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "PROXY_URL='$proxy_url' bash -s" <<'REMOTE' 2>/dev/null
 set -euo pipefail
 

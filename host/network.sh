@@ -1,5 +1,8 @@
 # Network setup and optional tinyproxy egress sidecar.
 
+# shellcheck source=host/project-id.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
+
 configure_network() {
     FILTER_FILE=""
     cleanup_filter_file() { if [ -n "$FILTER_FILE" ]; then rm -f "$FILTER_FILE"; fi; }
@@ -29,7 +32,7 @@ configure_proxy_network() {
     # topology trades transparent filtering for a simpler, capability-free
     # model: tools must cooperate with proxy configuration (HTTP_PROXY /
     # HTTPS_PROXY env, curlrc, wgetrc) to reach allowed hosts.
-    local domain internal_net external_net effective_egress_allow
+    local domain internal_net external_net effective_egress_allow proxy_internal_ip proxy_internal_subnet
 
     FILTER_FILE=$(mktemp)
     effective_egress_allow=()
@@ -51,8 +54,11 @@ configure_proxy_network() {
 
     internal_net="${NETWORK_NAME}-internal"
     external_net="${NETWORK_NAME}-external"
+    proxy_internal_subnet=$(proxy_internal_subnet)
+    proxy_internal_ip=$(proxy_internal_ip)
 
-    podman network exists "$internal_net" 2>/dev/null || podman network create --internal "$internal_net"
+    podman network exists "$internal_net" 2>/dev/null || \
+        podman network create --internal --disable-dns --subnet "$proxy_internal_subnet" "$internal_net"
     podman network exists "$external_net" 2>/dev/null || podman network create "$external_net"
 
     if podman container exists "$PROXY_NAME" 2>/dev/null; then
@@ -67,7 +73,7 @@ configure_proxy_network() {
         --name "$PROXY_NAME" \
         --replace \
         --network "$external_net" \
-        --network "$internal_net" \
+        --network "$internal_net:ip=$proxy_internal_ip" \
         --read-only \
         --tmpfs /tmp:rw,noexec,nosuid,nodev \
         --tmpfs /run:rw,noexec,nosuid,nodev \
@@ -78,6 +84,7 @@ configure_proxy_network() {
 
     JAILBOX_NETWORK="$internal_net"
     JAILBOX_INTERNAL_NETWORK="$internal_net"
+    PROXY_URL="http://$proxy_internal_ip:8888"
     configure_proxy_env
 }
 
@@ -107,9 +114,11 @@ effective_egress_allowlist() {
 
 configure_proxy_env() {
     # Single source for the proxy URL and no-proxy list. All other modules
-    # (editor settings, downloader bootstrap) reference these globals rather
-    # than reconstructing http://$PROXY_NAME:8888 independently.
-    PROXY_URL="http://$PROXY_NAME:8888"
+    # (editor settings, downloader bootstrap) reference these globals.
+    if [ -z "$PROXY_URL" ] && [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+        PROXY_URL="http://$(proxy_internal_ip):8888"
+    fi
+    [ -n "$PROXY_URL" ] || PROXY_URL="http://$PROXY_NAME:8888"
     PROXY_NO_PROXY="localhost,127.0.0.1"
     # Rendered into the generated SSH Host block via SetEnv. sshd creates fresh
     # session environments, so client-side SetEnv is the reliable way to expose
@@ -126,4 +135,20 @@ configure_proxy_env() {
 
 tinyproxy_escape_host() {
     printf '%s\n' "$1" | sed 's/\./\\./g'
+}
+
+proxy_internal_subnet() {
+    local hash offset octet
+
+    hash="${PROJECT_HASH:-0}"
+    offset=$(jailbox_project_hash_port_offset "$hash")
+    octet=$((1 + offset % 200))
+    printf '10.240.%s.0/24\n' "$octet"
+}
+
+proxy_internal_ip() {
+    local subnet
+
+    subnet=$(proxy_internal_subnet)
+    printf '%s.2\n' "${subnet%.0/24}"
 }
