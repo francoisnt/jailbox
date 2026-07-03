@@ -293,6 +293,33 @@ wait_for_proof() {
     return 1
 }
 
+wait_for_remote_editor_ready() {
+    local project_dir="$1"
+    local ctr="$2"
+    local ssh_cfg deadline
+
+    ssh_cfg=$(jailbox_ssh_config "$project_dir")
+    deadline=$((SECONDS + EDITOR_TIMEOUT))
+    while (( SECONDS < deadline )); do
+        if ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' <<'REMOTE' 2>/dev/null
+for root in "$HOME/.vscodium-server" "$HOME/.vscode-server"; do
+    [ -d "$root" ] || continue
+    if find "$root" -maxdepth 2 -type f -name '*.log' -exec grep -q 'Extension host agent started' {} \; -print -quit |
+        grep -q .; then
+        exit 0
+    fi
+done
+exit 1
+REMOTE
+        then
+            return 0
+        fi
+        sleep 1
+    done
+
+    return 1
+}
+
 assert_proof_contains() {
     local proof_path="$1"
     local needle="$2"
@@ -506,6 +533,16 @@ run_stage() {
     else
         fail "jailbox launched editor workspace"
         rc=1
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+        echo "  Waiting up to ${EDITOR_TIMEOUT}s for remote editor server readiness..."
+        if wait_for_remote_editor_ready "$project_dir" "$ctr"; then
+            pass "remote editor server became ready"
+        else
+            fail "remote editor server became ready"
+            rc=1
+        fi
     fi
 
     if [[ "$rc" -eq 0 ]]; then

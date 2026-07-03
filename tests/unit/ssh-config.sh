@@ -40,6 +40,8 @@ test_paths_with_spaces_are_quoted() {
         '    IdentityFile "/tmp/jailbox path/state/key"'
     assert_contains "UserKnownHostsFile path is quoted" "$output" \
         '    UserKnownHostsFile "/tmp/jailbox path/state/known_hosts"'
+    assert_contains "StrictHostKeyChecking is enabled" "$output" \
+        '    StrictHostKeyChecking yes'
 }
 
 test_quotes_inside_paths_are_escaped() {
@@ -60,12 +62,39 @@ test_quotes_inside_paths_are_escaped() {
         '    UserKnownHostsFile "/tmp/jailbox \"quoted\"/state/known_hosts"'
 }
 
+test_known_host_entry_is_pinned() {
+    local dir expected
+
+    dir=$(mktemp -d)
+    KNOWN_HOSTS="$dir/known_hosts"
+    LOCAL_PORT="50222"
+    expected="[localhost]:50222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey"
+
+    printf '%s ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIStaleKey\n' "[localhost]:50222" > "$KNOWN_HOSTS"
+    chmod 600 "$KNOWN_HOSTS"
+
+    write_known_host_entry "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey"
+
+    if grep -Fxq "$expected" "$KNOWN_HOSTS"; then
+        pass "known_hosts contains pinned localhost port key"
+    else
+        fail "known_hosts contains pinned localhost port key"
+    fi
+    if grep -Fq "IStaleKey" "$KNOWN_HOSTS"; then
+        fail "known_hosts removes stale localhost port key"
+    else
+        pass "known_hosts removes stale localhost port key"
+    fi
+    rm -rf "$dir"
+}
+
 main() {
     echo "ssh config tests"
     echo ""
 
     test_paths_with_spaces_are_quoted
     test_quotes_inside_paths_are_escaped
+    test_known_host_entry_is_pinned
 
     echo ""
     if [[ "$FAILED" -eq 0 ]]; then

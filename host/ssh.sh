@@ -45,7 +45,7 @@ Host $CONTAINER_NAME
     IdentitiesOnly yes
     PreferredAuthentications publickey
     PasswordAuthentication no
-    StrictHostKeyChecking no
+    StrictHostKeyChecking yes
     UserKnownHostsFile $(ssh_config_quote "$KNOWN_HOSTS")
     BatchMode yes
 SSHEOF
@@ -84,8 +84,6 @@ EOF_INSTRUCTIONS
 }
 
 wait_for_ssh() {
-    ssh-keygen -f "$KNOWN_HOSTS" -R "[localhost]:$LOCAL_PORT" 2>/dev/null || true
-
     echo "⏳ Waiting for sshd..."
     SSH_READY=false
     for i in $(seq 1 30); do
@@ -103,4 +101,34 @@ wait_for_ssh() {
         podman logs "$CONTAINER_NAME" >&2 || true
         exit 1
     fi
+}
+
+pin_ssh_host_key() {
+    local host_key_file host_key
+
+    host_key_file="$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub"
+    echo "🔐 Pinning SSH host key..."
+    for _ in $(seq 1 30); do
+        if [ -s "$host_key_file" ]; then
+            host_key=$(cat "$host_key_file")
+            write_known_host_entry "$host_key"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Error: sshd host key was not generated in time: $host_key_file" >&2
+    echo "  podman logs $CONTAINER_NAME" >&2
+    podman logs "$CONTAINER_NAME" >&2 || true
+    exit 1
+}
+
+write_known_host_entry() {
+    local host_key
+
+    host_key="$1"
+    mkdir -p "$(dirname "$KNOWN_HOSTS")"
+    ssh-keygen -f "$KNOWN_HOSTS" -R "[localhost]:$LOCAL_PORT" >/dev/null 2>&1 || true
+    printf '[localhost]:%s %s\n' "$LOCAL_PORT" "$host_key" >> "$KNOWN_HOSTS"
+    chmod 600 "$KNOWN_HOSTS"
 }

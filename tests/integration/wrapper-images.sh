@@ -83,11 +83,29 @@ Host jailbox-test
     IdentitiesOnly yes
     PreferredAuthentications publickey
     PasswordAuthentication no
-    StrictHostKeyChecking no
+    StrictHostKeyChecking yes
     UserKnownHostsFile $ssh_dir/known_hosts
     BatchMode yes
 EOF
     chmod 600 "$ssh_dir/config"
+}
+
+pin_ssh_host_key() {
+    local ssh_dir="$1" port="$2" runtime_dir="$3"
+    local host_key_file host_key
+
+    host_key_file="$runtime_dir/ssh_host_ed25519_key.pub"
+    for _ in $(seq 1 30); do
+        if [ -s "$host_key_file" ]; then
+            host_key=$(cat "$host_key_file")
+            ssh-keygen -f "$ssh_dir/known_hosts" -R "[localhost]:$port" >/dev/null 2>&1 || true
+            printf '[localhost]:%s %s\n' "$port" "$host_key" >> "$ssh_dir/known_hosts"
+            chmod 600 "$ssh_dir/known_hosts"
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
 }
 
 ssh_run() {
@@ -288,6 +306,14 @@ run_case() {
         fail "container starts"
         return 1
     fi
+
+    if ! pin_ssh_host_key "$ssh_dir" "$port" "$sshd_runtime_dir"; then
+        fail "SSH host key pinned"
+        podman logs "$ctr" >&2 || true
+        return 1
+    fi
+
+    pass "SSH host key pinned"
 
     if ! wait_for_ssh "$ssh_dir/config"; then
         fail "SSH ready"

@@ -109,6 +109,7 @@ run_launch() {
     build_readonly_mounts
     ensure_home_volume
     start_jailbox_container
+    pin_ssh_host_key
     wait_for_ssh
     configure_downloader_proxy
     post_start_validation
