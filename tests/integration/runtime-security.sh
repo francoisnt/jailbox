@@ -106,3 +106,96 @@ assert_zero_effective_capabilities() {
     assert_ssh "$config" "container starts with zero effective capabilities" \
         "awk '/^CapEff:/ { exit (\$2 == \"0000000000000000\" ? 0 : 1) }' /proc/1/status"
 }
+
+# host/dev-image.sh validation probes execute the dev image (including its
+# entrypoint) before any jailbox runtime hardening applies, so podman_probe
+# must supply its own constraints: no network and no capabilities.
+# Sourcing happens inside the command substitutions because dev-image.sh
+# defines jailbox_install_cache_bust, which would otherwise shadow this
+# harness's version of that helper.
+assert_probe_hardening() {
+    local image="$1"
+    local interfaces capabilities
+
+    interfaces=$(
+        # shellcheck source=host/dev-image.sh
+        source "$JAILBOX_DIR/host/dev-image.sh"
+        podman_probe "$image" /bin/sh -c 'ls /sys/class/net' 2>/dev/null || true
+    )
+    if [ "$interfaces" = "lo" ]; then
+        pass "dev-image probe has no network interfaces"
+    else
+        fail "dev-image probe has no network interfaces (got: ${interfaces:-none})"
+    fi
+
+    capabilities=$(
+        # shellcheck source=host/dev-image.sh
+        source "$JAILBOX_DIR/host/dev-image.sh"
+        podman_probe "$image" /bin/sh -c 'grep ^CapEff: /proc/self/status' 2>/dev/null || true
+    )
+    case "$capabilities" in
+        *0000000000000000)
+            pass "dev-image probe has zero effective capabilities"
+            ;;
+        *)
+            fail "dev-image probe has zero effective capabilities (got: ${capabilities:-none})"
+            ;;
+    esac
+}
+
+# Regression coverage for check_readonly_mounts itself, not just the mounts:
+# the directory branch once passed vacuously because its marker source lived
+# under the read-only .jailbox mount. Run the production check against a
+# project that has three correctly read-only paths (Containerfile, .git/hooks,
+# .jailbox — the last mirroring production so the old marker placement stays
+# pinned as a failure) and two decoys listed as protected but mounted writable
+# (Dockerfile, .github/workflows), and require it to flag exactly the decoys —
+# one file, one directory.
+assert_readonly_mount_validation() {
+    local config="$1" project_dir="$2"
+    local output
+
+    # shellcheck source=host/validation.sh
+    source "$JAILBOX_DIR/host/validation.sh"
+
+    # Globals consumed by check_readonly_mounts. CONTAINER_NAME doubles as
+    # the ssh host alias, which this harness names jailbox-test.
+    SSH_CONFIG="$config"
+    CONTAINER_NAME="jailbox-test"
+    PROJECT_DIR="$project_dir"
+    REMOTE_PATH="/home/jailbox/project"
+    WARNINGS=0
+
+    READONLY_PATHS=("Containerfile" ".git/hooks" ".jailbox")
+    output=$(check_readonly_mounts)
+    if printf '%s\n' "$output" | grep -q "Read-only mounts validated (3 entries checked)"; then
+        pass "read-only validation passes for correctly mounted paths"
+    else
+        fail "read-only validation passes for correctly mounted paths"
+        printf '%s\n' "$output" | sed 's/^/    /'
+    fi
+
+    READONLY_PATHS=("Containerfile" ".git/hooks" ".jailbox" "Dockerfile" ".github/workflows")
+    output=$(check_readonly_mounts)
+
+    if printf '%s\n' "$output" | grep -q "appears writable: Dockerfile"; then
+        pass "read-only validation flags writable file"
+    else
+        fail "read-only validation flags writable file"
+        printf '%s\n' "$output" | sed 's/^/    /'
+    fi
+
+    if printf '%s\n' "$output" | grep -q "appears writable: .github/workflows"; then
+        pass "read-only validation flags writable directory"
+    else
+        fail "read-only validation flags writable directory"
+        printf '%s\n' "$output" | sed 's/^/    /'
+    fi
+
+    if printf '%s\n' "$output" | grep -Eq "appears writable: (Containerfile|\.git/hooks|\.jailbox)"; then
+        fail "read-only validation stays quiet for read-only paths"
+        printf '%s\n' "$output" | sed 's/^/    /'
+    else
+        pass "read-only validation stays quiet for read-only paths"
+    fi
+}

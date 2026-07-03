@@ -1,5 +1,13 @@
 # Dev image discovery, validation, and wrapper-image build.
 
+# Validation probes execute the dev image (including any entrypoint it
+# defines) before jailbox's runtime hardening applies. The probes only run
+# short shell one-liners, so constrain them: no network, no capabilities, no
+# privilege escalation.
+podman_probe() {
+    podman run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges "$@"
+}
+
 build_or_select_dev_image() {
     if [ -n "$DEV_IMAGE" ]; then
         echo "📦 Using dev image: $DEV_IMAGE"
@@ -45,9 +53,9 @@ validate_dev_image() {
     echo "🔍 Validating dev image..."
 
     USABLE_SHELL=""
-    if podman run --rm "$PROJECT_DEV_IMAGE" /bin/sh -c "exit 0" 2>/dev/null; then
+    if podman_probe "$PROJECT_DEV_IMAGE" /bin/sh -c "exit 0" 2>/dev/null; then
         USABLE_SHELL="/bin/sh"
-    elif podman run --rm "$PROJECT_DEV_IMAGE" bash -c "exit 0" 2>/dev/null; then
+    elif podman_probe "$PROJECT_DEV_IMAGE" bash -c "exit 0" 2>/dev/null; then
         USABLE_SHELL="bash"
     fi
 
@@ -60,7 +68,7 @@ validate_dev_image() {
         exit 1
     fi
 
-    PKG_MANAGER=$(podman run --rm "$PROJECT_DEV_IMAGE" "$USABLE_SHELL" -c \
+    PKG_MANAGER=$(podman_probe "$PROJECT_DEV_IMAGE" "$USABLE_SHELL" -c \
         'for pm in apt-get apk dnf yum; do command -v "$pm" >/dev/null 2>&1 && echo "$pm" && exit 0; done; exit 1' \
         2>/dev/null || true)
 
@@ -81,7 +89,7 @@ warn_if_alpine_dev_image_with_vscode() {
 
     [ "$(basename "$EDITOR_BIN")" = "code" ] || return 0
 
-    os_release=$(podman run --rm "$PROJECT_DEV_IMAGE" "$USABLE_SHELL" -c 'cat /etc/os-release' 2>/dev/null || true)
+    os_release=$(podman_probe "$PROJECT_DEV_IMAGE" "$USABLE_SHELL" -c 'cat /etc/os-release' 2>/dev/null || true)
     if printf '%s\n' "$os_release" | grep -Eq '^ID="?alpine"?$'; then
         echo "⚠️  VS Code Remote SSH does not support Alpine SSH hosts."
         echo "   This dev image appears to be Alpine-based; set EDITOR=codium in jailbox.conf."

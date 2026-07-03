@@ -26,6 +26,8 @@ This gives you the convenience of Remote SSH development with a significantly re
 
 ```bash
 curl -fsSLO https://github.com/francoisnt/jailbox/releases/latest/download/jailbox-latest.tar.gz
+curl -fsSLO https://github.com/francoisnt/jailbox/releases/latest/download/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
 release_dir="$(tar -tzf jailbox-latest.tar.gz | head -1 | cut -d/ -f1)"
 tar -xzf jailbox-latest.tar.gz
 cd "$release_dir"

@@ -66,15 +66,17 @@ check_readonly_mounts() {
             if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
                 "REMOTE_PATH=$qpath RO_PATH=$qro MARKER=$(printf '%q' "$marker") bash -s" <<'REMOTE' 2>/dev/null | grep -q "^writable"; then
 set -euo pipefail
-marker_dir="$REMOTE_PATH/.jailbox"
-marker_src="$marker_dir/$MARKER"
+# The marker source must live on a path that is always writable (/tmp is
+# container tmpfs). Sourcing it from the project tree would abort under
+# set -e before the copy probe runs whenever that path is itself read-only,
+# making the check pass vacuously.
+marker_src="/tmp/$MARKER"
 marker_target="$REMOTE_PATH/$RO_PATH/$MARKER"
 cleanup_marker() {
     rm -f -- "$marker_src" "$marker_target"
 }
 trap cleanup_marker EXIT
 
-mkdir -p -- "$marker_dir"
 touch -- "$marker_src"
 if cp -- "$marker_src" "$marker_target" 2>/dev/null; then
     echo writable

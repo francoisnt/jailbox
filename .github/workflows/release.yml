@@ -28,3 +28,4 @@ jobs:
           files: |
             dist/jailbox-${{ github.ref_name }}.tar.gz
             dist/jailbox-latest.tar.gz
+            dist/SHA256SUMS

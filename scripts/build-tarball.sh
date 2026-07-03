@@ -29,6 +29,15 @@ die() {
     exit 1
 }
 
+# sha256sum on Linux, shasum on macOS dev machines.
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$@"
+    else
+        shasum -a 256 "$@"
+    fi
+}
+
 version="${1:-}"
 [ -n "$version" ] || { usage >&2; exit 2; }
 [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid version '$version'"
@@ -37,11 +46,12 @@ release_name="$APP_NAME-$version"
 stage_dir="$DIST_DIR/$release_name"
 tarball="$DIST_DIR/$release_name.tar.gz"
 latest_tarball="$DIST_DIR/$APP_NAME-latest.tar.gz"
+checksums_file="$DIST_DIR/SHA256SUMS"
 
 bash -n "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox" "$ROOT_DIR"/host/*.sh "$ROOT_DIR"/scripts/*.sh
 sh -n "$ROOT_DIR"/container/*.sh
 
-rm -rf "$stage_dir" "$tarball" "$latest_tarball"
+rm -rf "$stage_dir" "$tarball" "$latest_tarball" "$checksums_file"
 mkdir -p "$stage_dir"
 
 for path in "${RELEASE_PATHS[@]}"; do
@@ -57,5 +67,9 @@ chmod 755 "$stage_dir"/container/*.sh
 (cd "$DIST_DIR" && tar -czf "$release_name.tar.gz" "$release_name")
 cp "$tarball" "$latest_tarball"
 rm -rf "$stage_dir"
+
+# Checksums use bare filenames so `sha256sum --check` works from the
+# download directory.
+(cd "$DIST_DIR" && sha256 "$release_name.tar.gz" "$APP_NAME-latest.tar.gz" > SHA256SUMS)
 
 echo "$tarball"

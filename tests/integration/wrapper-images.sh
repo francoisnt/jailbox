@@ -174,6 +174,7 @@ run_case() {
     ssh_dir=""
     home_dir=""
     sshd_runtime_dir=""
+    project_dir=""
     build_log=""
 
     port=$(stage_port "$stage")
@@ -204,6 +205,7 @@ run_case() {
           rm -rf "$ssh_dir"
           rm -rf "$home_dir"
           rm -rf "$sshd_runtime_dir"
+          rm -rf "$project_dir"
           podman stop "'"$ctr"'" >/dev/null 2>&1 || true
           podman rm   "'"$ctr"'" >/dev/null 2>&1 || true' EXIT
 
@@ -248,8 +250,20 @@ run_case() {
 
     pass "images build"
 
+    assert_probe_hardening "$test_image"
+
     setup_ssh_keys "$ssh_dir" "$port"
     assert_bad_runtime_dir_fails "$wrapper_image" "$ssh_dir" "$ctr" "bad sshd runtime directory fails clearly before sshd"
+
+    # Project fixture for assert_readonly_mount_validation: Containerfile,
+    # .git/hooks, and .jailbox get read-only overlays below; Dockerfile and
+    # .github/workflows are deliberately listed as protected but left writable.
+    # The read-only .jailbox mount mirrors production and pins the old vacuous
+    # marker-in-.jailbox implementation as a failure.
+    project_dir=$(mktemp -d)
+    mkdir -p "$project_dir/.git/hooks" "$project_dir/.github/workflows" "$project_dir/.jailbox"
+    printf 'FROM scratch\n' > "$project_dir/Containerfile"
+    printf 'FROM scratch\n' > "$project_dir/Dockerfile"
 
     # Mirror production's /run/jailbox-sshd bind mount. A plain tmpfs at that
     # path is root-owned under Podman, while a world-writable /run breaks
@@ -267,6 +281,10 @@ run_case() {
         -v "${home_dir}:/home/jailbox:Z" \
         -v "${sshd_runtime_dir}:/run/jailbox-sshd:Z" \
         -v "${ssh_dir}/key.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
+        -v "${project_dir}:/home/jailbox/project:Z" \
+        -v "${project_dir}/Containerfile:/home/jailbox/project/Containerfile:Z,ro" \
+        -v "${project_dir}/.git/hooks:/home/jailbox/project/.git/hooks:Z,ro" \
+        -v "${project_dir}/.jailbox:/home/jailbox/project/.jailbox:Z,ro" \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
         "$wrapper_image" >/dev/null; then
@@ -290,6 +308,9 @@ run_case() {
     assert_host_container_sockets_absent "$ssh_dir/config"
     assert_zero_effective_capabilities "$ssh_dir/config"
     assert_local_forwarding "$ssh_dir/config" "$forward_port" "SSH local forwarding works"
+    # Last: mutates READONLY_PATHS and other host-module globals (safe in this
+    # per-stage subshell, but keep it after the plain container assertions).
+    assert_readonly_mount_validation "$ssh_dir/config" "$project_dir"
 }
 
 jailbox_install_cache_bust() {

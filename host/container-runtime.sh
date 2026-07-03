@@ -29,6 +29,23 @@ configure_readonly_paths() {
         READONLY_PATHS=("$submodule_rel" "${READONLY_PATHS[@]}")
     fi
 
+    # A configured DEV_CONTAINERFILE is a build input the next launch executes
+    # via podman build, exactly like the default candidates above. Protect it
+    # when it resolves inside the project; a containerfile outside the project
+    # is not reachable through the project mount and needs no overlay.
+    if [ -n "$DEV_CONTAINERFILE" ]; then
+        local containerfile_abs containerfile_rel
+        case "$DEV_CONTAINERFILE" in
+            /*) containerfile_abs="$DEV_CONTAINERFILE" ;;
+            *)  containerfile_abs="$PROJECT_DIR/$DEV_CONTAINERFILE" ;;
+        esac
+        containerfile_abs=$(realpath -m -- "$containerfile_abs" 2>/dev/null) || containerfile_abs=""
+        if [[ -n "$containerfile_abs" && "$containerfile_abs" == "$PROJECT_DIR/"* ]]; then
+            containerfile_rel="${containerfile_abs#"$PROJECT_DIR"/}"
+            readonly_paths_contain "$containerfile_rel" || READONLY_PATHS+=("$containerfile_rel")
+        fi
+    fi
+
     # READONLY_EXTRA is additive only: project config can extend the protected
     # set but never remove or replace the built-in defaults. Skip entries
     # already in the list so podman never sees duplicate mount destinations.
