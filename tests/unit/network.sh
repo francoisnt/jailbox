@@ -37,17 +37,35 @@ assert_no_match() {
 }
 
 test_tinyproxy_exact_match_patterns() {
-    local d filter escaped
+    local d filter
 
     d=$(mktemp -d)
     filter="$d/filter"
-    escaped="$(tinyproxy_escape_host "example.com")"
-    printf '^%s$\n' "$escaped" >> "$filter"
-    printf '\\.%s$\n' "$escaped" >> "$filter"
+    render_tinyproxy_filter "$filter" "example.com"
 
     assert_contains_line "tinyproxy: exact domain pattern" "$filter" '^example\.com$'
     assert_contains_line "tinyproxy: subdomain pattern" "$filter" '\.example\.com$'
     assert_no_match "tinyproxy: no xexample.com overmatch" "$filter" "xexample.com"
+
+    rm -rf "$d"
+}
+
+test_tinyproxy_filter_rerender() {
+    local d filter
+
+    d=$(mktemp -d)
+    filter="$d/filter"
+    printf 'stale\n' > "$filter"
+
+    render_tinyproxy_filter "$filter" "github.com" "api.github.com"
+
+    assert_contains_line "tinyproxy: rerender exact domain" "$filter" '^github\.com$'
+    assert_contains_line "tinyproxy: rerender second domain" "$filter" '^api\.github\.com$'
+    if grep -Fxq "stale" "$filter"; then
+        fail "tinyproxy: rerender removes stale lines"
+    else
+        pass "tinyproxy: rerender removes stale lines"
+    fi
 
     rm -rf "$d"
 }
@@ -112,6 +130,7 @@ main() {
     echo ""
 
     test_tinyproxy_exact_match_patterns
+    test_tinyproxy_filter_rerender
     test_proxy_internal_address
     test_configure_proxy_env_preserves_precomputed_url
     test_configure_proxy_env_computes_static_url

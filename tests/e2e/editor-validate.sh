@@ -1,7 +1,6 @@
 #!/bin/bash
-# Validation task run by VS Code/VSCodium inside the jailbox container.
-# Written into the fixture workspace by editor-smoke.sh and executed via
-# the runOn:folderOpen task in .vscode/tasks.json.
+# Validation probe run inside the jailbox container by editor-smoke.sh after
+# VS Code/VSCodium has established the Remote SSH session.
 #
 # Proof file format: one key=value per line, read by validate_proof().
 set -eu
@@ -47,4 +46,4 @@ rm -f "$write_probe"
 test "$(whoami)" = jailbox
 test -f /run/jailbox-sshd/authorized_keys
 test -w .
-echo "jailbox editor task validation passed"
+echo "jailbox editor validation probe passed"

@@ -5,8 +5,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
 
 configure_network() {
     FILTER_FILE=""
-    cleanup_filter_file() { if [ -n "$FILTER_FILE" ]; then rm -f "$FILTER_FILE"; fi; }
-    trap cleanup_filter_file EXIT
 
     if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
         configure_proxy_network
@@ -32,22 +30,14 @@ configure_proxy_network() {
     # topology trades transparent filtering for a simpler, capability-free
     # model: tools must cooperate with proxy configuration (HTTP_PROXY /
     # HTTPS_PROXY env, curlrc, wgetrc) to reach allowed hosts.
-    local domain internal_net external_net effective_egress_allow proxy_internal_ip proxy_internal_subnet
+    local internal_net external_net effective_egress_allow proxy_internal_ip proxy_internal_subnet
 
-    FILTER_FILE=$(mktemp)
     effective_egress_allow=()
     while IFS= read -r domain; do
         effective_egress_allow+=("$domain")
     done < <(effective_egress_allowlist)
-    for domain in "${effective_egress_allow[@]}"; do
-        local escaped
-        escaped="$(tinyproxy_escape_host "$domain")"
-        # Two patterns per domain: exact match and subdomain match.
-        # (^|\.)domain$ looks correct but the ^ inside a group is not
-        # honoured by musl libc's POSIX ERE (used in Alpine/tinyproxy).
-        printf '^%s$\n'   "$escaped" >> "$FILTER_FILE"
-        printf '\\.%s$\n' "$escaped" >> "$FILTER_FILE"
-    done
+    FILTER_FILE="$SSH_DIR/tinyproxy-filter"
+    render_tinyproxy_filter "$FILTER_FILE" "${effective_egress_allow[@]}"
 
     echo "📦 Building proxy image..."
     podman build -t "$PROXY_IMAGE" -f "$SCRIPT_DIR/container/tinyproxy/Containerfile" "$SCRIPT_DIR/container/tinyproxy"
@@ -79,7 +69,7 @@ configure_proxy_network() {
         --tmpfs /run:rw,noexec,nosuid,nodev \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
-        -v "$FILTER_FILE:/etc/tinyproxy/filter:ro" \
+        -v "$FILTER_FILE:/etc/tinyproxy/filter:ro,Z" \
         "$PROXY_IMAGE"
 
     JAILBOX_NETWORK="$internal_net"
@@ -135,6 +125,25 @@ configure_proxy_env() {
 
 tinyproxy_escape_host() {
     printf '%s\n' "$1" | sed 's/\./\\./g'
+}
+
+render_tinyproxy_filter() {
+    local filter_file domain escaped
+
+    filter_file="$1"
+    shift
+
+    mkdir -p "$(dirname "$filter_file")"
+    : > "$filter_file"
+    chmod 600 "$filter_file"
+    for domain in "$@"; do
+        escaped="$(tinyproxy_escape_host "$domain")"
+        # Two patterns per domain: exact match and subdomain match.
+        # (^|\.)domain$ looks correct but the ^ inside a group is not
+        # honoured by musl libc's POSIX ERE (used in Alpine/tinyproxy).
+        printf '^%s$\n' "$escaped" >> "$filter_file"
+        printf '\\.%s$\n' "$escaped" >> "$filter_file"
+    done
 }
 
 proxy_internal_subnet() {

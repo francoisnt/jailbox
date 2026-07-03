@@ -1,9 +1,9 @@
 #!/bin/bash
 # Editor smoke test for jailbox.
 #
-# For each stage: creates a temporary VS Code/VSCodium workspace fixture with a
-# .vscode/tasks.json validation task, launches the workspace through jailbox,
-# opens the Remote SSH workspace with automatic tasks enabled, and verifies the
+# For each stage: creates a temporary VS Code/VSCodium workspace fixture,
+# launches the workspace through jailbox, waits for the Remote SSH editor server,
+# runs the validation probe through the generated SSH target, and verifies the
 # proof file from the host.
 #
 # Prerequisites: run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
@@ -22,7 +22,6 @@ source "$JAILBOX_DIR/host/project-id.sh"
 ALL_STAGES=(debian alpine fedora egress)
 VSCODE_STAGES=(debian fedora egress)
 PROOF_FILE=".jailbox-editor-proof"
-TASK_LABEL="jailbox: validate remote session"
 EDITOR_TIMEOUT="${JAILBOX_EDITOR_TIMEOUT:-45}"
 
 PASSED=0
@@ -66,7 +65,7 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [stage...]
 
-Launch VSCodium/VS Code through jailbox and verify a Remote SSH task creates
+Launch VSCodium/VS Code through jailbox and verify a Remote SSH probe creates
 $PROOF_FILE in a temporary workspace.
 
 Stages: ${ALL_STAGES[*]}
@@ -191,29 +190,6 @@ EOF
     cp "$SCRIPT_DIR/editor-validate.sh" "$project_dir/.vscode/jailbox-validate.sh"
     chmod +x "$project_dir/.vscode/jailbox-validate.sh"
 
-    cat > "$project_dir/.vscode/tasks.json" <<'EOF'
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "jailbox: validate remote session",
-      "type": "shell",
-      "command": "bash .vscode/jailbox-validate.sh",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "runOptions": {
-        "runOn": "folderOpen"
-      },
-      "problemMatcher": []
-    }
-  ]
-}
-EOF
 }
 
 close_editor_workspace() {
@@ -278,21 +254,6 @@ prune_stale_jailbox_resources() {
     fi
 }
 
-wait_for_proof() {
-    local proof_path="$1"
-    local deadline
-
-    deadline=$((SECONDS + EDITOR_TIMEOUT))
-    while (( SECONDS < deadline )); do
-        if [[ -f "$proof_path" ]]; then
-            return 0
-        fi
-        sleep 1
-    done
-
-    return 1
-}
-
 wait_for_remote_editor_ready() {
     local project_dir="$1"
     local ctr="$2"
@@ -318,6 +279,16 @@ REMOTE
     done
 
     return 1
+}
+
+run_remote_validation_probe() {
+    local project_dir="$1"
+    local ctr="$2"
+    local ssh_cfg
+
+    ssh_cfg=$(jailbox_ssh_config "$project_dir")
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+        'cd /home/jailbox/project && bash .vscode/jailbox-validate.sh'
 }
 
 assert_proof_contains() {
@@ -351,10 +322,10 @@ validate_proof() {
     fi
 
     assert_proof_contains "$proof_path" "run_id=$run_id" "proof file belongs to this test run" || rc=1
-    assert_proof_contains "$proof_path" "whoami=jailbox" "task ran as jailbox user" || rc=1
+    assert_proof_contains "$proof_path" "whoami=jailbox" "probe ran as jailbox user" || rc=1
     assert_proof_contains "$proof_path" "authorized_keys=present" "sshd authorized_keys visible in container" || rc=1
     assert_proof_contains "$proof_path" "workspace_writable=yes" "remote workspace is writable" || rc=1
-    assert_proof_contains "$proof_path" "pwd=/home/jailbox/project" "task cwd is the mounted remote workspace" || rc=1
+    assert_proof_contains "$proof_path" "pwd=/home/jailbox/project" "probe cwd is the mounted remote workspace" || rc=1
 
     if [[ "$stage" == "egress" ]]; then
         assert_proof_contains "$proof_path" "proxy_configured=yes" "proxy env visible when EGRESS_ALLOW is configured" || rc=1
@@ -402,8 +373,8 @@ collect_failure_diagnostics() {
     fi
 
     echo ""
-    echo "  Task fixture:"
-    sed 's/^/    /' "$project_dir/.vscode/tasks.json" || true
+    echo "  Validation fixture:"
+    sed 's/^/    /' "$project_dir/.vscode/jailbox-validate.sh" || true
 
     echo ""
     echo "  Host editor profile logs:"
@@ -447,7 +418,7 @@ collect_failure_diagnostics() {
         echo ""
         echo "  Remote editor/server processes:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "ps -o pid,ppid,args -A | grep -E 'codium|code|node|extension|server|task' | grep -v grep || true" \
+            "ps -o pid,ppid,args -A | grep -E 'codium|code|node|extension|server' | grep -v grep || true" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
@@ -546,11 +517,20 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
-        echo "  Waiting up to ${EDITOR_TIMEOUT}s for automatic task proof: $PROOF_FILE..."
-        if wait_for_proof "$proof_path"; then
-            pass "proof file was created by automatic editor task"
+        echo "  Running validation probe through generated SSH target..."
+        if run_remote_validation_probe "$project_dir" "$ctr"; then
+            pass "remote validation probe completed"
         else
-            fail "proof file was created by automatic editor task"
+            fail "remote validation probe completed"
+            rc=1
+        fi
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+        if [[ -f "$proof_path" ]]; then
+            pass "proof file was created by remote validation probe"
+        else
+            fail "proof file was created by remote validation probe"
             rc=1
         fi
     fi
@@ -627,7 +607,6 @@ main() {
 
     log_run "jailbox editor smoke test"
     log_run "Stages : ${stages[*]}"
-    log_run "Task   : $TASK_LABEL"
     log_run "Timeout: ${EDITOR_TIMEOUT}s"
     log_run "Editor : $(editor_name)"
     log_run "Logs   : $LOG_DIR"

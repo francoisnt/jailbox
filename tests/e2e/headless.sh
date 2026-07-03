@@ -443,9 +443,11 @@ EOF
 
     # Egress policy (only run for the egress stage)
     if [[ "$stage" == "egress" ]]; then
-        local proxy_ctr="${ctr}-proxy" proxy_url
+        local proxy_ctr="${ctr}-proxy" proxy_url state_hash filter_path
 
         proxy_url=$(grep -Eo 'HTTPS_PROXY=[^ ]+' "$ssh_cfg" | head -1 | cut -d= -f2-)
+        state_hash=$(jailbox_project_hash_for_path "$project_dir")
+        filter_path="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/projects/$state_hash/tinyproxy-filter"
 
         if [[ -f "$settings_path" ]] && \
            grep -Fq '"terminal.integrated.env.linux"' "$settings_path" && \
@@ -469,6 +471,13 @@ EOF
         fi
         assert_ssh_fails "$ssh_cfg" "$ctr" "DNS resolution is disabled on egress network when getent is available" \
             "command -v getent >/dev/null 2>&1 && getent hosts api.ipify.org"
+        if [[ -f "$filter_path" ]] &&
+            grep -Fxq '^api\.ipify\.org$' "$filter_path" &&
+            grep -Fxq '^github\.com$' "$filter_path"; then
+            pass "tinyproxy filter is generated in project state"
+        else
+            fail "tinyproxy filter is generated in project state"
+        fi
         assert_ssh_fails "$ssh_cfg" "$ctr" "direct HTTP(S) bypassing proxy is blocked" \
             "curl --noproxy '*' --connect-timeout 5 --max-time 5 -fs https://example.com"
         assert_ssh_fails "$ssh_cfg" "$ctr" "raw TCP to external IP is blocked" \
@@ -492,6 +501,8 @@ EOF
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
             "for f in \"\$HOME/.curlrc\" \"\$HOME/.wgetrc\"; do echo --- \$f; if [ -f \"\$f\" ]; then sed -n '/# >>> jailbox managed proxy >>>/,/# <<< jailbox managed proxy <<</p' \"\$f\"; else echo '(missing)'; fi; done" \
             2>/dev/null || true
+        echo "  [diag] tinyproxy filter:"
+        sed 's/^/    /' "$filter_path" 2>/dev/null || echo "    (missing)"
         echo "  [diag] proxy direct reach (wget api.ipify.org, bypassing tinyproxy):"
         podman exec "$proxy_ctr" wget -qO- --timeout=5 http://api.ipify.org 2>&1 || echo "(wget failed)"
         echo "  [diag] curl verbose via proxy (inside jailbox):"
