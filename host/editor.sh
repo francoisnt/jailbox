@@ -23,6 +23,9 @@ launch_editor_remote() {
 editor_smoke_settings_json_object() {
     printf '{\n'
     printf '  "security.workspace.trust.enabled": false,\n'
+    if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+        printf '  "http.proxy": "%s",\n' "$PROXY_URL"
+    fi
     printf '  "task.allowAutomaticTasks": "on"\n'
     printf '}'
 }
@@ -79,6 +82,7 @@ write_jailbox_editor_user_settings() {
         cat > "$settings_tmp" <<EOF_SETTINGS
 {
   "remote.SSH.configFile": "$SSH_CONFIG"$(editor_smoke_profile_settings_json),
+  "http.proxy": "$PROXY_URL",
   "terminal.integrated.env.linux": {
     "HTTP_PROXY": "$PROXY_URL",
     "HTTPS_PROXY": "$PROXY_URL",

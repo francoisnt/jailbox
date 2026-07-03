@@ -181,6 +181,7 @@ under `scripts/`, and test suites stay under `tests/`.
 
 **What jAilbox avoids**:
 - Mutating host `~/.ssh/config`
+- Mounting host `~/.gitconfig`; only `user.name` and `user.email` are copied into a generated config
 - Mounting runtime sockets
 - Dynamic sshd_config rewriting
 - Overwriting `.vscode/settings.json`

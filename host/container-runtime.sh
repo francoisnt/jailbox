@@ -82,12 +82,36 @@ build_readonly_mounts() {
 }
 
 configure_runtime_mounts() {
+    local gitconfig_file
+
     GITCONFIG_MOUNT=()
-    [ -f ~/.gitconfig ] && GITCONFIG_MOUNT=(-v "$HOME/.gitconfig:/home/$MANAGED_USER/.gitconfig:ro")
+    gitconfig_file="$SSH_DIR/gitconfig"
+    generate_minimal_gitconfig "$gitconfig_file"
+    [ -f "$gitconfig_file" ] && GITCONFIG_MOUNT=(-v "$gitconfig_file:/home/$MANAGED_USER/.gitconfig:ro")
 
     # The container root filesystem is always read-only. Project and home
     # writes go through explicit mounts; runtime state uses tmpfs mounts.
     ROOTFS_FLAG=(--read-only)
+}
+
+generate_minimal_gitconfig() {
+    local gitconfig_file name email tmp_file
+
+    gitconfig_file="$1"
+    rm -f -- "$gitconfig_file"
+    command -v git >/dev/null 2>&1 || return 0
+
+    name=$(git config --global --get user.name 2>/dev/null || true)
+    email=$(git config --global --get user.email 2>/dev/null || true)
+    [ -n "$name$email" ] || return 0
+
+    mkdir -p "$(dirname "$gitconfig_file")"
+    tmp_file=$(mktemp "$(dirname "$gitconfig_file")/gitconfig.tmp.XXXXXX")
+    chmod 600 "$tmp_file"
+    [ -n "$name" ] && git config --file "$tmp_file" user.name "$name"
+    [ -n "$email" ] && git config --file "$tmp_file" user.email "$email"
+    mv "$tmp_file" "$gitconfig_file"
+    chmod 600 "$gitconfig_file"
 }
 
 clean_jailbox() {
