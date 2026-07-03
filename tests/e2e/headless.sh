@@ -35,7 +35,10 @@ jailbox_container_name() {
 }
 
 jailbox_ssh_config() {
-    printf '%s/.jailbox/ssh_config\n' "$1"
+    local hash
+
+    hash=$(jailbox_project_hash_for_path "$1")
+    printf '%s/jailbox/projects/%s/ssh_config\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "$hash"
 }
 
 usage() {

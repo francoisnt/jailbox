@@ -255,13 +255,11 @@ run_case() {
     setup_ssh_keys "$ssh_dir" "$port"
     assert_bad_runtime_dir_fails "$wrapper_image" "$ssh_dir" "$ctr" "bad sshd runtime directory fails clearly before sshd"
 
-    # Project fixture for assert_readonly_mount_validation: Containerfile,
-    # .git/hooks, and .jailbox get read-only overlays below; Dockerfile and
-    # .github/workflows are deliberately listed as protected but left writable.
-    # The read-only .jailbox mount mirrors production and pins the old vacuous
-    # marker-in-.jailbox implementation as a failure.
+    # Project fixture for assert_readonly_mount_validation: Containerfile and
+    # .git/hooks get read-only overlays below; Dockerfile and .github/workflows
+    # are deliberately listed as protected but left writable.
     project_dir=$(mktemp -d)
-    mkdir -p "$project_dir/.git/hooks" "$project_dir/.github/workflows" "$project_dir/.jailbox"
+    mkdir -p "$project_dir/.git/hooks" "$project_dir/.github/workflows"
     printf 'FROM scratch\n' > "$project_dir/Containerfile"
     printf 'FROM scratch\n' > "$project_dir/Dockerfile"
 
@@ -284,7 +282,6 @@ run_case() {
         -v "${project_dir}:/home/jailbox/project:Z" \
         -v "${project_dir}/Containerfile:/home/jailbox/project/Containerfile:Z,ro" \
         -v "${project_dir}/.git/hooks:/home/jailbox/project/.git/hooks:Z,ro" \
-        -v "${project_dir}/.jailbox:/home/jailbox/project/.jailbox:Z,ro" \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
         "$wrapper_image" >/dev/null; then

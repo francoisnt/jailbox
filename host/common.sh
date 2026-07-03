@@ -261,6 +261,8 @@ project_path_hash() {
 }
 
 initialize_project_names() {
+    local state_root
+
     PROJECT_HASH=$(project_path_hash)
     PROJECT_RESOURCE_PREFIX="jailbox-$PROJECT_HASH"
     PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
@@ -270,7 +272,8 @@ initialize_project_names() {
     PROXY_IMAGE="${PROJECT_RESOURCE_PREFIX}-proxy"
     VOLUME_NAME="${PROJECT_RESOURCE_PREFIX}-home"
     NETWORK_NAME="${PROJECT_RESOURCE_PREFIX}-net"
-    SSH_DIR="$PROJECT_DIR/.jailbox"
+    state_root="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
+    SSH_DIR="$state_root/projects/$PROJECT_HASH"
     SSH_CONFIG="$SSH_DIR/ssh_config"
     KNOWN_HOSTS="$SSH_DIR/known_hosts"
     KEY_FILE="$SSH_DIR/key"
@@ -278,7 +281,7 @@ initialize_project_names() {
     # /run/jailbox-sshd so the container path remains ephemeral daemon state,
     # while ownership still matches the non-root keep-id entrypoint.
     SSHD_RUNTIME_DIR="$SSH_DIR/sshd-runtime"
-    JAILBOX_EDITOR_USER_DATA="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/editor-profiles/$PROJECT_HASH"
+    JAILBOX_EDITOR_USER_DATA="$state_root/editor-profiles/$PROJECT_HASH"
     JAILBOX_EDITOR_USER_SETTINGS="$JAILBOX_EDITOR_USER_DATA/User/settings.json"
 }
 

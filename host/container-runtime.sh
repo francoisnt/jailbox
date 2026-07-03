@@ -17,7 +17,6 @@ configure_readonly_paths() {
         ".env"
         ".gitea/workflows"
         ".github/workflows"
-        ".jailbox"
         "jailbox"
         "jailbox.conf"
     )
@@ -150,42 +149,14 @@ start_jailbox_container() {
         "$JAILBOX_IMAGE"
 }
 
-ensure_jailbox_gitignore() {
-    ensure_gitignore_entry ".jailbox/"
-}
-
-ensure_gitignore_entry() {
-    local entry gitignore_file
-
-    entry="$1"
-    gitignore_file="$PROJECT_DIR/.gitignore"
-
-    if [ -f "$gitignore_file" ] && grep -Fxq "$entry" "$gitignore_file"; then
-        return 0
-    fi
-
-    {
-        [ -s "$gitignore_file" ] && printf '\n'
-        printf '%s\n' "$entry"
-    } >> "$gitignore_file"
-}
-
-gitignore_has_entry() {
-    local entry gitignore_file
-
-    entry="$1"
-    gitignore_file="$PROJECT_DIR/.gitignore"
-    [ -f "$gitignore_file" ] && grep -Fxq "$entry" "$gitignore_file"
-}
-
 doctor_jailbox() {
     local container_status container_os_release
 
     echo "Project jailbox state: $SSH_DIR"
     if [ -d "$SSH_DIR" ]; then
-        echo ".jailbox exists: yes"
+        echo "State directory exists: yes"
     else
-        echo ".jailbox exists: no"
+        echo "State directory exists: no"
     fi
 
     if command -v podman >/dev/null 2>&1; then
@@ -198,12 +169,6 @@ doctor_jailbox() {
     else
         container_status=""
         echo "Container status: unknown (podman not found)"
-    fi
-
-    if gitignore_has_entry ".jailbox/"; then
-        echo ".jailbox gitignored: yes"
-    else
-        echo ".jailbox gitignored: no"
     fi
 
     echo "SSH config: $SSH_CONFIG"

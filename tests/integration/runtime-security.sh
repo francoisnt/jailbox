@@ -143,14 +143,10 @@ assert_probe_hardening() {
     esac
 }
 
-# Regression coverage for check_readonly_mounts itself, not just the mounts:
-# the directory branch once passed vacuously because its marker source lived
-# under the read-only .jailbox mount. Run the production check against a
-# project that has three correctly read-only paths (Containerfile, .git/hooks,
-# .jailbox — the last mirroring production so the old marker placement stays
-# pinned as a failure) and two decoys listed as protected but mounted writable
-# (Dockerfile, .github/workflows), and require it to flag exactly the decoys —
-# one file, one directory.
+# Regression coverage for check_readonly_mounts itself, not just the mounts.
+# Run the production check against a project that has correctly read-only file
+# and directory paths, plus two decoys listed as protected but mounted writable
+# (Dockerfile, .github/workflows), and require it to flag exactly the decoys.
 assert_readonly_mount_validation() {
     local config="$1" project_dir="$2"
     local output
@@ -166,16 +162,16 @@ assert_readonly_mount_validation() {
     REMOTE_PATH="/home/jailbox/project"
     WARNINGS=0
 
-    READONLY_PATHS=("Containerfile" ".git/hooks" ".jailbox")
+    READONLY_PATHS=("Containerfile" ".git/hooks")
     output=$(check_readonly_mounts)
-    if printf '%s\n' "$output" | grep -q "Read-only mounts validated (3 entries checked)"; then
+    if printf '%s\n' "$output" | grep -q "Read-only mounts validated (2 entries checked)"; then
         pass "read-only validation passes for correctly mounted paths"
     else
         fail "read-only validation passes for correctly mounted paths"
         printf '%s\n' "$output" | sed 's/^/    /'
     fi
 
-    READONLY_PATHS=("Containerfile" ".git/hooks" ".jailbox" "Dockerfile" ".github/workflows")
+    READONLY_PATHS=("Containerfile" ".git/hooks" "Dockerfile" ".github/workflows")
     output=$(check_readonly_mounts)
 
     if printf '%s\n' "$output" | grep -q "appears writable: Dockerfile"; then
@@ -192,7 +188,7 @@ assert_readonly_mount_validation() {
         printf '%s\n' "$output" | sed 's/^/    /'
     fi
 
-    if printf '%s\n' "$output" | grep -Eq "appears writable: (Containerfile|\.git/hooks|\.jailbox)"; then
+    if printf '%s\n' "$output" | grep -Eq "appears writable: (Containerfile|\.git/hooks)"; then
         fail "read-only validation stays quiet for read-only paths"
         printf '%s\n' "$output" | sed 's/^/    /'
     else

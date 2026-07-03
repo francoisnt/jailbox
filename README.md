@@ -64,7 +64,7 @@ If your final stage is distroless or production-only, use `DEV_TARGET_STAGE` to 
 jailbox              # Launch the environment (default)
 jailbox doctor       # Check SSH and editor integration status
 jailbox ssh-config   # Show SSH configuration instructions
-jailbox --clean      # Remove container, volume, networks and .jailbox/ state
+jailbox --clean      # Remove container, volume, networks and jailbox runtime state
 ```
 
 ---
@@ -150,7 +150,7 @@ jAilbox follows a clean layered approach:
 1. **Dev Image** — Uses or builds from your existing `Containerfile`/`Dockerfile`
 2. **Wrapper Image** — Adds OpenSSH server, creates the managed `jailbox` user, and installs hardened sshd config
 3. **Runtime** — Project mounted at `/home/jailbox/project` (writable) with selected paths overlaid read-only, plus a persistent home volume for the jailbox user
-4. **SSH & Editor** — Generates a project-specific SSH config and VS Code/VSCodium user profile (under `~/.local/state/jailbox/editor-profiles/`)
+4. **SSH & Editor** — Generates project-specific SSH state under `~/.local/state/jailbox/projects/` and VS Code/VSCodium user profiles under `~/.local/state/jailbox/editor-profiles/`
 
 ## Repository Layout
 

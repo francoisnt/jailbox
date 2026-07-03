@@ -101,6 +101,7 @@ Suites (in order):
   unit/config-parser          host/public-api.sh config parsing
   unit/downloader-proxy       container/downloader-proxy-manager.sh
   unit/network                host/network.sh helpers
+  unit/project-state          host/common.sh state path helpers
   unit/readonly-paths         host/container-runtime.sh read-only path selection
   unit/ssh-config             host/ssh.sh generated config helpers
   integration/wrapper-images  build images and run container/runtime/security assertions
@@ -156,6 +157,7 @@ fi
 run_suite "unit/config-parser"  bash "$SCRIPT_DIR/unit/config-parser.sh"
 run_suite "unit/downloader-proxy" bash "$SCRIPT_DIR/unit/downloader-proxy.sh"
 run_suite "unit/network" bash "$SCRIPT_DIR/unit/network.sh"
+run_suite "unit/project-state" bash "$SCRIPT_DIR/unit/project-state.sh"
 run_suite "unit/readonly-paths" bash "$SCRIPT_DIR/unit/readonly-paths.sh"
 run_suite "unit/ssh-config" bash "$SCRIPT_DIR/unit/ssh-config.sh"
 

@@ -60,6 +60,7 @@ test_defaults() {
     configure_readonly_paths
     assert_listed_once "default .git/config listed" ".git/config"
     assert_listed_once "default jailbox.conf listed" "jailbox.conf"
+    assert_not_listed "project .jailbox is not protected state" ".jailbox"
     rm -rf "$PROJECT_DIR"
 }
 
