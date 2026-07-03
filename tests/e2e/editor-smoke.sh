@@ -2,14 +2,21 @@
 # Editor smoke test for jailbox.
 #
 # For each stage: creates a temporary VS Code/VSCodium workspace fixture,
-# launches the workspace through jailbox, waits for the Remote SSH editor server,
-# runs the validation probe through the generated SSH target, and verifies the
-# proof file from the host.
+# launches the workspace through jailbox, waits for an editor window to attach
+# to the Remote SSH server, runs the validation probe through the generated
+# SSH target, and verifies the proof file from the host. Then installs the
+# proof extension (fixtures/proof-extension/) into the remote editor server
+# and verifies the remote extension host activates it and executes a shell
+# task in the mounted workspace with exit code 0 — i.e. a user opening their
+# repo through jailbox gets an operational editor. The task is taken from
+# .vscode/tasks.json when the editor discovers it in time, otherwise defined
+# via the vscode.tasks API; which path was used is recorded as diagnostics
+# and is deliberately not part of the pass/fail gate.
 #
 # Prerequisites: run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
 #
 # Usage: tests/e2e/editor-smoke.sh [stage...]
-# Env:   JAILBOX_EDITOR_TIMEOUT seconds to wait for the proof file (default: 20)
+# Env:   JAILBOX_EDITOR_TIMEOUT seconds to wait for editor attach (default: 45)
 #        JAILBOX_KEEP_FAILED=1 keeps failed temp projects/containers for diagnosis
 set -euo pipefail
 
@@ -22,12 +29,17 @@ source "$JAILBOX_DIR/host/project-id.sh"
 ALL_STAGES=(debian alpine fedora egress)
 VSCODE_STAGES=(debian fedora egress)
 PROOF_FILE=".jailbox-editor-proof"
+# Marker/label values must match tests/e2e/fixtures/proof-extension/extension.js.
+EXT_ACTIVATION_MARKER=".jailbox-editor-ext-activated"
+EXT_TASK_RESULT=".jailbox-editor-task-result"
+TASK_LABEL="jailbox: validate remote session"
 EDITOR_TIMEOUT="${JAILBOX_EDITOR_TIMEOUT:-45}"
 
 PASSED=0
 FAILED=0
 LOG_DIR=""
 RUN_LOG=""
+PROOF_VSIX=""
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -65,18 +77,20 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [stage...]
 
-Launch VSCodium/VS Code through jailbox and verify a Remote SSH probe creates
-$PROOF_FILE in a temporary workspace.
+Launch VSCodium/VS Code through jailbox, verify a Remote SSH probe creates
+$PROOF_FILE in a temporary workspace, then verify the remote extension host
+activates the jailbox proof extension and executes a shell task in the
+mounted workspace with exit code 0. tasks.json discovery is diagnostic-only.
 
 Stages: ${ALL_STAGES[*]}
 Default: all stages in order.
 VS Code default: ${VSCODE_STAGES[*]} (VS Code Remote SSH does not support Alpine SSH hosts).
 
-Requires: podman, ssh, ssh-keygen, VSCodium or VS Code CLI.
+Requires: podman, ssh, ssh-keygen, python3, VSCodium or VS Code CLI.
 Run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
 
 Environment:
-  JAILBOX_EDITOR_TIMEOUT  Seconds to wait for $PROOF_FILE (default: 20)
+  JAILBOX_EDITOR_TIMEOUT  Seconds to wait for editor attach (default: 45)
   JAILBOX_EDITOR          Editor CLI to test: codium or code (default: auto)
   JAILBOX_KEEP_FAILED=1   Keep failed temp workspaces/containers for diagnosis
 EOF
@@ -190,6 +204,25 @@ EOF
     cp "$SCRIPT_DIR/editor-validate.sh" "$project_dir/.vscode/jailbox-validate.sh"
     chmod +x "$project_dir/.vscode/jailbox-validate.sh"
 
+    # Executed by the proof extension via the vscode.tasks API; no
+    # runOn:folderOpen, so nothing races the editor's task discovery.
+    # Whether the editor discovers this file is diagnostic-only — the
+    # extension defines an equivalent task itself if discovery times out.
+    cat > "$project_dir/.vscode/tasks.json" <<EOF
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "$TASK_LABEL",
+      "type": "shell",
+      "command": "bash .vscode/jailbox-validate.sh",
+      "options": { "cwd": "\${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}
+EOF
 }
 
 close_editor_workspace() {
@@ -262,10 +295,13 @@ wait_for_remote_editor_ready() {
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
     deadline=$((SECONDS + EDITOR_TIMEOUT))
     while (( SECONDS < deadline )); do
+        # "Launched Extension Host Process" is logged only once an editor
+        # window has attached to the remote server; "Extension host agent
+        # started" merely means the server booted, with no window connected.
         if ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' <<'REMOTE' 2>/dev/null
 for root in "$HOME/.vscodium-server" "$HOME/.vscode-server"; do
     [ -d "$root" ] || continue
-    if find "$root" -maxdepth 2 -type f -name '*.log' -exec grep -q 'Extension host agent started' {} \; -print -quit |
+    if find "$root" -maxdepth 2 -type f -name '*.log' -exec grep -q 'Launched Extension Host Process' {} \; -print -quit |
         grep -q .; then
         exit 0
     fi
@@ -289,6 +325,147 @@ run_remote_validation_probe() {
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
     ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
         'cd /home/jailbox/project && bash .vscode/jailbox-validate.sh'
+}
+
+build_proof_vsix() {
+    local out="$1"
+    local src="$SCRIPT_DIR/fixtures/proof-extension"
+
+    python3 - "$src" "$out" <<'PY'
+import pathlib
+import sys
+import zipfile
+
+src = pathlib.Path(sys.argv[1])
+out = pathlib.Path(sys.argv[2])
+
+manifest = """<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="jailbox-editor-proof" Version="0.0.1" Publisher="jailbox"/>
+    <DisplayName>jailbox editor proof</DisplayName>
+    <Description>jailbox e2e instrumentation extension</Description>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Code"/>
+  </Installation>
+  <Dependencies/>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/>
+  </Assets>
+</PackageManifest>
+"""
+
+content_types = """<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="json" ContentType="application/json"/>
+  <Default Extension="js" ContentType="application/javascript"/>
+  <Default Extension="vsixmanifest" ContentType="text/xml"/>
+</Types>
+"""
+
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("[Content_Types].xml", content_types)
+    z.writestr("extension.vsixmanifest", manifest)
+    for name in ("package.json", "extension.js"):
+        z.write(src / name, f"extension/{name}")
+PY
+}
+
+# Installs the proof extension through the remote server's own CLI so it does
+# the extensions.json bookkeeping, instead of us hand-writing internal state.
+install_proof_extension() {
+    local project_dir="$1"
+    local ctr="$2"
+    local ssh_cfg
+
+    ssh_cfg=$(jailbox_ssh_config "$project_dir")
+
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+        'cat > /tmp/jailbox-editor-proof.vsix' < "$PROOF_VSIX" || return 1
+
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' <<'REMOTE' 2>&1 | sed 's/^/    /'
+set -eu
+server_bin=""
+for candidate in "$HOME/.vscodium-server/bin"/*/bin/codium-server \
+                 "$HOME/.vscode-server/bin"/*/bin/code-server; do
+    if [ -x "$candidate" ]; then
+        server_bin="$candidate"
+        break
+    fi
+done
+[ -n "$server_bin" ] || { echo "no remote editor server CLI found" >&2; exit 1; }
+"$server_bin" --install-extension /tmp/jailbox-editor-proof.vsix --force
+REMOTE
+}
+
+# The running extension host predates the install, so reload the window until
+# the extension's activation marker appears in the workspace. The reload
+# command is fire-and-forget CLI IPC, but unlike the old task trigger it
+# targets an always-registered core command and we retry against a hard
+# acknowledgment (the marker file), so dropped deliveries self-heal.
+activate_proof_extension() {
+    local project_dir="$1"
+    local ctr="$2"
+    local bin user_data marker deadline last_reload
+
+    bin=$(editor_bin) || return 1
+    user_data=$(jailbox_editor_user_data "$project_dir")
+    marker="$project_dir/$EXT_ACTIVATION_MARKER"
+    deadline=$((SECONDS + EDITOR_TIMEOUT))
+    last_reload=-10
+
+    while (( SECONDS < deadline )); do
+        [[ -f "$marker" ]] && return 0
+        if (( SECONDS - last_reload >= 5 )); then
+            "$bin" --user-data-dir "$user_data" \
+                --reuse-window \
+                --remote "ssh-remote+$ctr" \
+                /home/jailbox/project \
+                --command workbench.action.reloadWindow >/dev/null 2>&1 || true
+            last_reload=$SECONDS
+        fi
+        sleep 1
+    done
+
+    [[ -f "$marker" ]]
+}
+
+wait_for_task_result() {
+    local project_dir="$1"
+    local result="$project_dir/$EXT_TASK_RESULT"
+    local deadline
+
+    # The extension spends up to 45s on tasks.json discovery before falling
+    # back to a synthesized task, then runs the task; allow for both.
+    deadline=$((SECONDS + EDITOR_TIMEOUT + 60))
+    while (( SECONDS < deadline )); do
+        [[ -f "$result" ]] && return 0
+        sleep 1
+    done
+
+    [[ -f "$result" ]]
+}
+
+validate_task_result() {
+    local project_dir="$1"
+    local run_id="$2"
+    local result="$project_dir/$EXT_TASK_RESULT"
+    local rc=0
+
+    assert_proof_contains "$result" "run_id=$run_id" "task result belongs to this test run" || rc=1
+    assert_proof_contains "$result" "task_exit_code=0" "editor executed a shell task in the workspace (exit 0)" || rc=1
+
+    # tasks.json discovery is editor-internal and diagnostic-only: the gate
+    # asserts the editor can execute in the repo, not workbench task discovery.
+    if ! grep -Fqx "task_source=workspace" "$result"; then
+        echo "  note: tasks.json discovery timed out; the task was defined via the API instead"
+    fi
+
+    echo "  Task result:"
+    sed 's/^/    /' "$result"
+
+    return "$rc"
 }
 
 assert_proof_contains() {
@@ -375,6 +552,21 @@ collect_failure_diagnostics() {
     echo ""
     echo "  Validation fixture:"
     sed 's/^/    /' "$project_dir/.vscode/jailbox-validate.sh" || true
+
+    echo ""
+    echo "  Task fixture:"
+    sed 's/^/    /' "$project_dir/.vscode/tasks.json" || true
+
+    local artifact
+    for artifact in "$EXT_ACTIVATION_MARKER" "$EXT_TASK_RESULT"; do
+        echo ""
+        if [[ -f "$project_dir/$artifact" ]]; then
+            echo "  Extension artifact $artifact:"
+            sed 's/^/    /' "$project_dir/$artifact"
+        else
+            echo "  Extension artifact $artifact: (missing)"
+        fi
+    done
 
     echo ""
     echo "  Host editor profile logs:"
@@ -507,11 +699,11 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
-        echo "  Waiting up to ${EDITOR_TIMEOUT}s for remote editor server readiness..."
+        echo "  Waiting up to ${EDITOR_TIMEOUT}s for an editor window to attach to the remote..."
         if wait_for_remote_editor_ready "$project_dir" "$ctr"; then
-            pass "remote editor server became ready"
+            pass "editor window attached to remote (extension host launched)"
         else
-            fail "remote editor server became ready"
+            fail "editor window attached to remote (extension host launched)"
             rc=1
         fi
     fi
@@ -537,6 +729,40 @@ run_stage() {
 
     if [[ "$rc" -eq 0 ]]; then
         validate_proof "$project_dir" "$stage" "$run_id" || rc=1
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+        echo "  Installing proof extension into remote editor server..."
+        if install_proof_extension "$project_dir" "$ctr"; then
+            pass "proof extension installed in remote editor server"
+        else
+            fail "proof extension installed in remote editor server"
+            rc=1
+        fi
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+        echo "  Reloading editor window until proof extension activates (up to ${EDITOR_TIMEOUT}s)..."
+        if activate_proof_extension "$project_dir" "$ctr"; then
+            pass "proof extension activated in remote extension host"
+        else
+            fail "proof extension activated in remote extension host"
+            rc=1
+        fi
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+        echo "  Waiting up to $((EDITOR_TIMEOUT + 60))s for extension-run task result..."
+        if wait_for_task_result "$project_dir"; then
+            pass "extension reported a task result"
+        else
+            fail "extension reported a task result"
+            rc=1
+        fi
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+        validate_task_result "$project_dir" "$run_id" || rc=1
     fi
 
     if [[ "$rc" -ne 0 ]]; then
@@ -571,6 +797,7 @@ main() {
     command -v podman     >/dev/null 2>&1 || die "podman is required"
     command -v ssh        >/dev/null 2>&1 || die "ssh is required"
     command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
+    command -v python3    >/dev/null 2>&1 || die "python3 is required (packages the proof extension vsix)"
     editor_bin >/dev/null || die "neither 'codium' nor 'code' was found in PATH"
     have_display || die "no graphical display session found; run with tests/run --core-tests on headless hosts"
     [[ "$EDITOR_TIMEOUT" =~ ^[0-9]+$ ]] || die "JAILBOX_EDITOR_TIMEOUT must be a positive integer"
@@ -604,6 +831,9 @@ main() {
 
     prune_stale_jailbox_resources
     setup_logging
+
+    PROOF_VSIX="$LOG_DIR/jailbox-editor-proof.vsix"
+    build_proof_vsix "$PROOF_VSIX" || die "failed to package the proof extension vsix"
 
     log_run "jailbox editor smoke test"
     log_run "Stages : ${stages[*]}"

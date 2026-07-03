@@ -1,0 +1,18 @@
+{
+  "name": "jailbox-editor-proof",
+  "displayName": "jailbox editor proof",
+  "description": "jailbox e2e instrumentation: proves the remote extension host runs workspace code and executes the tasks.json validation task.",
+  "publisher": "jailbox",
+  "version": "0.0.1",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "workspace"
+  ]
+}
