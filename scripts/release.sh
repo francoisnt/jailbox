@@ -6,22 +6,26 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 YES=false
 DRY_RUN=false
 FIRST_MAJOR=false
+PRINT_VERSION=false
 
 usage() {
     cat <<EOF_USAGE
 Usage: scripts/release.sh [options]
 
-Choose the next version, create an annotated git tag, and push it.
-GitHub Actions publishes the release tarball from the pushed tag.
-Real releases always run the full local validation suite before tagging:
-  - scripts/lint.sh
-  - tests/run
+Choose the next version and dispatch the GitHub Actions release workflow.
+The workflow re-selects the version with the same policy, runs the full
+release gate, and creates the tag and GitHub Release only after all
+validation succeeds — a failed gate leaves no stale tag.
 
 Options:
   --yes              Accept defaults without prompting
   --first-major      Release v1.0.0
-  --dry-run          Print the selected version without creating or pushing a tag
+  --dry-run          Print the selected version without dispatching
+  --print-version    Print only the selected version (used by the workflow)
   --help             Show this help
+
+Environment:
+  RELEASE_BRANCH     Branch releases must be cut from (default: origin HEAD, or master)
 EOF_USAGE
 }
 
@@ -42,6 +46,7 @@ parse_args() {
             --yes) YES=true ;;
             --dry-run) DRY_RUN=true ;;
             --first-major) FIRST_MAJOR=true ;;
+            --print-version) PRINT_VERSION=true ;;
             --help|-h)
                 usage
                 exit 0
@@ -99,6 +104,23 @@ refresh_tags() {
     fi
 }
 
+remote_tag_exists() {
+    git -C "$ROOT_DIR" ls-remote --exit-code --tags origin "refs/tags/$1" >/dev/null 2>&1
+}
+
+# A failed release push can leave a local tag behind. Refuse to continue
+# until it is removed so version selection stays based on published tags.
+ensure_no_local_only_version_tags() {
+    local tag
+
+    while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
+        if ! remote_tag_exists "$tag"; then
+            die "local release tag is not on origin: $tag (delete it with: git tag -d $tag)"
+        fi
+    done < <(git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*')
+}
+
 # True when any v1+ tag exists; used to keep --first-major one-time only.
 has_v1_or_later_tag() {
     local tag
@@ -121,15 +143,61 @@ ensure_origin_remote() {
         die "origin remote is required for releases"
 }
 
-# Run mandatory release validation before any confirmation, tag, or push.
-run_validation() {
-    echo "Running release validation:"
-    echo "  scripts/lint.sh"
-    bash "$ROOT_DIR/scripts/lint.sh"
-    echo "  tests/run"
-    require_command podman
-    bash "$ROOT_DIR/tests/run"
-    echo "Release validation passed."
+release_branch() {
+    local origin_head
+
+    if [ -n "${RELEASE_BRANCH:-}" ]; then
+        printf '%s\n' "$RELEASE_BRANCH"
+        return 0
+    fi
+
+    origin_head="$(git -C "$ROOT_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    if [ -n "$origin_head" ]; then
+        printf '%s\n' "${origin_head#origin/}"
+    else
+        printf 'master\n'
+    fi
+}
+
+# Require releases to come from the configured release branch and from the
+# exact commit currently published at origin. Pushing only a tag from a local
+# commit makes the release hard to review and easy to reproduce incorrectly.
+ensure_release_branch_synced() {
+    local branch upstream upstream_branch
+
+    branch="$(git -C "$ROOT_DIR" branch --show-current)"
+    [ -n "$branch" ] || die "releases must be cut from a branch, not detached HEAD"
+    [ "$branch" = "$(release_branch)" ] || \
+        die "releases must be cut from $(release_branch) (current branch: $branch)"
+
+    upstream="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+    [ -n "$upstream" ] || die "release branch must track origin/$branch"
+    upstream_branch="${upstream#origin/}"
+    [ "$upstream" = "origin/$branch" ] || \
+        die "release branch must track origin/$branch (current upstream: $upstream)"
+    [ "$upstream_branch" = "$branch" ] || die "release branch upstream mismatch"
+
+    git -C "$ROOT_DIR" fetch origin "$branch" --tags >/dev/null
+    [ "$(git -C "$ROOT_DIR" rev-parse HEAD)" = "$(git -C "$ROOT_DIR" rev-parse "origin/$branch")" ] || \
+        die "HEAD must match origin/$branch before releasing"
+}
+
+# Select SELECTED_VERSION/BUMP_REASON from published tags and the public API
+# diff. Shared by local runs and the CI workflow (--print-version), so both
+# always agree on the version policy.
+select_release_version() {
+    local latest api_change
+
+    latest="$(latest_tag)"
+    [ -n "$latest" ] || latest="v0.0.0"
+
+    if [ "$latest" = "v0.0.0" ] && [ "$FIRST_MAJOR" != true ]; then
+        SELECTED_VERSION="v0.1.0"
+        BUMP_REASON="Initial public release"
+    else
+        api_change="$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$latest")"
+        select_version "$latest" "$api_change"
+    fi
 }
 
 # Map public API diff status to the release bump policy.
@@ -171,12 +239,12 @@ select_version() {
         die "tag already exists: $SELECTED_VERSION"
 }
 
-# Ask before creating and pushing a release tag unless --yes was supplied.
+# Ask before dispatching the release workflow unless --yes was supplied.
 confirm_release() {
     local answer
 
     [ "$YES" = false ] || return 0
-    printf "Create and push tag %s to origin? This will trigger GitHub Actions release publication. [Y/n]: " "$SELECTED_VERSION"
+    printf "Dispatch the release workflow for %s? The tag and GitHub Release are created only after the release gate passes. [Y/n]: " "$SELECTED_VERSION"
     read -r answer
     case "$answer" in
         ""|y|Y|yes|YES) ;;
@@ -184,50 +252,58 @@ confirm_release() {
     esac
 }
 
-# Create the annotated tag and push it; GitHub Actions handles publication.
-tag_and_push() {
-    git -C "$ROOT_DIR" tag -a "$SELECTED_VERSION" -m "Release $SELECTED_VERSION"
-    echo "Created tag $SELECTED_VERSION"
-    echo "Pushing tag $SELECTED_VERSION to origin. GitHub Actions will publish the release artifact from this tag."
-    git -C "$ROOT_DIR" push origin "$SELECTED_VERSION"
-    echo "Pushed tag $SELECTED_VERSION."
+# Trigger the release workflow. CI re-selects the version with the same
+# policy, runs the full release gate, and creates the tag and GitHub Release
+# only after the gate passes, so a failed run leaves no stale tag.
+dispatch_release() {
+    local branch dispatch_args
+
+    require_command gh
+    branch="$(release_branch)"
+    dispatch_args=(workflow run release.yml --ref "$branch")
+    [ "$FIRST_MAJOR" = true ] && dispatch_args+=(--field first_major=true)
+    gh "${dispatch_args[@]}"
+    echo "Dispatched release workflow on $branch."
+    echo "Follow it with: gh run watch"
 }
 
-# Coordinate validation, version selection, confirmation, and tag push.
+# Coordinate version selection, confirmation, and workflow dispatch.
 main() {
-    local latest api_change
-
     parse_args "$@"
     require_command git
     require_command bash
+
+    # Machine-readable mode for the workflow's select-version job: version
+    # only on stdout, no prompts, no dispatch.
+    if [ "$PRINT_VERSION" = true ]; then
+        refresh_tags
+        select_release_version
+        printf '%s\n' "$SELECTED_VERSION"
+        return 0
+    fi
+
     if [ "$DRY_RUN" != true ]; then
         ensure_clean_tree
         ensure_origin_remote
+        ensure_release_branch_synced
     fi
 
     refresh_tags
-    latest="$(latest_tag)"
-    [ -n "$latest" ] || latest="v0.0.0"
-
-    if [ "$latest" = "v0.0.0" ] && [ "$FIRST_MAJOR" != true ]; then
-        SELECTED_VERSION="v0.1.0"
-        BUMP_REASON="Initial public release"
-    else
-        api_change="$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$latest")"
-        select_version "$latest" "$api_change"
+    if [ "$DRY_RUN" != true ]; then
+        ensure_no_local_only_version_tags
     fi
+    select_release_version
     echo "Selected version: $SELECTED_VERSION"
     echo "Bump reason:"
     printf '%s\n' "$BUMP_REASON" | sed 's/^/  /'
 
     if [ "$DRY_RUN" = true ]; then
-        echo "Dry run: no tag created."
+        echo "Dry run: no release dispatched."
         return 0
     fi
 
-    run_validation
     confirm_release
-    tag_and_push
+    dispatch_release
 }
 
 main "$@"

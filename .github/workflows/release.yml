@@ -1,31 +1,77 @@
 name: Release
 
+# Releases are initiated manually. The version is selected in CI with the
+# same policy as scripts/release.sh (which is also the dispatch client), the
+# full release gate runs first, and the tag plus GitHub Release are created
+# only after all validation succeeds — a failed gate leaves no stale tag.
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      first_major:
+        description: "Release v1.0.0 (only valid before any v1+ tag exists)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
+# One release at a time: parallel runs would select the same version and
+# race on the tag push.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  select-version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.select.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          # Full history and tags: version selection reads the latest tag and
+          # diffs host/public-api.sh against it.
+          fetch-depth: 0
+
+      - name: Select release version
+        id: select
+        run: |
+          args=(--print-version)
+          if [[ "${{ inputs.first_major }}" == "true" ]]; then
+            args+=(--first-major)
+          fi
+          version="$(bash scripts/release.sh "${args[@]}")"
+          echo "Selected version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   release-gate:
     uses: ./.github/workflows/release-gate.yml
 
   publish:
     runs-on: ubuntu-24.04
-    needs: release-gate
+    needs: [select-version, release-gate]
     steps:
-      - name: Check out tag
+      - name: Check out repository
         uses: actions/checkout@v5
 
+      - name: Create and push release tag
+        env:
+          VERSION: ${{ needs.select-version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION" "$GITHUB_SHA"
+          git push origin "$VERSION"
+
       - name: Build release tarball
-        run: scripts/build-tarball.sh "${GITHUB_REF_NAME}"
+        run: bash scripts/build-tarball.sh "${{ needs.select-version.outputs.version }}"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.select-version.outputs.version }}
           files: |
-            dist/jailbox-${{ github.ref_name }}.tar.gz
+            dist/jailbox-${{ needs.select-version.outputs.version }}.tar.gz
             dist/jailbox-latest.tar.gz
             dist/SHA256SUMS
