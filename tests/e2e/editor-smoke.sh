@@ -298,10 +298,13 @@ wait_for_remote_editor_ready() {
         # "Launched Extension Host Process" is logged only once an editor
         # window has attached to the remote server; "Extension host agent
         # started" merely means the server booted, with no window connected.
+        # Current VS Code stores server logs under
+        # .vscode-server/cli/servers/Stable-*/server/..., while older
+        # VS Code/VSCodium builds used .*-server/bin/*/*.log.
         if ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' <<'REMOTE' 2>/dev/null
 for root in "$HOME/.vscodium-server" "$HOME/.vscode-server"; do
     [ -d "$root" ] || continue
-    if find "$root" -maxdepth 2 -type f -name '*.log' -exec grep -q 'Launched Extension Host Process' {} \; -print -quit |
+    if find "$root" -maxdepth 8 -type f \( -name '*.log' -o -name 'log.txt' \) -exec grep -q 'Launched Extension Host Process' {} \; -print -quit |
         grep -q .; then
         exit 0
     fi
@@ -388,7 +391,9 @@ install_proof_extension() {
 set -eu
 server_bin=""
 for candidate in "$HOME/.vscodium-server/bin"/*/bin/codium-server \
-                 "$HOME/.vscode-server/bin"/*/bin/code-server; do
+                 "$HOME/.vscode-server/bin"/*/bin/code-server \
+                 "$HOME/.vscodium-server/cli/servers"/*/server/bin/codium-server \
+                 "$HOME/.vscode-server/cli/servers"/*/server/bin/code-server; do
     if [ -x "$candidate" ]; then
         server_bin="$candidate"
         break

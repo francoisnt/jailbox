@@ -111,7 +111,7 @@ matrix for the supported editor/OS combinations.
 When `EGRESS_ALLOW` is configured, jAilbox automatically adds the selected
 editor's Remote SSH bootstrap hosts so the editor can install its remote server:
 
-- `EDITOR=code`: `update.code.visualstudio.com`, `vscode.download.prss.microsoft.com`, `vo.msecnd.net`
+- `EDITOR=code`: `update.code.visualstudio.com`, `vscode.download.prss.microsoft.com`, `main.vscode-cdn.net`, `vo.msecnd.net`
 - `EDITOR=codium`: `github.com`, `githubusercontent.com`
 
 **How egress enforcement works:** When `EGRESS_ALLOW` is set, jAilbox places the jailbox container on an internal-only Podman network — a network created with no external route and no DNS service. A tinyproxy sidecar is attached to both that internal network and a separate external-facing network, and acts as the sole outbound gateway at a fixed internal IP. Applications inside the jailbox container that ignore `HTTP_PROXY`/`HTTPS_PROXY` cannot reach the public internet directly: the internal network has no gateway, so outbound connections fail at the network level regardless of proxy cooperation. tinyproxy enforces the domain allowlist for all HTTP and HTTPS traffic that passes through it, and restricts HTTPS CONNECT tunnels to port 443.

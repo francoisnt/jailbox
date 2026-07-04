@@ -97,9 +97,12 @@ effective_egress_allowlist() {
     if [[ -n "$EDITOR_BIN" ]]; then
         case "$(basename "$EDITOR_BIN")" in
             code)
+                # main.vscode-cdn.net succeeded vo.msecnd.net as the download
+                # CDN; keep both while older VS Code builds remain in use.
                 hosts+=(
                     update.code.visualstudio.com
                     vscode.download.prss.microsoft.com
+                    main.vscode-cdn.net
                     vo.msecnd.net
                 )
                 ;;
