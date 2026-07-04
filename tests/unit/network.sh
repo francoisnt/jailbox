@@ -92,7 +92,47 @@ test_proxy_internal_address() {
     esac
 }
 
+test_proxy_subnet_candidates_distinct() {
+    PROJECT_HASH="abcdef123456"
+
+    if [ "$(proxy_internal_subnet 0)" != "$(proxy_internal_subnet 1)" ]; then
+        pass "collision fallback candidates use distinct subnets"
+    else
+        fail "collision fallback candidates use distinct subnets (both $(proxy_internal_subnet 0))"
+    fi
+}
+
+test_proxy_ip_for_subnet() {
+    if [ "$(proxy_ip_for_subnet "10.240.57.0/24")" = "10.240.57.2" ]; then
+        pass "proxy IP derived from subnet"
+    else
+        fail "proxy IP derived from subnet (got $(proxy_ip_for_subnet "10.240.57.0/24"))"
+    fi
+}
+
+test_render_tinyproxy_conf() {
+    local d conf
+
+    d=$(mktemp -d)
+    conf="$d/tinyproxy.conf"
+    SCRIPT_DIR="$JAILBOX_DIR"
+    render_tinyproxy_conf "$conf" "10.240.57.0/24"
+
+    assert_contains_line "tinyproxy conf: client ACL rendered" "$conf" "Allow 10.240.57.0/24"
+    assert_contains_line "tinyproxy conf: base config included" "$conf" "FilterDefaultDeny Yes"
+    local conf_mode
+    conf_mode=$(stat -c '%a' "$conf" 2>/dev/null || stat -f '%Lp' "$conf")
+    if [ "$conf_mode" = "644" ]; then
+        pass "tinyproxy conf: readable by unprivileged proxy user"
+    else
+        fail "tinyproxy conf: readable by unprivileged proxy user (mode $conf_mode)"
+    fi
+
+    rm -rf "$d"
+}
+
 test_configure_proxy_env_preserves_precomputed_url() {
+    NETWORK_NAME="jailbox-unittest-net"
     PROXY_NAME="proxy-name"
     PROXY_URL="http://10.240.5.2:8888"
 
@@ -112,6 +152,7 @@ test_configure_proxy_env_preserves_precomputed_url() {
 
 test_configure_proxy_env_computes_static_url() {
     PROJECT_HASH="abcdef123456"
+    NETWORK_NAME="jailbox-unittest-net"
     PROXY_NAME="proxy-name"
     PROXY_URL=""
     EGRESS_ALLOW=(api.example.test)
@@ -132,6 +173,9 @@ main() {
     test_tinyproxy_exact_match_patterns
     test_tinyproxy_filter_rerender
     test_proxy_internal_address
+    test_proxy_subnet_candidates_distinct
+    test_proxy_ip_for_subnet
+    test_render_tinyproxy_conf
     test_configure_proxy_env_preserves_precomputed_url
     test_configure_proxy_env_computes_static_url
 

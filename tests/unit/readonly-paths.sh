@@ -139,11 +139,72 @@ test_mounts() {
     rm -rf "$PROJECT_DIR"
 }
 
+test_stubs() {
+    local out_file
+
+    with_project
+    mkdir -p "$PROJECT_DIR/.github/workflows"
+    printf 'SECRET=1\n' > "$PROJECT_DIR/.env"
+
+    out_file=$(mktemp)
+    ensure_readonly_stubs > "$out_file"
+
+    if [ -d "$PROJECT_DIR/.gitea/workflows" ]; then
+        pass "absent workflow dir is stubbed"
+    else
+        fail "absent workflow dir is stubbed"
+    fi
+    if grep -q ".gitea/workflows" "$out_file"; then
+        pass "stub creation is reported"
+    else
+        fail "stub creation is reported"
+    fi
+    if [ "$(cat "$PROJECT_DIR/.env")" = "SECRET=1" ]; then
+        pass "existing .env is left untouched"
+    else
+        fail "existing .env is left untouched"
+    fi
+    if grep -qE "\.env|\.github" "$out_file"; then
+        fail "existing paths are not reported as stubbed"
+    else
+        pass "existing paths are not reported as stubbed"
+    fi
+
+    rm -f "$out_file"
+    rm -rf "$PROJECT_DIR"
+}
+
+test_stubs_from_empty_project() {
+    with_project
+    ensure_readonly_stubs > /dev/null
+
+    if [ -d "$PROJECT_DIR/.github/workflows" ] && [ -f "$PROJECT_DIR/.env" ] && [ ! -s "$PROJECT_DIR/.env" ]; then
+        pass "empty project gets all stubs, .env empty"
+    else
+        fail "empty project gets all stubs, .env empty"
+    fi
+
+    configure_readonly_paths
+    build_readonly_mounts > /dev/null
+    case "${READONLY_MOUNTS[*]}" in
+        *"$PROJECT_DIR/.github/workflows:$REMOTE_PATH/.github/workflows:Z,ro"*)
+            pass "stubbed path receives ro mount"
+            ;;
+        *)
+            fail "stubbed path receives ro mount"
+            ;;
+    esac
+
+    rm -rf "$PROJECT_DIR"
+}
+
 main() {
     test_defaults
     test_readonly_extra
     test_dev_containerfile
     test_mounts
+    test_stubs
+    test_stubs_from_empty_project
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

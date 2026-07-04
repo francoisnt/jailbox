@@ -68,6 +68,7 @@ READONLY_MOUNTS=()
 GITCONFIG_MOUNT=()
 ROOTFS_FLAG=()
 FILTER_FILE=""
+PROXY_CONF_FILE=""
 JAILBOX_NETWORK=""
 JAILBOX_INTERNAL_NETWORK=""
 SSH_SESSION_ENV=()
@@ -99,6 +100,7 @@ source "$SCRIPT_DIR/host/validation.sh"
 
 run_launch() {
     initialize_runtime_ids
+    check_local_port_available
     build_or_select_dev_image
     validate_dev_image
     warn_if_alpine_dev_image_with_vscode
@@ -106,6 +108,7 @@ run_launch() {
     configure_runtime_mounts
     configure_network
     setup_ssh_keys
+    ensure_readonly_stubs
     build_readonly_mounts
     ensure_home_volume
     start_jailbox_container

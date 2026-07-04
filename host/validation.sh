@@ -109,6 +109,21 @@ validate_egress_policy() {
     check_downloader_proxy_config
     check_direct_egress_blocked
     check_proxy_egress_allowed
+    check_proxy_egress_denied
+}
+
+check_proxy_egress_denied() {
+    # The filter must deny hosts missing from EGRESS_ALLOW. A reserved
+    # .invalid name can never be listed, and tinyproxy matches the filter
+    # before resolving, so denial fails fast with 403 rather than a DNS error.
+    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+        "curl -fsS --connect-timeout 5 --max-time 10 'https://jailbox-egress-denied.invalid' >/dev/null" \
+        2>/dev/null; then
+        echo "  ⚠️  Proxy allowed a host outside EGRESS_ALLOW — filter is not enforcing"
+        WARNINGS=$((WARNINGS + 1))
+    else
+        echo "  ✅ Proxy denies hosts outside EGRESS_ALLOW"
+    fi
 }
 
 check_downloader_proxy_config_absent() {

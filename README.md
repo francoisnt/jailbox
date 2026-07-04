@@ -129,14 +129,15 @@ Without `EGRESS_ALLOW`, the container runs on a standard Podman network with unr
 - Fresh SSH keypair per launch
 - No container runtime sockets mounted
 - Strict sshd configuration (key auth only, local forwarding only)
-- Optional egress control: when `EGRESS_ALLOW` is set, the container is placed on an internal-only network with no direct external route; a tinyproxy sidecar is the only outbound gateway and enforces the domain allowlist for HTTP/HTTPS
+- Optional egress control: when `EGRESS_ALLOW` is set, the container is placed on an internal-only network with no direct external route and no DNS; an unprivileged tinyproxy sidecar is the only outbound gateway, accepts clients from the internal network only, and enforces the domain allowlist for HTTP/HTTPS
 
 ### Important realities
 - The container runs with your **host UID**, so it can read and write your project files
-- Project files are mounted writable. Selected paths like `.git/config`, `.github/workflows`, and `Containerfile` are mounted read-only over the writable project mount. The built-in list is illustrative, not exhaustive — anything the host or CI later executes (`Makefile`, `.envrc`, `package.json` scripts, editor task files, …) is writable unless you add it via `READONLY_EXTRA`, which extends the built-in set but can never remove from it. Paths that do not exist at launch are not protected.
+- Project files are mounted writable. Selected paths like `.git/config`, `.github/workflows`, and `Containerfile` are mounted read-only over the writable project mount. The built-in list is illustrative, not exhaustive — anything the host or CI later executes (`Makefile`, `.envrc`, `package.json` scripts, editor task files, …) is writable unless you add it via `READONLY_EXTRA`, which extends the built-in set but can never remove from it. High-risk paths that are absent at launch (`.env`, `.github/workflows`, `.gitea/workflows`) are created as empty stubs so they can be mounted read-only; other absent paths — including `READONLY_EXTRA` entries, which produce a launch warning — are not protected.
 - The AI (or any code running in the container) can still exfiltrate or destroy project contents
 - You still share the kernel and container runtime trust boundary
 - Without `EGRESS_ALLOW`, the container has unrestricted outbound internet access
+- Host services listening on `0.0.0.0` (local dev servers, LLM runtimes, databases) remain reachable from the container through the Podman bridge gateway IP — even in egress mode, since the internal network's bridge interface still exists on the host. Bind sensitive host services to `127.0.0.1` if the container must not reach them
 - Egress enforcement is proxy-mediated (HTTP/HTTPS domain filter), not packet-level: tinyproxy only filters traffic that passes through it and cannot inspect TLS payload; allowed endpoints can still receive exfiltrated data; this is not equivalent to a firewall, VM network isolation, or kernel-enforced packet filtering
 
 jAilbox focuses on reducing accidental host exposure and limiting common container escape vectors, not defending against a determined kernel- or runtime-level attacker. It provides much better defaults than running agents directly on the host or in privileged containers, but it is **not** a full sandbox.

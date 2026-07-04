@@ -64,6 +64,32 @@ readonly_paths_contain() {
     return 1
 }
 
+# A protected path that is absent at launch gets no read-only overlay, so
+# anything inside the container could create it — and .env or CI workflow
+# files materializing on the host is exactly what the overlays exist to
+# prevent. Stub the high-risk entries: empty directories are invisible to git
+# and an empty .env is inert. Containerfile candidates are deliberately not
+# stubbed; an empty Containerfile would break dev-image discovery.
+ensure_readonly_stubs() {
+    local stub_dirs stub_files path
+
+    stub_dirs=(".gitea/workflows" ".github/workflows")
+    stub_files=(".env")
+
+    for path in "${stub_dirs[@]}"; do
+        if [ ! -e "$PROJECT_DIR/$path" ]; then
+            mkdir -p "$PROJECT_DIR/$path"
+            echo "🔒 Created stub for protected path: $path/"
+        fi
+    done
+    for path in "${stub_files[@]}"; do
+        if [ ! -e "$PROJECT_DIR/$path" ]; then
+            touch "$PROJECT_DIR/$path"
+            echo "🔒 Created stub for protected path: $path"
+        fi
+    done
+}
+
 build_readonly_mounts() {
     local path
     READONLY_MOUNTS=()

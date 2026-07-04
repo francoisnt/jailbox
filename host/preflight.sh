@@ -12,6 +12,19 @@ parse_args() {
     fi
 }
 
+# The derived port can collide with an unrelated listener; fail with a clear
+# message instead of a confusing podman bind error or wait_for_ssh timeout.
+# An existing jailbox container legitimately holds the port (--replace frees
+# it at start), so the check only applies when none exists.
+check_local_port_available() {
+    if podman container exists "$CONTAINER_NAME" 2>/dev/null; then
+        return 0
+    fi
+    if (exec 3<>"/dev/tcp/127.0.0.1/$LOCAL_PORT") 2>/dev/null; then
+        die "local port $LOCAL_PORT is already in use by another process. jailbox derives this port from the project path; stop the conflicting listener and relaunch."
+    fi
+}
+
 host_preflight() {
     require_command cksum
 
