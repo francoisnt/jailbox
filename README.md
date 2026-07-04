@@ -75,7 +75,7 @@ jAilbox is **not** a replacement for Microsoft's Dev Containers specification.
 
 **Dev Containers** excel at team collaboration, standardized onboarding, and rich configuration through `devcontainer.json`.
 
-**jAilbox** provides more **opinionated, hardened runtime defaults** focused on reducing risk when running untrusted code (particularly AI agents). It works with plain `Containerfile`/`Dockerfile` setups and adds egress control by default.
+**jAilbox** provides more **opinionated, hardened runtime defaults** focused on reducing risk when running untrusted code (particularly AI agents). It works with plain `Containerfile`/`Dockerfile` setups and adds optional egress control.
 
 **Many teams use both**:
 - Dev Containers for regular development and consistency
