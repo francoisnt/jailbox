@@ -252,19 +252,21 @@ confirm_release() {
     esac
 }
 
-# Trigger the release workflow. CI re-selects the version with the same
-# policy, runs the full release gate, and creates the tag and GitHub Release
-# only after the gate passes, so a failed run leaves no stale tag.
+# Trigger the release workflow with a plain git push — no gh dependency.
+# An ephemeral release-request tag (never matching v*.*.*) starts the
+# workflow, which re-selects the version with the same policy, runs the full
+# release gate, and creates the version tag and GitHub Release only after the
+# gate passes, so a failed run leaves no stale version tag. The workflow
+# deletes the request tag when it finishes; --force covers a leftover marker
+# from an interrupted run.
 dispatch_release() {
-    local branch dispatch_args
+    local request_tag
 
-    require_command gh
-    branch="$(release_branch)"
-    dispatch_args=(workflow run release.yml --ref "$branch")
-    [ "$FIRST_MAJOR" = true ] && dispatch_args+=(--field first_major=true)
-    gh "${dispatch_args[@]}"
-    echo "Dispatched release workflow on $branch."
-    echo "Follow it with: gh run watch"
+    request_tag="release-request"
+    [ "$FIRST_MAJOR" = true ] && request_tag="release-request-first-major"
+    git -C "$ROOT_DIR" push --force origin "HEAD:refs/tags/$request_tag"
+    echo "Pushed $request_tag; the release workflow will tag and publish after the gate passes."
+    echo "Follow it in GitHub Actions (Release workflow)."
 }
 
 # Coordinate version selection, confirmation, and workflow dispatch.

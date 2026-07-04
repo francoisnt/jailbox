@@ -1,9 +1,11 @@
 name: Release
 
-# Releases are initiated manually. The version is selected in CI with the
-# same policy as scripts/release.sh (which is also the dispatch client), the
-# full release gate runs first, and the tag plus GitHub Release are created
-# only after all validation succeeds — a failed gate leaves no stale tag.
+# Releases are initiated manually: either from the Actions UI
+# (workflow_dispatch) or by scripts/release.sh pushing an ephemeral
+# release-request tag — plain git, no gh dependency. The version is selected
+# in CI with the same policy as scripts/release.sh, the full release gate
+# runs first, and the version tag plus GitHub Release are created only after
+# all validation succeeds — a failed gate leaves no stale version tag.
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +13,10 @@ on:
         description: "Release v1.0.0 (only valid before any v1+ tag exists)"
         type: boolean
         default: false
+  push:
+    tags:
+      - "release-request"
+      - "release-request-first-major"
 
 permissions:
   contents: write
@@ -34,11 +40,24 @@ jobs:
           # diffs host/public-api.sh against it.
           fetch-depth: 0
 
+      - name: Require release requests to match the default branch head
+        if: github.event_name == 'push'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch origin "$DEFAULT_BRANCH"
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$DEFAULT_BRANCH")" ]]; then
+            echo "release-request must point at the head of $DEFAULT_BRANCH" >&2
+            exit 1
+          fi
+
       - name: Select release version
         id: select
+        env:
+          FIRST_MAJOR: ${{ inputs.first_major == true || github.ref_name == 'release-request-first-major' }}
         run: |
           args=(--print-version)
-          if [[ "${{ inputs.first_major }}" == "true" ]]; then
+          if [[ "$FIRST_MAJOR" == "true" ]]; then
             args+=(--first-major)
           fi
           version="$(bash scripts/release.sh "${args[@]}")"
@@ -75,3 +94,17 @@ jobs:
             dist/jailbox-${{ needs.select-version.outputs.version }}.tar.gz
             dist/jailbox-latest.tar.gz
             dist/SHA256SUMS
+
+  # Remove the ephemeral request tag whether the release succeeded or not.
+  # A leftover marker is harmless (the next request force-pushes over it)
+  # but would clutter the tag list.
+  cleanup-request:
+    runs-on: ubuntu-24.04
+    needs: [publish]
+    if: ${{ always() && github.event_name == 'push' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Delete release-request tag
+        run: git push origin ":refs/tags/${{ github.ref_name }}"
