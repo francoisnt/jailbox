@@ -36,13 +36,7 @@ its reach into your machine.
 ### 1. Install
 
 ```bash
-curl -fsSLO https://github.com/francoisnt/jailbox/releases/latest/download/jailbox-latest.tar.gz
-curl -fsSLO https://github.com/francoisnt/jailbox/releases/latest/download/SHA256SUMS
-sha256sum --check --ignore-missing SHA256SUMS
-release_dir="$(tar -tzf jailbox-latest.tar.gz | head -1 | cut -d/ -f1)"
-tar -xzf jailbox-latest.tar.gz
-cd "$release_dir"
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/francoisnt/jailbox/master/install.sh | bash
 ```
 
 ### 2. Use
@@ -284,6 +278,7 @@ editor integration for the current project.
 | VS Code cannot connect to an Alpine-based container | VS Code Remote SSH does not support Alpine hosts; set `EDITOR=codium` |
 | `neither 'codium' nor 'code' was found in PATH` | Install the VSCodium or VS Code CLI, or set `JAILBOX_EDITOR` |
 | `sshd did not become ready in time` | Inspect the container log: `podman logs <container-name>` (printed in the error) |
+| Editor shows `Unable to watch for file changes` | Host `fs.inotify.max_user_watches` is too low (jailbox warns below 524288); raise it persistently: `echo 'fs.inotify.max_user_watches=524288' \| sudo tee /etc/sysctl.d/60-jailbox-inotify.conf` then `sudo sysctl --system` |
 
 ---
 

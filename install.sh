@@ -3,7 +3,18 @@ set -euo pipefail
 
 APP_NAME="jailbox"
 MARKER_FILE=".jailbox-install"
-SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "${#BASH_SOURCE[@]}" -gt 0 ]; then
+    SOURCE_FILE="${BASH_SOURCE[0]}"
+else
+    SOURCE_FILE=""
+fi
+if [ -n "$SOURCE_FILE" ]; then
+    SOURCE_DIR="$(cd "$(dirname "$SOURCE_FILE")" && pwd)"
+else
+    SOURCE_DIR="$(pwd)"
+fi
+RELEASE_BASE_URL="${JAILBOX_RELEASE_BASE_URL:-https://github.com/francoisnt/jailbox/releases/latest/download}"
+RELEASE_TMP_DIR=""
 
 if [ -n "${JAILBOX_INSTALL_DIR:-}" ]; then
     TARGET_DIR="$JAILBOX_INSTALL_DIR"
@@ -65,12 +76,47 @@ Environment overrides:
   XDG_DATA_HOME          Default data parent when PREFIX is unset
   JAILBOX_INSTALL_DIR    Exact app asset directory
   JAILBOX_BIN_DIR        Exact directory for the jailbox symlink
+  JAILBOX_RELEASE_BASE_URL
+                         Release asset base URL for streamed installs
 EOF_USAGE
 }
 
 die() {
     echo "Error: $*" >&2
     exit 1
+}
+
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$@"
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$@"
+    else
+        die "sha256sum or shasum is required"
+    fi
+}
+
+download_file() {
+    local url output
+
+    url="$1"
+    output="$2"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$output"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$output" "$url"
+    else
+        die "curl or wget is required"
+    fi
+}
+
+installer_bundle_is_available() {
+    local path
+
+    for path in "${REQUIRED_PATHS[@]}"; do
+        [ -e "$SOURCE_DIR/$path" ] || return 1
+    done
 }
 
 absolute_path() {
@@ -124,6 +170,41 @@ validate_source_tree() {
     for path in "${REQUIRED_PATHS[@]}"; do
         [ -e "$SOURCE_DIR/$path" ] || die "installer bundle is missing required path: $path"
     done
+}
+
+install_from_release() {
+    local tmp_dir tarball checksums tar_list expected actual release_dir
+
+    tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_NAME}.install.XXXXXX")"
+    RELEASE_TMP_DIR="$tmp_dir"
+    cleanup_release_download() {
+        [ -n "${RELEASE_TMP_DIR:-}" ] && rm -rf "$RELEASE_TMP_DIR"
+    }
+    trap cleanup_release_download EXIT
+
+    tarball="$tmp_dir/$APP_NAME-latest.tar.gz"
+    checksums="$tmp_dir/SHA256SUMS"
+    tar_list="$tmp_dir/tar.list"
+
+    echo "Downloading jailbox..."
+    download_file "$RELEASE_BASE_URL/$APP_NAME-latest.tar.gz" "$tarball"
+    download_file "$RELEASE_BASE_URL/SHA256SUMS" "$checksums"
+
+    expected="$(awk -v file="$APP_NAME-latest.tar.gz" '$2 == file { print $1; exit }' "$checksums")"
+    [ -n "$expected" ] || die "checksum file does not include $APP_NAME-latest.tar.gz"
+    actual="$(sha256 "$tarball" | awk '{ print $1 }')"
+    [ "$actual" = "$expected" ] || die "checksum verification failed for $APP_NAME-latest.tar.gz"
+
+    tar -tzf "$tarball" > "$tar_list"
+    release_dir="$(sed -n '1{s#/.*##;p;q;}' "$tar_list")"
+    [ -n "$release_dir" ] || die "release archive is empty"
+    tar -xzf "$tarball" -C "$tmp_dir"
+    [ -f "$tmp_dir/$release_dir/install.sh" ] || die "release archive is missing install.sh"
+
+    bash "$tmp_dir/$release_dir/install.sh" "$@"
+    trap - EXIT
+    rm -rf "$tmp_dir"
+    RELEASE_TMP_DIR=""
 }
 
 copy_bundle() {
@@ -220,7 +301,11 @@ uninstall_jailbox() {
 
 case "${1:-}" in
     "")
-        install_jailbox
+        if installer_bundle_is_available; then
+            install_jailbox
+        else
+            install_from_release "$@"
+        fi
         ;;
     --uninstall)
         uninstall_jailbox

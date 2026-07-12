@@ -25,10 +25,26 @@ check_local_port_available() {
     fi
 }
 
+warn_low_inotify_watch_limit() {
+    local limit_file limit recommended
+
+    recommended=524288
+    limit_file="${JAILBOX_INOTIFY_MAX_USER_WATCHES_FILE:-/proc/sys/fs/inotify/max_user_watches}"
+    [ -r "$limit_file" ] || return 0
+
+    limit=$(cat "$limit_file" 2>/dev/null || true)
+    [[ "$limit" =~ ^[0-9]+$ ]] || return 0
+    [ "$limit" -ge "$recommended" ] && return 0
+
+    echo "⚠️  fs.inotify.max_user_watches is $limit; VSCodium/VS Code Remote SSH may be unable to watch workspace file changes." >&2
+    echo "   Fix on the Linux host: echo 'fs.inotify.max_user_watches=$recommended' | sudo tee /etc/sysctl.d/60-jailbox-inotify.conf && sudo sysctl --system" >&2
+}
+
 host_preflight() {
     require_command cksum
 
     if [[ "${1:-}" == "ssh-config" || "${1:-}" == "doctor" ]]; then
+        warn_low_inotify_watch_limit
         return 0
     fi
 
@@ -41,6 +57,7 @@ host_preflight() {
     require_command ssh
     require_command ssh-keygen
     require_command realpath
+    warn_low_inotify_watch_limit
 
     local requested_editor
 
