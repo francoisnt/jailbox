@@ -25,6 +25,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=host/project-id.sh
 source "$JAILBOX_DIR/host/project-id.sh"
+# shellcheck source=tests/lib/run-meta.sh
+source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
 VSCODE_STAGES=(debian fedora egress)
@@ -102,6 +104,8 @@ setup_logging() {
     LOG_DIR="$JAILBOX_DIR/testlog/editor-$(date +%Y%m%d-%H%M%S)-$$"
     RUN_LOG="$LOG_DIR/editor-smoke.log"
     mkdir -p "$LOG_DIR"
+    write_run_meta "$LOG_DIR"
+    run_meta_editor "$LOG_DIR" "$(editor_bin || true)"
 }
 
 log_run() {

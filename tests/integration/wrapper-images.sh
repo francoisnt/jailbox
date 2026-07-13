@@ -139,6 +139,9 @@ source "$SCRIPT_DIR/runtime-security.sh"
 # shellcheck source=versions.env
 source "$JAILBOX_DIR/versions.env"
 
+# shellcheck source=tests/lib/run-meta.sh
+source "$JAILBOX_DIR/tests/lib/run-meta.sh"
+
 
 assert_eq() {
     local desc="$1" expected="$2" actual="$3"
@@ -374,6 +377,7 @@ main() {
     local log_dir
     log_dir="$JAILBOX_DIR/testlog/test-$(date +%Y%m%d-%H%M%S)-$$"
     mkdir -p "$log_dir"
+    write_run_meta "$log_dir"
 
     echo "jailbox integration tests (parallel)"
     echo "Stages : ${stages[*]}"
@@ -429,6 +433,12 @@ main() {
     for pid in "${stage_pids[@]}"; do
         wait "$pid" 2>/dev/null || true
     done
+
+    # Base images were pulled by the stage builds; record what the tags
+    # resolved to for this run.
+    run_meta_image "$log_dir" debian "$BASE_IMAGE_DEBIAN"
+    run_meta_image "$log_dir" alpine "$BASE_IMAGE_ALPINE"
+    run_meta_image "$log_dir" fedora "$BASE_IMAGE_FEDORA"
 
     # Print full per-stage output in defined order and keep the same files in
     # testlog for terminals that clip long runs.

@@ -20,8 +20,15 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$JAILBOX_DIR/host/project-id.sh"
 # shellcheck source=versions.env
 source "$JAILBOX_DIR/versions.env"
+# shellcheck source=tests/lib/run-meta.sh
+source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
+
+# VSCodium REH build the Alpine stage probes; shared by the probe and the run
+# metadata. Defaults come from versions.env; the canary overrides via env.
+REH_RELEASE="${JAILBOX_E2E_REH_RELEASE:-$CODIUM_VERSION}"
+REH_COMMIT="${JAILBOX_E2E_REH_COMMIT:-$CODIUM_COMMIT}"
 
 PASSED=0
 FAILED=0
@@ -162,10 +169,9 @@ assert_vscodium_reh_probe() {
     local remote_output remote_output_file remote_rc listening_on tunnel_pid=""
 
     # Mirrors the current VSCodium/Open Remote SSH server used in editor smoke
-    # tests. Defaults come from versions.env; keep them overridable so the
-    # canary can test latest without editing the pin file first.
-    local reh_release="${JAILBOX_E2E_REH_RELEASE:-$CODIUM_VERSION}"
-    local reh_commit="${JAILBOX_E2E_REH_COMMIT:-$CODIUM_COMMIT}"
+    # tests (file-scope REH_RELEASE/REH_COMMIT, from versions.env or env).
+    local reh_release="$REH_RELEASE"
+    local reh_commit="$REH_COMMIT"
 
     remote_output_file="$(mktemp)"
     ssh -F "$config" -o ConnectTimeout=3 "$ctr" \
@@ -549,6 +555,8 @@ main() {
     local log_dir
     log_dir="$JAILBOX_DIR/testlog/e2e-$(date +%Y%m%d-%H%M%S)-$$"
     mkdir -p "$log_dir"
+    write_run_meta "$log_dir"
+    run_meta_reh "$log_dir" "$REH_RELEASE" "$REH_COMMIT"
     stub_dir=$(mktemp -d)
     trap 'rm -rf "$stub_dir"' EXIT
 
