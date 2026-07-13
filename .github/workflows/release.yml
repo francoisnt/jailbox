@@ -34,7 +34,7 @@ jobs:
       version: ${{ steps.select.outputs.version }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # Full history and tags: version selection reads the latest tag and
           # diffs host/public-api.sh against it.
@@ -72,7 +72,7 @@ jobs:
     needs: [select-version, release-gate]
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Create and push release tag
         env:
@@ -104,7 +104,7 @@ jobs:
     if: ${{ always() && github.event_name == 'push' }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Delete release-request tag
         run: git push origin ":refs/tags/${{ github.ref_name }}"

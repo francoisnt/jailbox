@@ -16,7 +16,7 @@ jobs:
           - macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Run portable smoke suite
         run: bash tests/portable/smoke.sh
@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up host
         run: bash tests/ci/setup-linux.sh
@@ -50,7 +50,7 @@ jobs:
           - codium
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up host with editors
         run: bash tests/ci/setup-linux.sh --with-editors
