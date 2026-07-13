@@ -10,6 +10,7 @@
 # Usage: tests/e2e/headless.sh [stage...]
 # Env:   JAILBOX_E2E_REH_RELEASE / JAILBOX_E2E_REH_COMMIT
 #                              VSCodium REH build to smoke-test on Alpine
+#                              (defaults: CODIUM_VERSION/CODIUM_COMMIT in versions.env)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,6 +18,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=host/project-id.sh
 source "$JAILBOX_DIR/host/project-id.sh"
+# shellcheck source=versions.env
+source "$JAILBOX_DIR/versions.env"
 
 ALL_STAGES=(debian alpine fedora egress)
 
@@ -57,6 +60,7 @@ Requires: podman, ssh, ssh-keygen, curl
 Environment:
   JAILBOX_E2E_REH_RELEASE
   JAILBOX_E2E_REH_COMMIT  VSCodium REH build to smoke-test on Alpine.
+                          Defaults: CODIUM_VERSION/CODIUM_COMMIT in versions.env.
 EOF
 }
 
@@ -157,11 +161,11 @@ assert_vscodium_reh_probe() {
     local config="$1" ctr="$2" port="$3" desc="$4"
     local remote_output remote_output_file remote_rc listening_on tunnel_pid=""
 
-    # Mirrors the current VSCodium/Open Remote SSH server used in editor smoke tests.
-    # Keep these overridable so CI can follow VSCodium release bumps without
-    # editing the test script first.
-    local reh_release="${JAILBOX_E2E_REH_RELEASE:-1.116.02821}"
-    local reh_commit="${JAILBOX_E2E_REH_COMMIT:-221e0a382c0be3a673a4e4cab0601344a0b3de3a}"
+    # Mirrors the current VSCodium/Open Remote SSH server used in editor smoke
+    # tests. Defaults come from versions.env; keep them overridable so the
+    # canary can test latest without editing the pin file first.
+    local reh_release="${JAILBOX_E2E_REH_RELEASE:-$CODIUM_VERSION}"
+    local reh_commit="${JAILBOX_E2E_REH_COMMIT:-$CODIUM_COMMIT}"
 
     remote_output_file="$(mktemp)"
     ssh -F "$config" -o ConnectTimeout=3 "$ctr" \

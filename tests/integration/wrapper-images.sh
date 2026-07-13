@@ -136,6 +136,9 @@ assert_ssh() {
 # shellcheck source=tests/integration/runtime-security.sh
 source "$SCRIPT_DIR/runtime-security.sh"
 
+# shellcheck source=versions.env
+source "$JAILBOX_DIR/versions.env"
+
 
 assert_eq() {
     local desc="$1" expected="$2" actual="$3"
@@ -237,6 +240,9 @@ run_case() {
     if ! podman build \
             --target "$stage" \
             "${test_build_args[@]}" \
+            --build-arg "BASE_IMAGE_DEBIAN=${BASE_IMAGE_DEBIAN}" \
+            --build-arg "BASE_IMAGE_ALPINE=${BASE_IMAGE_ALPINE}" \
+            --build-arg "BASE_IMAGE_FEDORA=${BASE_IMAGE_FEDORA}" \
             -t "$test_image" \
             -f "$JAILBOX_DIR/tests/integration/dev-images.Containerfile" \
             "$JAILBOX_DIR" > "$build_log" 2>&1; then

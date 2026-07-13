@@ -1,5 +1,7 @@
 # Intentionally pinned: update this Alpine minor version deliberately rather
-# than floating on latest, and keep it aligned with the integration test image.
+# than floating on latest, and keep it aligned with BASE_IMAGE_ALPINE in
+# versions.env (jailbox builds this file at runtime, so it cannot source the
+# pin file itself; scripts/gen-tested-matrix.sh --check enforces alignment).
 FROM alpine:3.21
 RUN apk add --no-cache tinyproxy
 COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
