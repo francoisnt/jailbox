@@ -17,8 +17,10 @@ shellcheck --external-sources --shell=bash "$@" jailbox
 echo "shellcheck: scripts/ and tests/"
 shellcheck --external-sources --shell=bash "$@" \
     scripts/build-tarball.sh \
+    scripts/canary-report.sh \
     scripts/public-api-diff.sh \
     scripts/release.sh \
+    scripts/resolve-latest-versions.sh \
     install.sh \
     tests/ci/setup-common.sh \
     tests/ci/setup-linux.sh \
