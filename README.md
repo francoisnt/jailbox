@@ -50,6 +50,21 @@ jailbox discovers or builds your dev image, starts the hardened container,
 and opens the project in VS Code or VSCodium via Remote SSH. If your repo has
 a `Containerfile` or `Dockerfile`, there is nothing to configure.
 
+### Updating
+
+Re-run the install command above. It cleanly replaces the previous install
+and never touches your `jailbox.conf`, containers, or images.
+
+### Uninstalling
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/francoisnt/jailbox/master/install.sh | bash -s -- --uninstall
+```
+
+This removes the installed files and the `jailbox` command. Project
+containers and images are left in place; remove them with `podman rm` /
+`podman rmi` if you no longer want them.
+
 ---
 
 ## Recipes
