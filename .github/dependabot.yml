@@ -1,0 +1,9 @@
+# Keeps GitHub Actions references current via bump PRs (pr-checks runs on them).
+# Editor/REH/extension and base-image pins are NOT managed here — those live in
+# versions.env and advance through the canary workflow (see docs/version-pinning-plan.md).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
