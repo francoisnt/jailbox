@@ -18,6 +18,7 @@ echo "shellcheck: scripts/ and tests/"
 shellcheck --external-sources --shell=bash "$@" \
     scripts/build-tarball.sh \
     scripts/canary-report.sh \
+    scripts/gen-tested-matrix.sh \
     scripts/public-api-diff.sh \
     scripts/release.sh \
     scripts/resolve-latest-versions.sh \
