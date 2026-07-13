@@ -136,6 +136,16 @@ run_clean() {
     clean_jailbox
 }
 
+run_uninstall() {
+    # Delegate to the installer copy shipped inside this install, so the
+    # uninstall logic always matches the installed version's layout.
+    [ -f "$SCRIPT_DIR/.jailbox-install" ] || \
+        die "this jailbox is not an installed copy (source checkout?); nothing to uninstall"
+    # exec: install.sh deletes SCRIPT_DIR, so this script must not keep
+    # running (bash reads scripts incrementally from disk).
+    JAILBOX_INSTALL_DIR="$SCRIPT_DIR" exec bash "$SCRIPT_DIR/install.sh" --uninstall
+}
+
 initialize_common_state() {
     initialize_project_names
     configure_readonly_paths
@@ -148,6 +158,12 @@ main() {
 
     load_project_config
     parse_args "$@"
+
+    # Before host_preflight: uninstalling must not require podman or SSH tooling.
+    if [[ "${1:-}" == "--uninstall" ]]; then
+        run_uninstall
+    fi
+
     host_preflight "$@"
     initialize_common_state
 

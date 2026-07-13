@@ -58,12 +58,13 @@ and never touches your `jailbox.conf`, containers, or images.
 ### Uninstalling
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/francoisnt/jailbox/master/install.sh | bash -s -- --uninstall
+jailbox --uninstall
 ```
 
 This removes the installed files and the `jailbox` command. Project
-containers and images are left in place; remove them with `podman rm` /
-`podman rmi` if you no longer want them.
+containers and images are left in place; remove them with `jailbox --clean`
+per project (or `podman rm` / `podman rmi`) beforehand if you no longer
+want them.
 
 ---
 
@@ -114,6 +115,7 @@ jailbox              # Launch the environment (default)
 jailbox doctor       # Check SSH and editor integration status
 jailbox ssh-config   # Show SSH configuration instructions
 jailbox --clean      # Remove container, volume, networks and jailbox runtime state
+jailbox --uninstall  # Remove the jailbox installation from this machine
 ```
 
 **State**: per-project runtime state (SSH keys/config, editor profiles) lives
@@ -122,10 +124,12 @@ share of it. Nothing is written to your project except an optional
 `jailbox.conf` you create and the protected-path stubs described in the
 threat model.
 
-**Upgrade**: install a newer release over the old one (`./install.sh` from
-the new release directory).
+**Upgrade**: re-run the install command (see Quick Start); it replaces the
+previous install cleanly.
 
-**Uninstall**: `~/.local/share/jailbox/install.sh --uninstall`
+**Uninstall**: `jailbox --uninstall` (delegates to the installed copy's
+`install.sh --uninstall`, so the uninstall logic always matches the
+installed version).
 
 ---
 

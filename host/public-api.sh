@@ -33,6 +33,7 @@ CLI_FLAGS=(
     doctor
     ssh-config
     --clean
+    --uninstall
     --help
 )
 
@@ -40,6 +41,7 @@ CLI_HELP=(
     "doctor=Report editor and SSH config integration for this project"
     "ssh-config=Print manual SSH config instructions for this project"
     "--clean=Stop/remove jailbox containers, networks, and home volume"
+    "--uninstall=Remove this jailbox installation from the host"
     "--help=Show this help"
 )
 

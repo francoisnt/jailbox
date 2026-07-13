@@ -7,7 +7,7 @@ usage() {
     local flag
 
     cat <<EOF_USAGE
-Usage: $(basename "$0") [doctor|ssh-config|--clean|--help]
+Usage: $(basename "$0") [doctor|ssh-config|--clean|--uninstall|--help]
 
 Launch this project inside a hardened jailbox container.
 
