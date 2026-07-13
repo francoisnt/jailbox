@@ -174,6 +174,10 @@ start_jailbox_container() {
     # Keep the runtime non-privileged. SSH auth state is copied into a
     # user-owned runtime directory mounted at /run/jailbox-sshd. Do not make
     # /run itself world-writable: OpenSSH StrictModes rejects that parent path.
+    # /tmp is deliberately exec-capable: the home volume and project mount are
+    # writable+exec, so noexec on /tmp adds no containment — it only breaks
+    # tools that extract native code to the temp dir at runtime (Bun
+    # single-file binaries, PyInstaller, .NET single-file, AppImage).
     # The public key is mounted only as an inert source file; container/entrypoint.sh
     # copies it into /run/jailbox-sshd with strict ownership before sshd starts.
     podman run -d \
@@ -183,7 +187,7 @@ start_jailbox_container() {
         --userns=keep-id \
         --network "$JAILBOX_NETWORK" \
         "${ROOTFS_FLAG[@]}" \
-        --tmpfs /tmp:rw,size=512m,noexec \
+        --tmpfs /tmp:rw,size=512m \
         --tmpfs /run:rw,size=64m \
         -v "$SSHD_RUNTIME_DIR:/run/jailbox-sshd:Z" \
         -v "$VOLUME_NAME":/home/$MANAGED_USER \
