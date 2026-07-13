@@ -10,7 +10,8 @@ configure_network() {
     if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
         configure_proxy_network
     else
-        podman network exists "$NETWORK_NAME" 2>/dev/null || podman network create "$NETWORK_NAME"
+        podman network exists "$NETWORK_NAME" 2>/dev/null || \
+            podman network create --label "jailbox.project=$PROJECT_DIR" "$NETWORK_NAME"
         JAILBOX_NETWORK="$NETWORK_NAME"
         SSH_SESSION_ENV=()
         PROXY_URL=""
@@ -47,7 +48,8 @@ configure_proxy_network() {
     external_net="${NETWORK_NAME}-external"
 
     ensure_internal_network "$internal_net"
-    podman network exists "$external_net" 2>/dev/null || podman network create "$external_net"
+    podman network exists "$external_net" 2>/dev/null || \
+        podman network create --label "jailbox.project=$PROJECT_DIR" "$external_net"
 
     # Derive the proxy address from the network's actual subnet rather than
     # recomputing the hash candidate: an existing network may have been
@@ -72,6 +74,7 @@ configure_proxy_network() {
     # would fail; the account comes from the Alpine tinyproxy package.
     podman run -d \
         --name "$PROXY_NAME" \
+        --label "jailbox.project=$PROJECT_DIR" \
         --replace \
         --network "$external_net" \
         --network "$internal_net:ip=$proxy_internal_ip" \
@@ -204,7 +207,8 @@ ensure_internal_network() {
 
     for attempt in $(seq 0 19); do
         candidate=$(proxy_internal_subnet "$attempt")
-        if podman network create --internal --disable-dns --subnet "$candidate" "$internal_net" >/dev/null 2>&1; then
+        if podman network create --internal --disable-dns --subnet "$candidate" \
+            --label "jailbox.project=$PROJECT_DIR" "$internal_net" >/dev/null 2>&1; then
             return 0
         fi
     done

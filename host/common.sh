@@ -264,7 +264,10 @@ initialize_project_names() {
     local state_root
 
     PROJECT_HASH=$(project_path_hash)
-    PROJECT_RESOURCE_PREFIX="jailbox-$PROJECT_HASH"
+    # Podman resources carry the project name for readability; the hash of
+    # the full path remains the identity. State directories below stay keyed
+    # on the hash alone.
+    PROJECT_RESOURCE_PREFIX=$(jailbox_resource_prefix_for_path "$PROJECT_DIR")
     PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
     JAILBOX_IMAGE="${PROJECT_RESOURCE_PREFIX}-image"
     CONTAINER_NAME="${PROJECT_RESOURCE_PREFIX}"

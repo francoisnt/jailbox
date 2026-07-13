@@ -55,7 +55,7 @@ case "$PKG_MGR" in
     apk)
         apk add --no-cache \
             openssh bash curl git procps ca-certificates tar shadow \
-            musl libgcc libstdc++ \
+            musl libgcc libstdc++ flock \
             gcompat krb5-libs webkit2gtk-4.1
         ;;
     dnf)

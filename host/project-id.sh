@@ -1,5 +1,30 @@
 # Shared project identity helpers.
 
+# Human-readable slug from the project directory name. The prefix is used in
+# image tags too, so the slug must satisfy the strictest naming rules (OCI
+# repository names): lowercase alphanumerics and single dashes only. Empty
+# when nothing survives sanitization.
+jailbox_project_slug_for_path() {
+    printf '%s' "$(basename "$1")" |
+        tr '[:upper:]' '[:lower:]' |
+        tr -c 'a-z0-9' '-' |
+        cut -c1-24 |
+        sed 's/--*/-/g; s/^-//; s/-$//'
+}
+
+# Shared prefix for all per-project Podman resources (container, proxy,
+# volume, networks, images). The slug is cosmetic; the hash is the identity.
+jailbox_resource_prefix_for_path() {
+    local slug
+
+    slug=$(jailbox_project_slug_for_path "$1")
+    if [ -n "$slug" ]; then
+        printf 'jailbox-%s-%s\n' "$slug" "$(jailbox_project_hash_for_path "$1")"
+    else
+        printf 'jailbox-%s\n' "$(jailbox_project_hash_for_path "$1")"
+    fi
+}
+
 jailbox_project_hash_for_path() {
     if command -v sha256sum >/dev/null 2>&1; then
         printf '%s' "$1" | sha256sum | cut -c1-12

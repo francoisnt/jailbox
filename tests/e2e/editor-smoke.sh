@@ -40,6 +40,8 @@ FAILED=0
 LOG_DIR=""
 RUN_LOG=""
 PROOF_VSIX=""
+# PIDs of backgrounded success-path teardowns, joined in main() before exit.
+TEARDOWN_PIDS=()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,7 +50,7 @@ pass()  { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail()  { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 jailbox_container_name() {
-    printf 'jailbox-%s\n' "$(jailbox_project_hash_for_path "$1")"
+    jailbox_resource_prefix_for_path "$1"
 }
 
 jailbox_ssh_config() {
@@ -240,51 +242,107 @@ close_editor_workspace() {
         --command workbench.action.closeWindow >/dev/null 2>&1 || true
 }
 
-terminate_editor_profile() {
-    local project_dir="$1"
-    local user_data pid
+# Every process of the test editor instance references the profile path
+# somewhere in its args, but not always adjacent to --user-data-dir: the
+# main process's argv gets reordered by the editor launcher. Match on the
+# path itself, restricted to editor binaries, so the main process is
+# included — leaving it alive while killing its children makes it show a
+# "window terminated unexpectedly" crash dialog.
+editor_profile_pids() {
+    local user_data="$1"
 
-    user_data=$(jailbox_editor_user_data "$project_dir")
-
-    while read -r pid; do
-        [[ -n "$pid" ]] || continue
-        [[ "$pid" == "$$" ]] && continue
-        kill "$pid" >/dev/null 2>&1 || true
-    done < <(
-        ps -eo pid=,args= |
-            awk -v user_data="$user_data" '
-                index($0, "--user-data-dir " user_data) ||
-                index($0, "--user-data-dir=" user_data) {
-                    print $1
-                }
-            '
-    )
+    ps -eo pid=,args= |
+        awk -v user_data="$user_data" -v self="$$" '
+            index($0, user_data) && $2 ~ /(codium|code|electron)/ && $1 != self {
+                print $1
+            }
+        '
 }
 
+# Last-resort teardown for an editor instance that ignored the graceful
+# closeWindow request. Do NOT SIGTERM: Electron treats a signalled renderer as
+# a crash and the surviving main process pops a "window terminated
+# unexpectedly" dialog. SIGKILL the main process first — it cannot be caught,
+# so the process dies before running any crash-report code path — then reap
+# whatever children remain.
+terminate_editor_profile() {
+    local project_dir="$1"
+    local user_data pids pid
+
+    user_data=$(jailbox_editor_user_data "$project_dir")
+    pids=$(editor_profile_pids "$user_data")
+    [[ -n "$pids" ]] || return 0
+
+    # ps lists parents before children, so the main process is killed first.
+    while read -r pid; do
+        [[ -n "$pid" ]] || continue
+        kill -9 "$pid" >/dev/null 2>&1 || true
+    done <<< "$pids"
+}
+
+# Prefer a clean shutdown: closeWindow over the editor's own IPC lets Electron
+# tear the window down with no crash dialog and no leftover processes. Poll for
+# the instance to actually exit before falling back to a forced kill, so the
+# graceful path is the norm rather than a race against a fixed sleep.
 cleanup_editor_workspace() {
     local project_dir="$1"
     local ctr="$2"
+    local user_data deadline
+
+    user_data=$(jailbox_editor_user_data "$project_dir")
 
     close_editor_workspace "$project_dir" "$ctr"
-    sleep 0.5
+
+    deadline=$((SECONDS + 10))
+    while (( SECONDS < deadline )); do
+        [[ -z "$(editor_profile_pids "$user_data")" ]] && return 0
+        sleep 0.5
+    done
+
     terminate_editor_profile "$project_dir"
 }
 
+# Crashed runs leave containers/networks/volumes behind whose mktemp project
+# dirs are unrecoverable, so name-based cleanup cannot find them. Instead,
+# every jailbox resource carries a jailbox.project label; prune only resources
+# whose label points at a test fixture path. Real projects — including a
+# jailbox container this test itself may be running inside — are never
+# touched.
+is_test_fixture_project() {
+    case "$1" in
+        /tmp/jailbox-editor-*|/tmp/jailbox-e2e-*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 prune_stale_jailbox_resources() {
-    local ctrs nets
+    local name project
 
-    ctrs=$(podman ps -aq --filter 'name=^jailbox-' 2>/dev/null || true)
-    nets=$(podman network ls -q --filter 'name=^jailbox-' 2>/dev/null || true)
+    while read -r name project; do
+        [[ -n "$name" ]] || continue
+        is_test_fixture_project "$project" || continue
+        echo "Pruning stale test container $name ($project)"
+        podman rm -f "$name" >/dev/null 2>&1 || true
+    done < <(podman ps -a --filter 'label=jailbox.project' \
+        --format '{{.Names}} {{index .Labels "jailbox.project"}}' 2>/dev/null || true)
 
-    if [[ -n "$ctrs" || -n "$nets" ]]; then
-        echo "Pruning stale jailbox containers/networks from a previous run..."
-        if [[ -n "$ctrs" ]]; then
-            printf '%s\n' "$ctrs" | xargs podman rm -f >/dev/null 2>&1 || true
-        fi
-        if [[ -n "$nets" ]]; then
-            printf '%s\n' "$nets" | xargs podman network rm >/dev/null 2>&1 || true
-        fi
-    fi
+    while read -r name; do
+        [[ -n "$name" ]] || continue
+        project=$(podman network inspect "$name" \
+            --format '{{index .Labels "jailbox.project"}}' 2>/dev/null || true)
+        is_test_fixture_project "$project" || continue
+        echo "Pruning stale test network $name ($project)"
+        podman network rm "$name" >/dev/null 2>&1 || true
+    done < <(podman network ls -q --filter 'label=jailbox.project' 2>/dev/null || true)
+
+    while read -r name; do
+        [[ -n "$name" ]] || continue
+        project=$(podman volume inspect "$name" \
+            --format '{{index .Labels "jailbox.project"}}' 2>/dev/null || true)
+        is_test_fixture_project "$project" || continue
+        echo "Pruning stale test volume $name ($project)"
+        podman volume rm "$name" >/dev/null 2>&1 || true
+    done < <(podman volume ls -q --filter 'label=jailbox.project' 2>/dev/null || true)
 }
 
 wait_for_remote_editor_ready() {
@@ -783,6 +841,27 @@ run_stage() {
         fi
     fi
 
+    # Success: hand teardown to the background so the next stage starts without
+    # waiting on this stage's editor close (the slow part). Close then clean as
+    # one ordered unit — removing the container out from under a still-closing
+    # window risks a disconnect dialog. Every stage uses independently-named
+    # resources, so an overlapping teardown has nothing to collide with. main()
+    # joins these before summarizing. The failure path below stays synchronous
+    # so diagnostics and JAILBOX_KEEP_FAILED are unaffected.
+    if [[ "$rc" -eq 0 ]]; then
+        if [[ "$editor_opened" -eq 1 ]]; then
+            (
+                cleanup_editor_workspace "$project_dir" "$ctr"
+                cleanup_stage "$project_dir"
+            ) &
+            TEARDOWN_PIDS+=("$!")
+        else
+            cleanup_stage "$project_dir"
+        fi
+        project_dir=""  # disarm the EXIT trap — teardown owns cleanup now
+        return 0
+    fi
+
     if [[ "$editor_opened" -eq 1 ]]; then
         cleanup_editor_workspace "$project_dir" "$ctr"
     fi
@@ -862,6 +941,15 @@ main() {
             failed_stages+=("$stage")
         fi
     done
+
+    # Success-path teardowns run in the background so a stage never waits on the
+    # previous stage's editor close; join them before summarizing so the last
+    # stage's container is removed and nothing is orphaned.
+    if [[ ${#TEARDOWN_PIDS[@]} -gt 0 ]]; then
+        echo ""
+        echo "Waiting for background stage teardowns to finish..."
+        wait "${TEARDOWN_PIDS[@]}" 2>/dev/null || true
+    fi
 
     log_run ""
     log_run "──────────────────────────────────────────────────────────────────────"

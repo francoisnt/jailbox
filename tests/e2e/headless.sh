@@ -31,7 +31,7 @@ pass()  { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail()  { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 jailbox_container_name() {
-    printf 'jailbox-%s\n' "$(jailbox_project_hash_for_path "$1")"
+    jailbox_resource_prefix_for_path "$1"
 }
 
 jailbox_ssh_config() {

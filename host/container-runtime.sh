@@ -157,7 +157,7 @@ clean_jailbox() {
 
 ensure_home_volume() {
     if ! podman volume exists "$VOLUME_NAME" 2>/dev/null; then
-        podman volume create "$VOLUME_NAME"
+        podman volume create --label "jailbox.project=$PROJECT_DIR" "$VOLUME_NAME"
         VOLUME_PATH=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}')
         # Rootless volumes are created from the host side. Chown only the new
         # jailbox-managed home volume so the keep-id user can write to it; do
@@ -178,6 +178,7 @@ start_jailbox_container() {
     # copies it into /run/jailbox-sshd with strict ownership before sshd starts.
     podman run -d \
         --name "$CONTAINER_NAME" \
+        --label "jailbox.project=$PROJECT_DIR" \
         --replace \
         --userns=keep-id \
         --network "$JAILBOX_NETWORK" \
