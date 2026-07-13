@@ -8,12 +8,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/ci/setup-common.sh
 source "$SCRIPT_DIR/setup-common.sh"
 
+# shellcheck source=versions.env
+source "$ROOT_DIR/versions.env"
+
+# JAILBOX_* overrides let the canary workflow install latest upstream versions
+# without editing the pin file. Verifiers in setup-common.sh assert whatever
+# ends up in these variables.
+CODE_VERSION="${JAILBOX_CODE_VERSION:-$CODE_VERSION}"
+CODIUM_VERSION="${JAILBOX_CODIUM_VERSION:-$CODIUM_VERSION}"
+REMOTE_SSH_VERSION="${JAILBOX_REMOTE_SSH_VERSION:-$REMOTE_SSH_VERSION}"
+OPEN_REMOTE_SSH_VERSION="${JAILBOX_OPEN_REMOTE_SSH_VERSION:-$OPEN_REMOTE_SSH_VERSION}"
+
 install_base_tools() {
     local packages=(
         ca-certificates
         curl
         fuse-overlayfs
-        gnupg
         openssh-client
         podman
         shellcheck
@@ -30,21 +40,24 @@ install_base_tools() {
 
 install_code_editor() {
     curl -fsSL \
-        https://update.code.visualstudio.com/latest/linux-deb-x64/stable \
+        "https://update.code.visualstudio.com/${CODE_VERSION}/linux-deb-x64/stable" \
         -o /tmp/code.deb
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/code.deb
-    code --install-extension ms-vscode-remote.remote-ssh --force
+    code --install-extension "ms-vscode-remote.remote-ssh@${REMOTE_SSH_VERSION}" --force
 }
 
 install_codium_editor() {
-    curl -fsSL https://repo.vscodium.dev/vscodium.gpg \
-        | gpg --dearmor \
-        | sudo dd of=/usr/share/keyrings/vscodium.gpg
-    sudo curl --output-dir /etc/apt/sources.list.d \
-        -LO https://repo.vscodium.dev/vscodium.sources
-    sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y codium
-    codium --install-extension jeanp413.open-remote-ssh --force
+    # The VSCodium apt repo only serves latest; install the pinned .deb from
+    # GitHub releases instead, and the extension from the deterministic
+    # open-vsx VSIX URL (gallery @version negotiation is flaky).
+    curl -fsSL \
+        "https://github.com/VSCodium/vscodium/releases/download/${CODIUM_VERSION}/codium_${CODIUM_VERSION}_amd64.deb" \
+        -o /tmp/codium.deb
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/codium.deb
+    curl -fsSL \
+        "https://open-vsx.org/api/jeanp413/open-remote-ssh/${OPEN_REMOTE_SSH_VERSION}/file/jeanp413.open-remote-ssh-${OPEN_REMOTE_SSH_VERSION}.vsix" \
+        -o /tmp/open-remote-ssh.vsix
+    codium --install-extension /tmp/open-remote-ssh.vsix --force
 }
 
 main() {

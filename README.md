@@ -302,7 +302,9 @@ control.
 
 ## Tested Configurations
 
-Every release is gated on CI runs covering this matrix:
+Every release is gated on CI runs covering this matrix, with editors,
+extensions, and base images installed at the exact versions pinned in
+`versions.env`:
 
 | Container OS | VS Code | VSCodium |
 |---|---|---|

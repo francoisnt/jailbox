@@ -1,5 +1,10 @@
 #!/bin/bash
-# Prepare a macOS GitHub Actions host for jailbox tests.
+# Prepare a macOS host for jailbox tests — manual local-Mac convenience only.
+#
+# Not run in CI: GitHub macOS runners lack the hypervisor entitlement, so
+# podman machine cannot start (see 999d314). Editor installs here are
+# intentionally floating (brew latest), unlike the pinned Linux CI path;
+# the setup-common.sh verifiers only check presence when pins are unset.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

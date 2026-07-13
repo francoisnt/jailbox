@@ -40,13 +40,32 @@ verify_base_tools() {
     shellcheck --version
 }
 
+# When the pin variables are set (Linux sources versions.env), the verifiers
+# assert exact versions; without them (macOS installs floating via brew) they
+# only check presence.
 verify_code_editor() {
     code --version
-    code --list-extensions | grep -Fx ms-vscode-remote.remote-ssh
+    if [[ -n "${CODE_VERSION:-}" ]]; then
+        code --version | head -1 | grep -Fx "$CODE_VERSION"
+    fi
+    if [[ -n "${REMOTE_SSH_VERSION:-}" ]]; then
+        code --list-extensions --show-versions \
+            | grep -Fx "ms-vscode-remote.remote-ssh@${REMOTE_SSH_VERSION}"
+    else
+        code --list-extensions | grep -Fx ms-vscode-remote.remote-ssh
+    fi
 }
 
 verify_codium_editor() {
     codium --version
-    codium --list-extensions | grep -Fx jeanp413.open-remote-ssh
+    if [[ -n "${CODIUM_VERSION:-}" ]]; then
+        codium --version | head -1 | grep -Fx "$CODIUM_VERSION"
+    fi
+    if [[ -n "${OPEN_REMOTE_SSH_VERSION:-}" ]]; then
+        codium --list-extensions --show-versions \
+            | grep -Fx "jeanp413.open-remote-ssh@${OPEN_REMOTE_SSH_VERSION}"
+    else
+        codium --list-extensions | grep -Fx jeanp413.open-remote-ssh
+    fi
 }
 
