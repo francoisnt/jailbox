@@ -1,0 +1,167 @@
+name: Canary
+
+# Daily check of the latest upstream versions (editors, remote extensions,
+# VSCodium REH). When anything is newer than the versions.env pins, run the
+# full gate-equivalent suite at those versions; on green, canary-report.sh
+# pushes the pin bump directly to master (guarded: only if master still
+# equals the tested SHA), on failure it files a deduped "canary" issue.
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run the suite even when no upstream version is new
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency: canary
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      codium_version: ${{ steps.latest.outputs.CODIUM_VERSION }}
+      code_version: ${{ steps.latest.outputs.CODE_VERSION }}
+      remote_ssh_version: ${{ steps.latest.outputs.REMOTE_SSH_VERSION }}
+      open_remote_ssh_version: ${{ steps.latest.outputs.OPEN_REMOTE_SSH_VERSION }}
+      run_suite: ${{ steps.decide.outputs.run_suite }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve latest upstream versions
+        id: latest
+        run: bash scripts/resolve-latest-versions.sh >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to run the suite
+        id: decide
+        env:
+          HAS_NEW: ${{ steps.latest.outputs.has_new }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          if [[ "$HAS_NEW" == "true" || "$FORCE" == "true" ]]; then
+            echo "run_suite=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_suite=false" >> "$GITHUB_OUTPUT"
+            echo "Pins already match latest upstream; nothing to test."
+          fi
+
+  # VSCodium's build commit names the REH server directory and cannot be
+  # resolved from release metadata (upstream/stable.json carries Microsoft's
+  # commit, not VSCodium's), so install the .deb and read `codium --version`.
+  codium-commit:
+    needs: resolve
+    if: needs.resolve.outputs.run_suite == 'true'
+    runs-on: ubuntu-24.04
+    outputs:
+      codium_commit: ${{ steps.read.outputs.codium_commit }}
+    steps:
+      - name: Install latest VSCodium and read its build commit
+        id: read
+        env:
+          CODIUM_VERSION: ${{ needs.resolve.outputs.codium_version }}
+        run: |
+          curl -fsSL \
+            "https://github.com/VSCodium/vscodium/releases/download/${CODIUM_VERSION}/codium_${CODIUM_VERSION}_amd64.deb" \
+            -o /tmp/codium.deb
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/codium.deb
+          commit="$(codium --version | sed -n 2p)"
+          [[ -n "$commit" ]]
+          echo "codium_commit=$commit" >> "$GITHUB_OUTPUT"
+
+  core-tests-latest:
+    name: core tests (latest)
+    needs: [resolve, codium-commit]
+    if: needs.resolve.outputs.run_suite == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up host
+        run: bash tests/ci/setup-linux.sh
+
+      - name: Run core test suite at latest REH
+        env:
+          JAILBOX_E2E_REH_RELEASE: ${{ needs.resolve.outputs.codium_version }}
+          JAILBOX_E2E_REH_COMMIT: ${{ needs.codium-commit.outputs.codium_commit }}
+        run: bash tests/run --core-tests
+
+      - name: Upload core test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-core-logs
+          path: testlog/
+          retention-days: 7
+
+  editor-smoke-latest:
+    name: editor smoke (latest, ${{ matrix.editor_cli }})
+    needs: resolve
+    if: needs.resolve.outputs.run_suite == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        editor_cli:
+          - code
+          - codium
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up host with latest editors
+        env:
+          JAILBOX_CODE_VERSION: ${{ needs.resolve.outputs.code_version }}
+          JAILBOX_CODIUM_VERSION: ${{ needs.resolve.outputs.codium_version }}
+          JAILBOX_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.remote_ssh_version }}
+          JAILBOX_OPEN_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.open_remote_ssh_version }}
+        run: bash tests/ci/setup-linux.sh --with-editors
+
+      - name: Build integration test images
+        run: bash tests/integration/wrapper-images.sh
+
+      - name: Run editor smoke
+        env:
+          JAILBOX_EDITOR: ${{ matrix.editor_cli }}
+          JAILBOX_EDITOR_TIMEOUT: "60"
+        run: bash tests/run --editor-smoke
+
+      - name: Upload editor smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-editor-logs-${{ matrix.editor_cli }}
+          path: testlog/editor-*/
+          retention-days: 7
+
+  report:
+    needs: [resolve, codium-commit, core-tests-latest, editor-smoke-latest]
+    if: always() && needs.resolve.outputs.run_suite == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Report outcome (bump pins or file issue)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_CODIUM_VERSION: ${{ needs.resolve.outputs.codium_version }}
+          NEW_CODIUM_COMMIT: ${{ needs.codium-commit.outputs.codium_commit }}
+          NEW_CODE_VERSION: ${{ needs.resolve.outputs.code_version }}
+          NEW_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.remote_ssh_version }}
+          NEW_OPEN_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.open_remote_ssh_version }}
+          TESTED_SHA: ${{ github.sha }}
+          CORE_RESULT: ${{ needs.core-tests-latest.result }}
+          SMOKE_RESULT: ${{ needs.editor-smoke-latest.result }}
+          COMMIT_RESULT: ${{ needs.codium-commit.result }}
+        run: |
+          if [[ "$CORE_RESULT" == "success" && "$SMOKE_RESULT" == "success" && "$COMMIT_RESULT" == "success" ]]; then
+            bash scripts/canary-report.sh success
+          else
+            bash scripts/canary-report.sh failure
+          fi
