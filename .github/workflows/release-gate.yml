@@ -66,7 +66,7 @@ jobs:
 
       - name: Upload editor smoke logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: editor-smoke-logs-${{ matrix.editor_cli }}
           path: testlog/editor-*/
