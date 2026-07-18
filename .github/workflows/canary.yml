@@ -32,7 +32,7 @@ jobs:
       open_remote_ssh_version: ${{ steps.latest.outputs.OPEN_REMOTE_SSH_VERSION }}
       run_suite: ${{ steps.decide.outputs.run_suite }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve latest upstream versions
         id: latest
@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up host
         run: bash tests/ci/setup-linux.sh
@@ -113,7 +113,7 @@ jobs:
           - code
           - codium
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up host with latest editors
         env:
@@ -145,7 +145,7 @@ jobs:
     if: always() && needs.resolve.outputs.run_suite == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Report outcome (bump pins or file issue)
         env:
