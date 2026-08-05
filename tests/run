@@ -1,55 +1,28 @@
 #!/bin/bash
-# Run jailbox test suites.
+# Run one of jailbox's three test gates.
 #
-# Suites run in dependency order (unit → integration → e2e). With no flag,
-# all suites run and all prerequisites (Podman, editor, display) are required.
-# Use a scoping flag to run a subset that fits your environment.
+# Usage: tests/run <portable|runtime|editor>
 #
-# Usage: tests/run [--unit-tests] [--core-tests] [--editor-smoke] [--help]
-#
-#   --unit-tests    Unit tests only (no Podman required)
-#   --core-tests    Unit + integration + e2e headless (no editor required)
-#   --editor-smoke  Editor smoke only
+#   portable  ShellCheck, unit tests, and distribution/install lifecycle
+#   runtime   Container security contract and headless CLI system tests
+#   editor    Real VS Code/VSCodium Remote SSH and task execution
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
-UNIT_TESTS_ONLY=false
-CORE_TESTS_ONLY=false
-EDITOR_SMOKE_ONLY=false
-
 SUITES_PASSED=0
 SUITES_FAILED=0
-SUITES_SKIPPED=0
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-die()  { echo "Error: $*" >&2; exit 1; }
-
-suite_pass()  {
-    printf '\n✅ PASS  %s\n' "$1"
-    SUITES_PASSED=$((SUITES_PASSED + 1))
-}
-
-suite_fail()  {
-    printf '\n❌ FAIL  %s\n' "$1"
-    SUITES_FAILED=$((SUITES_FAILED + 1))
-}
-
-suite_skip()  {
-    printf '⏭  skip  %s  (%s)\n' "$1" "$2"
-    SUITES_SKIPPED=$((SUITES_SKIPPED + 1))
-}
-
-have_podman() { command -v podman >/dev/null 2>&1; }
-have_editor() {
-    command -v codium >/dev/null 2>&1 || command -v code >/dev/null 2>&1
-}
+die() { echo "Error: $*" >&2; exit 1; }
 
 have_display() {
     [[ "$(uname -s)" == "Darwin" ]] && return 0
     [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
+}
+
+have_editor() {
+    command -v codium >/dev/null 2>&1 || command -v code >/dev/null 2>&1
 }
 
 rerun_with_xvfb_if_needed() {
@@ -60,145 +33,95 @@ rerun_with_xvfb_if_needed() {
     JAILBOX_UNDER_XVFB=1 exec xvfb-run -a bash "$0" "$@"
 }
 
+suite_pass() {
+    printf '\n✅ PASS  %s\n' "$1"
+    SUITES_PASSED=$((SUITES_PASSED + 1))
+}
+
+suite_fail() {
+    printf '\n❌ FAIL  %s\n' "$1"
+    SUITES_FAILED=$((SUITES_FAILED + 1))
+}
+
 run_suite() {
-    local label="$1"; shift
+    local label="$1"
+    shift
+
     printf '\n══ %s ══\n' "$label"
     if "$@"; then
         suite_pass "$label"
     else
         suite_fail "$label"
-        echo ""
-        echo "Stopping: fix $label before running later suites." >&2
         print_summary
         exit 1
     fi
 }
 
+run_unit_suites() {
+    local test_file label
+
+    while IFS= read -r test_file; do
+        label="unit/$(basename "${test_file%.sh}")"
+        run_suite "$label" bash "$test_file"
+    done < <(find "$SCRIPT_DIR/unit" -maxdepth 1 -type f -name '*.sh' -print | sort)
+}
+
 print_summary() {
     echo ""
     echo "──────────────────────────────────────────────────────────────────────"
-    printf 'Suites: %d passed' "$SUITES_PASSED"
-    [[ "$SUITES_FAILED"  -gt 0 ]] && printf ', %d failed'  "$SUITES_FAILED"
-    [[ "$SUITES_SKIPPED" -gt 0 ]] && printf ', %d skipped' "$SUITES_SKIPPED"
+    printf 'Gate %s: %d suite(s) passed' "$GATE" "$SUITES_PASSED"
+    [[ "$SUITES_FAILED" -gt 0 ]] && printf ', %d failed' "$SUITES_FAILED"
     printf '\n'
 }
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [--unit-tests] [--core-tests] [--editor-smoke] [--help]
+Usage: $(basename "$0") <portable|runtime|editor>
 
-Run jailbox test suites. With no flag, all suites run and all prerequisites
-(Podman, editor CLI, display) are required. Use a scoping flag to run a
-subset that fits your environment.
-
-Options:
-  --unit-tests    Unit tests only (no Podman required)
-  --core-tests    Unit + integration + e2e headless (no editor required)
-  --editor-smoke  Editor smoke only
-  --help          Show this help
-
-Suites (in order):
-  unit/config-parser          host/public-api.sh config parsing
-  unit/downloader-proxy       container/downloader-proxy-manager.sh
-  unit/editor-settings        host/editor.sh generated editor settings
-  unit/network                host/network.sh helpers
-  unit/preflight              host/preflight.sh host checks
-  unit/project-state          host/common.sh state path helpers
-  unit/readonly-paths         host/container-runtime.sh read-only path selection
-  unit/runtime-mounts         host/container-runtime.sh generated runtime mounts
-  unit/ssh-config             host/ssh.sh generated config helpers
-  integration/wrapper-images  build images and run container/runtime/security assertions
-  e2e/headless                full jailbox CLI end-to-end, headless editor stub
-  e2e/editor-smoke            launch VSCodium/VS Code and verify Remote SSH task
+Test gates:
+  portable  ShellCheck, all unit tests, release tarball, and install lifecycle
+  runtime   Wrapper/container security contract and headless jailbox CLI system tests
+  editor    Build test images and verify a real Remote SSH editor session and task
 EOF
 }
 
-# ── argument parsing ──────────────────────────────────────────────────────────
+[[ "$#" -eq 1 ]] || { usage >&2; exit 2; }
 
-for arg in "$@"; do
-    case "$arg" in
-        --unit-tests)   UNIT_TESTS_ONLY=true ;;
-        --core-tests)   CORE_TESTS_ONLY=true ;;
-        --editor-smoke) EDITOR_SMOKE_ONLY=true ;;
-        --help|-h)      usage; exit 0 ;;
-        *) die "unknown option: $arg" ;;
-    esac
-done
+case "$1" in
+    portable|runtime|editor) GATE="$1" ;;
+    --help|-h) usage; exit 0 ;;
+    *) die "unknown test gate: $1 (expected portable, runtime, or editor)" ;;
+esac
 
-# ── main ──────────────────────────────────────────────────────────────────────
-
-echo "jailbox test runner"
+echo "jailbox test gate: $GATE"
 echo "Working directory: $JAILBOX_DIR"
-echo ""
 
-if [[ "$UNIT_TESTS_ONLY" == true && "$EDITOR_SMOKE_ONLY" == true ]]; then
-    die "--unit-tests and --editor-smoke cannot be used together"
-fi
-if [[ "$CORE_TESTS_ONLY" == true && "$EDITOR_SMOKE_ONLY" == true ]]; then
-    die "--core-tests and --editor-smoke cannot be used together"
-fi
-
-if [[ "$EDITOR_SMOKE_ONLY" == true ]]; then
-    if ! have_podman; then
-        die "podman is required for --editor-smoke"
-    fi
-    if ! have_editor; then
-        die "VSCodium or VS Code CLI is required for --editor-smoke"
-    fi
-    if ! have_display; then
-        rerun_with_xvfb_if_needed "$@"
-        die "graphical display session is required for --editor-smoke"
-    fi
-
-    run_suite "e2e/editor-smoke" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
-    print_summary
-    [[ "$SUITES_FAILED" -eq 0 ]]
-    exit $?
-fi
-
-# 1. Unit tests: pure shell, no Podman.
-run_suite "unit/config-parser"  bash "$SCRIPT_DIR/unit/config-parser.sh"
-run_suite "unit/downloader-proxy" bash "$SCRIPT_DIR/unit/downloader-proxy.sh"
-run_suite "unit/editor-settings" bash "$SCRIPT_DIR/unit/editor-settings.sh"
-run_suite "unit/network" bash "$SCRIPT_DIR/unit/network.sh"
-run_suite "unit/preflight" bash "$SCRIPT_DIR/unit/preflight.sh"
-run_suite "unit/project-state" bash "$SCRIPT_DIR/unit/project-state.sh"
-run_suite "unit/readonly-paths" bash "$SCRIPT_DIR/unit/readonly-paths.sh"
-run_suite "unit/runtime-mounts" bash "$SCRIPT_DIR/unit/runtime-mounts.sh"
-run_suite "unit/ssh-config" bash "$SCRIPT_DIR/unit/ssh-config.sh"
-
-if [[ "$UNIT_TESTS_ONLY" == true ]]; then
-    echo ""
-    echo "Stopping after unit tests (--unit-tests)."
-    print_summary
-    exit 0
-fi
-
-# 2. Integration tests: Podman required, no editor GUI.
-if ! have_podman; then
-    die "podman is required (use --unit-tests to run without podman)"
-fi
-
-run_suite "integration/wrapper-images" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
-
-# 3. E2E tests: full jailbox workflow.
-run_suite "e2e/headless" bash "$SCRIPT_DIR/e2e/headless.sh"
-
-if [[ "$CORE_TESTS_ONLY" == true ]]; then
-    echo ""
-    echo "Stopping after core tests (--core-tests)."
-    print_summary
-    exit 0
-fi
-
-if ! have_editor; then
-    die "VSCodium or VS Code CLI is required (use --core-tests to skip editor smoke)"
-elif ! have_display; then
-    rerun_with_xvfb_if_needed "$@"
-    die "graphical display session is required (use --core-tests to skip editor smoke)"
-else
-    run_suite "e2e/editor-smoke" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
-fi
+case "$GATE" in
+    portable)
+        command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the portable gate"
+        run_suite "shellcheck" bash "$JAILBOX_DIR/scripts/lint.sh"
+        run_suite "generated-files" bash "$JAILBOX_DIR/scripts/gen-tested-matrix.sh" --check
+        run_unit_suites
+        run_suite "distribution" bash "$SCRIPT_DIR/portable/smoke.sh"
+        ;;
+    runtime)
+        command -v podman >/dev/null 2>&1 || die "podman is required for the runtime gate"
+        run_suite "container-contract" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
+        run_suite "system/headless" bash "$SCRIPT_DIR/e2e/headless.sh"
+        ;;
+    editor)
+        command -v podman >/dev/null 2>&1 || die "podman is required for the editor gate"
+        have_editor || die "VSCodium or VS Code CLI is required for the editor gate"
+        if ! have_display; then
+            rerun_with_xvfb_if_needed "$@"
+            die "a graphical display session or xvfb-run is required for the editor gate"
+        fi
+        # The editor suite consumes the test images produced by the contract
+        # suite, so the gate builds and validates them before opening an editor.
+        run_suite "container-contract" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
+        run_suite "system/editor" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
+        ;;
+esac
 
 print_summary
 [[ "$SUITES_FAILED" -eq 0 ]]

@@ -28,14 +28,15 @@ to it drive release version suggestions (see `scripts/release.sh --help`).
 ## Linting and tests
 
 ```bash
-scripts/lint.sh              # shellcheck over all shipped and test scripts
-tests/run --unit-tests       # pure-shell unit suites, no podman required
-tests/run --core-tests       # + integration and headless e2e (podman required)
-tests/run                    # everything, including editor smoke (GUI/xvfb)
+tests/run portable   # ShellCheck, unit tests, packaging, and installer lifecycle
+tests/run runtime    # Container security and headless CLI behavior (Podman)
+tests/run editor     # Real Remote SSH editor behavior (Podman + GUI/xvfb)
 ```
 
-Run at least `scripts/lint.sh` and `tests/run --unit-tests` before sending a
-change; CI runs the full matrix on pull requests and gates releases on it.
+The three commands are independent, self-contained quality gates. Pull requests
+must pass the portable and runtime gates; releases also require the editor gate.
+Run `tests/run portable` before sending a change, plus `tests/run runtime` when
+Podman is available.
 
 ## Releases
 

@@ -7,9 +7,9 @@ The Alpine/VSCodium editor smoke test broke because open-remote-ssh 0.2.0 silent
 ## Execution environment (added 2026-07-13 — read first)
 
 The implementing session runs **inside a jailbox dev container** (user `jailbox`, project at `/home/jailbox/project`), not on the host. Probe capabilities at session start before trusting the Verification section:
-- **podman is likely unavailable in-container** — integration/e2e verification (`tests/run --core-tests`, `--editor-smoke`, `wrapper-images.sh`) probably cannot run locally. Verify via CI instead (push a branch, use the release-gate `workflow_dispatch`) or hand the run to the user on the host.
+- **podman is likely unavailable in-container** — the runtime and editor gates (`tests/run runtime`, `tests/run editor`) probably cannot run locally. Verify via CI instead (push a branch, use the test-gates `workflow_dispatch`) or hand the run to the user on the host.
 - **Egress may be limited to the downloader-proxy allowlist** — the network calls in `resolve-latest-versions.sh` (GitHub API, update.code.visualstudio.com, marketplace, open-vsx) and "resolve initial pin values at landing time" may fail in-container. If so, get values from a CI run or ask the user to run the resolver on the host.
-- Should work in-container: all file edits, `scripts/lint.sh` (if shellcheck is installed), `tests/run --unit-tests`, git commits. Check `git remote -v` and push access before assuming CI-based verification is reachable.
+- Should work in-container: all file edits, `tests/run portable` (if shellcheck is installed), and git commits. Check `git remote -v` and push access before assuming CI-based verification is reachable.
 - Untracked-file context: this file (`docs/version-pinning-plan.md`) is the canonical plan; the untracked `Containerfile`, `.env`, `.vscode/` at repo root predate the plan — don't fold any of them into implementation commits.
 
 ## Assessment of the discussion doc vs. repo (verified)
@@ -61,7 +61,7 @@ PINS_LAST_VERIFIED="<date>"        # updated by canary bump
   - VSCodium: drop the apt repo entirely (only serves latest); install `codium_${CODIUM_VERSION}_amd64.deb` from GitHub releases (verify asset name against a real release); install open-remote-ssh from the deterministic open-vsx VSIX URL `https://open-vsx.org/api/jeanp413/open-remote-ssh/${VER}/file/jeanp413.open-remote-ssh-${VER}.vsix` (avoids gallery `@version` negotiation flakiness).
 - [tests/ci/setup-common.sh](tests/ci/setup-common.sh): verifiers assert the pinned versions (`code --version | head -1` == `$CODE_VERSION`; `--list-extensions --show-versions` contains `id@version`; confirm codium's exact `--version` line format during implementation).
 - [tests/ci/setup-macos.sh](tests/ci/setup-macos.sh): header comment only — manual local-Mac convenience, intentionally floating, CI can't run it (no hypervisor entitlement on GH macOS runners, see 999d314).
-- [.github/workflows/pr-checks.yml](.github/workflows/pr-checks.yml) + [release-gate.yml](.github/workflows/release-gate.yml): `ubuntu-latest` → `ubuntu-24.04` (keep `macos-latest`, portable smoke only).
+- [.github/workflows/pr-checks.yml](.github/workflows/pr-checks.yml) + [test-gates.yml](.github/workflows/test-gates.yml): `ubuntu-latest` → `ubuntu-24.04` (keep `macos-latest`, portable gate only).
 - README:217: hand-fix wording now ("pinned to the versions in versions.env"); full generation in Step 5.
 
 ## Step 3 — Run metadata: `meta.env` in every testlog dir
@@ -72,7 +72,7 @@ New sourced helper `tests/lib/run-meta.sh` (new dir; follows the `source "$JAILB
 - `run_meta_reh <dir> <release> <commit>`: release, commit, derived download URL.
 - `run_meta_image <dir> <stage> <ref>`: image ref, resolved digest (`podman image inspect --format '{{index .RepoDigests 0}}'`), container `PRETTY_NAME` via `podman run --rm <ref> cat /etc/os-release`.
 
-Wire into the three run-dir creators: [tests/e2e/editor-smoke.sh:101-105](tests/e2e/editor-smoke.sh#L101-L105), [tests/e2e/headless.sh:546](tests/e2e/headless.sh#L546) (hoist REH release/commit resolution to file scope so probe + metadata share it), [tests/integration/wrapper-images.sh:369](tests/integration/wrapper-images.sh#L369). Add to `scripts/lint.sh` list. Gate already uploads `testlog/*` artifacts, so meta.env ships in CI for free.
+Wire into the three run-dir creators: [tests/e2e/editor-smoke.sh:101-105](tests/e2e/editor-smoke.sh#L101-L105), [tests/e2e/headless.sh:546](tests/e2e/headless.sh#L546) (hoist REH release/commit resolution to file scope so probe + metadata share it), [tests/integration/wrapper-images.sh:369](tests/integration/wrapper-images.sh#L369). The automatic lint discovery includes it. Gate artifacts already include `testlog/*`, so meta.env ships in CI for free.
 
 ## Step 4 — Canary workflow + auto-bump
 
@@ -80,7 +80,7 @@ New `scripts/resolve-latest-versions.sh` (add to lint.sh): prints `KEY=value` fo
 
 New `.github/workflows/canary.yml`:
 - Triggers: daily cron + `workflow_dispatch` (with `force` input). Daily check that exits early when nothing is new ≈ "per upstream release"; subsumes the weekly requirement. `permissions: contents: write, issues: write`; `concurrency: canary`.
-- Jobs: `resolve` → (if has_new) **full gate-equivalent suite at latest versions**, reusing existing scripts with `JAILBOX_*` version overrides: `editor-smoke-latest` (matrix code/codium, `setup-linux.sh --with-editors`, wrapper-images, `tests/run --editor-smoke`, upload testlogs) and `core-tests-latest` (`tests/run --core-tests` with `JAILBOX_E2E_REH_RELEASE/COMMIT` = latest). Full-suite parity is required for the auto-pin to be a sound "verified" claim.
+- Jobs: `resolve` → (if has_new) the reusable **full gate-equivalent suite** at latest versions, passing `JAILBOX_*` and REH version overrides into the portable, runtime, and editor gates. Full-suite parity is required for the auto-pin to be a sound "verified" claim.
 - `report` job (`if: always() && has_new`), logic in `scripts/canary-report.sh`:
   - **On any failure**: file a deduped issue (search open issues for the version-set key in the title before creating; label `canary`; note Alpine/VSCodium best-effort tier). Dedup-by-version = per-version tracking; a re-run after transient flake goes green and bumps normally.
   - **On success**: sed the new versions + `PINS_LAST_VERIFIED` into versions.env, run the README generator (Step 5), commit, and **push directly to master only if `origin/master` still equals the tested SHA**; otherwise skip (next run retests). Close any open canary issue for that version set.
@@ -107,11 +107,11 @@ New `scripts/gen-tested-matrix.sh` (add to lint.sh):
 **Decision history (user-confirmed, don't re-ask):** direct push to master for pin bumps was the *user's* choice over the doc's PR approach (soundness restored via the fast-forward guard); pinned-only gate confirmed; setup-macos.sh stays floating — macOS container CI was removed in 999d314 because GitHub macOS runners lack the hypervisor entitlement (podman machine fails on applehv/libkrun/qemu), not by policy, so the script is the only macOS container-test path and is manual-only.
 
 **Repo conventions:**
-- `scripts/lint.sh` enumerates scripts explicitly — every new .sh file must be added to its list or it goes unlinted (setup-macos.sh is at lint.sh:25 as an example).
+- `scripts/lint.sh` discovers repository tooling and test scripts automatically.
 - Sourcing pattern: `# shellcheck source=<repo-relative>` directive + `source "$JAILBOX_DIR/..."` (see headless.sh:18-19); CI setup scripts compute `ROOT_DIR` and source `setup-common.sh` (setup-linux.sh:5-9).
 - Env override convention: `JAILBOX_*` with `${VAR:-default}`.
-- Orchestrator: `tests/run` with `--unit-tests` / `--core-tests` (unit+integration+headless) / `--editor-smoke`. No Makefile.
-- `release.yml` invokes `release-gate.yml` via `workflow_call`, so gate changes automatically apply to releases. Releases dispatch via a pushed `release-request` tag (scripts/release.sh:262-269).
+- Orchestrator: `tests/run` exposes exactly three gates: `portable`, `runtime`, and `editor`. No Makefile.
+- `release.yml` invokes `test-gates.yml` via `workflow_call`, so gate changes automatically apply to releases. Releases dispatch via a pushed `release-request` tag (scripts/release.sh:262-269).
 
 **Exact anchors (current as of commit eaccb43):**
 - headless.sh: REH defaults :163-164 inside `assert_vscodium_reh_probe()`; download URL formula :200; env docs :57-60; run dir :546; probe invoked :416.
@@ -132,8 +132,8 @@ New `scripts/gen-tested-matrix.sh` (add to lint.sh):
 
 ## Verification
 
-- Step 1: `bash tests/run --core-tests` locally (or at minimum `tests/integration/wrapper-images.sh` + headless alpine stage) — identical behavior, REH probe still passes with defaults now sourced from versions.env; `JAILBOX_E2E_REH_RELEASE/COMMIT` overrides still win.
-- Step 2: run `tests/ci/setup-linux.sh --with-editors` in a disposable Ubuntu 24.04 container/VM; verify `code --version`/`codium --version` match the pins and both extensions report the pinned versions. `bash scripts/lint.sh` green.
+- Step 1: `bash tests/run runtime` locally — the REH probe still passes with defaults sourced from versions.env, and `JAILBOX_E2E_REH_RELEASE/COMMIT` overrides still win.
+- Step 2: run `tests/ci/setup-linux.sh --with-editors` in a disposable Ubuntu 24.04 container/VM; verify `code --version`/`codium --version` match the pins and both extensions report the pinned versions. `bash tests/run portable` green.
 - Step 3: run each of the three test scripts once; confirm `testlog/*/meta.env` exists with populated fields (and `unknown` fallbacks, never a failed run, when e.g. git or podman data is missing).
 - Step 4: `bash scripts/resolve-latest-versions.sh` locally (prints latest versions + has_new). Then `gh workflow run canary.yml -f force=true` and watch a full run: with pins already current expect early-exit path; with a stale pin expect the suite + a direct bump commit on master (or a deduped issue on failure).
 - Step 5: `scripts/gen-tested-matrix.sh --check` green; hand-edit the README block → `--check` fails; `--write` restores it. Intentionally mismatch tinyproxy FROM → `--check` fails.

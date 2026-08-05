@@ -13,30 +13,14 @@ cd "$(dirname "$SCRIPT_DIR")"
 echo "shellcheck: jailbox (+ sourced host/*.sh)"
 shellcheck --external-sources --shell=bash "$@" jailbox
 
-# Standalone bash scripts
+# Standalone bash scripts. Discover repository tooling and tests so adding a
+# new suite cannot silently leave it outside ShellCheck coverage.
 echo "shellcheck: scripts/ and tests/"
-shellcheck --external-sources --shell=bash "$@" \
-    scripts/build-tarball.sh \
-    scripts/canary-report.sh \
-    scripts/gen-tested-matrix.sh \
-    scripts/public-api-diff.sh \
-    scripts/release.sh \
-    scripts/resolve-latest-versions.sh \
-    install.sh \
-    tests/ci/setup-common.sh \
-    tests/ci/setup-linux.sh \
-    tests/ci/setup-macos.sh \
-    tests/portable/smoke.sh \
-    tests/unit/config-parser.sh \
-    tests/unit/downloader-proxy.sh \
-    tests/unit/network.sh \
-    tests/unit/ssh-config.sh \
-    tests/lib/run-meta.sh \
-    tests/integration/wrapper-images.sh \
-    tests/integration/runtime-security.sh \
-    tests/e2e/headless.sh \
-    tests/e2e/editor-smoke.sh \
-    tests/run
+bash_scripts=(install.sh tests/run)
+while IFS= read -r script; do
+    bash_scripts+=("$script")
+done < <(find scripts tests -type f -name '*.sh' ! -path 'tests/run' -print | sort)
+shellcheck --external-sources --shell=bash "$@" "${bash_scripts[@]}"
 
 # Bash scripts in container/ (bash justified: container always installs bash)
 echo "shellcheck: container/downloader-proxy-manager.sh"

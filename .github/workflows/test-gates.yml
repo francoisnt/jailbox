@@ -1,0 +1,128 @@
+name: Test Gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_editor:
+        description: Run the VS Code and VSCodium editor smoke tests
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      run_editor:
+        description: Run the VS Code and VSCodium editor smoke tests
+        type: boolean
+        default: true
+      code_version:
+        description: VS Code version override; empty uses versions.env
+        type: string
+        default: ""
+      codium_version:
+        description: VSCodium version override; empty uses versions.env
+        type: string
+        default: ""
+      remote_ssh_version:
+        description: VS Code Remote SSH version override; empty uses versions.env
+        type: string
+        default: ""
+      open_remote_ssh_version:
+        description: Open Remote SSH version override; empty uses versions.env
+        type: string
+        default: ""
+      reh_release:
+        description: VSCodium REH release override; empty uses versions.env
+        type: string
+        default: ""
+      reh_commit:
+        description: VSCodium REH commit override; empty uses versions.env
+        type: string
+        default: ""
+
+jobs:
+  portable:
+    name: portable (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install ShellCheck on macOS
+        if: runner.os == 'macOS'
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install shellcheck
+
+      - name: Run portable gate
+        run: bash tests/run portable
+
+  runtime:
+    name: runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up host
+        run: bash tests/ci/setup-linux.sh
+
+      - name: Run runtime gate
+        env:
+          JAILBOX_E2E_REH_RELEASE: ${{ inputs.reh_release }}
+          JAILBOX_E2E_REH_COMMIT: ${{ inputs.reh_commit }}
+        run: bash tests/run runtime
+
+      - name: Upload runtime logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-logs
+          path: |
+            testlog/test-*/
+            testlog/e2e-*/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  editor:
+    name: editor (${{ matrix.editor_cli }})
+    if: inputs.run_editor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        editor_cli:
+          - code
+          - codium
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up host with editors
+        env:
+          JAILBOX_CODE_VERSION: ${{ inputs.code_version }}
+          JAILBOX_CODIUM_VERSION: ${{ inputs.codium_version }}
+          JAILBOX_REMOTE_SSH_VERSION: ${{ inputs.remote_ssh_version }}
+          JAILBOX_OPEN_REMOTE_SSH_VERSION: ${{ inputs.open_remote_ssh_version }}
+        run: bash tests/ci/setup-linux.sh --with-editors
+
+      - name: Run editor gate
+        env:
+          JAILBOX_EDITOR: ${{ matrix.editor_cli }}
+          JAILBOX_EDITOR_TIMEOUT: "60"
+        run: bash tests/run editor
+
+      - name: Upload editor logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: editor-logs-${{ matrix.editor_cli }}
+          path: |
+            testlog/test-*/
+            testlog/editor-*/
+          if-no-files-found: ignore
+          retention-days: 7

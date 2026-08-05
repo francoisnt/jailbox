@@ -64,12 +64,12 @@ jobs:
           echo "Selected version: $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  release-gate:
-    uses: ./.github/workflows/release-gate.yml
+  test-gates:
+    uses: ./.github/workflows/test-gates.yml
 
   publish:
     runs-on: ubuntu-24.04
-    needs: [select-version, release-gate]
+    needs: [select-version, test-gates]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7

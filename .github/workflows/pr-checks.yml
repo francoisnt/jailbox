@@ -6,34 +6,8 @@ on:
   pull_request:
 
 jobs:
-  shellcheck:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - name: shellcheck
-        run: bash scripts/lint.sh
-      - name: Check generated README matrix
-        run: bash scripts/gen-tested-matrix.sh --check
-
-  portable-smoke:
-    name: portable smoke (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-24.04
-          - macos-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Run portable smoke suite
-        run: bash tests/portable/smoke.sh
-
-  unit-tests:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Run unit tests
-        run: bash tests/run --unit-tests
+  test-gates:
+    name: required test gates
+    uses: ./.github/workflows/test-gates.yml
+    with:
+      run_editor: false

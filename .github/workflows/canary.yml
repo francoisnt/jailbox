@@ -74,74 +74,22 @@ jobs:
           [[ -n "$commit" ]]
           echo "codium_commit=$commit" >> "$GITHUB_OUTPUT"
 
-  core-tests-latest:
-    name: core tests (latest)
+  test-gate:
+    name: latest-version gate
     needs: [resolve, codium-commit]
     if: needs.resolve.outputs.run_suite == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up host
-        run: bash tests/ci/setup-linux.sh
-
-      - name: Run core test suite at latest REH
-        env:
-          JAILBOX_E2E_REH_RELEASE: ${{ needs.resolve.outputs.codium_version }}
-          JAILBOX_E2E_REH_COMMIT: ${{ needs.codium-commit.outputs.codium_commit }}
-        run: bash tests/run --core-tests
-
-      - name: Upload core test logs
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: canary-core-logs
-          path: testlog/
-          retention-days: 7
-
-  editor-smoke-latest:
-    name: editor smoke (latest, ${{ matrix.editor_cli }})
-    needs: resolve
-    if: needs.resolve.outputs.run_suite == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        editor_cli:
-          - code
-          - codium
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up host with latest editors
-        env:
-          JAILBOX_CODE_VERSION: ${{ needs.resolve.outputs.code_version }}
-          JAILBOX_CODIUM_VERSION: ${{ needs.resolve.outputs.codium_version }}
-          JAILBOX_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.remote_ssh_version }}
-          JAILBOX_OPEN_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.open_remote_ssh_version }}
-        run: bash tests/ci/setup-linux.sh --with-editors
-
-      - name: Build integration test images
-        run: bash tests/integration/wrapper-images.sh
-
-      - name: Run editor smoke
-        env:
-          JAILBOX_EDITOR: ${{ matrix.editor_cli }}
-          JAILBOX_EDITOR_TIMEOUT: "60"
-        run: bash tests/run --editor-smoke
-
-      - name: Upload editor smoke logs
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: canary-editor-logs-${{ matrix.editor_cli }}
-          path: testlog/editor-*/
-          retention-days: 7
+    uses: ./.github/workflows/test-gates.yml
+    with:
+      run_editor: true
+      code_version: ${{ needs.resolve.outputs.code_version }}
+      codium_version: ${{ needs.resolve.outputs.codium_version }}
+      remote_ssh_version: ${{ needs.resolve.outputs.remote_ssh_version }}
+      open_remote_ssh_version: ${{ needs.resolve.outputs.open_remote_ssh_version }}
+      reh_release: ${{ needs.resolve.outputs.codium_version }}
+      reh_commit: ${{ needs.codium-commit.outputs.codium_commit }}
 
   report:
-    needs: [resolve, codium-commit, core-tests-latest, editor-smoke-latest]
+    needs: [resolve, codium-commit, test-gate]
     if: always() && needs.resolve.outputs.run_suite == 'true'
     runs-on: ubuntu-24.04
     steps:
@@ -156,11 +104,10 @@ jobs:
           NEW_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.remote_ssh_version }}
           NEW_OPEN_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.open_remote_ssh_version }}
           TESTED_SHA: ${{ github.sha }}
-          CORE_RESULT: ${{ needs.core-tests-latest.result }}
-          SMOKE_RESULT: ${{ needs.editor-smoke-latest.result }}
+          GATE_RESULT: ${{ needs.test-gate.result }}
           COMMIT_RESULT: ${{ needs.codium-commit.result }}
         run: |
-          if [[ "$CORE_RESULT" == "success" && "$SMOKE_RESULT" == "success" && "$COMMIT_RESULT" == "success" ]]; then
+          if [[ "$GATE_RESULT" == "success" && "$COMMIT_RESULT" == "success" ]]; then
             bash scripts/canary-report.sh success
           else
             bash scripts/canary-report.sh failure
