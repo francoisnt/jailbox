@@ -892,7 +892,7 @@ main() {
     [[ "$EDITOR_TIMEOUT" -gt 0 ]] || die "JAILBOX_EDITOR_TIMEOUT must be greater than zero"
 
     local stages=("$@")
-    if [[ ${#stages[@]} -eq 0 ]]; then
+    if [[ -z "${stages[*]-}" ]]; then
         stages=()
         while IFS= read -r stage; do
             stages+=("$stage")
@@ -949,7 +949,7 @@ main() {
     # Success-path teardowns run in the background so a stage never waits on the
     # previous stage's editor close; join them before summarizing so the last
     # stage's container is removed and nothing is orphaned.
-    if [[ ${#TEARDOWN_PIDS[@]} -gt 0 ]]; then
+    if [[ -n "${TEARDOWN_PIDS[*]-}" ]]; then
         echo ""
         echo "Waiting for background stage teardowns to finish..."
         wait "${TEARDOWN_PIDS[@]}" 2>/dev/null || true
@@ -958,7 +958,7 @@ main() {
     log_run ""
     log_run "──────────────────────────────────────────────────────────────────────"
     log_run "Results: $PASSED passed, $FAILED failed"
-    if [[ ${#failed_stages[@]} -gt 0 ]]; then
+    if [[ -n "${failed_stages[*]-}" ]]; then
         log_run "Failed stages: ${failed_stages[*]}"
     fi
     log_run "Full logs: $LOG_DIR"

@@ -12,7 +12,7 @@
 configure_downloader_proxy() {
     local current_proxy_state expected_proxy_state
 
-    if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         expected_proxy_state="proxy = \"$PROXY_URL\"
 http_proxy = $PROXY_URL
 https_proxy = $PROXY_URL"

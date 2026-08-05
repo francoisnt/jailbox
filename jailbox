@@ -126,7 +126,7 @@ run_doctor() {
 
 run_ssh_config() {
     initialize_runtime_ids
-    if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         configure_proxy_env
     fi
     print_ssh_config_instructions

@@ -50,7 +50,7 @@ Host $CONTAINER_NAME
     BatchMode yes
 SSHEOF
 
-    for env_pair in "${SSH_SESSION_ENV[@]}"; do
+    for env_pair in "${SSH_SESSION_ENV[@]+"${SSH_SESSION_ENV[@]}"}"; do
         setenv_line="${setenv_line:+$setenv_line }$env_pair"
     done
     if [ -n "$setenv_line" ]; then

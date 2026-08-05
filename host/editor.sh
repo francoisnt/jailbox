@@ -23,7 +23,7 @@ launch_editor_remote() {
 editor_smoke_settings_json_object() {
     printf '{\n'
     printf '  "security.workspace.trust.enabled": false,\n'
-    if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         printf '  "http.proxy": "%s",\n' "$PROXY_URL"
     fi
     printf '  "task.allowAutomaticTasks": "on"\n'
@@ -78,7 +78,7 @@ write_jailbox_editor_user_settings() {
     settings_dir="$(dirname "$JAILBOX_EDITOR_USER_SETTINGS")"
     mkdir -p "$settings_dir"
     settings_tmp=$(mktemp "$settings_dir/settings.json.tmp.XXXXXX")
-    if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         cat > "$settings_tmp" <<EOF_SETTINGS
 {
   "remote.SSH.configFile": "$SSH_CONFIG"$(editor_smoke_profile_settings_json),

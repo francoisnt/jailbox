@@ -49,7 +49,7 @@ configure_readonly_paths() {
     # set but never remove or replace the built-in defaults. Skip entries
     # already in the list so podman never sees duplicate mount destinations.
     local extra
-    for extra in "${READONLY_EXTRA[@]}"; do
+    for extra in "${READONLY_EXTRA[@]+"${READONLY_EXTRA[@]}"}"; do
         readonly_paths_contain "$extra" || READONLY_PATHS+=("$extra")
     done
 }
@@ -100,7 +100,7 @@ build_readonly_mounts() {
     # Default paths are skipped silently when absent, but READONLY_EXTRA was
     # requested explicitly — a missing path gets no read-only mount and could
     # be created writable from inside the container, so surface that.
-    for path in "${READONLY_EXTRA[@]}"; do
+    for path in "${READONLY_EXTRA[@]+"${READONLY_EXTRA[@]}"}"; do
         if [ ! -e "$PROJECT_DIR/$path" ]; then
             echo "⚠️  READONLY_EXTRA path does not exist and is not protected: $path"
         fi
@@ -191,11 +191,11 @@ start_jailbox_container() {
         --tmpfs /run:rw,size=64m \
         -v "$SSHD_RUNTIME_DIR:/run/jailbox-sshd:Z" \
         -v "$VOLUME_NAME":/home/$MANAGED_USER \
-        "${GITCONFIG_MOUNT[@]}" \
+        "${GITCONFIG_MOUNT[@]+"${GITCONFIG_MOUNT[@]}"}" \
         -p 127.0.0.1:"$LOCAL_PORT":2222 \
         -v "$PROJECT_DIR:$REMOTE_PATH:Z" \
         -v "$KEY_FILE.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
-        "${READONLY_MOUNTS[@]}" \
+        "${READONLY_MOUNTS[@]+"${READONLY_MOUNTS[@]}"}" \
         --memory=4g \
         --cpus=2 \
         --pids-limit=256 \

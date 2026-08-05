@@ -99,7 +99,7 @@ REMOTE
 }
 
 validate_egress_policy() {
-    if [ "${#EGRESS_ALLOW[@]}" -eq 0 ]; then
+    if [ -z "${EGRESS_ALLOW[*]-}" ]; then
         check_downloader_proxy_config_absent
         return 0
     fi
@@ -251,7 +251,7 @@ check_proxy_egress_allowed() {
 egress_validation_domain() {
     local domain
 
-    for domain in "${EGRESS_ALLOW[@]}"; do
+    for domain in "${EGRESS_ALLOW[@]+"${EGRESS_ALLOW[@]}"}"; do
         case "$domain" in
             ""|*[\(\)\*\+\?\|\[\]\{\}]*|*"'"*|*\"*)
                 continue

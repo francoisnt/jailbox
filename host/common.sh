@@ -96,7 +96,7 @@ config_key_seen() {
     local key seen
 
     key="$1"
-    for seen in "${CONFIG_SEEN_KEYS[@]}"; do
+    for seen in "${CONFIG_SEEN_KEYS[@]+"${CONFIG_SEEN_KEYS[@]}"}"; do
         [ "$seen" = "$key" ] && return 0
     done
     return 1
@@ -226,7 +226,7 @@ validate_editor_config() {
 validate_egress_allow() {
     local host
 
-    for host in "${EGRESS_ALLOW[@]}"; do
+    for host in "${EGRESS_ALLOW[@]+"${EGRESS_ALLOW[@]}"}"; do
         # Single-label names such as localhost or proxy are intentionally
         # rejected: this allowlist is for internet-routable domain names only.
         [[ "$host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] || \
@@ -237,7 +237,7 @@ validate_egress_allow() {
 validate_readonly_extra() {
     local path
 
-    for path in "${READONLY_EXTRA[@]}"; do
+    for path in "${READONLY_EXTRA[@]+"${READONLY_EXTRA[@]}"}"; do
         # Paths are mounted as "$PROJECT_DIR/$path", so only plain relative
         # paths make sense; absolute or traversing paths could target host
         # locations outside the project tree. Trailing slashes are rejected so

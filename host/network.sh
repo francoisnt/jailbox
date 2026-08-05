@@ -7,7 +7,7 @@ configure_network() {
     FILTER_FILE=""
     PROXY_CONF_FILE=""
 
-    if [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         configure_proxy_network
     else
         podman network exists "$NETWORK_NAME" 2>/dev/null || \
@@ -95,7 +95,7 @@ configure_proxy_network() {
 }
 
 effective_egress_allowlist() {
-    local hosts=("${EGRESS_ALLOW[@]}")
+    local hosts=("${EGRESS_ALLOW[@]+"${EGRESS_ALLOW[@]}"}")
 
     if [[ -n "$EDITOR_BIN" ]]; then
         case "$(basename "$EDITOR_BIN")" in
@@ -118,7 +118,7 @@ effective_egress_allowlist() {
         esac
     fi
 
-    printf '%s\n' "${hosts[@]}" | awk 'NF && !seen[$0]++'
+    printf '%s\n' "${hosts[@]+"${hosts[@]}"}" | awk 'NF && !seen[$0]++'
 }
 
 configure_proxy_env() {
@@ -126,7 +126,7 @@ configure_proxy_env() {
 
     # Single source for the proxy URL and no-proxy list. All other modules
     # (editor settings, downloader bootstrap) reference these globals.
-    if [ -z "$PROXY_URL" ] && [ "${#EGRESS_ALLOW[@]}" -gt 0 ]; then
+    if [ -z "$PROXY_URL" ] && [ -n "${EGRESS_ALLOW[*]-}" ]; then
         # ssh-config runs without launching: prefer the live network's subnet
         # (it may sit on a collision-fallback candidate), else candidate 0.
         # podman may be absent on this path; internal_network_subnet then
