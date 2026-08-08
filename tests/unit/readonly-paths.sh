@@ -139,7 +139,7 @@ test_mounts() {
     out_file=$(mktemp)
     build_readonly_mounts > "$out_file"
 
-    joined="${READONLY_MOUNTS[*]}"
+    joined="${READONLY_MOUNTS[*]-}"
     case "$joined" in
         *"$PROJECT_DIR/scripts/deploy.sh:$REMOTE_PATH/scripts/deploy.sh:Z,ro"*)
             pass "existing extra path gets ro mount"
@@ -212,7 +212,7 @@ test_stubs_from_empty_project() {
 
     configure_readonly_paths
     build_readonly_mounts > /dev/null
-    case "${READONLY_MOUNTS[*]}" in
+    case "${READONLY_MOUNTS[*]-}" in
         *"$PROJECT_DIR/.github/workflows:$REMOTE_PATH/.github/workflows:Z,ro"*)
             pass "stubbed path receives ro mount"
             ;;

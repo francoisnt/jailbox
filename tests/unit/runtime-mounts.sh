@@ -40,7 +40,7 @@ assert_not_contains() {
 assert_no_gitconfig_mount() {
     local name="$1" joined
 
-    joined="${GITCONFIG_MOUNT[*]}"
+    joined="${GITCONFIG_MOUNT[*]-}"
     case "$joined" in
         *".gitconfig"*)
             fail "$name (got: $joined)"
@@ -77,7 +77,7 @@ test_minimal_gitconfig_mount() {
 
     configure_runtime_mounts
     gitconfig_file="$SSH_DIR/gitconfig"
-    joined="${GITCONFIG_MOUNT[*]}"
+    joined="${GITCONFIG_MOUNT[*]-}"
 
     case "$joined" in
         *"$gitconfig_file:/home/jailbox/.gitconfig:ro"*)
