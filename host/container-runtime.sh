@@ -33,14 +33,19 @@ configure_readonly_paths() {
     # when it resolves inside the project; a containerfile outside the project
     # is not reachable through the project mount and needs no overlay.
     if [ -n "$DEV_CONTAINERFILE" ]; then
-        local containerfile_abs containerfile_rel
+        local containerfile_abs containerfile_rel project_abs
         case "$DEV_CONTAINERFILE" in
             /*) containerfile_abs="$DEV_CONTAINERFILE" ;;
             *)  containerfile_abs="$PROJECT_DIR/$DEV_CONTAINERFILE" ;;
         esac
+        # Canonicalize both sides of the containment check. On macOS, mktemp
+        # commonly returns a path below /var while realpath resolves the file
+        # below /private/var; comparing one canonical path to one lexical path
+        # incorrectly treats an in-project Containerfile as external.
+        project_abs=$(realpath "$PROJECT_DIR" 2>/dev/null) || project_abs=""
         containerfile_abs=$(realpath "$containerfile_abs" 2>/dev/null) || containerfile_abs=""
-        if [[ -n "$containerfile_abs" && "$containerfile_abs" == "$PROJECT_DIR/"* ]]; then
-            containerfile_rel="${containerfile_abs#"$PROJECT_DIR"/}"
+        if [[ -n "$project_abs" && -n "$containerfile_abs" && "$containerfile_abs" == "$project_abs/"* ]]; then
+            containerfile_rel="${containerfile_abs#"$project_abs"/}"
             readonly_paths_contain "$containerfile_rel" || READONLY_PATHS+=("$containerfile_rel")
         fi
     fi

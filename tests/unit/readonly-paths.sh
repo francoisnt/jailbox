@@ -105,6 +105,28 @@ test_dev_containerfile() {
     rm -rf "$PROJECT_DIR"
 }
 
+# macOS temporary directories are commonly reported below /var even though
+# realpath resolves them below /private/var. A symlinked fixture reproduces that
+# lexical-vs-physical path mismatch on every OS and guards the containment check.
+test_dev_containerfile_with_symlinked_project() {
+    local project_real project_link
+
+    project_real=$(mktemp -d)
+    project_link="${project_real}-link"
+    ln -s "$project_real" "$project_link"
+    PROJECT_DIR="$project_link"
+    apply_config_defaults
+    mkdir -p "$PROJECT_DIR/docker"
+    touch "$PROJECT_DIR/docker/dev.Dockerfile"
+
+    DEV_CONTAINERFILE="docker/dev.Dockerfile"
+    configure_readonly_paths
+    assert_listed_once "custom containerfile listed through canonicalized project path" "docker/dev.Dockerfile"
+
+    rm -f "$project_link"
+    rm -rf "$project_real"
+}
+
 test_mounts() {
     local out_file joined
 
@@ -206,6 +228,7 @@ main() {
     test_defaults
     test_readonly_extra
     test_dev_containerfile
+    test_dev_containerfile_with_symlinked_project
     test_mounts
     test_stubs
     test_stubs_from_empty_project
