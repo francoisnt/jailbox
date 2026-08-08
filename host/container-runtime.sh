@@ -38,7 +38,7 @@ configure_readonly_paths() {
             /*) containerfile_abs="$DEV_CONTAINERFILE" ;;
             *)  containerfile_abs="$PROJECT_DIR/$DEV_CONTAINERFILE" ;;
         esac
-        containerfile_abs=$(realpath -m -- "$containerfile_abs" 2>/dev/null) || containerfile_abs=""
+        containerfile_abs=$(realpath "$containerfile_abs" 2>/dev/null) || containerfile_abs=""
         if [[ -n "$containerfile_abs" && "$containerfile_abs" == "$PROJECT_DIR/"* ]]; then
             containerfile_rel="${containerfile_abs#"$PROJECT_DIR"/}"
             readonly_paths_contain "$containerfile_rel" || READONLY_PATHS+=("$containerfile_rel")

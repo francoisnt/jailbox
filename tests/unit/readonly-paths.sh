@@ -76,6 +76,8 @@ test_readonly_extra() {
 
 test_dev_containerfile() {
     with_project
+    mkdir -p "$PROJECT_DIR/docker"
+    touch "$PROJECT_DIR/docker/dev.Dockerfile"
     DEV_CONTAINERFILE="docker/dev.Dockerfile"
     configure_readonly_paths
     assert_listed_once "custom containerfile listed" "docker/dev.Dockerfile"
@@ -88,6 +90,8 @@ test_dev_containerfile() {
     rm -rf "$PROJECT_DIR"
 
     with_project
+    mkdir -p "$PROJECT_DIR/docker"
+    touch "$PROJECT_DIR/docker/dev.Dockerfile"
     DEV_CONTAINERFILE="$PROJECT_DIR/docker/dev.Dockerfile"
     configure_readonly_paths
     assert_listed_once "absolute in-project containerfile listed relative" "docker/dev.Dockerfile"
