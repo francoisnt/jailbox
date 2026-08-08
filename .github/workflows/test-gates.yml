@@ -52,9 +52,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Install ShellCheck on macOS
-        if: runner.os == 'macOS'
-        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install shellcheck
+      - name: Set up portable test host
+        run: bash tests/ci/setup-portable.sh
 
       - name: Run portable gate
         run: bash tests/run portable

@@ -11,21 +11,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PODMAN_MACHINE_NAME="${PODMAN_MACHINE_NAME:-jailbox-ci}"
 
-# shellcheck source=tests/ci/setup-common.sh
-source "$SCRIPT_DIR/setup-common.sh"
-
-prepend_path() {
-    local path="$1"
-
-    if [[ -n "${GITHUB_PATH:-}" ]]; then
-        printf '%s\n' "$path" >> "$GITHUB_PATH"
-    fi
-    export PATH="$path:$PATH"
-}
+# shellcheck source=tests/ci/setup-portable.sh
+source "$SCRIPT_DIR/setup-portable.sh"
 
 install_base_tools() {
-    HOMEBREW_NO_AUTO_UPDATE=1 brew install coreutils podman qemu shellcheck
-    prepend_path "$(brew --prefix coreutils)/libexec/gnubin"
+    HOMEBREW_NO_AUTO_UPDATE=1 brew install podman qemu
 }
 
 wait_for_podman_machine() {
@@ -69,6 +59,7 @@ main() {
     parse_setup_args "$@"
     cd "$ROOT_DIR"
 
+    install_portable_tools
     install_base_tools
     start_podman_machine
     verify_base_tools

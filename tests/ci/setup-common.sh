@@ -4,6 +4,15 @@
 # shellcheck disable=SC2034  # consumed by OS-specific setup scripts after source
 WITH_EDITORS=false
 
+prepend_path() {
+    local path="$1"
+
+    if [[ -n "${GITHUB_PATH:-}" ]]; then
+        printf '%s\n' "$path" >> "$GITHUB_PATH"
+    fi
+    export PATH="$path:$PATH"
+}
+
 setup_usage() {
     cat <<EOF_USAGE
 Usage: $(basename "$0") [--with-editors]
@@ -32,12 +41,16 @@ parse_setup_args() {
     done
 }
 
-verify_base_tools() {
+verify_portable_tools() {
     realpath --version
+    shellcheck --version
+}
+
+verify_base_tools() {
+    verify_portable_tools
     timeout --version
     podman info
     ssh -V
-    shellcheck --version
 }
 
 # When the pin variables are set (Linux sources versions.env), the verifiers
@@ -68,4 +81,3 @@ verify_codium_editor() {
         codium --list-extensions | grep -Fx jeanp413.open-remote-ssh
     fi
 }
-
