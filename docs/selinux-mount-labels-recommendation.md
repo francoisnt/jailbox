@@ -18,6 +18,39 @@ container-to-container isolation, while `:z` still relabels host files and makes
 them shareable with other containers. Verify the current behavior on a real
 SELinux-enforcing host and choose deliberately from the observed results.
 
+## Is a relabel suffix required?
+
+Podman does not require `:Z` or `:z` syntactically. Without either suffix it
+preserves the source's existing host label. On an enforcing host, a normal
+project under a user's home directory is commonly not labeled for access by a
+confined container, so the mount may be present but reads and writes are denied
+by SELinux.
+
+No suffix can work when SELinux is disabled or permissive, when an administrator
+has already assigned a compatible container label or custom policy, or when the
+container uses `--security-opt label=disable`. The first two do not validate the
+enforcing-host contract, pre-labeling is not a reasonable default prerequisite,
+and disabling label separation would weaken jailbox's container isolation.
+
+The likely minimal policy is therefore:
+
+```text
+independent project root:       :Z
+nested protected-path overlay:  ro, with no additional relabel suffix
+independent SSH/state mounts:    :Z
+```
+
+The project-root `:Z` recursively establishes a private label compatible with
+the jailbox container. A nested source such as `.env` or
+`.github/workflows` already lies beneath that relabeled root, so its overlay may
+only need `ro`; omitting a nested `:Z` preserves the label established by the
+parent mount. This must be proven on Fedora before changing the emitted mount
+options.
+
+Do not use `--security-opt label=disable` as the general solution. It avoids
+host relabeling by disabling SELinux separation for the whole container, which
+is a broader security-model change than adjusting bind-mount labels.
+
 ## Manual Fedora VM test
 
 Run the verification in a disposable local Fedora VM. Do not use a Fedora
@@ -81,11 +114,19 @@ Run `tests/run runtime` in the VM as the baseline, then execute the focused
 checks above against a disposable project created specifically for the test.
 The result is not valid if only selected unit or wrapper-image tests ran.
 
+Repeat the protected-overlay assertions with the project root mounted using
+`:Z` and nested overlays using only `ro`. Confirm that the nested paths retain a
+category compatible with the container, remain readable, deny writes, and do
+not trigger unexpected AVC denials. Also confirm that an independent state path
+without any compatible label is denied, demonstrating that the test is
+actually exercising SELinux rather than merely observing successful mounts.
+
 ### Decision criteria
 
-Keep private `:Z` labels if the assertions pass and ordinary host-side use is
-not disrupted. Remove redundant nested relabel options if testing proves the
-parent label is sufficient and read-only enforcement remains intact.
+Keep private `:Z` on independent project and state roots if the assertions pass
+and ordinary host-side use is not disrupted. Remove redundant nested relabel
+options if testing proves the parent label is sufficient and read-only
+enforcement remains intact.
 
 Consider shared `:z` labels only if jailbox intentionally supports concurrent
 containers mounting the same checkout and that requirement outweighs the loss
