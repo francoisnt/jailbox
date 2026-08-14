@@ -43,8 +43,10 @@ editor launch and headless commands use this core.
 
 Otherwise the normal bring-up path replaces it. Liveness alone is not enough:
 a changed write or egress policy must never reuse stale, broader permissions.
-The fingerprint contract is defined in `profiles-plan.md` (now the external
-config spec).
+The fingerprint must cover every effective setting that affects the container,
+mounts, networking, SSH environment, editor integration, image/build inputs,
+and jailbox implementation version. Store only its digest, never secrets or raw
+config contents, on the container and proxy.
 
 ## `exec` transport
 

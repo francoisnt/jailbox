@@ -1,5 +1,7 @@
 # Version-pinning policy: versions.env, pinned CI, canary, run metadata, generated README matrix
 
+Archived after implementation.
+
 ## Context
 
 The Alpine/VSCodium editor smoke test broke because open-remote-ssh 0.2.0 silently updated (its `flock -x -w 30` is rejected by BusyBox flock), while the pinned headless REH probe kept passing. Root cause: three unsynchronized version regimes — the GUI smoke test floats silently, the REH probe is pinned, and CI installs latest editors while the README claims a deterministic gate. The agreed policy: pin everything jailbox chooses, canary-test everything upstream chooses, auto-advance pins on canary green, and make `versions.env` the single source of truth whose history records what each commit was verified against.
