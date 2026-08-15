@@ -86,7 +86,7 @@ EOF_INSTRUCTIONS
 wait_for_ssh() {
     echo "⏳ Waiting for sshd..."
     SSH_READY=false
-    for i in $(seq 1 30); do
+    for ((i = 1; i <= 30; i++)); do
         if ssh -F "$SSH_CONFIG" -o ConnectTimeout=1 "$CONTAINER_NAME" true 2>/dev/null; then
             echo "✅ SSH is up (attempt $i)"
             SSH_READY=true
@@ -104,11 +104,11 @@ wait_for_ssh() {
 }
 
 pin_ssh_host_key() {
-    local host_key_file host_key
+    local host_key_file host_key i
 
     host_key_file="$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub"
     echo "🔐 Pinning SSH host key..."
-    for _ in $(seq 1 30); do
+    for ((i = 1; i <= 30; i++)); do
         if [ -s "$host_key_file" ]; then
             host_key=$(cat "$host_key_file")
             write_known_host_entry "$host_key"

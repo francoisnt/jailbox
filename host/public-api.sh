@@ -45,24 +45,44 @@ CLI_HELP=(
     "--help=Show this help"
 )
 
+declare -A CONFIG_SCALAR_KEY_SET=()
+declare -A CONFIG_ARRAY_KEY_SET=()
+declare -A CLI_FLAG_SET=()
+declare -A CLI_HELP_BY_FLAG=()
+
+initialize_public_api_lookups() {
+    local key entry
+
+    for key in "${CONFIG_SCALAR_KEYS[@]}"; do
+        CONFIG_SCALAR_KEY_SET["$key"]=1
+    done
+    for key in "${CONFIG_ARRAY_KEYS[@]}"; do
+        CONFIG_ARRAY_KEY_SET["$key"]=1
+    done
+    for key in "${CLI_FLAGS[@]}"; do
+        CLI_FLAG_SET["$key"]=1
+    done
+    for entry in "${CLI_HELP[@]}"; do
+        CLI_HELP_BY_FLAG["${entry%%=*}"]="${entry#*=}"
+    done
+}
+
+initialize_public_api_lookups
+
 is_config_scalar_key() {
-    local key scalar_key
+    local key
 
     key="$1"
-    for scalar_key in "${CONFIG_SCALAR_KEYS[@]}"; do
-        [ "$key" = "$scalar_key" ] && return 0
-    done
-    return 1
+    [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || return 1
+    [[ -v CONFIG_SCALAR_KEY_SET[$key] ]]
 }
 
 is_config_array_key() {
-    local key array_key
+    local key
 
     key="$1"
-    for array_key in "${CONFIG_ARRAY_KEYS[@]}"; do
-        [ "$key" = "$array_key" ] && return 0
-    done
-    return 1
+    [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || return 1
+    [[ -v CONFIG_ARRAY_KEY_SET[$key] ]]
 }
 
 apply_config_defaults() {
@@ -88,26 +108,19 @@ apply_config_defaults() {
 }
 
 is_cli_flag_allowed() {
-    local arg flag
+    local arg
 
     arg="$1"
     [ -z "$arg" ] && return 0
-
-    for flag in "${CLI_FLAGS[@]}"; do
-        [ "$arg" = "$flag" ] && return 0
-    done
-    return 1
+    [[ "$arg" =~ ^-{0,2}[A-Za-z][A-Za-z0-9-]*$ ]] || return 1
+    [[ -v CLI_FLAG_SET[$arg] ]]
 }
 
 cli_flag_help() {
-    local flag entry
+    local flag
 
     flag="$1"
-    for entry in "${CLI_HELP[@]}"; do
-        if [ "${entry%%=*}" = "$flag" ]; then
-            printf '%s\n' "${entry#*=}"
-            return 0
-        fi
-    done
-    return 1
+    [[ "$flag" =~ ^-{0,2}[A-Za-z][A-Za-z0-9-]*$ ]] || return 1
+    [[ -v CLI_HELP_BY_FLAG[$flag] ]] || return 1
+    printf '%s\n' "${CLI_HELP_BY_FLAG[$flag]}"
 }

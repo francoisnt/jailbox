@@ -116,6 +116,23 @@ test_injection_rejected() {
     fi
 }
 
+test_cli_lookup_injection_rejected() {
+    local marker="/tmp/jailbox-cli-lookup-pwned-$$"
+
+    rm -f "$marker"
+    if is_cli_flag_allowed "BAD[\$(touch $marker)]"; then
+        fail "associative CLI lookup rejects invalid argument"
+    else
+        pass "associative CLI lookup rejects invalid argument"
+    fi
+    if [ -e "$marker" ]; then
+        fail "CLI lookup injection marker was created"
+        rm -f "$marker"
+    else
+        pass "CLI lookup injection marker not created"
+    fi
+}
+
 test_help_ignores_invalid_config() {
     local dir
 
@@ -151,6 +168,7 @@ main() {
     assert_rejects "trailing slash readonly extra rejected" "READONLY_EXTRA=.husky/"
     assert_rejects "whitespace in value rejected" "DEV_IMAGE=node 22"
     test_injection_rejected
+    test_cli_lookup_injection_rejected
     test_help_ignores_invalid_config
 
     echo ""
