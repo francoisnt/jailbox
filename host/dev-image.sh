@@ -12,6 +12,11 @@ initialize_dev_image_state() {
     PKG_MANAGER=""
 }
 
+assert_dev_image_state_initialized() {
+    [ -n "$PROJECT_DEV_IMAGE" ] && [ -n "$JAILBOX_IMAGE" ] || \
+        die "internal error: development image state is not initialized"
+}
+
 # Validation probes execute the dev image (including any entrypoint it
 # defines) before jailbox's runtime hardening applies. The probes only run
 # short shell one-liners, so constrain them: no network, no capabilities, no
@@ -21,6 +26,7 @@ podman_probe() {
 }
 
 build_or_select_dev_image() {
+    assert_dev_image_state_initialized
     if [ -n "$DEV_IMAGE" ]; then
         echo "📦 Using dev image: $DEV_IMAGE"
         PROJECT_DEV_IMAGE="$DEV_IMAGE"

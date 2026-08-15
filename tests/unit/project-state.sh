@@ -58,6 +58,7 @@ test_project_state_paths() {
     assert_eq "SSH state uses XDG project state dir" "$state_home/jailbox/projects/$hash" "$SSH_DIR"
     assert_eq "SSH config uses project state dir" "$state_home/jailbox/projects/$hash/ssh_config" "$SSH_CONFIG"
     assert_eq "editor profile remains in XDG state" "$state_home/jailbox/editor-profiles/$hash" "$JAILBOX_EDITOR_USER_DATA"
+    assert_eq "shared project state root uses XDG state" "$state_home/jailbox" "$PROJECT_STATE_ROOT"
     assert_not_prefix "SSH state is outside project" "$project_dir" "$SSH_DIR"
 
     rm -rf "$project_dir" "$state_home"

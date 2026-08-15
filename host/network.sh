@@ -13,10 +13,20 @@ declare -A NETWORK_STATE=(
 )
 NETWORK_SSH_SESSION_ENV=()
 
+initialize_network_state() {
+    NETWORK_STATE=(
+        [selected_network]=""
+        [internal_network]=""
+        [proxy_url]=""
+        [no_proxy]=""
+        [filter_file]=""
+        [proxy_conf_file]=""
+    )
+    NETWORK_SSH_SESSION_ENV=()
+}
+
 configure_network() {
-    NETWORK_STATE[filter_file]=""
-    NETWORK_STATE[proxy_conf_file]=""
-    NETWORK_STATE[internal_network]=""
+    initialize_network_state
 
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         configure_proxy_network

@@ -7,10 +7,9 @@ KEY_FILE=""
 SSHD_RUNTIME_DIR=""
 
 initialize_ssh_state() {
-    local state_root
-
-    state_root="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
-    SSH_DIR="$state_root/projects/$PROJECT_HASH"
+    [ -n "$PROJECT_STATE_ROOT" ] && [ -n "$PROJECT_HASH" ] || \
+        die "internal error: SSH state requires initialized project state"
+    SSH_DIR="$PROJECT_STATE_ROOT/projects/$PROJECT_HASH"
     SSH_CONFIG="$SSH_DIR/ssh_config"
     KNOWN_HOSTS="$SSH_DIR/known_hosts"
     KEY_FILE="$SSH_DIR/key"
@@ -18,7 +17,14 @@ initialize_ssh_state() {
     SSHD_RUNTIME_DIR="$SSH_DIR/sshd-runtime"
 }
 
+assert_ssh_state_initialized() {
+    [ -n "$SSH_DIR" ] && [ -n "$SSH_CONFIG" ] && [ -n "$KNOWN_HOSTS" ] && \
+        [ -n "$KEY_FILE" ] && [ -n "$SSHD_RUNTIME_DIR" ] || \
+        die "internal error: SSH state is not initialized"
+}
+
 setup_ssh_keys() {
+    assert_ssh_state_initialized
     mkdir -p "$SSH_DIR"
     chmod 700 "$SSH_DIR"
     # Recreate the backing directory on each launch. OpenSSH StrictModes

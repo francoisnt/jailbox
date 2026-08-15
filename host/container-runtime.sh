@@ -4,7 +4,13 @@ READONLY_PATHS=()
 READONLY_MOUNTS=()
 GITCONFIG_MOUNT=()
 ROOTFS_FLAG=()
-VOLUME_PATH=""
+
+initialize_container_runtime_state() {
+    READONLY_PATHS=()
+    READONLY_MOUNTS=()
+    GITCONFIG_MOUNT=()
+    ROOTFS_FLAG=()
+}
 
 configure_readonly_paths() {
     READONLY_PATHS=(
@@ -185,13 +191,15 @@ clean_jailbox() {
 }
 
 ensure_home_volume() {
+    local volume_path
+
     if ! podman volume exists "$VOLUME_NAME" 2>/dev/null; then
         podman volume create --label "jailbox.project=$PROJECT_DIR" "$VOLUME_NAME"
-        VOLUME_PATH=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}')
+        volume_path=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}')
         # Rootless volumes are created from the host side. Chown only the new
         # jailbox-managed home volume so the keep-id user can write to it; do
         # not repair ownership inside the project or dev image.
-        podman unshare chown "$(id -u):$(id -g)" "$VOLUME_PATH"
+        podman unshare chown "$(id -u):$(id -g)" "$volume_path"
     fi
 }
 

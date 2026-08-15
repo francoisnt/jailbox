@@ -7,6 +7,7 @@ declare -A CONFIG_SEEN_KEYS=()
 
 PROJECT_HASH=""
 PROJECT_RESOURCE_PREFIX=""
+PROJECT_STATE_ROOT=""
 CONTAINER_NAME=""
 PROXY_NAME=""
 PROXY_IMAGE=""
@@ -277,6 +278,7 @@ initialize_project_names() {
     # the full path remains the identity. State directories below stay keyed
     # on the hash alone.
     PROJECT_RESOURCE_PREFIX=$(jailbox_resource_prefix_for_path "$PROJECT_DIR")
+    PROJECT_STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
     CONTAINER_NAME="${PROJECT_RESOURCE_PREFIX}"
     PROXY_NAME="${PROJECT_RESOURCE_PREFIX}-proxy"
     PROXY_IMAGE="${PROJECT_RESOURCE_PREFIX}-proxy"

@@ -4,11 +4,15 @@ JAILBOX_EDITOR_USER_DATA=""
 JAILBOX_EDITOR_USER_SETTINGS=""
 
 initialize_editor_state() {
-    local state_root
-
-    state_root="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
-    JAILBOX_EDITOR_USER_DATA="$state_root/editor-profiles/$PROJECT_HASH"
+    [ -n "$PROJECT_STATE_ROOT" ] && [ -n "$PROJECT_HASH" ] || \
+        die "internal error: editor state requires initialized project state"
+    JAILBOX_EDITOR_USER_DATA="$PROJECT_STATE_ROOT/editor-profiles/$PROJECT_HASH"
     JAILBOX_EDITOR_USER_SETTINGS="$JAILBOX_EDITOR_USER_DATA/User/settings.json"
+}
+
+assert_editor_state_initialized() {
+    [ -n "$JAILBOX_EDITOR_USER_DATA" ] && [ -n "$JAILBOX_EDITOR_USER_SETTINGS" ] || \
+        die "internal error: editor state is not initialized"
 }
 
 open_editor() {
@@ -85,6 +89,8 @@ editor_profile_uses_code() {
 
 write_jailbox_editor_user_settings() {
     local settings_dir settings_tmp
+
+    assert_editor_state_initialized
 
     settings_dir="$(dirname "$JAILBOX_EDITOR_USER_SETTINGS")"
     mkdir -p "$settings_dir"

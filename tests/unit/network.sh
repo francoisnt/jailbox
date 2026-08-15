@@ -190,6 +190,21 @@ test_effective_egress_allowlist_array_output() {
     fi
 }
 
+test_initialize_network_state_clears_outputs() {
+    NETWORK_STATE[selected_network]="stale-network"
+    NETWORK_STATE[proxy_url]="http://stale"
+    NETWORK_SSH_SESSION_ENV=(stale)
+
+    initialize_network_state
+
+    if [[ -z "${NETWORK_STATE[selected_network]}" && -z "${NETWORK_STATE[proxy_url]}" && \
+        "${#NETWORK_SSH_SESSION_ENV[@]}" -eq 0 ]]; then
+        pass "network initialization clears stale outputs"
+    else
+        fail "network initialization clears stale outputs"
+    fi
+}
+
 main() {
     echo "network tests"
     echo ""
@@ -203,6 +218,7 @@ main() {
     test_configure_proxy_env_preserves_precomputed_url
     test_configure_proxy_env_computes_static_url
     test_effective_egress_allowlist_array_output
+    test_initialize_network_state_clears_outputs
 
     echo ""
     if [[ "$FAILED" -eq 0 ]]; then

@@ -119,6 +119,22 @@ test_container_launch_preconditions() {
     assert_launch_state_rejects "invalid SSH port rejected" "valid SSH port"
 }
 
+test_initialize_container_runtime_state_clears_outputs() {
+    READONLY_PATHS=(stale)
+    READONLY_MOUNTS=(stale)
+    GITCONFIG_MOUNT=(stale)
+    ROOTFS_FLAG=(stale)
+
+    initialize_container_runtime_state
+
+    if [[ "${#READONLY_PATHS[@]}" -eq 0 && "${#READONLY_MOUNTS[@]}" -eq 0 && \
+        "${#GITCONFIG_MOUNT[@]}" -eq 0 && "${#ROOTFS_FLAG[@]}" -eq 0 ]]; then
+        pass "runtime initialization clears stale outputs"
+    else
+        fail "runtime initialization clears stale outputs"
+    fi
+}
+
 with_project_state() {
     PROJECT_DIR=$(mktemp -d)
     HOME=$(mktemp -d)
@@ -194,6 +210,7 @@ main() {
     echo ""
 
     test_container_launch_preconditions
+    test_initialize_container_runtime_state_clears_outputs
 
     if ! command -v git >/dev/null 2>&1; then
         echo "git not found; skipping runtime mounts tests"

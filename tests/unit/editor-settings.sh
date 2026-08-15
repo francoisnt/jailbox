@@ -35,6 +35,7 @@ assert_not_contains() {
 
 with_settings_file() {
     SETTINGS_DIR=$(mktemp -d)
+    JAILBOX_EDITOR_USER_DATA="$SETTINGS_DIR"
     JAILBOX_EDITOR_USER_SETTINGS="$SETTINGS_DIR/User/settings.json"
     SSH_CONFIG="$SETTINGS_DIR/ssh_config"
     declare -gA NETWORK_STATE=(

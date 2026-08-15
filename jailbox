@@ -115,11 +115,13 @@ run_uninstall() {
     JAILBOX_INSTALL_DIR="$SCRIPT_DIR" exec bash "$SCRIPT_DIR/install.sh" --uninstall
 }
 
-initialize_common_state() {
+initialize_launch_state() {
     initialize_project_names
     initialize_dev_image_state
     initialize_ssh_state
     initialize_editor_state
+    initialize_network_state
+    initialize_container_runtime_state
     configure_readonly_paths
 }
 
@@ -137,7 +139,7 @@ main() {
     fi
 
     host_preflight "$@"
-    initialize_common_state
+    initialize_launch_state
 
     case "${1:-}" in
         doctor)
