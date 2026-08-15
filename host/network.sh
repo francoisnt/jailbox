@@ -34,7 +34,7 @@ configure_proxy_network() {
     # HTTPS_PROXY env, curlrc, wgetrc) to reach allowed hosts.
     local internal_net external_net effective_egress_allow proxy_internal_ip proxy_internal_subnet
 
-    mapfile -t effective_egress_allow < <(effective_egress_allowlist)
+    effective_egress_allowlist effective_egress_allow
     FILTER_FILE="$SSH_DIR/tinyproxy-filter"
     render_tinyproxy_filter "$FILTER_FILE" "${effective_egress_allow[@]}"
 
@@ -92,7 +92,12 @@ configure_proxy_network() {
 }
 
 effective_egress_allowlist() {
+    local -n result="$1"
+    local host
     local hosts=("${EGRESS_ALLOW[@]}")
+    local -A seen=()
+
+    result=()
 
     if [[ -n "$EDITOR_BIN" ]]; then
         case "$(basename "$EDITOR_BIN")" in
@@ -115,7 +120,14 @@ effective_egress_allowlist() {
         esac
     fi
 
-    printf '%s\n' "${hosts[@]}" | awk 'NF && !seen[$0]++'
+    for host in "${hosts[@]}"; do
+        [ -n "$host" ] || continue
+        # Configured hosts are validated before this function is called; the
+        # remaining values are fixed editor domains declared above.
+        [[ -v seen[$host] ]] && continue
+        seen["$host"]=1
+        result+=("$host")
+    done
 }
 
 configure_proxy_env() {

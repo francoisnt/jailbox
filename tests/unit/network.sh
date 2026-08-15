@@ -166,6 +166,30 @@ test_configure_proxy_env_computes_static_url() {
     fi
 }
 
+test_effective_egress_allowlist_array_output() {
+    local actual
+
+    EGRESS_ALLOW=(github.com github.com api.github.com)
+    EDITOR_BIN=""
+    actual=(stale)
+    effective_egress_allowlist actual
+
+    if [[ "${actual[*]}" == "github.com api.github.com" ]]; then
+        pass "effective allowlist preserves order and removes duplicates"
+    else
+        fail "effective allowlist preserves order and removes duplicates (got ${actual[*]})"
+    fi
+
+    EGRESS_ALLOW=()
+    actual=(stale)
+    effective_egress_allowlist actual
+    if [[ "${#actual[@]}" -eq 0 ]]; then
+        pass "effective allowlist clears stale array output"
+    else
+        fail "effective allowlist clears stale array output"
+    fi
+}
+
 main() {
     echo "network tests"
     echo ""
@@ -178,6 +202,7 @@ main() {
     test_render_tinyproxy_conf
     test_configure_proxy_env_preserves_precomputed_url
     test_configure_proxy_env_computes_static_url
+    test_effective_egress_allowlist_array_output
 
     echo ""
     if [[ "$FAILED" -eq 0 ]]; then
