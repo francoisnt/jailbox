@@ -48,12 +48,15 @@ Below 5.2, `arr[$key]` in an arithmetic context is expanded twice.
 This is a real hazard — a key drawn from `jailbox.conf` and double-expanded is a
 code-execution path, which matters more than usual for a sandboxing tool — but
 it is not a reason to require 5.2. It is a reason to write subscripts that are
-safe under both semantics, and to let the version matrix catch violations.
+safe under both semantics, with focused regression tests run across the version
+matrix.
 `shopt -s assoc_expand_once` is not available as an escape hatch, since it
 arrived in 5.0 and the floor is 4.4.
 
 Treat it as a coding rule: never place an unquoted, non-literal subscript in an
-arithmetic context. The 4.4 job in the matrix is what enforces it.
+arithmetic context. Add regression cases with adversarial, configuration-derived
+keys; running those cases on both sides of the 5.2 behavior change is what
+enforces the rule. The matrix alone cannot detect a path the tests do not cover.
 
 ### Moving the floor later
 
@@ -89,7 +92,7 @@ Install it on macOS with: brew install bash
 
 ## Implementation
 
-Three changes. There is no launcher, no second installed file, and no change to
+Four changes. There is no launcher, no second installed file, and no change to
 packaging or the install layout.
 
 ### 1. Resolve Bash through `PATH`
@@ -166,7 +169,22 @@ The guard is still worth having with no users. Its purpose is not migration; it
 is to give the *first* user without Bash 4.4 a clear instruction instead of a
 parse error or a confusing failure deep inside a Podman call.
 
-### 3. Document the prerequisite
+### 3. Test the supported Bash range
+
+Run the complete portable gate under Bash 4.4, 5.0, 5.1, 5.2, and the current
+Bash. Every matrix entry runs exactly the same command:
+
+```sh
+tests/run portable
+```
+
+Do not split ShellCheck, generated-file checks, unit tests, or distribution
+tests into version-specific subsets. Uniform jobs are easier to understand and
+ensure that invoking the portable gate means the same thing everywhere. The
+extra repetition is acceptable because the portable gate requires neither
+Podman nor an editor.
+
+### 4. Document the prerequisite
 
 Update README prerequisites, `AGENTS.md` shell compatibility rules, and
 `CONTRIBUTING.md`.
@@ -193,17 +211,25 @@ value is enforced rather than described. README, `AGENTS.md`, and
 
 ## The one invariant, and how it is enforced
 
-The `jailbox` entrypoint must stay parseable by Bash 3.2, so that a user without
-modern Bash reaches the guard instead of a raw parse error. `host/*.sh` are
-under no such constraint: they carry no shebang, are only ever sourced, and are
-parsed by the already-running interpreter after the guard has passed.
+The `jailbox` entrypoint and `install.sh` must stay parseable by Bash 3.2.
+`jailbox` needs that compatibility so a user without modern Bash reaches the
+guard instead of a raw parse error. `install.sh` runs before a compatible host
+runtime is necessarily installed. `host/*.sh` are under no such constraint:
+they carry no shebang, are only ever sourced, and are parsed by the
+already-running interpreter after the guard has passed.
 
-This is enforced, not left to convention. `tests/portable/smoke.sh` already runs
-`bash -n` across every shell file; split that check so the entrypoint is held to
-the older parser:
+This is enforced, not left to convention. Every portable-matrix environment
+provides a Bash 3.2 executable as a parser oracle. `tests/portable/smoke.sh`
+runs the same checks in every matrix entry:
 
-- `/bin/bash -n jailbox install.sh` on macOS, where `/bin/bash` is 3.2.
+- Bash 3.2 runs `-n jailbox install.sh` and must accept both files.
 - `bash -n` for `host/*.sh` and everything else, under the current Bash.
+
+On macOS the parser oracle is `/bin/bash`. Linux matrix jobs build and cache a
+pinned Bash 3.2 alongside the selected runtime Bash. Pass its explicit path as
+`JAILBOX_TEST_BASH32`; do not depend on it being first on `PATH`, because Bash
+3.2 must parse only these two files and must never run the full gate. The smoke
+test fails if the supplied parser does not identify itself as Bash 3.2.
 
 A contributor who puts Bash 4.4 syntax in `jailbox` itself fails the portable
 gate on macOS. The consequence of the invariant breaking is also mild — a user
@@ -241,8 +267,14 @@ jailbox has no users yet, so there is no migration: no staged releases, no grace
 period, no compatibility window. Land the floor as one change.
 
 1. `#!/usr/bin/env bash` in `jailbox`, plus the version guard.
-2. Split the `bash -n` check in `tests/portable/smoke.sh`.
-3. Update `AGENTS.md`, README prerequisites, and `CONTRIBUTING.md`.
+2. Split the syntax checks in `tests/portable/smoke.sh`: use the required Bash
+   3.2 parser oracle for `jailbox` and `install.sh`, and the matrix runtime Bash
+   for all other Bash files.
+3. Add the Bash-version setup and portable CI matrix, including the pinned Bash
+   3.2 parser oracle; every entry runs the complete `tests/run portable` gate
+   unchanged.
+4. Update `AGENTS.md`, README prerequisites, `CONTRIBUTING.md`, and the in-flight
+   plans that still state a Bash 3.2 constraint.
 
 Adopting Bash 4.4 features in `host/` should still be a separate commit, but for
 dependency reasons rather than release safety: until the shebang change lands,
@@ -251,26 +283,27 @@ one it is being written on. Once the floor is in, the constraint is gone and
 feature adoption proceeds normally.
 
 The only sequencing risk left is a self-inflicted one. Changing the shebang
-moves macOS development from Bash 3.2 to 5.x, which is where a latent 3.2-era
-assumption in `host/` would surface. Run the runtime and editor gates on macOS
-once after the change, before building on top of it.
+moves macOS portable-gate execution from Bash 3.2 to 5.x, which is where a
+latent 3.2-era assumption in `host/` would surface. The existing macOS portable
+job covers that transition without expanding runtime or editor platform scope.
 
 ## Tests
 
 - The guard rejects Bash 3.2 with a clear error, invoked as
-  `/bin/bash jailbox` on macOS.
+  the parser-oracle executable followed by `jailbox`.
 - The guard rejects a non-Bash interpreter with the same error, tested with both
   `sh jailbox` and `dash jailbox`. This is the regression test for the split
   `if` statements; a merged condition fails here with "Bad substitution".
-- `jailbox` parses under Bash 3.2 (`/bin/bash -n jailbox`).
+- Both `jailbox` and `install.sh` parse under the explicit Bash 3.2 parser
+  oracle.
 - A modern Bash earlier on `PATH` than the system one is selected, and jailbox
   reaches normal argument handling.
 - Invocation through the installed `$BIN_DIR` symlink still resolves `host/`.
   This is existing behaviour in `resolve_script_path` and is unchanged by the
   shebang, but it is the path every user takes and is currently untested.
-- The portable gate runs under every supported Bash version (see the matrix
-  below) and prints `bash --version` in its output, so the tested interpreter is
-  a recorded fact rather than an inference from the runner image.
+- The complete portable gate runs unchanged under every supported Bash version
+  in the matrix below and prints `bash --version` in its output, so both the
+  tested interpreter and the identical test scope are recorded facts.
 - The `${array[@]+"${array[@]}"}` removals behave identically on 4.4 and on the
   newest Bash. This is the change the floor was chosen to enable, so it is the
   one that most needs both ends of the range.
@@ -282,17 +315,19 @@ A declared floor of 4.4 is a claim about five releases — 4.4, 5.0, 5.1, 5.2, a
 testing it is an assumption, and the whole point of deriving the floor from
 features is that the resulting claim is honest.
 
-The matrix applies to the **portable gate only**. That gate is ShellCheck, unit
-tests, the release tarball, and the install lifecycle; it needs no Podman, no
-GUI, and no privileges, so it is cheap to multiply. The runtime and editor gates
-need a container runtime and a real editor and stay on the existing OS matrix —
-they test jailbox's interaction with the outside world, not Bash semantics.
+The matrix applies to the **portable gate only**. Every entry runs all of it:
+ShellCheck, generated-file checks, unit tests, the release tarball, and the
+install lifecycle. It needs no Podman, GUI, or privileges, so it is cheap to
+multiply. The runtime and editor gates stay on their existing jobs; they test
+jailbox's interaction with the outside world, not the supported Bash range.
 
 Build the interpreters from source on one current Linux runner. Do not use old
-distro images.
+distro images. Bash 3.2 is also built as a parser oracle, but it is not a matrix
+runtime and never executes the full portable gate.
 
 | Bash | Source |
 | --- | --- |
+| 3.2 (parser only) | `/bin/bash` on macOS; pinned source build on Linux |
 | 4.4.18 | `ftp.gnu.org/gnu/bash`, built |
 | 5.0.18 | `ftp.gnu.org/gnu/bash`, built |
 | 5.1.16 | `ftp.gnu.org/gnu/bash`, built |
@@ -323,7 +358,8 @@ through `PATH` — the "no hardcoded absolute interpreter path" rule above. That
 is what makes this cheap: a matrix job prepends its built Bash to `PATH` and
 runs `tests/run portable` unmodified. No test needs to know it is running under
 a non-default interpreter, and the gate prints `bash --version` so the job
-output records which one.
+output records which one. There is no reduced or special-case matrix command:
+the same public gate runs in every entry.
 
 The floor job and the newest job carry the most weight. 4.4 catches use of
 anything above the declared minimum, including the 5.2 subscript rule above,
@@ -335,27 +371,28 @@ Practical notes:
 - Cache the built interpreters keyed by exact version. The build is a minute or
   two and then never runs again until a version is added.
 - Pin the tarball `sha256`. CI downloads these and runs a compiler over them.
-- **Verify that 4.4 still compiles on the runner's toolchain before relying on
-  this.** GCC 14 and Clang 15 promoted implicit function declarations to errors,
-  which breaks many pre-2017 autoconf packages; `ubuntu-24.04` is still on GCC
-  13, so 4.4 is expected to build, possibly with warnings. If it needs a
-  `CFLAGS` relaxation, record that in the install script rather than dropping
-  the job. This has not been verified yet — treat it as the first thing the
-  matrix work must establish.
-- ShellCheck is version-independent. Run it once in the existing gate, not in
-  every matrix job.
+- **Verify that 3.2 and 4.4 still compile on the runner's toolchain before
+  relying on this.** GCC 14 and Clang 15 promoted implicit function declarations
+  to errors, which breaks many older autoconf packages; `ubuntu-24.04` is still
+  on GCC 13, so warnings or a narrow `CFLAGS` relaxation may be needed. Record
+  any workaround in the CI setup script rather than dropping either check. This
+  has not been verified yet — treat it as the first thing the matrix work must
+  establish.
+- Run the complete portable gate in every matrix job even where an individual
+  component, such as ShellCheck, is not Bash-version-sensitive. Consistency is
+  worth the small duplicated cost.
 - The matrix is Linux-only, and that is correct: it varies Bash, not the OS.
   macOS-specific behavior stays covered by the existing OS matrix, which also
   supplies the newest-Bash end of the range through Homebrew.
 
-The guarantee is still one-sided: the matrix proves jailbox works at or above
-4.4, not that it fails cleanly below. That direction is the guard's job, tested
-with `/bin/bash` on macOS as a real 3.2 interpreter and with `dash` for the
-non-Bash path.
+The runtime matrix proves jailbox works at or above 4.4. The separate 3.2 parser
+oracle proves that `jailbox` reaches its guard and that `install.sh` remains
+usable before modern Bash is installed. `dash` covers the non-Bash invocation
+path.
 
-Run `tests/run portable`. Also run the runtime and editor gates on macOS once
-after the shebang change: no test asserts anything about the interpreter, but
-every host module now executes under a different one than before.
+Run `tests/run portable`. CI then runs that same complete gate across the Bash
+matrix. Runtime and editor coverage remains unchanged because this plan changes
+the host interpreter contract, not the supported Podman or editor platforms.
 
 ## Non-goals
 
