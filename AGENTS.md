@@ -52,6 +52,9 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   Bash syntax to them. `container/downloader-proxy-manager.sh` is Bash.
 - Quote expansions, use explicit error handling, and avoid evaluating project
   configuration as shell code.
+- Validate configuration-derived and other untrusted associative-array
+  subscripts before lookup. Never use an untrusted subscript in an arithmetic
+  context where Bash may expand it more than once.
 - Keep functions focused and follow the existing formatting and naming style.
 
 ## Security invariants

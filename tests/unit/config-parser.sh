@@ -104,6 +104,8 @@ test_injection_rejected() {
 
     rm -f "$marker"
     assert_rejects "command substitution rejected" "DEV_IMAGE=\$(touch $marker)"
+    assert_rejects "associative subscript injection rejected" \
+        "BAD[\$(touch $marker)]=value"
     assert_rejects "semicolon rejected" "DEV_IMAGE=node:22;touch-$marker"
     assert_rejects "legacy bash array rejected" 'EGRESS_ALLOW=("github.com" "api.github.com")'
     if [ -e "$marker" ]; then

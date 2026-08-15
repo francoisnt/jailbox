@@ -3,6 +3,8 @@
 # shellcheck source=host/project-id.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
 
+declare -A CONFIG_SEEN_KEYS=()
+
 usage() {
     local flag
 
@@ -82,7 +84,7 @@ parse_config_file() {
         if config_key_seen "$key"; then
             die "invalid jailbox.conf line $line_no: duplicate setting '$key'"
         fi
-        CONFIG_SEEN_KEYS+=("$key")
+        CONFIG_SEEN_KEYS["$key"]=1
 
         if is_config_array_key "$key"; then
             parse_config_array "$key" "$value" "$line_no" || return $?
@@ -93,13 +95,10 @@ parse_config_file() {
 }
 
 config_key_seen() {
-    local key seen
+    local key
 
     key="$1"
-    for seen in "${CONFIG_SEEN_KEYS[@]}"; do
-        [ "$seen" = "$key" ] && return 0
-    done
-    return 1
+    [[ -v CONFIG_SEEN_KEYS[$key] ]]
 }
 
 validate_config_value() {
