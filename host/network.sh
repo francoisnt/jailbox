@@ -11,6 +11,9 @@ declare -A NETWORK_STATE=(
     [filter_file]=""
     [proxy_conf_file]=""
 )
+# Network owns these outputs. Container launch consumes selected_network;
+# validation consumes internal_network; editor/downloader configuration consumes
+# proxy_url and no_proxy; proxy startup alone consumes the rendered file paths.
 NETWORK_SSH_SESSION_ENV=()
 
 initialize_network_state() {
