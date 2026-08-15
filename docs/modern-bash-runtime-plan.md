@@ -218,18 +218,19 @@ runtime is necessarily installed. `host/*.sh` are under no such constraint:
 they carry no shebang, are only ever sourced, and are parsed by the
 already-running interpreter after the guard has passed.
 
-This is enforced, not left to convention. Every portable-matrix environment
-provides a Bash 3.2 executable as a parser oracle. `tests/portable/smoke.sh`
-runs the same checks in every matrix entry:
+This is enforced, not left to convention. The macOS portable job uses the
+system `/bin/bash` as a real Bash 3.2 parser oracle. In
+`tests/portable/smoke.sh`:
 
-- Bash 3.2 runs `-n jailbox install.sh` and must accept both files.
+- On macOS, first verify that `/bin/bash` identifies itself as Bash 3.2, then
+  run `/bin/bash -n jailbox install.sh`; both files must parse successfully.
 - `bash -n` for `host/*.sh` and everything else, under the current Bash.
 
-On macOS the parser oracle is `/bin/bash`. Linux matrix jobs build and cache a
-pinned Bash 3.2 alongside the selected runtime Bash. Pass its explicit path as
-`JAILBOX_TEST_BASH32`; do not depend on it being first on `PATH`, because Bash
-3.2 must parse only these two files and must never run the full gate. The smoke
-test fails if the supplied parser does not identify itself as Bash 3.2.
+Do not build or emulate Bash 3.2 on Linux. Its relevance is specifically the
+macOS system interpreter, and the existing macOS portable job tests that real
+environment. Linux jobs test only supported runtime versions. Every CI entry
+still invokes the same public command, `tests/run portable`; the 3.2 parser
+assertion is a platform-specific check within that gate.
 
 A contributor who puts Bash 4.4 syntax in `jailbox` itself fails the portable
 gate on macOS. The consequence of the invariant breaking is also mild — a user
@@ -268,11 +269,11 @@ period, no compatibility window. Land the floor as one change.
 
 1. `#!/usr/bin/env bash` in `jailbox`, plus the version guard.
 2. Split the syntax checks in `tests/portable/smoke.sh`: use the required Bash
-   3.2 parser oracle for `jailbox` and `install.sh`, and the matrix runtime Bash
-   for all other Bash files.
-3. Add the Bash-version setup and portable CI matrix, including the pinned Bash
-   3.2 parser oracle; every entry runs the complete `tests/run portable` gate
-   unchanged.
+   3.2 parser on macOS for `jailbox` and `install.sh`, and the selected runtime
+   Bash for all other Bash files.
+3. Add the supported Bash-version setup and Linux portable CI matrix; every
+   entry, including the existing macOS job, runs the complete
+   `tests/run portable` gate unchanged.
 4. Update `AGENTS.md`, README prerequisites, `CONTRIBUTING.md`, and the in-flight
    plans that still state a Bash 3.2 constraint.
 
@@ -290,12 +291,12 @@ job covers that transition without expanding runtime or editor platform scope.
 ## Tests
 
 - The guard rejects Bash 3.2 with a clear error, invoked as
-  the parser-oracle executable followed by `jailbox`.
+  `/bin/bash jailbox` on macOS.
 - The guard rejects a non-Bash interpreter with the same error, tested with both
   `sh jailbox` and `dash jailbox`. This is the regression test for the split
   `if` statements; a merged condition fails here with "Bad substitution".
-- Both `jailbox` and `install.sh` parse under the explicit Bash 3.2 parser
-  oracle.
+- On macOS, `/bin/bash` is verified as Bash 3.2 and both `jailbox` and
+  `install.sh` parse under it.
 - A modern Bash earlier on `PATH` than the system one is selected, and jailbox
   reaches normal argument handling.
 - Invocation through the installed `$BIN_DIR` symlink still resolves `host/`.
@@ -321,13 +322,13 @@ install lifecycle. It needs no Podman, GUI, or privileges, so it is cheap to
 multiply. The runtime and editor gates stay on their existing jobs; they test
 jailbox's interaction with the outside world, not the supported Bash range.
 
-Build the interpreters from source on one current Linux runner. Do not use old
-distro images. Bash 3.2 is also built as a parser oracle, but it is not a matrix
-runtime and never executes the full portable gate.
+Build the supported interpreters from source on one current Linux runner. Do
+not use old distro images. Do not build Bash 3.2 on Linux; the macOS portable
+job uses the system `/bin/bash` for the only 3.2 compatibility claim.
 
 | Bash | Source |
 | --- | --- |
-| 3.2 (parser only) | `/bin/bash` on macOS; pinned source build on Linux |
+| 3.2 (parser only) | macOS system `/bin/bash` |
 | 4.4.18 | `ftp.gnu.org/gnu/bash`, built |
 | 5.0.18 | `ftp.gnu.org/gnu/bash`, built |
 | 5.1.16 | `ftp.gnu.org/gnu/bash`, built |
@@ -371,12 +372,12 @@ Practical notes:
 - Cache the built interpreters keyed by exact version. The build is a minute or
   two and then never runs again until a version is added.
 - Pin the tarball `sha256`. CI downloads these and runs a compiler over them.
-- **Verify that 3.2 and 4.4 still compile on the runner's toolchain before
-  relying on this.** GCC 14 and Clang 15 promoted implicit function declarations
-  to errors, which breaks many older autoconf packages; `ubuntu-24.04` is still
-  on GCC 13, so warnings or a narrow `CFLAGS` relaxation may be needed. Record
-  any workaround in the CI setup script rather than dropping either check. This
-  has not been verified yet — treat it as the first thing the matrix work must
+- **Verify that 4.4 still compiles on the runner's toolchain before relying on
+  this.** GCC 14 and Clang 15 promoted implicit function declarations to errors,
+  which breaks many older autoconf packages; `ubuntu-24.04` is still on GCC 13,
+  so warnings or a narrow `CFLAGS` relaxation may be needed. Record any
+  workaround in the CI setup script rather than dropping the check. This has
+  not been verified yet — treat it as the first thing the matrix work must
   establish.
 - Run the complete portable gate in every matrix job even where an individual
   component, such as ShellCheck, is not Bash-version-sensitive. Consistency is
@@ -385,10 +386,10 @@ Practical notes:
   macOS-specific behavior stays covered by the existing OS matrix, which also
   supplies the newest-Bash end of the range through Homebrew.
 
-The runtime matrix proves jailbox works at or above 4.4. The separate 3.2 parser
-oracle proves that `jailbox` reaches its guard and that `install.sh` remains
-usable before modern Bash is installed. `dash` covers the non-Bash invocation
-path.
+The Linux runtime matrix proves jailbox works at or above 4.4. The macOS system
+Bash proves that `jailbox` reaches its guard and that `install.sh` remains
+parseable before modern Bash is installed. `dash` covers the non-Bash
+invocation path.
 
 Run `tests/run portable`. CI then runs that same complete gate across the Bash
 matrix. Runtime and editor coverage remains unchanged because this plan changes
