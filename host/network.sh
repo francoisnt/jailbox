@@ -238,7 +238,7 @@ ensure_internal_network() {
     internal_net="$1"
     podman network exists "$internal_net" 2>/dev/null && return 0
 
-    for attempt in $(seq 0 19); do
+    for ((attempt = 0; attempt < 20; attempt++)); do
         candidate=$(proxy_internal_subnet "$attempt")
         if podman network create --internal --disable-dns --subnet "$candidate" \
             --label "jailbox.project=$PROJECT_DIR" "$internal_net" >/dev/null 2>&1; then
