@@ -70,7 +70,7 @@ with_valid_launch_state() {
     state_dir=$(mktemp -d)
     LAUNCH_STATE_DIRS+=("$state_dir")
     JAILBOX_IMAGE="jailbox-test-image"
-    JAILBOX_NETWORK="jailbox-test-network"
+    declare -gA NETWORK_STATE=([selected_network]="jailbox-test-network")
     ROOTFS_FLAG=(--read-only)
     SSHD_RUNTIME_DIR="$state_dir/sshd"
     KEY_FILE="$state_dir/key"
@@ -104,7 +104,7 @@ test_container_launch_preconditions() {
     JAILBOX_IMAGE=""
     assert_launch_state_rejects "missing image state rejected" "initialized image state"
     with_valid_launch_state
-    JAILBOX_NETWORK=""
+    NETWORK_STATE[selected_network]=""
     assert_launch_state_rejects "missing network state rejected" "initialized network state"
     with_valid_launch_state
     ROOTFS_FLAG=()

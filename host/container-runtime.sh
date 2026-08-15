@@ -147,7 +147,7 @@ generate_minimal_gitconfig() {
 
 assert_container_launch_state() {
     [ -n "$JAILBOX_IMAGE" ] || die "internal error: container launch requires initialized image state"
-    [ -n "$JAILBOX_NETWORK" ] || die "internal error: container launch requires initialized network state"
+    [ -n "${NETWORK_STATE[selected_network]}" ] || die "internal error: container launch requires initialized network state"
     [ "${ROOTFS_FLAG[*]-}" = "--read-only" ] || \
         die "internal error: container launch requires read-only rootfs state"
     [ -n "$SSHD_RUNTIME_DIR" ] && [ -d "$SSHD_RUNTIME_DIR" ] || \
@@ -210,7 +210,7 @@ start_jailbox_container() {
         --label "jailbox.project=$PROJECT_DIR" \
         --replace \
         --userns=keep-id \
-        --network "$JAILBOX_NETWORK" \
+        --network "${NETWORK_STATE[selected_network]}" \
         "${ROOTFS_FLAG[@]}" \
         --tmpfs /tmp:rw,size=512m \
         --tmpfs /run:rw,size=64m \

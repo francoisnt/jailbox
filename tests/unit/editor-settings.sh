@@ -37,8 +37,10 @@ with_settings_file() {
     SETTINGS_DIR=$(mktemp -d)
     JAILBOX_EDITOR_USER_SETTINGS="$SETTINGS_DIR/User/settings.json"
     SSH_CONFIG="$SETTINGS_DIR/ssh_config"
-    PROXY_URL="http://proxy.test:8888"
-    PROXY_NO_PROXY="localhost,127.0.0.1"
+    declare -gA NETWORK_STATE=(
+        [proxy_url]="http://proxy.test:8888"
+        [no_proxy]="localhost,127.0.0.1"
+    )
 }
 
 test_egress_editor_settings_include_proxy() {
@@ -52,7 +54,7 @@ test_egress_editor_settings_include_proxy() {
     write_jailbox_editor_user_settings
 
     assert_contains "egress settings include SSH config" "$settings" "\"remote.SSH.configFile\": \"$SSH_CONFIG\""
-    assert_contains "egress settings include editor HTTP proxy" "$settings" "\"http.proxy\": \"$PROXY_URL\""
+    assert_contains "egress settings include editor HTTP proxy" "$settings" "\"http.proxy\": \"${NETWORK_STATE[proxy_url]}\""
     assert_contains "egress settings include terminal proxy env" "$settings" "\"terminal.integrated.env.linux\""
     rm -rf "$SETTINGS_DIR"
 }
@@ -77,11 +79,11 @@ test_smoke_machine_settings_include_proxy_in_egress() {
     local output
 
     EGRESS_ALLOW=(api.example.test)
-    PROXY_URL="http://proxy.test:8888"
+    declare -gA NETWORK_STATE=([proxy_url]="http://proxy.test:8888")
 
     output=$(editor_smoke_settings_json_object)
 
-    if grep -Fq "\"http.proxy\": \"$PROXY_URL\"" <<< "$output"; then
+    if grep -Fq "\"http.proxy\": \"${NETWORK_STATE[proxy_url]}\"" <<< "$output"; then
         pass "smoke machine settings include editor HTTP proxy in egress"
     else
         fail "smoke machine settings include editor HTTP proxy in egress"

@@ -24,7 +24,7 @@ editor_smoke_settings_json_object() {
     printf '{\n'
     printf '  "security.workspace.trust.enabled": false,\n'
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
-        printf '  "http.proxy": "%s",\n' "$PROXY_URL"
+        printf '  "http.proxy": "%s",\n' "${NETWORK_STATE[proxy_url]}"
     fi
     printf '  "task.allowAutomaticTasks": "on"\n'
     printf '}'
@@ -82,14 +82,14 @@ write_jailbox_editor_user_settings() {
         cat > "$settings_tmp" <<EOF_SETTINGS
 {
   "remote.SSH.configFile": "$SSH_CONFIG"$(editor_smoke_profile_settings_json),
-  "http.proxy": "$PROXY_URL",
+  "http.proxy": "${NETWORK_STATE[proxy_url]}",
   "terminal.integrated.env.linux": {
-    "HTTP_PROXY": "$PROXY_URL",
-    "HTTPS_PROXY": "$PROXY_URL",
-    "http_proxy": "$PROXY_URL",
-    "https_proxy": "$PROXY_URL",
-    "NO_PROXY": "$PROXY_NO_PROXY",
-    "no_proxy": "$PROXY_NO_PROXY"
+    "HTTP_PROXY": "${NETWORK_STATE[proxy_url]}",
+    "HTTPS_PROXY": "${NETWORK_STATE[proxy_url]}",
+    "http_proxy": "${NETWORK_STATE[proxy_url]}",
+    "https_proxy": "${NETWORK_STATE[proxy_url]}",
+    "NO_PROXY": "${NETWORK_STATE[no_proxy]}",
+    "no_proxy": "${NETWORK_STATE[no_proxy]}"
   }
 }
 EOF_SETTINGS

@@ -134,19 +134,19 @@ test_render_tinyproxy_conf() {
 test_configure_proxy_env_preserves_precomputed_url() {
     NETWORK_NAME="jailbox-unittest-net"
     PROXY_NAME="proxy-name"
-    PROXY_URL="http://10.240.5.2:8888"
+    NETWORK_STATE[proxy_url]="http://10.240.5.2:8888"
 
     configure_proxy_env
 
-    if [ "$PROXY_URL" = "http://10.240.5.2:8888" ]; then
+    if [ "${NETWORK_STATE[proxy_url]}" = "http://10.240.5.2:8888" ]; then
         pass "proxy env keeps static proxy URL"
     else
-        fail "proxy env keeps static proxy URL (got $PROXY_URL)"
+        fail "proxy env keeps static proxy URL (got ${NETWORK_STATE[proxy_url]})"
     fi
-    if [ "${SSH_SESSION_ENV[0]}" = "HTTP_PROXY=http://10.240.5.2:8888" ]; then
+    if [ "${NETWORK_SSH_SESSION_ENV[0]}" = "HTTP_PROXY=http://10.240.5.2:8888" ]; then
         pass "SSH session env uses static proxy URL"
     else
-        fail "SSH session env uses static proxy URL (got ${SSH_SESSION_ENV[0]})"
+        fail "SSH session env uses static proxy URL (got ${NETWORK_SSH_SESSION_ENV[0]})"
     fi
 }
 
@@ -154,15 +154,15 @@ test_configure_proxy_env_computes_static_url() {
     PROJECT_HASH="abcdef123456"
     NETWORK_NAME="jailbox-unittest-net"
     PROXY_NAME="proxy-name"
-    PROXY_URL=""
+    NETWORK_STATE[proxy_url]=""
     EGRESS_ALLOW=(api.example.test)
 
     configure_proxy_env
 
-    if [[ "$PROXY_URL" =~ ^http://10\.240\.[0-9]+\.2:8888$ ]]; then
+    if [[ "${NETWORK_STATE[proxy_url]}" =~ ^http://10\.240\.[0-9]+\.2:8888$ ]]; then
         pass "proxy env computes static proxy URL in egress mode"
     else
-        fail "proxy env computes static proxy URL in egress mode (got $PROXY_URL)"
+        fail "proxy env computes static proxy URL in egress mode (got ${NETWORK_STATE[proxy_url]})"
     fi
 }
 

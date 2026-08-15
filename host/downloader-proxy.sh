@@ -13,9 +13,9 @@ configure_downloader_proxy() {
     local current_proxy_state expected_proxy_state
 
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
-        expected_proxy_state="proxy = \"$PROXY_URL\"
-http_proxy = $PROXY_URL
-https_proxy = $PROXY_URL"
+        expected_proxy_state="proxy = \"${NETWORK_STATE[proxy_url]}\"
+http_proxy = ${NETWORK_STATE[proxy_url]}
+https_proxy = ${NETWORK_STATE[proxy_url]}"
         current_proxy_state=$(ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" 'bash -s' <<'REMOTE' 2>/dev/null || true
 read_managed_line() {
     local file="$1"
@@ -38,7 +38,7 @@ REMOTE
 
         echo "🔧 Configuring downloader proxy compatibility..."
         ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-            "PROXY_URL=$(printf '%q' "$PROXY_URL") bash -s" <<'REMOTE'
+            "PROXY_URL=$(printf '%q' "${NETWORK_STATE[proxy_url]}") bash -s" <<'REMOTE'
 jailbox-manage-proxy enable "$PROXY_URL"
 REMOTE
     else

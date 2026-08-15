@@ -146,9 +146,9 @@ REMOTE
 check_internal_network_flag() {
     local internal_value
 
-    internal_value=$(podman network inspect "$JAILBOX_INTERNAL_NETWORK" --format '{{.Internal}}' 2>/dev/null || true)
+    internal_value=$(podman network inspect "${NETWORK_STATE[internal_network]}" --format '{{.Internal}}' 2>/dev/null || true)
     if [ "$internal_value" != "true" ]; then
-        echo "  ⚠️  Egress network is not marked internal: $JAILBOX_INTERNAL_NETWORK"
+        echo "  ⚠️  Egress network is not marked internal: ${NETWORK_STATE[internal_network]}"
         WARNINGS=$((WARNINGS + 1))
     fi
 }
@@ -168,7 +168,7 @@ check_proxy_env_in_session() {
 check_downloader_proxy_config() {
     local proxy_url
 
-    proxy_url="$PROXY_URL"
+    proxy_url="${NETWORK_STATE[proxy_url]}"
     if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "PROXY_URL='$proxy_url' bash -s" <<'REMOTE' 2>/dev/null
 set -euo pipefail
 

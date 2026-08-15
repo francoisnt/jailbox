@@ -3,19 +3,30 @@
 # shellcheck source=host/project-id.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
 
+declare -A NETWORK_STATE=(
+    [selected_network]=""
+    [internal_network]=""
+    [proxy_url]=""
+    [no_proxy]=""
+    [filter_file]=""
+    [proxy_conf_file]=""
+)
+NETWORK_SSH_SESSION_ENV=()
+
 configure_network() {
-    FILTER_FILE=""
-    PROXY_CONF_FILE=""
+    NETWORK_STATE[filter_file]=""
+    NETWORK_STATE[proxy_conf_file]=""
+    NETWORK_STATE[internal_network]=""
 
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         configure_proxy_network
     else
         podman network exists "$NETWORK_NAME" 2>/dev/null || \
             podman network create --label "jailbox.project=$PROJECT_DIR" "$NETWORK_NAME"
-        JAILBOX_NETWORK="$NETWORK_NAME"
-        SSH_SESSION_ENV=()
-        PROXY_URL=""
-        PROXY_NO_PROXY=""
+        NETWORK_STATE[selected_network]="$NETWORK_NAME"
+        NETWORK_SSH_SESSION_ENV=()
+        NETWORK_STATE[proxy_url]=""
+        NETWORK_STATE[no_proxy]=""
     fi
 }
 
@@ -35,8 +46,8 @@ configure_proxy_network() {
     local internal_net external_net effective_egress_allow proxy_internal_ip proxy_internal_subnet
 
     effective_egress_allowlist effective_egress_allow
-    FILTER_FILE="$SSH_DIR/tinyproxy-filter"
-    render_tinyproxy_filter "$FILTER_FILE" "${effective_egress_allow[@]}"
+    NETWORK_STATE[filter_file]="$SSH_DIR/tinyproxy-filter"
+    render_tinyproxy_filter "${NETWORK_STATE[filter_file]}" "${effective_egress_allow[@]}"
 
     echo "📦 Building proxy image..."
     podman build -t "$PROXY_IMAGE" -f "$SCRIPT_DIR/container/tinyproxy/Containerfile" "$SCRIPT_DIR/container/tinyproxy"
@@ -55,8 +66,8 @@ configure_proxy_network() {
     [ -n "$proxy_internal_subnet" ] || die "could not determine subnet of internal network $internal_net"
     proxy_internal_ip=$(proxy_ip_for_subnet "$proxy_internal_subnet")
 
-    PROXY_CONF_FILE="$SSH_DIR/tinyproxy.conf"
-    render_tinyproxy_conf "$PROXY_CONF_FILE" "$proxy_internal_subnet"
+    NETWORK_STATE[proxy_conf_file]="$SSH_DIR/tinyproxy.conf"
+    render_tinyproxy_conf "${NETWORK_STATE[proxy_conf_file]}" "$proxy_internal_subnet"
 
     if podman container exists "$PROXY_NAME" 2>/dev/null; then
         echo "Replacing existing proxy container: $PROXY_NAME"
@@ -81,13 +92,13 @@ configure_proxy_network() {
         --tmpfs /run:rw,noexec,nosuid,nodev \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
-        -v "$FILTER_FILE:/etc/tinyproxy/filter:ro,Z" \
-        -v "$PROXY_CONF_FILE:/etc/tinyproxy/tinyproxy.conf:ro,Z" \
+        -v "${NETWORK_STATE[filter_file]}:/etc/tinyproxy/filter:ro,Z" \
+        -v "${NETWORK_STATE[proxy_conf_file]}:/etc/tinyproxy/tinyproxy.conf:ro,Z" \
         "$PROXY_IMAGE"
 
-    JAILBOX_NETWORK="$internal_net"
-    JAILBOX_INTERNAL_NETWORK="$internal_net"
-    PROXY_URL="http://$proxy_internal_ip:8888"
+    NETWORK_STATE[selected_network]="$internal_net"
+    NETWORK_STATE[internal_network]="$internal_net"
+    NETWORK_STATE[proxy_url]="http://$proxy_internal_ip:8888"
     configure_proxy_env
 }
 
@@ -133,32 +144,32 @@ effective_egress_allowlist() {
 configure_proxy_env() {
     local existing_subnet
 
-    # Single source for the proxy URL and no-proxy list. All other modules
-    # (editor settings, downloader bootstrap) reference these globals.
-    if [ -z "$PROXY_URL" ] && [ -n "${EGRESS_ALLOW[*]-}" ]; then
+    # Single source for the proxy URL and no-proxy list. Other modules read
+    # these values from the network-owned state map.
+    if [ -z "${NETWORK_STATE[proxy_url]}" ] && [ -n "${EGRESS_ALLOW[*]-}" ]; then
         # ssh-config runs without launching: prefer the live network's subnet
         # (it may sit on a collision-fallback candidate), else candidate 0.
         # podman may be absent on this path; internal_network_subnet then
         # returns empty and the hash candidate is used.
         existing_subnet=$(internal_network_subnet "${NETWORK_NAME}-internal")
         if [ -n "$existing_subnet" ]; then
-            PROXY_URL="http://$(proxy_ip_for_subnet "$existing_subnet"):8888"
+            NETWORK_STATE[proxy_url]="http://$(proxy_ip_for_subnet "$existing_subnet"):8888"
         else
-            PROXY_URL="http://$(proxy_internal_ip):8888"
+            NETWORK_STATE[proxy_url]="http://$(proxy_internal_ip):8888"
         fi
     fi
-    [ -n "$PROXY_URL" ] || PROXY_URL="http://$PROXY_NAME:8888"
-    PROXY_NO_PROXY="localhost,127.0.0.1"
+    [ -n "${NETWORK_STATE[proxy_url]}" ] || NETWORK_STATE[proxy_url]="http://$PROXY_NAME:8888"
+    NETWORK_STATE[no_proxy]="localhost,127.0.0.1"
     # Rendered into the generated SSH Host block via SetEnv. sshd creates fresh
     # session environments, so client-side SetEnv is the reliable way to expose
     # proxy settings to editor terminals and tools.
-    SSH_SESSION_ENV=(
-        "HTTP_PROXY=$PROXY_URL"
-        "HTTPS_PROXY=$PROXY_URL"
-        "http_proxy=$PROXY_URL"
-        "https_proxy=$PROXY_URL"
-        "NO_PROXY=$PROXY_NO_PROXY"
-        "no_proxy=$PROXY_NO_PROXY"
+    NETWORK_SSH_SESSION_ENV=(
+        "HTTP_PROXY=${NETWORK_STATE[proxy_url]}"
+        "HTTPS_PROXY=${NETWORK_STATE[proxy_url]}"
+        "http_proxy=${NETWORK_STATE[proxy_url]}"
+        "https_proxy=${NETWORK_STATE[proxy_url]}"
+        "NO_PROXY=${NETWORK_STATE[no_proxy]}"
+        "no_proxy=${NETWORK_STATE[no_proxy]}"
     )
 }
 

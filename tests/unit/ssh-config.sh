@@ -32,7 +32,7 @@ test_paths_with_spaces_are_quoted() {
     MANAGED_USER="jailbox"
     KEY_FILE="/tmp/jailbox path/state/key"
     KNOWN_HOSTS="/tmp/jailbox path/state/known_hosts"
-    SSH_SESSION_ENV=()
+    NETWORK_SSH_SESSION_ENV=()
 
     output=$(write_ssh_host_block)
 
@@ -52,7 +52,7 @@ test_quotes_inside_paths_are_escaped() {
     MANAGED_USER="jailbox"
     KEY_FILE='/tmp/jailbox "quoted"/state/key'
     KNOWN_HOSTS='/tmp/jailbox "quoted"/state/known_hosts'
-    SSH_SESSION_ENV=()
+    NETWORK_SSH_SESSION_ENV=()
 
     output=$(write_ssh_host_block)
 
