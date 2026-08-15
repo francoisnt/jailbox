@@ -49,8 +49,8 @@ holds the full reasoning, the guard, and the version matrix.
 | `"${a[@]}"` on an empty array under `set -u` | **4.4** |
 
 The plan is to enforce the selected floor with a guard at the top of `jailbox`.
-Planned CI coverage builds 4.4, 5.0, 5.1, and 5.2 from source and launches the
-complete portable gate with each. Bash 4.4 becomes the supported floor only if
+Planned CI coverage builds 4.4, 5.0, 5.1, 5.2, and 5.3 from source and launches
+the complete portable gate with each. Bash 4.4 becomes the supported floor only if
 that coverage is practical; otherwise the plan selects the oldest later series
 CI can exercise reliably and updates the guard and documentation before landing.
 
