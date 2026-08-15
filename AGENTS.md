@@ -43,9 +43,11 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
 - Host modules and the portable gate require Bash 4.4 or newer. The `jailbox`
   entrypoint before its version guard must remain parseable by macOS Bash 3.2,
   and `install.sh` must remain compatible with Bash 3.2.
-- Under `set -u`, expand arrays that may be empty with a Bash 3.2-safe form such
-  as `${array[@]+"${array[@]}"}`. For an array whose valid elements cannot be
-  empty, test it with `${array[*]-}` instead of `${#array[@]}`.
+- In Bash 4.4-or-newer code, expand possibly empty arrays normally with
+  `"${array[@]}"`. Keep the Bash 3.2-safe `${array[@]+"${array[@]}"}` form in
+  `install.sh` and any code explicitly required to support Bash 3.2. For an
+  array whose valid elements cannot be empty, test it with `${array[*]-}`
+  instead of `${#array[@]}`.
 - `container/setup.sh` and `container/entrypoint.sh` are POSIX `sh`; do not add
   Bash syntax to them. `container/downloader-proxy-manager.sh` is Bash.
 - Quote expansions, use explicit error handling, and avoid evaluating project

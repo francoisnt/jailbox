@@ -251,7 +251,7 @@ check_proxy_egress_allowed() {
 egress_validation_domain() {
     local domain
 
-    for domain in "${EGRESS_ALLOW[@]+"${EGRESS_ALLOW[@]}"}"; do
+    for domain in "${EGRESS_ALLOW[@]}"; do
         case "$domain" in
             ""|*[\(\)\*\+\?\|\[\]\{\}]*|*"'"*|*\"*)
                 continue

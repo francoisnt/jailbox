@@ -34,10 +34,7 @@ configure_proxy_network() {
     # HTTPS_PROXY env, curlrc, wgetrc) to reach allowed hosts.
     local internal_net external_net effective_egress_allow proxy_internal_ip proxy_internal_subnet
 
-    effective_egress_allow=()
-    while IFS= read -r domain; do
-        effective_egress_allow+=("$domain")
-    done < <(effective_egress_allowlist)
+    mapfile -t effective_egress_allow < <(effective_egress_allowlist)
     FILTER_FILE="$SSH_DIR/tinyproxy-filter"
     render_tinyproxy_filter "$FILTER_FILE" "${effective_egress_allow[@]}"
 
@@ -95,7 +92,7 @@ configure_proxy_network() {
 }
 
 effective_egress_allowlist() {
-    local hosts=("${EGRESS_ALLOW[@]+"${EGRESS_ALLOW[@]}"}")
+    local hosts=("${EGRESS_ALLOW[@]}")
 
     if [[ -n "$EDITOR_BIN" ]]; then
         case "$(basename "$EDITOR_BIN")" in
@@ -118,7 +115,7 @@ effective_egress_allowlist() {
         esac
     fi
 
-    printf '%s\n' "${hosts[@]+"${hosts[@]}"}" | awk 'NF && !seen[$0]++'
+    printf '%s\n' "${hosts[@]}" | awk 'NF && !seen[$0]++'
 }
 
 configure_proxy_env() {
