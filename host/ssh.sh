@@ -1,5 +1,23 @@
 # SSH key/config generation and readiness waiting.
 
+SSH_DIR=""
+SSH_CONFIG=""
+KNOWN_HOSTS=""
+KEY_FILE=""
+SSHD_RUNTIME_DIR=""
+
+initialize_ssh_state() {
+    local state_root
+
+    state_root="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
+    SSH_DIR="$state_root/projects/$PROJECT_HASH"
+    SSH_CONFIG="$SSH_DIR/ssh_config"
+    KNOWN_HOSTS="$SSH_DIR/known_hosts"
+    KEY_FILE="$SSH_DIR/key"
+    # Backing state is bind-mounted into the container's ephemeral runtime.
+    SSHD_RUNTIME_DIR="$SSH_DIR/sshd-runtime"
+}
+
 setup_ssh_keys() {
     mkdir -p "$SSH_DIR"
     chmod 700 "$SSH_DIR"

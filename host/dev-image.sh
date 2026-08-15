@@ -1,5 +1,17 @@
 # Dev image discovery, validation, and wrapper-image build.
 
+PROJECT_DEV_IMAGE=""
+JAILBOX_IMAGE=""
+USABLE_SHELL=""
+PKG_MANAGER=""
+
+initialize_dev_image_state() {
+    PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
+    JAILBOX_IMAGE="${PROJECT_RESOURCE_PREFIX}-image"
+    USABLE_SHELL=""
+    PKG_MANAGER=""
+}
+
 # Validation probes execute the dev image (including any entrypoint it
 # defines) before jailbox's runtime hardening applies. The probes only run
 # short shell one-liners, so constrain them: no network, no capabilities, no

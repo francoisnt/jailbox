@@ -44,37 +44,6 @@ resolve_script_path() {
 SCRIPT_DIR="$(resolve_script_path)"
 PROJECT_DIR=$(pwd -P)
 
-# Image, container, volume, and network names
-PROJECT_HASH=""
-PROJECT_RESOURCE_PREFIX=""
-PROJECT_DEV_IMAGE=""
-JAILBOX_IMAGE=""
-CONTAINER_NAME=""
-PROXY_NAME=""
-PROXY_IMAGE=""
-VOLUME_NAME=""
-NETWORK_NAME=""
-
-# Runtime state populated by modules
-MANAGED_USER="jailbox"
-REMOTE_PATH="/home/jailbox/project"
-EDITOR_BIN=""
-LOCAL_PORT=""
-MY_UID=""
-USABLE_SHELL=""
-PKG_MANAGER=""
-SSH_DIR=""
-SSH_CONFIG=""
-KNOWN_HOSTS=""
-KEY_FILE=""
-SSHD_RUNTIME_DIR=""
-JAILBOX_EDITOR_USER_DATA=""
-JAILBOX_EDITOR_USER_SETTINGS=""
-READONLY_PATHS=()
-READONLY_MOUNTS=()
-GITCONFIG_MOUNT=()
-ROOTFS_FLAG=()
-
 # shellcheck source=host/public-api.sh
 source "$SCRIPT_DIR/host/public-api.sh"
 # Defaults overridden by jailbox.conf
@@ -148,6 +117,9 @@ run_uninstall() {
 
 initialize_common_state() {
     initialize_project_names
+    initialize_dev_image_state
+    initialize_ssh_state
+    initialize_editor_state
     configure_readonly_paths
 }
 

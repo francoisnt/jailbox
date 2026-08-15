@@ -1,5 +1,16 @@
 # Editor launch and generated Remote SSH profile config.
 
+JAILBOX_EDITOR_USER_DATA=""
+JAILBOX_EDITOR_USER_SETTINGS=""
+
+initialize_editor_state() {
+    local state_root
+
+    state_root="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
+    JAILBOX_EDITOR_USER_DATA="$state_root/editor-profiles/$PROJECT_HASH"
+    JAILBOX_EDITOR_USER_SETTINGS="$JAILBOX_EDITOR_USER_DATA/User/settings.json"
+}
+
 open_editor() {
     if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" true 2>/dev/null; then
         echo "Error: jailbox could not verify SSH before opening the editor." >&2

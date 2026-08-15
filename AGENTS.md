@@ -56,6 +56,11 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   subscripts before lookup. Never use an untrusted subscript in an arithmetic
   context where Bash may expand it more than once.
 - Keep functions focused and follow the existing formatting and naming style.
+- Declare mutable host state in the module that owns its lifecycle. Keep shared
+  project/resource identity in `host/common.sh`, image state in
+  `host/dev-image.sh`, SSH state in `host/ssh.sh`, editor state in
+  `host/editor.sh`, network state in `host/network.sh`, and mount/runtime state
+  in `host/container-runtime.sh`.
 
 ## Security invariants
 

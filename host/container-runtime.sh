@@ -1,5 +1,11 @@
 # Read-only mounts, persistent home, cleanup, and container launch.
 
+READONLY_PATHS=()
+READONLY_MOUNTS=()
+GITCONFIG_MOUNT=()
+ROOTFS_FLAG=()
+VOLUME_PATH=""
+
 configure_readonly_paths() {
     READONLY_PATHS=(
         "Containerfile"

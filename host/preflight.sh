@@ -1,5 +1,7 @@
 # CLI parsing and host/tool validation.
 
+EDITOR_BIN=""
+
 parse_args() {
     if ! is_cli_flag_allowed "${1:-}"; then
         usage >&2

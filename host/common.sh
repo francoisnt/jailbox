@@ -5,6 +5,18 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
 
 declare -A CONFIG_SEEN_KEYS=()
 
+PROJECT_HASH=""
+PROJECT_RESOURCE_PREFIX=""
+CONTAINER_NAME=""
+PROXY_NAME=""
+PROXY_IMAGE=""
+VOLUME_NAME=""
+NETWORK_NAME=""
+LOCAL_PORT=""
+MY_UID=""
+MANAGED_USER="jailbox"
+REMOTE_PATH="/home/jailbox/project"
+
 usage() {
     local flag
 
@@ -260,31 +272,16 @@ project_path_hash() {
 }
 
 initialize_project_names() {
-    local state_root
-
     PROJECT_HASH=$(project_path_hash)
     # Podman resources carry the project name for readability; the hash of
     # the full path remains the identity. State directories below stay keyed
     # on the hash alone.
     PROJECT_RESOURCE_PREFIX=$(jailbox_resource_prefix_for_path "$PROJECT_DIR")
-    PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
-    JAILBOX_IMAGE="${PROJECT_RESOURCE_PREFIX}-image"
     CONTAINER_NAME="${PROJECT_RESOURCE_PREFIX}"
     PROXY_NAME="${PROJECT_RESOURCE_PREFIX}-proxy"
     PROXY_IMAGE="${PROJECT_RESOURCE_PREFIX}-proxy"
     VOLUME_NAME="${PROJECT_RESOURCE_PREFIX}-home"
     NETWORK_NAME="${PROJECT_RESOURCE_PREFIX}-net"
-    state_root="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
-    SSH_DIR="$state_root/projects/$PROJECT_HASH"
-    SSH_CONFIG="$SSH_DIR/ssh_config"
-    KNOWN_HOSTS="$SSH_DIR/known_hosts"
-    KEY_FILE="$SSH_DIR/key"
-    # Host-side backing store for sshd runtime state. It is bind-mounted to
-    # /run/jailbox-sshd so the container path remains ephemeral daemon state,
-    # while ownership still matches the non-root keep-id entrypoint.
-    SSHD_RUNTIME_DIR="$SSH_DIR/sshd-runtime"
-    JAILBOX_EDITOR_USER_DATA="$state_root/editor-profiles/$PROJECT_HASH"
-    JAILBOX_EDITOR_USER_SETTINGS="$JAILBOX_EDITOR_USER_DATA/User/settings.json"
 }
 
 initialize_runtime_ids() {

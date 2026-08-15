@@ -9,6 +9,8 @@ source "$JAILBOX_DIR/host/public-api.sh"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/common.sh"
 # shellcheck disable=SC1091
+source "$JAILBOX_DIR/host/ssh.sh"
+# shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/container-runtime.sh"
 
 PASSED=0
@@ -126,6 +128,7 @@ with_project_state() {
     export HOME XDG_CONFIG_HOME XDG_STATE_HOME GIT_CONFIG_NOSYSTEM
     MANAGED_USER="jailbox"
     initialize_project_names
+    initialize_ssh_state
 }
 
 cleanup_project_state() {
