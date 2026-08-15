@@ -17,8 +17,15 @@ install_portable_tools() {
                 echo "Error: Homebrew is required to install portable test dependencies" >&2
                 return 1
             }
-            HOMEBREW_NO_AUTO_UPDATE=1 brew install coreutils shellcheck
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install bash coreutils shellcheck
+            prepend_path "$(brew --prefix bash)/bin"
             prepend_path "$(brew --prefix coreutils)/libexec/gnubin"
+            command -v bash
+            bash --version | head -1
+            bash -c '(( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) ))' || {
+                echo "Error: Bash 4.4 or newer is required" >&2
+                return 1
+            }
             ;;
         Linux)
             packages=()

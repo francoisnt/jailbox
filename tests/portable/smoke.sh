@@ -44,6 +44,21 @@ syntax_check() {
     sh -n container/setup.sh container/entrypoint.sh
 }
 
+reject_macos_system_bash() {
+    local output status
+
+    [[ "$(uname -s)" == "Darwin" ]] || return 0
+
+    set +e
+    output="$(/bin/bash jailbox --help 2>&1)"
+    status="$?"
+    set -e
+
+    [[ "$status" -ne 0 ]]
+    grep -Fq "Error: jailbox requires Bash 4.4 or newer (found 3.2." <<<"$output"
+    grep -Fq "Install it on macOS with: brew install bash" <<<"$output"
+}
+
 build_release_tarball() {
     section "release tarball"
     bash scripts/build-tarball.sh v9.9.9
@@ -88,6 +103,7 @@ refuse_unmanaged_update_target() {
 
 main() {
     syntax_check
+    reject_macos_system_bash
     build_release_tarball
     smoke_install_update_uninstall
     refuse_unmanaged_update_target

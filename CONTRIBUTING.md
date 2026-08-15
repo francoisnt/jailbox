@@ -27,6 +27,11 @@ to it drive release version suggestions (see `scripts/release.sh --help`).
 
 ## Linting and tests
 
+Host orchestration and the portable test gate require Bash 4.4 or newer. On
+macOS, install it with `brew install bash`. The `jailbox` entrypoint remains
+Bash 3.2-parseable through its version guard, and `install.sh` remains Bash
+3.2-compatible.
+
 ```bash
 tests/run portable   # ShellCheck, unit tests, packaging, and installer lifecycle
 tests/run runtime    # Container security and headless CLI behavior (Podman)

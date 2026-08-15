@@ -1,4 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
+if [ "${BASH_VERSINFO[0]}" -lt 4 ] || \
+    { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 4 ]; }; then
+    printf 'Error: jailbox requires Bash 4.4 or newer (found %s).\n' \
+        "${BASH_VERSION%%(*}" >&2
+    printf 'Install it on macOS with: brew install bash\n' >&2
+    exit 1
+fi
 # =============================================================================
 # jailbox — Sandboxed AI Development Environment
 # =============================================================================

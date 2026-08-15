@@ -37,10 +37,10 @@ Step 2 is what separates a supported version from a hopeful one. Without a
 guard, an unsupported version does not fail — it half-works, and fails later
 somewhere unrelated.
 
-## Bash — 4.4 candidate, not yet enforced
+## Bash — 4.4
 
 Derived in [modern-bash-runtime-plan.md](modern-bash-runtime-plan.md), which
-holds the full reasoning, the guard, and the version matrix.
+holds the full reasoning and implementation plan.
 
 | Feature | Introduced |
 | --- | --- |
@@ -48,11 +48,10 @@ holds the full reasoning, the guard, and the version matrix.
 | Namerefs (`local -n`) | 4.3 |
 | `"${a[@]}"` on an empty array under `set -u` | **4.4** |
 
-The plan is to enforce the selected floor with a guard at the top of `jailbox`.
-Planned CI coverage builds 4.4, 5.0, 5.1, 5.2, and 5.3 from source and launches
-the complete portable gate with each. Bash 4.4 becomes the supported floor only if
-that coverage is practical; otherwise the plan selects the oldest later series
-CI can exercise reliably and updates the guard and documentation before landing.
+The guard at the top of `jailbox` enforces the floor before loading host
+modules or project configuration. CI runs the complete portable gate with
+Bash 4.4 and the current runner Bash; macOS CI also verifies that its system
+Bash 3.2 receives the documented error.
 
 ## Podman — 4.0, not yet enforced
 
@@ -155,8 +154,8 @@ decision, not an omission.
 
 Floors are claims, and claims need evidence.
 
-- **Bash:** build each supported version from source, run the portable gate
-  under each. See the version matrix in the Bash plan.
+- **Bash:** build the minimum version from source and run the portable gate
+  under it and the current runner Bash.
 - **Podman:** harder, since Podman is not a self-contained build. Testing the
   candidate likely means a runner image or a package archive. If 4.0 cannot be
   exercised reasonably, choose and document the oldest version CI can test

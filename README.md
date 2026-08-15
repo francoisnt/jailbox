@@ -24,7 +24,8 @@ its reach into your machine.
 
 ## Requirements
 
-- **Linux** with **Podman** (rootless preferred)
+- **Linux or macOS** with **Podman** (rootless preferred)
+- **Bash 4.4 or newer** (`brew install bash` on macOS)
 - `podman`, `ssh`, `ssh-keygen`
 - VS Code or VSCodium with the **Remote - SSH** extension (for the editor
   workflow)
@@ -65,6 +66,10 @@ This removes the installed files and the `jailbox` command. Project
 containers and images are left in place; remove them with `jailbox --clean`
 per project (or `podman rm` / `podman rmi`) beforehand if you no longer
 want them.
+
+If modern Bash is unavailable, run the installed copy of
+`install.sh --uninstall` directly; the installer remains compatible with the
+macOS system Bash 3.2.
 
 ---
 
@@ -130,6 +135,8 @@ previous install cleanly.
 **Uninstall**: `jailbox --uninstall` (delegates to the installed copy's
 `install.sh --uninstall`, so the uninstall logic always matches the
 installed version).
+This command requires Bash 4.4 or newer; without it, run the installed
+`install.sh --uninstall` directly.
 
 ---
 

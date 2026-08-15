@@ -44,22 +44,17 @@ host modules, reject Bash versions older than 4.4. Keep this small part of the
 entrypoint parseable by Bash 3.2 so macOS system Bash prints the useful error
 instead of a syntax error.
 
-Use two checks. First reject non-Bash shells and Bash versions below 4 using
-only `${BASH_VERSINFO:-0}`. Only after that check may the guard read
-`${BASH_VERSINFO[1]}` to reject Bash 4.0 through 4.3. This ordering lets `sh`
-and `dash` exit with the documented error instead of a `Bad substitution`.
-
-The Bash 4.0 through 4.3 rejection branch is not executed in CI because no
-supported interpreter uses it. Its simple comparison is reviewed directly
-rather than adding another source-built Bash fixture.
+Use a Bash 3.2-compatible comparison of `BASH_VERSINFO[0]` and
+`BASH_VERSINFO[1]` to reject versions below 4.4.
 
 Do not adopt Bash 4.4-only syntax in `jailbox` itself. Host modules may use it
 because they are sourced only after the guard passes.
 
 `install.sh` remains unchanged. It continues to use `/bin/bash` and remain
-compatible with macOS Bash 3.2. The installer and the installed runtime have
-different requirements: installation, update, and uninstall can run before a
-modern Bash is installed, while running `jailbox` requires Bash 4.4 or newer.
+compatible with macOS Bash 3.2. Running `jailbox`, including
+`jailbox --uninstall`, requires Bash 4.4 or newer. A user without modern Bash
+can uninstall directly with the installed `install.sh --uninstall`; document
+that fallback in the README.
 
 ### 2. Update macOS CI
 
@@ -83,8 +78,8 @@ Run the complete portable gate in two Linux environments:
 
 The Bash 4.4 job builds and may cache the pinned upstream 4.4.18 release. Its
 `bin` directory must be written to `$GITHUB_PATH`, and the gate must print
-`command -v bash` and `bash --version` before running so a path error cannot
-silently test the runner Bash instead.
+`command -v bash` and `bash --version` immediately before running so a path
+error cannot silently test the runner Bash instead.
 
 If Bash 4.4.18 cannot be maintained on the CI runner without source patches or
 fragile workarounds, select the oldest practical later version and update the
@@ -94,11 +89,8 @@ Do not create a matrix for every intermediate Bash release. The minimum catches
 use of syntax newer than the contract, while the current runner catches modern
 behavior and upstream drift.
 
-Verify:
-
-- `sh jailbox` and `dash jailbox` fail with the documented Bash requirement
-  rather than shell parser noise.
-- `tests/run portable` passes with Bash 4.4 and the current runner Bash.
+Verify that `tests/run portable` passes with Bash 4.4 and the current runner
+Bash. The macOS smoke assertion provides the unsupported-runtime test.
 
 Runtime and editor gate coverage remains unchanged. Those gates exercise
 Podman and editor integration, not the supported Bash range.
@@ -120,11 +112,6 @@ Update the relevant documentation:
 Keep `${array[@]+"${array[@]}"}` where Bash 3.2 compatibility still applies.
 Keep the version-independent `${array[*]-}` guidance for testing whether an
 array whose elements cannot be empty has any entries.
-
-Add a security rule to `AGENTS.md`: never use a configuration-derived or other
-untrusted associative-array subscript in an arithmetic context where older
-Bash versions may expand it more than once. Add an adversarial regression test
-when associative arrays are introduced.
 
 Do not store the minimum Bash version in `versions.env`; that file contains
 moving external version pins, while the Bash floor is a stable runtime
@@ -151,6 +138,9 @@ review.
 - Supporting Bash older than 4.4 for host orchestration.
 - Adding a launcher, re-exec mechanism, or `JAILBOX_BASH` override.
 - Changing the runtime or editor test platforms.
+- Testing Bash 4.0 through 4.3 or non-Bash interpreters.
+- Adding associative-array security guidance before associative arrays are
+  introduced.
 
 ## Verification
 

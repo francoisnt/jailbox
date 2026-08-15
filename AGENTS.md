@@ -40,8 +40,9 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
 
 - Use Bash for `jailbox`, `host/`, `scripts/`, and tests. Preserve
   `set -euo pipefail` in executable Bash scripts.
-- Host-side code and the portable gate must work with macOS Bash 3.2 as well as
-  current Linux Bash. Avoid newer-only features such as namerefs and `mapfile`.
+- Host modules and the portable gate require Bash 4.4 or newer. The `jailbox`
+  entrypoint before its version guard must remain parseable by macOS Bash 3.2,
+  and `install.sh` must remain compatible with Bash 3.2.
 - Under `set -u`, expand arrays that may be empty with a Bash 3.2-safe form such
   as `${array[@]+"${array[@]}"}`. For an array whose valid elements cannot be
   empty, test it with `${array[*]-}` instead of `${#array[@]}`.
