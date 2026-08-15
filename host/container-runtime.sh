@@ -145,6 +145,24 @@ generate_minimal_gitconfig() {
     chmod 600 "$gitconfig_file"
 }
 
+assert_container_launch_state() {
+    [ -n "$JAILBOX_IMAGE" ] || die "internal error: container launch requires initialized image state"
+    [ -n "$JAILBOX_NETWORK" ] || die "internal error: container launch requires initialized network state"
+    [ "${ROOTFS_FLAG[*]-}" = "--read-only" ] || \
+        die "internal error: container launch requires read-only rootfs state"
+    [ -n "$SSHD_RUNTIME_DIR" ] && [ -d "$SSHD_RUNTIME_DIR" ] || \
+        die "internal error: container launch requires initialized SSH runtime state"
+    [ -n "$KEY_FILE" ] && [ -f "$KEY_FILE.pub" ] || \
+        die "internal error: container launch requires initialized SSH credentials"
+    [[ "$LOCAL_PORT" =~ ^[0-9]+$ ]] && \
+        [ "$LOCAL_PORT" -ge 1 ] && [ "$LOCAL_PORT" -le 65535 ] || \
+        die "internal error: container launch requires a valid SSH port"
+    [ -n "$CONTAINER_NAME" ] && [ -n "$VOLUME_NAME" ] || \
+        die "internal error: container launch requires initialized resource names"
+    [ -n "$PROJECT_DIR" ] && [ -n "$REMOTE_PATH" ] || \
+        die "internal error: container launch requires initialized project paths"
+}
+
 clean_jailbox() {
     echo "🧹 Cleaning up..."
 
@@ -172,6 +190,8 @@ ensure_home_volume() {
 }
 
 start_jailbox_container() {
+    assert_container_launch_state
+
     if podman container exists "$CONTAINER_NAME" 2>/dev/null; then
         echo "Replacing existing jailbox container: $CONTAINER_NAME"
     fi

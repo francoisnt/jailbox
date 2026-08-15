@@ -13,6 +13,7 @@ source "$JAILBOX_DIR/host/container-runtime.sh"
 
 PASSED=0
 FAILED=0
+LAUNCH_STATE_DIRS=()
 
 pass() { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail() { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
@@ -49,6 +50,71 @@ assert_no_gitconfig_mount() {
             pass "$name"
             ;;
     esac
+}
+
+assert_launch_state_rejects() {
+    local name="$1" expected="$2" output
+
+    if output=$(assert_container_launch_state 2>&1); then
+        fail "$name"
+    elif grep -Fq "$expected" <<< "$output"; then
+        pass "$name"
+    else
+        fail "$name (got: $output)"
+    fi
+}
+
+with_valid_launch_state() {
+    local state_dir
+
+    state_dir=$(mktemp -d)
+    LAUNCH_STATE_DIRS+=("$state_dir")
+    JAILBOX_IMAGE="jailbox-test-image"
+    JAILBOX_NETWORK="jailbox-test-network"
+    ROOTFS_FLAG=(--read-only)
+    SSHD_RUNTIME_DIR="$state_dir/sshd"
+    KEY_FILE="$state_dir/key"
+    LOCAL_PORT="50222"
+    CONTAINER_NAME="jailbox-test"
+    VOLUME_NAME="jailbox-test-home"
+    PROJECT_DIR="$state_dir/project"
+    REMOTE_PATH="/home/jailbox/project"
+    mkdir -p "$SSHD_RUNTIME_DIR" "$PROJECT_DIR"
+    : > "$KEY_FILE.pub"
+}
+
+cleanup_launch_state() {
+    local state_dir
+
+    for state_dir in "${LAUNCH_STATE_DIRS[@]}"; do
+        rm -rf "$state_dir"
+    done
+}
+
+trap cleanup_launch_state EXIT
+
+test_container_launch_preconditions() {
+    with_valid_launch_state
+    if assert_container_launch_state; then
+        pass "complete container launch state accepted"
+    else
+        fail "complete container launch state accepted"
+    fi
+
+    JAILBOX_IMAGE=""
+    assert_launch_state_rejects "missing image state rejected" "initialized image state"
+    with_valid_launch_state
+    JAILBOX_NETWORK=""
+    assert_launch_state_rejects "missing network state rejected" "initialized network state"
+    with_valid_launch_state
+    ROOTFS_FLAG=()
+    assert_launch_state_rejects "missing rootfs state rejected" "read-only rootfs state"
+    with_valid_launch_state
+    rm -f "$KEY_FILE.pub"
+    assert_launch_state_rejects "missing SSH credentials rejected" "initialized SSH credentials"
+    with_valid_launch_state
+    LOCAL_PORT="invalid"
+    assert_launch_state_rejects "invalid SSH port rejected" "valid SSH port"
 }
 
 with_project_state() {
@@ -123,6 +189,8 @@ test_no_identity_gets_no_mount() {
 main() {
     echo "runtime mounts tests"
     echo ""
+
+    test_container_launch_preconditions
 
     if ! command -v git >/dev/null 2>&1; then
         echo "git not found; skipping runtime mounts tests"
