@@ -63,21 +63,28 @@ A stub exists only while the sandbox runs.
 Removal is **marker-gated and non-recursive**, which is what keeps it from
 becoming risky deletion logic. A directory is removed only when:
 
-1. it carries the `JAILBOX-STUB` marker; and
-2. it contains nothing beyond its own two stub files.
+1. it carries the `JAILBOX-STUB` marker;
+2. it contains nothing beyond its own two stub files;
+3. its canonical path remains beneath canonical `$PROJECT_DIR`, with no
+   symlink component; and
+4. neither the candidate path nor anything beneath it is tracked in the
+   project's Git index, including staged additions.
 
 The launcher then deletes exactly `.gitignore` and `JAILBOX-STUB` and `rmdir`s
 the now-empty directory. It never uses recursive removal, never removes a
 directory lacking the marker, and never removes one that holds any other entry —
 so a directory the user has since repurposed is left intact. A
-`$SSH_DIR/created-stubs` index lists candidate paths, but the on-disk marker plus
-the emptiness check — not the index — authorize deletion, so a stale or lost
-index can never cause loss of real files.
+`$SSH_DIR/created-stubs` index lists candidate paths, but the on-disk marker,
+emptiness, containment, and Git-index checks — not the index — authorize
+deletion, so a stale or lost index can never cause loss of real files. Repeat
+all four checks immediately before deleting the two files and calling `rmdir`.
+If containment or Git-index status cannot be determined reliably, fail closed
+and leave the directory in place.
 
 ## Path safety
 
-Stub creation is a host write and part of the security boundary. For each
-candidate path:
+Stub creation and removal are host writes and part of the security boundary.
+For each candidate path:
 
 - resolve it canonically and require it to remain beneath canonical
   `$PROJECT_DIR`;
@@ -104,6 +111,9 @@ candidate path:
   launch.
 - Removal refuses a directory without the marker; a stub directory that has
   gained an extra file is left intact.
+- Removal refuses a path outside the project, a path reached through a symlink,
+  and a candidate with any tracked or staged Git entry at or beneath it. A Git
+  query failure also leaves the candidate intact.
 - A protected path that is a symlink, or resolves outside the project, is never
   stubbed.
 - `Containerfile` / `Dockerfile` are never stubbed.
