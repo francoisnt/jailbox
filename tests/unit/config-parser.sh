@@ -78,6 +78,22 @@ assert_eq() {
     fi
 }
 
+assert_cli_exit() {
+    local name expected_status
+
+    name="$1"
+    expected_status="$2"
+    shift 2
+
+    local actual_status
+    if "$@" >/dev/null 2>&1; then
+        actual_status=0
+    else
+        actual_status=$?
+    fi
+    assert_eq "$name" "$expected_status" "$actual_status"
+}
+
 test_values() {
     local dir
 
@@ -151,31 +167,37 @@ test_help_ignores_invalid_config() {
 }
 
 test_global_config_args() {
-    if "$JAILBOX_UNDER_TEST" --config >/dev/null 2>&1; then
-        fail "config option requires a value"
+    local help_output invalid_project
+
+    assert_cli_exit "config option requires a value" 2 "$JAILBOX_UNDER_TEST" --config
+    assert_cli_exit "config option rejects an empty value" 2 "$JAILBOX_UNDER_TEST" --config ""
+    assert_cli_exit "misplaced config option rejected" 2 "$JAILBOX_UNDER_TEST" doctor --config lane.conf
+    assert_cli_exit "duplicate config option rejected" 2 \
+        "$JAILBOX_UNDER_TEST" --config lane.conf --config other.conf
+    # shellcheck disable=SC2016  # $1 is intentionally expanded by bash -c.
+    assert_cli_exit "unexpected command operand rejected" 2 bash -c \
+        'source "$1/host/public-api.sh"; source "$1/host/common.sh"; source "$1/host/preflight.sh"; parse_args doctor extra' \
+        bash "$JAILBOX_DIR"
+    assert_cli_exit "unknown leading option rejected before config access" 2 \
+        "$JAILBOX_UNDER_TEST" --unknown
+    assert_cli_exit "equals-form config option rejected" 2 \
+        "$JAILBOX_UNDER_TEST" --config=lane.conf
+
+    help_output=$("$JAILBOX_UNDER_TEST" --help)
+    case "$help_output" in
+        *"--config PATH"*) pass "help shows config value placeholder" ;;
+        *) fail "help shows config value placeholder" ;;
+    esac
+
+    invalid_project=$(with_config "UNKNOWN=value")
+    if (cd "$invalid_project" && "$JAILBOX_UNDER_TEST" --unknown) >/dev/null 2>&1; then
+        fail "unknown command rejected before malformed default config"
+    elif [ "$?" -eq 2 ]; then
+        pass "unknown command rejected before malformed default config"
     else
-        pass "config option requires a value"
+        fail "unknown command rejected before malformed default config"
     fi
-    if "$JAILBOX_UNDER_TEST" --config "" >/dev/null 2>&1; then
-        fail "config option rejects an empty value"
-    else
-        pass "config option rejects an empty value"
-    fi
-    if "$JAILBOX_UNDER_TEST" doctor --config lane.conf >/dev/null 2>&1; then
-        fail "misplaced config option rejected"
-    else
-        pass "misplaced config option rejected"
-    fi
-    if "$JAILBOX_UNDER_TEST" --config lane.conf --config other.conf >/dev/null 2>&1; then
-        fail "duplicate config option rejected"
-    else
-        pass "duplicate config option rejected"
-    fi
-    if (parse_args doctor extra) >/dev/null 2>&1; then
-        fail "unexpected command operand rejected"
-    else
-        pass "unexpected command operand rejected"
-    fi
+    rm -rf "$invalid_project"
 }
 
 test_selected_config() {
@@ -263,6 +285,67 @@ test_explicit_help_ignores_missing_config() {
     fi
 }
 
+test_config_selection_precedence() {
+    local project external
+
+    project=$(mktemp -d)
+    external=$(mktemp -d)
+    PROJECT_DIR="$project"
+
+    CONFIG_PATH_ARG=""
+    CONFIG_FILE=stale
+    prepare_config_selection
+    assert_eq "no config clears stale selection" "" "$CONFIG_FILE"
+
+    printf 'DEV_IMAGE=default\n' > "$project/jailbox.conf"
+    prepare_config_selection
+    assert_eq "default project config selected" "$project/jailbox.conf" "$CONFIG_FILE"
+
+    printf 'UNKNOWN=bad-default\n' > "$project/jailbox.conf"
+    printf 'DEV_IMAGE=explicit\n' > "$external/lane.conf"
+    CONFIG_PATH_ARG="$external/lane.conf"
+    apply_config_defaults
+    prepare_config_selection
+    load_project_config
+    assert_eq "explicit config bypasses malformed default" "explicit" "$DEV_IMAGE"
+
+    CONFIG_PATH_ARG="./lane.conf"
+    if (cd "$external" && prepare_config_selection && [ "$CONFIG_FILE" = "$external/lane.conf" ]); then
+        pass "relative explicit config resolves from invocation directory"
+    else
+        fail "relative explicit config resolves from invocation directory"
+    fi
+
+    ln -s missing-target.conf "$external/dangling.conf"
+    CONFIG_PATH_ARG="$external/dangling.conf"
+    if (prepare_config_selection) >/dev/null 2>&1; then
+        fail "dangling selected config symlink rejected"
+    else
+        pass "dangling selected config symlink rejected"
+    fi
+
+    rm -rf "$project" "$external"
+}
+
+test_config_path_diagnostics() {
+    local project output
+
+    project=$(mktemp -d)
+    PROJECT_DIR="$project"
+    CONFIG_PATH_ARG="$project/missing.conf"
+    output=$( (prepare_config_selection) 2>&1 || true)
+    case "$output" in
+        *"config path does not exist"*"$project/missing.conf"*)
+            pass "missing selected config diagnostic names path"
+            ;;
+        *)
+            fail "missing selected config diagnostic names path"
+            ;;
+    esac
+
+    rm -rf "$project"
+}
+
 main() {
     assert_loads "empty config loads" ""
     assert_loads "comments load" $'# comment\n\nDEV_IMAGE=node:22'
@@ -291,6 +374,8 @@ main() {
     test_global_config_args
     test_selected_config
     test_explicit_help_ignores_missing_config
+    test_config_selection_precedence
+    test_config_path_diagnostics
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

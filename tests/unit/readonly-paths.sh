@@ -53,6 +53,7 @@ assert_not_listed() {
 with_project() {
     PROJECT_DIR=$(mktemp -d)
     apply_config_defaults
+    CONFIG_FILE=""
 }
 
 test_defaults() {
@@ -225,13 +226,17 @@ test_stubs_from_empty_project() {
 }
 
 test_selected_config_readonly_paths() {
+    local external
+
     with_project
+    external=$(mktemp -d)
     mkdir -p "$PROJECT_DIR/config"
-    touch "$PROJECT_DIR/config/lane.conf"
+    touch "$PROJECT_DIR/config/lane.conf" "$PROJECT_DIR/config/target.conf"
     CONFIG_FILE="$PROJECT_DIR/config/lane.conf"
+    READONLY_EXTRA=(config/lane.conf)
     configure_readonly_paths
 
-    assert_listed_once "selected config path listed once" "config/lane.conf"
+    assert_listed_once "selected config deduplicates with readonly extra" "config/lane.conf"
 
     build_readonly_mounts > /dev/null
     case "${READONLY_MOUNTS[*]-}" in
@@ -243,7 +248,88 @@ test_selected_config_readonly_paths() {
             ;;
     esac
 
-    rm -rf "$PROJECT_DIR"
+    initialize_container_runtime_state
+    apply_config_defaults
+    CONFIG_FILE="$external/lane.conf"
+    touch "$CONFIG_FILE"
+    configure_readonly_paths
+    build_readonly_mounts > /dev/null
+    case "${READONLY_MOUNTS[*]-}" in
+        *"$external/lane.conf"*) fail "external config receives no project mount" ;;
+        *) pass "external config receives no project mount" ;;
+    esac
+
+    initialize_container_runtime_state
+    apply_config_defaults
+    ln -s target.conf "$PROJECT_DIR/config/link.conf"
+    CONFIG_FILE=$(realpath "$PROJECT_DIR/config/link.conf")
+    configure_readonly_paths
+    assert_listed_once "canonical symlink target is protected" "config/target.conf"
+
+    initialize_container_runtime_state
+    apply_config_defaults
+    touch "$PROJECT_DIR/jailbox.conf"
+    CONFIG_FILE="$PROJECT_DIR/jailbox.conf"
+    configure_readonly_paths
+    assert_listed_once "default config remains deduplicated" "jailbox.conf"
+
+    rm -rf "$PROJECT_DIR" "$external"
+}
+
+test_canonical_project_relative_path() {
+    local sibling
+
+    with_project
+    mkdir -p "$PROJECT_DIR/config"
+    touch "$PROJECT_DIR/config/lane.conf"
+    sibling="${PROJECT_DIR}-sibling"
+    mkdir "$sibling"
+    touch "$sibling/lane.conf"
+
+    if [ "$(canonical_project_relative_path "$PROJECT_DIR/config/lane.conf")" = "config/lane.conf" ]; then
+        pass "canonical containment returns project-relative path"
+    else
+        fail "canonical containment returns project-relative path"
+    fi
+    if canonical_project_relative_path "$sibling/lane.conf" >/dev/null 2>&1; then
+        fail "canonical containment rejects sibling prefix"
+    else
+        pass "canonical containment rejects sibling prefix"
+    fi
+    if canonical_project_relative_path "$PROJECT_DIR/missing.conf" >/dev/null 2>&1; then
+        fail "canonical containment rejects missing path"
+    else
+        pass "canonical containment rejects missing path"
+    fi
+
+    rm -rf "$PROJECT_DIR" "$sibling"
+}
+
+test_external_config_project_relative_setting() {
+    local external
+
+    with_project
+    external=$(mktemp -d)
+    mkdir -p "$PROJECT_DIR/config"
+    touch "$PROJECT_DIR/config/project-only.txt"
+    printf 'READONLY_EXTRA=config/project-only.txt\n' > "$external/lane.conf"
+
+    CONFIG_PATH_ARG="$external/lane.conf"
+    prepare_config_selection
+    load_project_config
+    configure_readonly_paths
+    build_readonly_mounts > /dev/null
+
+    case "${READONLY_MOUNTS[*]-}" in
+        *"$PROJECT_DIR/config/project-only.txt:$REMOTE_PATH/config/project-only.txt:Z,ro"*)
+            pass "external config relative setting resolves from project"
+            ;;
+        *)
+            fail "external config relative setting resolves from project"
+            ;;
+    esac
+
+    rm -rf "$PROJECT_DIR" "$external"
 }
 
 main() {
@@ -255,6 +341,8 @@ main() {
     test_stubs
     test_stubs_from_empty_project
     test_selected_config_readonly_paths
+    test_canonical_project_relative_path
+    test_external_config_project_relative_setting
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

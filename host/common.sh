@@ -59,6 +59,7 @@ canonical_project_relative_path() {
     candidate="$1"
     project_abs=$(realpath -- "$PROJECT_DIR" 2>/dev/null) || return 1
     candidate_abs=$(realpath -- "$candidate" 2>/dev/null) || return 1
+    [ -e "$candidate_abs" ] || return 1
     [[ "$candidate_abs" == "$project_abs/"* ]] || return 1
     printf '%s\n' "${candidate_abs#"$project_abs"/}"
 }
@@ -75,6 +76,8 @@ prepare_config_selection() {
 
     require_command realpath
     CONFIG_FILE=$(realpath -- "$CONFIG_FILE" 2>/dev/null) || \
+        die "config path does not exist: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
+    [ -e "$CONFIG_FILE" ] || \
         die "config path does not exist: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
     [ -f "$CONFIG_FILE" ] || \
         die "config path is not a regular file: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
