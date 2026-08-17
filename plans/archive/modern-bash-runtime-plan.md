@@ -106,7 +106,7 @@ Update the relevant documentation:
 - `AGENTS.md` so `host/` may use Bash 4.4 features while `jailbox` remains Bash
   3.2-parseable and `install.sh` remains Bash 3.2-compatible. Tooling and tests
   keep their current compatibility unless a later change needs otherwise.
-- `docs/supported-versions.md` so it describes minimum-and-current Bash
+- `plans/supported-versions.md` so it describes minimum-and-current Bash
   coverage rather than a matrix of every Bash series.
 
 Keep `${array[@]+"${array[@]}"}` where Bash 3.2 compatibility still applies.

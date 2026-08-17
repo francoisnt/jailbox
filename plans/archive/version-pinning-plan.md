@@ -12,7 +12,7 @@ The implementing session runs **inside a jailbox dev container** (user `jailbox`
 - **podman is likely unavailable in-container** — the runtime and editor gates (`tests/run runtime`, `tests/run editor`) probably cannot run locally. Verify via CI instead (push a branch, use the test-gates `workflow_dispatch`) or hand the run to the user on the host.
 - **Egress may be limited to the downloader-proxy allowlist** — the network calls in `resolve-latest-versions.sh` (GitHub API, update.code.visualstudio.com, marketplace, open-vsx) and "resolve initial pin values at landing time" may fail in-container. If so, get values from a CI run or ask the user to run the resolver on the host.
 - Should work in-container: all file edits, `tests/run portable` (if shellcheck is installed), and git commits. Check `git remote -v` and push access before assuming CI-based verification is reachable.
-- Untracked-file context: this file (`docs/version-pinning-plan.md`) is the canonical plan; the untracked `Containerfile`, `.env`, `.vscode/` at repo root predate the plan — don't fold any of them into implementation commits.
+- Untracked-file context: this file (`plans/version-pinning-plan.md`) is the canonical plan; the untracked `Containerfile`, `.env`, `.vscode/` at repo root predate the plan — don't fold any of them into implementation commits.
 
 ## Assessment of the discussion doc vs. repo (verified)
 

@@ -39,8 +39,8 @@ somewhere unrelated.
 
 ## Bash — 4.4
 
-Derived in [modern-bash-runtime-plan.md](modern-bash-runtime-plan.md), which
-holds the full reasoning and implementation plan.
+Derived in [modern-bash-runtime-plan.md](archive/modern-bash-runtime-plan.md),
+which holds the full reasoning and implementation plan.
 
 | Feature | Introduced |
 | --- | --- |

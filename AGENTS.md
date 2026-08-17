@@ -33,6 +33,8 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   exclude unrelated or untracked files.
 - Never stage, inspect, print, or commit `.env` files unless the user explicitly
   identifies a specific file and asks for that action.
+- Move tracked files with `git mv` so Git records their history cleanly. Always
+  use `git mv` when moving completed plans into `plans/archive/`.
 - Preserve unrelated worktree changes. Do not reset, restore, or overwrite user
   changes to make the tree clean.
 
