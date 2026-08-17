@@ -45,19 +45,14 @@ configure_readonly_paths() {
     # when it resolves inside the project; a containerfile outside the project
     # is not reachable through the project mount and needs no overlay.
     if [ -n "$DEV_CONTAINERFILE" ]; then
-        local containerfile_abs containerfile_rel project_abs
+        local containerfile_abs containerfile_rel
         case "$DEV_CONTAINERFILE" in
             /*) containerfile_abs="$DEV_CONTAINERFILE" ;;
             *)  containerfile_abs="$PROJECT_DIR/$DEV_CONTAINERFILE" ;;
         esac
-        # Canonicalize both sides of the containment check. On macOS, mktemp
-        # commonly returns a path below /var while realpath resolves the file
-        # below /private/var; comparing one canonical path to one lexical path
-        # incorrectly treats an in-project Containerfile as external.
-        project_abs=$(realpath "$PROJECT_DIR" 2>/dev/null) || project_abs=""
-        containerfile_abs=$(realpath "$containerfile_abs" 2>/dev/null) || containerfile_abs=""
-        if [[ -n "$project_abs" && -n "$containerfile_abs" && "$containerfile_abs" == "$project_abs/"* ]]; then
-            containerfile_rel="${containerfile_abs#"$project_abs"/}"
+        # Canonicalize both sides: macOS temp paths may be lexical /var paths
+        # whose physical spelling is below /private/var.
+        if containerfile_rel=$(canonical_project_relative_path "$containerfile_abs"); then
             readonly_paths_contain "$containerfile_rel" || READONLY_PATHS+=("$containerfile_rel")
         fi
     fi
@@ -65,10 +60,16 @@ configure_readonly_paths() {
     # READONLY_EXTRA is additive only: project config can extend the protected
     # set but never remove or replace the built-in defaults. Skip entries
     # already in the list so podman never sees duplicate mount destinations.
-    local extra
+    local extra config_rel
     for extra in "${READONLY_EXTRA[@]}"; do
         readonly_paths_contain "$extra" || READONLY_PATHS+=("$extra")
     done
+
+    # An in-project config is executable launch policy for the next run.
+    # Protect its canonical project path from container writes.
+    if [ -n "$CONFIG_FILE" ] && config_rel=$(canonical_project_relative_path "$CONFIG_FILE"); then
+        readonly_paths_contain "$config_rel" || READONLY_PATHS+=("$config_rel")
+    fi
 }
 
 readonly_paths_contain() {

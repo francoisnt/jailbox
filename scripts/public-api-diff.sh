@@ -38,12 +38,27 @@ public_api_values() {
         sort -u
 }
 
+cli_api_values() {
+    local ref="$1" split_values
+
+    split_values="$({
+        public_api_values "$ref" "CLI_FLAGS_WITH_VALUES"
+        public_api_values "$ref" "CLI_FLAGS_WITHOUT_VALUES"
+    } | sort -u)"
+    if [ -n "$split_values" ]; then
+        printf '%s\n' "$split_values"
+    else
+        # Releases before value-taking options used one combined declaration.
+        public_api_values "$ref" "CLI_FLAGS"
+    fi
+}
+
 # Return all public API names that participate in release bump decisions.
 public_api_names() {
     {
         public_api_values "$1" "CONFIG_SCALAR_KEYS"
         public_api_values "$1" "CONFIG_ARRAY_KEYS"
-        public_api_values "$1" "CLI_FLAGS"
+        cli_api_values "$1"
     } | sort -u
 }
 

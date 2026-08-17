@@ -3,6 +3,16 @@
 EDITOR_BIN=""
 
 parse_args() {
+    if [ "${1:-}" = "--config" ] || [ "${2:-}" = "--config" ]; then
+        echo "Error: --config must appear before the command" >&2
+        usage >&2
+        exit 2
+    fi
+    if [ "$#" -gt 1 ]; then
+        echo "Error: unexpected argument: $2" >&2
+        usage >&2
+        exit 2
+    fi
     if ! is_cli_flag_allowed "${1:-}"; then
         usage >&2
         exit 2

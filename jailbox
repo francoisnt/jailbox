@@ -126,12 +126,22 @@ initialize_launch_state() {
 }
 
 main() {
-    if [[ "${1:-}" == "--help" ]]; then
-        parse_args "$@"
+    CONFIG_PATH_ARG=""
+    if [ "${1:-}" = "--config" ]; then
+        case "${2:-}" in
+            ""|--help|--config)
+                echo "Error: --config requires a PATH value" >&2
+                usage >&2
+                exit 2
+                ;;
+        esac
+        CONFIG_PATH_ARG="$2"
+        shift 2
     fi
 
-    load_project_config
     parse_args "$@"
+    prepare_config_selection
+    load_project_config
 
     # Before host_preflight: uninstalling must not require podman or SSH tooling.
     if [[ "${1:-}" == "--uninstall" ]]; then

@@ -388,18 +388,19 @@ run_e2e_case() {
     local dev_image
     dev_image=$(stage_test_image "$stage")
 
-    cat > "$project_dir/jailbox.conf" << EOF
+    mkdir -p "$project_dir/config"
+    cat > "$project_dir/config/runtime.conf" << EOF
 DEV_IMAGE=${dev_image}
 EOF
     if [[ "$stage" == "egress" ]]; then
-        printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/jailbox.conf"
+        printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/config/runtime.conf"
     fi
     export JAILBOX_E2E_PROJECT="$project_dir"
 
     # ── Phase 1: full jailbox pipeline ────────────────────────────────────────
     if (
         cd "$project_dir"
-        PATH="$stub_dir:$PATH" "$JAILBOX_DIR/jailbox"
+        PATH="$stub_dir:$PATH" "$JAILBOX_DIR/jailbox" --config config/runtime.conf
     ) 2>&1; then
         pass "pipeline (build → start → SSH wait → validation → editor stub)"
     else
@@ -434,6 +435,8 @@ EOF
         "printf '%s\n' edited > /home/jailbox/project/editor-write.txt"
     assert_ssh "$ssh_cfg" "$ctr" "git index write works with managed UID" \
         "git -C /home/jailbox/project add editor-write.txt"
+    assert_ssh "$ssh_cfg" "$ctr" "selected in-project config is immutable" \
+        "! printf 'DEV_IMAGE=attacker\\n' >> /home/jailbox/project/config/runtime.conf 2>/dev/null && ! rm /home/jailbox/project/config/runtime.conf 2>/dev/null"
     if [[ "$stage" != "egress" ]]; then
         assert_ssh "$ssh_cfg" "$ctr" "no stale managed downloader proxy blocks" \
             "! { { test -f \"\$HOME/.curlrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\"; } || { test -f \"\$HOME/.wgetrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\"; }; }"

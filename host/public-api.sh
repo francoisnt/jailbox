@@ -29,7 +29,11 @@ CONFIG_DEFAULTS=(
     "READONLY_EXTRA="
 )
 
-CLI_FLAGS=(
+CLI_FLAGS_WITH_VALUES=(
+    --config
+)
+
+CLI_FLAGS_WITHOUT_VALUES=(
     doctor
     ssh-config
     --clean
@@ -38,6 +42,7 @@ CLI_FLAGS=(
 )
 
 CLI_HELP=(
+    "--config=Load configuration from PATH instead of project jailbox.conf"
     "doctor=Report editor and SSH config integration for this project"
     "ssh-config=Print manual SSH config instructions for this project"
     "--clean=Stop/remove jailbox containers, networks, and home volume"
@@ -59,7 +64,7 @@ initialize_public_api_lookups() {
     for key in "${CONFIG_ARRAY_KEYS[@]}"; do
         CONFIG_ARRAY_KEY_SET["$key"]=1
     done
-    for key in "${CLI_FLAGS[@]}"; do
+    for key in "${CLI_FLAGS_WITH_VALUES[@]}" "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
         CLI_FLAG_SET["$key"]=1
     done
     for entry in "${CLI_HELP[@]}"; do

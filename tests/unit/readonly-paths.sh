@@ -224,6 +224,28 @@ test_stubs_from_empty_project() {
     rm -rf "$PROJECT_DIR"
 }
 
+test_selected_config_readonly_paths() {
+    with_project
+    mkdir -p "$PROJECT_DIR/config"
+    touch "$PROJECT_DIR/config/lane.conf"
+    CONFIG_FILE="$PROJECT_DIR/config/lane.conf"
+    configure_readonly_paths
+
+    assert_listed_once "selected config path listed once" "config/lane.conf"
+
+    build_readonly_mounts > /dev/null
+    case "${READONLY_MOUNTS[*]-}" in
+        *"$PROJECT_DIR/config/lane.conf:$REMOTE_PATH/config/lane.conf:Z,ro"*)
+            pass "selected in-project config receives ro mount"
+            ;;
+        *)
+            fail "selected in-project config receives ro mount"
+            ;;
+    esac
+
+    rm -rf "$PROJECT_DIR"
+}
+
 main() {
     test_defaults
     test_readonly_extra
@@ -232,6 +254,7 @@ main() {
     test_mounts
     test_stubs
     test_stubs_from_empty_project
+    test_selected_config_readonly_paths
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

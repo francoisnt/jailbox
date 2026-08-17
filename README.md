@@ -145,6 +145,12 @@ This command requires Bash 4.4 or newer; without it, run the installed
 Optional `jailbox.conf` in the project root, strict `KEY=value` lines (no
 shell syntax, values cannot contain whitespace):
 
+Use `jailbox --config PATH [COMMAND]` to select a different complete config
+file. The option must precede the command; the selected file replaces rather
+than merges with the project config. Relative settings still resolve from the
+project root. A selected config inside the project is automatically mounted
+read-only in the sandbox.
+
 | Key | Default | Purpose |
 |---|---|---|
 | `DEV_IMAGE` | — | Use this image instead of building one |

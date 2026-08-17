@@ -5,6 +5,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
 
 declare -A CONFIG_SEEN_KEYS=()
 
+CONFIG_PATH_ARG=""
+CONFIG_FILE=""
+
 PROJECT_HASH=""
 PROJECT_RESOURCE_PREFIX=""
 PROJECT_STATE_ROOT=""
@@ -22,15 +25,18 @@ usage() {
     local flag
 
     cat <<EOF_USAGE
-Usage: $(basename "$0") [doctor|ssh-config|--clean|--uninstall|--help]
+Usage: $(basename "$0") [--config PATH] [doctor|ssh-config|--clean|--uninstall|--help]
 
 Launch this project inside a hardened jailbox container.
 
 Options:
 EOF_USAGE
 
-    for flag in "${CLI_FLAGS[@]}"; do
-        printf '  %-8s %s\n' "$flag" "$(cli_flag_help "$flag")"
+    for flag in "${CLI_FLAGS_WITH_VALUES[@]}"; do
+        printf '  %-14s %s\n' "$flag PATH" "$(cli_flag_help "$flag")"
+    done
+    for flag in "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
+        printf '  %-14s %s\n' "$flag" "$(cli_flag_help "$flag")"
     done
 }
 
@@ -43,17 +49,59 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
+# Print the canonical project-relative spelling of an existing path. Return
+# non-zero when either side cannot be canonicalized or the path is outside the
+# project. Callers decide whether absence/outside containment is an error or
+# simply means the path needs no project mount.
+canonical_project_relative_path() {
+    local candidate project_abs candidate_abs
+
+    candidate="$1"
+    project_abs=$(realpath -- "$PROJECT_DIR" 2>/dev/null) || return 1
+    candidate_abs=$(realpath -- "$candidate" 2>/dev/null) || return 1
+    [[ "$candidate_abs" == "$project_abs/"* ]] || return 1
+    printf '%s\n' "${candidate_abs#"$project_abs"/}"
+}
+
+prepare_config_selection() {
+    if [ -n "$CONFIG_PATH_ARG" ]; then
+        CONFIG_FILE="$CONFIG_PATH_ARG"
+    else
+        CONFIG_FILE=""
+        [ -f "$PROJECT_DIR/jailbox.conf" ] && CONFIG_FILE="$PROJECT_DIR/jailbox.conf"
+    fi
+
+    [ -n "$CONFIG_FILE" ] || return 0
+
+    require_command realpath
+    CONFIG_FILE=$(realpath -- "$CONFIG_FILE" 2>/dev/null) || \
+        die "config path does not exist: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
+    [ -f "$CONFIG_FILE" ] || \
+        die "config path is not a regular file: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
+    [ -r "$CONFIG_FILE" ] || \
+        die "config path is not readable: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
+}
+
 load_project_config() {
     local config_file
 
-    config_file="$PROJECT_DIR/jailbox.conf"
-    [ -f "$config_file" ] || return 0
+    config_file="$CONFIG_FILE"
+    [ -n "$config_file" ] || return 0
 
     # jailbox.conf is deliberately data, not shell. Parse a tiny KEY=value
     # grammar explicitly so user config can never execute code through source,
     # command substitution, arithmetic expansion, or shell metacharacters.
     parse_config_file "$config_file" || return $?
     validate_config
+}
+
+config_die() {
+    local line_no message display_path
+
+    line_no="$1"
+    message="$2"
+    display_path="${CONFIG_PATH_ARG:-${CONFIG_FILE:-$PROJECT_DIR/jailbox.conf}}"
+    die "invalid config '$display_path' line $line_no: $message"
 }
 
 trim() {
@@ -82,20 +130,20 @@ parse_config_file() {
         # makes malformed config fail predictably and keeps parser behavior
         # easy to audit.
         if [[ "$trimmed" != *=* ]]; then
-            die "invalid jailbox.conf line $line_no: expected KEY=value"
+            config_die "$line_no" "expected KEY=value"
         fi
 
         key="${trimmed%%=*}"
         value=$(trim "${trimmed#*=}")
 
         if ! [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
-            die "invalid jailbox.conf line $line_no: invalid key '${key}' (use KEY=value with no spaces around =)"
+            config_die "$line_no" "invalid key '${key}' (use KEY=value with no spaces around =)"
         fi
         if ! is_config_scalar_key "$key" && ! is_config_array_key "$key"; then
-            die "invalid jailbox.conf line $line_no: unknown setting '$key'"
+            config_die "$line_no" "unknown setting '$key'"
         fi
         if config_key_seen "$key"; then
-            die "invalid jailbox.conf line $line_no: duplicate setting '$key'"
+            config_die "$line_no" "duplicate setting '$key'"
         fi
         CONFIG_SEEN_KEYS["$key"]=1
 
@@ -123,14 +171,14 @@ validate_config_value() {
     # Values are atoms. Paths, image refs, stage names, and hostnames currently
     # do not need spaces; rejecting whitespace avoids quote/escape semantics.
     if [[ "$value" =~ [[:space:]] ]]; then
-        die "invalid jailbox.conf line $line_no: values cannot contain whitespace"
+        config_die "$line_no" "values cannot contain whitespace"
     fi
     # Reject shell metacharacters even though values are not evaluated. This
     # keeps config visually unambiguous and prevents future call sites from
     # accidentally inheriting dangerous-looking strings.
     case "$value" in
         *'"'*|*'`'*|*'$'*|*';'*|*'&'*|*'|'*|*'<'*|*'>'*|*'('*|*')'*|*'{'*|*'}'*|*'['*|*']'*)
-            die "invalid jailbox.conf line $line_no: unsupported character in value"
+            config_die "$line_no" "unsupported character in value"
             ;;
     esac
 }
@@ -150,7 +198,7 @@ unquote_config_value() {
 
     case "$value" in
         *'"'*|*"'"*)
-            die "invalid jailbox.conf line $line_no: mismatched or embedded quote in value"
+            config_die "$line_no" "mismatched or embedded quote in value"
             ;;
     esac
 
@@ -167,7 +215,7 @@ parse_config_scalar() {
     value=$(unquote_config_value "$value" "$line_no") || return $?
     validate_config_value "$value" "$line_no"
     if [[ "$value" == *,* ]]; then
-        die "invalid jailbox.conf line $line_no: scalar setting '$key' cannot contain a comma"
+        config_die "$line_no" "scalar setting '$key' cannot contain a comma"
     fi
 
     case "$key" in
@@ -198,7 +246,7 @@ parse_config_array() {
     IFS=',' read -ra parts <<< "$raw_value"
     for item in "${parts[@]}"; do
         item=$(trim "$item")
-        [ -n "$item" ] || die "invalid jailbox.conf line $line_no: empty list item for '$key'"
+        [ -n "$item" ] || config_die "$line_no" "empty list item for '$key'"
         item=$(unquote_config_value "$item" "$line_no") || return $?
         validate_config_value "$item" "$line_no"
         items+=("$item")
