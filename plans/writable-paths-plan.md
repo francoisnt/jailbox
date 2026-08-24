@@ -43,8 +43,7 @@ protected read-only overlay > writable lane > read-only project base
 ```
 
 `WRITABLE_PATHS` does not hide secrets. Sensitive material that must not be read
-should not be placed in the mounted checkout. `HIDDEN_PATHS` is not part of this
-proposal.
+should not be placed in the mounted checkout.
 
 ## Path safety
 
@@ -82,9 +81,10 @@ Mount project-tree paths parent-first:
 2. writable lanes, shallowest first;
 3. protected read-only overlays, shallowest first where necessary.
 
-The implementation must verify this behavior on the supported Podman/SELinux
-matrix. The existing `:Z` versus `:z` project-label policy is a separate open
-decision and must be settled before encoding either form as a new invariant.
+Implement the project-label policy established by
+`selinux-mount-labels-recommendation.md`. Complete its enforcing-host
+verification before adding writable lanes, then verify this mount ordering on
+the supported Podman/SELinux matrix.
 
 ## Git commits
 
@@ -101,23 +101,21 @@ The resulting layering is:
 read-only project
   -> read-write sections/checkout
   -> read-write .git
-  -> read-only .git/config and .git/hooks (when listed in READONLY_PATHS)
+  -> read-only .git/config and .git/hooks
 ```
 
-When `.git/config` and `.git/hooks` are listed in `READONLY_PATHS`, this prevents
-direct changes to them, but does not make agent-authored Git objects or refs
-trusted. The external orchestrator or human must inspect commits before
-integration.
+Listing `.git/config` and `.git/hooks` in `READONLY_PATHS` prevents direct
+changes to them, but does not make agent-authored Git objects or refs trusted.
+The external orchestrator or human must inspect commits before integration.
 
 Independent commit histories require independent clones. Multiple sandboxes
 must not share one writable `.git` directory.
 
 ## Protected paths
 
-There are no mountpoint stubs. Every `READONLY_PATHS` entry must exist before
-launch in both default and allowlist modes. The selected config and selected
-Containerfile necessarily exist before they are added automatically. Missing,
-outside, or symlinked configured paths fail before any mount is constructed.
+Every `READONLY_PATHS` entry must exist and pass the validation defined in
+`protected-path-policy-plan.md`. Writable lanes must not weaken or bypass any
+effective protected overlay.
 
 ## Safe reuse
 
@@ -187,5 +185,4 @@ contract, the runtime gate wherever Podman is available.
 
 - No profiles, inheritance, or per-config resource identities.
 - No `HIDDEN_PATHS` or general read confinement.
-- No managed temporary-stub system.
 - No orchestration, checkout management, scheduling, or merging.

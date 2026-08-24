@@ -125,6 +125,24 @@ bypass that protection. Prepare replacement files in a writable location and
 tell the user exactly where they must be moved, or ask the user to make the
 host-side edit.
 
+## Plan authoring
+
+- Write plans as final, settled implementation documents. If the user's intent
+  is unclear, ask before writing the plan; do not put unresolved approval
+  questions, speculative alternatives, or requests for decisions into it.
+- When revising a plan removes or replaces earlier behavior, rewrite the
+  affected passages as though the superseded material had never been present.
+  Do not retain history about the discarded direction or statements that the
+  plan will not implement it.
+- Distinguish discarded plan text from existing implementation artifacts. When
+  the current code, public API, tests, or documentation still contains behavior
+  replaced by the plan, include explicit migration or removal steps and name
+  the affected symbols and files. A final plan must describe all work required
+  to move the repository from its current state to the planned state.
+- Whenever the user gives a new standing instruction about how agents should
+  work in this repository, update this `AGENTS.md` in the same change so later
+  sessions inherit it.
+
 ## Handoff expectations
 
 Summarize the behavioral result, list the gates actually run, identify anything

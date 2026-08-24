@@ -85,45 +85,28 @@ each mutates the same containers, credentials, and networks. That race exists
 today between bare launch and `--clean`, is not introduced by command mode, and
 is left alone here. Locking the lifecycle commands is a separate change.
 
-### Configuration bootstrap and protected paths
+### Configuration files
 
-Bare `jailbox` and `jailbox up` create `$PROJECT_DIR/jailbox.conf` atomically
-when no `--config` argument was supplied and the default file does not exist.
-The generated file is minimal and documents that every configured read-only path
-must already exist:
+Bare `jailbox` and `jailbox up` atomically create the default
+`$PROJECT_DIR/jailbox.conf` before config loading when it does not exist:
 
 ```conf
 # Project paths that jailbox must mount read-only.
-# Every listed path must exist before launch.
 READONLY_PATHS=
 ```
 
-An explicitly selected `--config PATH` is never created; it must exist. `exec`
-and `shell` also never create configuration: if the default config is absent,
-they fail and direct the user to `jailbox up`. `stop`, `--clean`, `doctor`, and
-`ssh-config` retain their non-creating behavior.
+Publish the complete file with no-replace semantics. Never overwrite an
+existing path, never expose a partial file, and remove temporary files on
+failure. If another process wins the creation race, load and validate the file
+it published. A path that exists but is not a regular readable config fails
+through the normal config validation path.
 
-Replace `READONLY_EXTRA` with `READONLY_PATHS`. There is no built-in list of
-project policy paths and there are no mountpoint stubs. Every configured entry
-must exist, contain no symlink component, resolve beneath the project, and be
-mounted read-only; an absent entry is a configuration error with no override.
-
-Jailbox automatically adds only two reachable launch inputs to the effective
-read-only mount list:
-
-- the selected config file, when it is inside the project; and
-- the exact detected or configured Containerfile used for the build, when it is
-  inside the project.
-
-There is no special protection for a jailbox source checkout inside the project.
-Project `.env`, workflow, Git configuration, hook, and other paths are protected
-only when the user lists them in `READONLY_PATHS`.
-
-Initialize and validate the user/config portion of the list after project and
-config loading. Finalize the mount list only after
-`build_or_select_dev_image` has identified the exact Containerfile, then build
-the overlays. This ordering avoids protecting every discovery candidate while
-still protecting the file jailbox actually executed.
+`exec`, `shell`, `stop`, `doctor`, `ssh-config`, and `--clean` never create
+configuration. `exec` and `shell` require the default config to exist so their
+digest comparison is against persistent launch policy; when it is absent they
+fail and direct the user to `jailbox up`. An explicitly selected
+`--config PATH` must exist for every command that loads configuration and is
+never created automatically.
 
 ### Config digest
 
@@ -133,7 +116,7 @@ Record a digest of the parsed effective configuration as a project-scoped
 is stale — mount and egress policy — and telling the user to run `jailbox up` to
 apply it.
 
-Failing is the point, not a warning. If `EGRESS_ALLOW` or `READONLY_PATHS` was
+Failing is the point, not a warning. If egress or read-only path policy was
 tightened, the running sandbox holds broader permissions than the configuration
 now requests, and a command run inside it would silently execute under the old
 policy. A warning does not address that: automation redirects or discards
@@ -143,9 +126,12 @@ did not ask it to destroy — while making the operator's current declaration
 authoritative for every command that runs.
 
 Hash the *parsed* values rather than the config file's bytes, so reformatting is
-not a policy change, and so `--config PATH` selection and the `JAILBOX_EDITOR`
-override are covered. A missing label is a mismatch, so containers created by
-older jailbox versions fail the same way and are resolved by a relaunch.
+not a policy change. In addition to all public config values, hash the canonical
+selected-config identity (or an explicit marker for the absent default config)
+and the effective `JAILBOX_EDITOR` override. Those inputs are not members of the
+public config key arrays and must be included explicitly. A missing label is a
+mismatch, so containers created by older jailbox versions fail the same way and
+are resolved by a relaunch.
 
 Cover **every** key by iterating `CONFIG_SCALAR_KEYS` and `CONFIG_ARRAY_KEYS`
 from `host/public-api.sh`. Do not write the key names out, here or in the
@@ -290,7 +276,6 @@ bring_up_sandbox() {
     check_local_port_available
     build_or_select_dev_image
     validate_dev_image
-    finalize_readonly_paths     # add the exact selected Containerfile
     run_pre_build_hook          # optional; bare launch passes the Alpine warning
     build_jailbox_image
     configure_runtime_mounts
@@ -352,13 +337,11 @@ Preflight is command-aware:
 The host Base64 encoder required by `exec` is checked only for `exec`. The
 remote decoder is part of development-image validation.
 
-Config creation is command-aware and occurs before config loading. Only bare
-launch and `up` may create the default config. Validation of `READONLY_PATHS`
-occurs after project initialization so canonical containment and path existence
-can be checked before any mount is constructed. Rename the public configuration
-key from `READONLY_EXTRA` to `READONLY_PATHS` in `host/public-api.sh`, defaults,
-parser assignment, help, README, generated public-API expectations, and tests;
-do not retain the old key as an alias.
+Configuration bootstrap and loading are command-aware. Bare launch and `up`
+create a missing default config and then load it. `exec` and `shell` load an
+existing default or explicitly selected config. Lifecycle and inspection
+commands retain their existing config-loading requirements and never create a
+file.
 
 ### CLI parsing and public API
 
@@ -380,13 +363,11 @@ do not retain the old key as an alias.
 
 Do not add a `HEADLESS` configuration key. Review the generated diff from
 `scripts/public-api-diff.sh`: adding four commands is a minor bump pre-1.0.
-Update README usage and the documented lifecycle/security behavior, including
+Update README usage and the documented lifecycle behavior, including
 the `up`/`exec` split, the distinction between `stop` and `--clean`, the
 sandbox-handling rules and the config digest's documented gaps, and the limits
-of SSH disconnect and exit-status semantics. Update the threat model explicitly:
-jailbox no longer automatically protects `.env`, workflows, Git configuration,
-hooks, or its own source checkout; those are user policy expressed through
-`READONLY_PATHS`.
+of SSH disconnect and exit-status semantics. The threat model's protected-path
+claims remain unchanged by command mode.
 
 ## Tests
 
@@ -426,18 +407,19 @@ Lifecycle:
   answer.
 - Repeated `stop` succeeds; `stop` succeeds when only the proxy exists.
 - Bare launch and `up` atomically create a missing default `jailbox.conf` with
-  `READONLY_PATHS=`; no other command creates it.
+  `READONLY_PATHS=` before loading it.
+- Concurrent default-config creation never overwrites either writer, exposes a
+  partial config, or leaves a temporary file; the winning complete file is
+  loaded and validated.
+- `exec` and `shell` fail with the `jailbox up` instruction when the default
+  config is absent and create nothing.
+- `stop`, `doctor`, `ssh-config`, and `--clean` create no config.
 - An explicit missing `--config PATH` fails and is never created.
-- Every `READONLY_PATHS` entry must exist and resolve safely beneath the project;
-  a missing, outside, or symlinked entry fails before launch.
-- The selected in-project config and exact in-project Containerfile used for the
-  build are mounted read-only even when absent from `READONLY_PATHS`.
-- No other project path is protected unless listed in `READONLY_PATHS`.
 - A changed `jailbox.conf` makes `exec` fail with the relaunch message without
   running the command, and does not stop or replace the container; a missing
   `jailbox.config-digest` label fails the same way; a reformatted config with
   unchanged values runs normally.
-- Tightening `EGRESS_ALLOW` or `READONLY_PATHS` cannot be bypassed by an `exec`
+- Tightening egress or read-only path policy cannot be bypassed by an `exec`
   against the sandbox launched under the looser policy.
 - With egress filtering enabled, a missing or stopped proxy fails before the
   command runs.
