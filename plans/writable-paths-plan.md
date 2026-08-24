@@ -19,8 +19,8 @@ strict data grammar:
 WRITABLE_PATHS=sections/checkout,.git
 ```
 
-- Empty or omitted: current behavior. Mount the project read-write, then apply
-  the built-in and configured read-only overlays.
+- Empty or omitted: mount the project read-write, then apply the automatic
+  config/Containerfile overlays and configured `READONLY_PATHS` overlays.
 - Non-empty: mount the project read-only, overlay each listed lane read-write,
   then apply protected read-only overlays last.
 
@@ -32,8 +32,8 @@ In allowlist mode:
 
 - the whole project remains readable for builds and tests;
 - writes succeed only within listed lanes;
-- built-in protected paths and `READONLY_EXTRA` remain read-only even when they
-  are nested inside a writable lane; and
+- the selected config, selected Containerfile, and configured `READONLY_PATHS`
+  remain read-only even when nested inside a writable lane; and
 - denied writes fail at the mount layer.
 
 The precedence invariant is:
@@ -64,7 +64,7 @@ Reject duplicate lanes and a lane nested under another writable lane as
 redundant. Do not silently normalize unsafe input.
 
 The same canonical containment helper should be used for other project-relative
-mount inputs, including `READONLY_EXTRA`, so policy does not vary by feature.
+mount inputs, including `READONLY_PATHS`, so policy does not vary by feature.
 
 ## Interaction with protected paths
 
@@ -101,37 +101,36 @@ The resulting layering is:
 read-only project
   -> read-write sections/checkout
   -> read-write .git
-  -> read-only .git/config and .git/hooks
+  -> read-only .git/config and .git/hooks (when listed in READONLY_PATHS)
 ```
 
-This prevents direct changes to the protected Git config and hook locations,
-but does not make agent-authored Git objects or refs trusted. The external
-orchestrator or human must inspect commits before integration.
+When `.git/config` and `.git/hooks` are listed in `READONLY_PATHS`, this prevents
+direct changes to them, but does not make agent-authored Git objects or refs
+trusted. The external orchestrator or human must inspect commits before
+integration.
 
 Independent commit histories require independent clones. Multiple sandboxes
 must not share one writable `.git` directory.
 
-## Absent protected paths
+## Protected paths
 
-The current launcher may create mountpoint stubs for absent protected paths on
-a writable project base. This proposal does not redesign that lifecycle.
-
-In allowlist mode, no stub is needed for an absent protected path outside every
-writable lane because the read-only base already prevents its creation. An
-absent protected path inside a writable lane still needs a safe mountpoint
-strategy before that lane can be supported.
-
-For the first implementation, fail clearly when such a protected path is absent
-inside a writable lane. Do not introduce temporary directory markers, cleanup
-indexes, recursive removal, or crash-recovery behavior as part of this feature.
-That narrower failure is preferable to adding race-sensitive deletion logic to
-the host tool.
+There are no mountpoint stubs. Every `READONLY_PATHS` entry must exist before
+launch in both default and allowlist modes. The selected config and selected
+Containerfile necessarily exist before they are added automatically. Missing,
+outside, or symlinked configured paths fail before any mount is constructed.
 
 ## Safe reuse
 
-`WRITABLE_PATHS` participates in the effective-config fingerprint. Changing the
-allowlist must force replacement of a running sandbox before `start` or `exec`
-can reuse it. A liveness check alone is insufficient.
+`WRITABLE_PATHS` participates in the config digest defined by
+`headless-mode-plan.md`, automatically: that digest covers every key in
+`CONFIG_SCALAR_KEYS` and `CONFIG_ARRAY_KEYS`, so adding this key to
+`CONFIG_ARRAY_KEYS` is all that is required.
+
+Changing the allowlist must prevent a running sandbox from being used until it
+is relaunched. A liveness check alone is insufficient. Note the semantics
+settled in the command-mode plan: `exec` and `shell` never replace a sandbox,
+they *fail* on a digest mismatch and direct the user to `jailbox up`. There is
+no `start` command, and no automatic replacement anywhere.
 
 ## Implementation outline
 
@@ -150,7 +149,9 @@ can reuse it. A liveness check alone is insufficient.
 - Non-empty allowlist: base is read-only.
 - Build one read-write bind per validated lane.
 - Emit read-only protected overlays after writable overlays.
-- Use Bash 3.2-safe expansion for possibly empty mount arrays.
+- Expand possibly empty mount arrays as `"${array[@]}"`. This is `host/` code,
+  which targets Bash 4.4 or newer; the `${array[@]+"${array[@]}"}` form belongs
+  only to `install.sh` and other explicitly Bash 3.2-constrained code.
 
 ### Validation
 
@@ -168,17 +169,16 @@ Validation markers must be created and cleaned without overwriting user files.
 - Empty `WRITABLE_PATHS` is byte-for-byte compatible with current mount mode.
 - A write inside a lane succeeds and a sibling write fails.
 - A protected path inside a lane remains read-only.
-- With `.git` writable, a commit succeeds while `.git/config` and `.git/hooks`
-  remain protected.
+- With `.git` writable and `.git/config` plus `.git/hooks` listed in
+  `READONLY_PATHS`, a commit succeeds while those paths remain protected.
 - Absolute, traversing, missing, file-valued, duplicate, nested, and symlinked
   lanes are rejected.
 - A symlink to a host path outside the project can never become a writable
   mount.
 - A writable lane equal to or beneath a protected path is rejected.
-- An absent protected path inside a writable lane fails clearly; outside the
-  lanes it requires no stub and cannot be created.
-- Tightening the allowlist changes the fingerprint and replaces a running
-  sandbox.
+- An absent `READONLY_PATHS` entry fails clearly in every mount mode.
+- Tightening the allowlist changes the config digest, so `exec` against the
+  sandbox launched under the looser allowlist fails until `jailbox up` is run.
 
 Run the portable gate and, because this changes host mounts and the security
 contract, the runtime gate wherever Podman is available.
@@ -187,5 +187,5 @@ contract, the runtime gate wherever Podman is available.
 
 - No profiles, inheritance, or per-config resource identities.
 - No `HIDDEN_PATHS` or general read confinement.
-- No managed temporary-stub cleanup system.
+- No managed temporary-stub system.
 - No orchestration, checkout management, scheduling, or merging.
