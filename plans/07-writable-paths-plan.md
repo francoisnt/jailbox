@@ -1,4 +1,4 @@
-# `WRITABLE_PATHS` — deny-by-default project writes
+# 7. `WRITABLE_PATHS` — deny-by-default project writes
 
 ## Goal
 
@@ -10,6 +10,15 @@ The caller chooses the lanes in the selected config file. Concurrent agents use
 separate checkouts and separate external configs; jailbox does not provide
 profiles or multiple identities for one checkout.
 
+## Sequence
+
+Order 7.0. Requires `01-protected-path-policy-plan.md` for the
+`check_readonly_path` primitive and `04-config-digest-plan.md` for automatic
+digest coverage of the new key. Its safe-reuse requirement — that changing the
+allowlist prevents a stale sandbox from being used — is only enforceable once
+`05-exec-command-plan.md` and `06-shell-command-plan.md` gate attachment on the
+digest, so it lands after the full command-mode sequence.
+
 ## Configuration
 
 `WRITABLE_PATHS` is a comma-separated config array, matching the existing
@@ -19,8 +28,8 @@ strict data grammar:
 WRITABLE_PATHS=sections/checkout,.git
 ```
 
-- Empty or omitted: mount the project read-write, then apply the automatic
-  config/Containerfile overlays and configured `READONLY_PATHS` overlays.
+- Empty or omitted: mount the project read-write, then apply the effective
+  read-only overlays.
 - Non-empty: mount the project read-only, overlay each listed lane read-write,
   then apply protected read-only overlays last.
 
@@ -32,8 +41,9 @@ In allowlist mode:
 
 - the whole project remains readable for builds and tests;
 - writes succeed only within listed lanes;
-- the selected config, selected Containerfile, and configured `READONLY_PATHS`
-  remain read-only even when nested inside a writable lane; and
+- every effective read-only entry — configured paths plus the automatic default
+  config, selected config, and used Containerfile — remains read-only even when
+  nested inside a writable lane; and
 - denied writes fail at the mount layer.
 
 The precedence invariant is:
@@ -114,19 +124,21 @@ must not share one writable `.git` directory.
 ## Protected paths
 
 Every `READONLY_PATHS` entry must exist and pass the validation defined in
-`protected-path-policy-plan.md`. Writable lanes must not weaken or bypass any
-effective protected overlay.
+`01-protected-path-policy-plan.md`. That plan also adds the existing default
+config, selected in-project config, and used in-project Containerfile to the
+effective set. Writable lanes must not weaken or bypass any effective protected
+overlay.
 
 ## Safe reuse
 
 `WRITABLE_PATHS` participates in the config digest defined by
-`headless-mode-plan.md`, automatically: that digest covers every key in
+`04-config-digest-plan.md`, automatically: that digest covers every key in
 `CONFIG_SCALAR_KEYS` and `CONFIG_ARRAY_KEYS`, so adding this key to
 `CONFIG_ARRAY_KEYS` is all that is required.
 
 Changing the allowlist must prevent a running sandbox from being used until it
 is relaunched. A liveness check alone is insufficient. Note the semantics
-settled in the command-mode plan: `exec` and `shell` never replace a sandbox,
+settled in `05-exec-command-plan.md`: `exec` and `shell` never replace a sandbox,
 they *fail* on a digest mismatch and direct the user to `jailbox up`. There is
 no `start` command, and no automatic replacement anywhere.
 
