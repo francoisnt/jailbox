@@ -1,4 +1,4 @@
-# Command mode — explicit up, exec, shell, and stop
+# Command mode — explicit up, exec, and shell
 
 ## Goal
 
@@ -7,9 +7,9 @@ API for terminal and automation use. The mode is selected by an explicit
 command, not a `HEADLESS` config key and not by whether stdio happens to be a
 TTY.
 
-Bare `jailbox` remains backward compatible: it launches the sandbox and opens
-the configured editor exactly as today. `up`, `exec`, `shell`, and `stop` never
-launch or require an editor.
+Bare `jailbox` launches the sandbox and opens the configured editor. `up`,
+`exec`, and `shell` never launch or require an editor. The existing `stop`
+command remains editor-independent.
 
 ## Naming
 
@@ -32,29 +32,27 @@ jailbox [--config PATH] --clean
 
 | Command | Behavior |
 |---|---|
-| `up` | Launch the sandbox without opening an editor: bare launch minus `open_editor`. Replaces any existing sandbox, exactly as bare launch does. |
+| `up` | Launch the sandbox without opening an editor: bare launch minus `open_editor`. Like bare launch, it requires any running sandbox to be stopped explicitly first. |
 | `exec [--] CMD [ARG...]` | Attach to the project's running sandbox, run one non-interactive command as the managed user in `$REMOTE_PATH`, stream stdin/stdout/stderr, and propagate its exit status. A command is required; a leading `--` is optional. |
 | `shell` | Attach to the project's running sandbox and open an interactive login Bash in `$REMOTE_PATH`; requires local TTYs. |
-| `stop` | Stop the development container and proxy while preserving the home volume, networks, and the project state directory. |
+| `stop` | Existing lifecycle command from the protected-path implementation: remove the ephemeral development and proxy containers while preserving the home volume, networks, images, and project state. |
 | `--clean` | Full teardown as today: remove containers, networks, home volume, and SSH state. |
 
-One command creates a sandbox, the others attach to it. `up` and bare launch are
-the only commands that start or replace anything; `exec` and `shell` never
-create, never replace, and never repair. That split is what keeps the rest of
-this plan small.
+`up` creates a sandbox, `exec` and `shell` attach to one, and `stop` is the
+separate lifecycle boundary. `up` and bare launch are the only commands that
+start anything; both fail when the sandbox is already running and direct the
+user to `jailbox stop`. `exec` and `shell` never create, replace, or repair.
 
-`stop` is idempotent and succeeds when the relevant containers are already
-stopped or absent. Repeated `exec` calls attach to the same sandbox, but the
-command executed by `exec` is not itself assumed to be idempotent. `up` is not
-idempotent — it replaces — so automation runs it once during setup and then
-issues many `exec` calls.
+`stop` retains its existing idempotent behavior. Repeated `exec` calls attach to
+the same sandbox, but the command executed by `exec` is not itself assumed to be
+idempotent. Automation runs `up` once during setup and then issues many `exec`
+calls; it must call `stop` before a deliberate relaunch.
 
-`stop` leaves the container object in place but does not enable a restart fast
-path: the next `up` or bare launch replaces it, because `start_jailbox_container`
-always runs `podman run --replace` and `setup_ssh_keys` rotates the key pair and
-sshd runtime directory on every bring-up. `stop` therefore preserves the home
-volume, networks, and the state directory itself — not the credentials inside
-it. A `podman start` fast path is out of scope.
+`stop` removes the ephemeral container objects. The next `up` or bare launch
+creates fresh ones, and `setup_ssh_keys` rotates the key pair and sshd runtime
+directory on every bring-up. `stop` preserves the home volume, networks, images,
+and state directory itself — not the credentials inside it. A container restart
+fast path is out of scope.
 
 ## Sandbox handling
 
@@ -76,9 +74,8 @@ repair; staleness is surfaced and the user resolves it. That matches how the
 tool already behaves — an editor session likewise keeps running until the user
 relaunches.
 
-Because `up` and bare launch still replace the sandbox unconditionally, either
-one terminates any `exec` or `shell` session attached to the old container.
-Document that; do not try to prevent it.
+Because `up` and bare launch refuse a running sandbox, they do not implicitly
+terminate an attached `exec` or `shell` session.
 
 Concurrent `up`, `stop`, and `--clean` invocations can still interleave badly —
 each mutates the same containers, credentials, and networks. That race exists
@@ -87,26 +84,19 @@ is left alone here. Locking the lifecycle commands is a separate change.
 
 ### Configuration files
 
-Bare `jailbox` and `jailbox up` atomically create the default
-`$PROJECT_DIR/jailbox.conf` before config loading when it does not exist:
-
-```conf
-# Project paths that jailbox must mount read-only.
-READONLY_PATHS=
-```
-
-Publish the complete file with no-replace semantics. Never overwrite an
-existing path, never expose a partial file, and remove temporary files on
-failure. If another process wins the creation race, load and validate the file
-it published. A path that exists but is not a regular readable config fails
-through the normal config validation path.
+`protected-path-policy-plan.md` owns the default-config policy anchor: its
+creation, integrity validation, automatic protection even with `--config PATH`,
+and command-aware side effects. Command mode reuses that implementation without
+restating or weakening it. Adding `up` makes it a sandbox-creating command, so it
+follows the same anchor behavior as bare `jailbox`.
 
 `exec`, `shell`, `stop`, `doctor`, `ssh-config`, and `--clean` never create
 configuration. `exec` and `shell` require the default config to exist so their
 digest comparison is against persistent launch policy; when it is absent they
-fail and direct the user to `jailbox up`. An explicitly selected
-`--config PATH` must exist for every command that loads configuration and is
-never created automatically.
+fail and direct the user to `jailbox up`. An explicitly selected `--config PATH`
+must exist for every command that loads configuration and is never itself
+created automatically; this does not alter the separately protected default
+policy anchor.
 
 ### Config digest
 
@@ -266,13 +256,14 @@ the wrapper's sshd config already lists those names in `AcceptEnv`.
 A sandbox brought up by `up` omits the editor CDN hosts that
 `effective_egress_allowlist` adds from a discovered `EDITOR_BIN`, because `up`
 never discovers an editor. That is correct — no editor is attached — and it needs
-no code change; document that bare `jailbox` replaces the sandbox with one whose
-allowlist includes them.
+no code change; document that after an explicit stop, bare `jailbox` launches a
+sandbox whose allowlist includes them.
 
 ## Implementation outline
 
 ```sh
 bring_up_sandbox() {
+    validate_configured_readonly_paths
     check_local_port_available
     build_or_select_dev_image
     validate_dev_image
@@ -281,6 +272,7 @@ bring_up_sandbox() {
     configure_runtime_mounts
     configure_network
     setup_ssh_keys
+    finalize_effective_readonly_paths
     build_readonly_mounts
     ensure_home_volume
     start_jailbox_container
@@ -305,17 +297,13 @@ bring_up_sandbox() {
   discover, configure, or launch an editor, and do not call `bring_up_sandbox`.
 - `shell`: validate its TTY requirements, resolve the sandbox, then open the
   login shell over SSH. Same prohibitions as `exec`.
-- `stop`: stop only the project-scoped development container and proxy without
-  deleting either container, the home volume, networks, or SSH state. Verify the
-  `jailbox.project` ownership label before acting, and tolerate absent or
-  already stopped resources.
+- `stop`: retain the command and ownership-checked behavior already implemented
+  by the protected-path policy; command mode does not add a second stop path.
 - `--clean`: retain the existing full teardown behavior.
 
-`check_local_port_available` currently returns early whenever the container
-merely *exists*. `stop` makes "exists but is not running" a common state, in
-which a foreign listener on the derived port would produce a confusing
-`wait_for_ssh` timeout for the next `up` instead of the intended clear error.
-Narrow the short-circuit to a *running* jailbox container.
+The protected-path implementation makes `check_local_port_available`
+unconditional after proving both container names absent; command mode reuses
+that behavior unchanged.
 
 ### Editor separation
 
@@ -337,9 +325,11 @@ Preflight is command-aware:
 The host Base64 encoder required by `exec` is checked only for `exec`. The
 remote decoder is part of development-image validation.
 
-Configuration bootstrap and loading are command-aware. Bare launch and `up`
-create a missing default config and then load it. `exec` and `shell` load an
-existing default or explicitly selected config. Lifecycle and inspection
+Configuration bootstrap and loading are command-aware. Before either bare launch
+or `up` creates a missing default config, top-level dispatch proves both
+container names absent; it then creates and loads the anchor. `exec` and `shell`
+load an existing default or explicitly selected config. `stop` bypasses
+configuration selection and loading entirely; other lifecycle and inspection
 commands retain their existing config-loading requirements and never create a
 file.
 
@@ -347,8 +337,8 @@ file.
 
 `exec` takes arguments, so it cannot simply join `CLI_FLAGS_WITHOUT_VALUES`:
 
-- add a third list — `CLI_COMMANDS_WITH_ARGS=(exec)` — and put `up`, `shell`,
-  and `stop` in `CLI_FLAGS_WITHOUT_VALUES`; extend `CLI_HELP` and
+- add a third list — `CLI_COMMANDS_WITH_ARGS=(exec)` — and put `up` and `shell`
+  in `CLI_FLAGS_WITHOUT_VALUES`; `stop` is already present. Extend `CLI_HELP` and
   `initialize_public_api_lookups` accordingly;
 - `parse_args` currently rejects any second argument; relax that for `exec` only
   and keep the rejection for every other command;
@@ -362,7 +352,7 @@ file.
   alongside `CLI_HELP`.
 
 Do not add a `HEADLESS` configuration key. Review the generated diff from
-`scripts/public-api-diff.sh`: adding four commands is a minor bump pre-1.0.
+`scripts/public-api-diff.sh`: adding three commands is a minor bump pre-1.0.
 Update README usage and the documented lifecycle behavior, including
 the `up`/`exec` split, the distinction between `stop` and `--clean`, the
 sandbox-handling rules and the config digest's documented gaps, and the limits
@@ -399,22 +389,25 @@ Transport fidelity:
 Lifecycle:
 
 - `up` then `exec` attaches to the sandbox `up` created.
+- `up` against a running sandbox fails with the existing `jailbox stop`
+  instruction before creating or loading configuration and does not terminate
+  attached sessions.
 - `exec` against an absent sandbox fails with the `jailbox up` message and
   creates nothing.
-- After `stop`, `exec` fails the same way and does not replace the stopped
-  container; `up` then brings it back.
+- After `stop`, `exec` fails against the absent container; `up` then creates a
+  fresh one using the preserved persistent state.
 - `exec` fails the same way when the container is running but SSH does not
   answer.
 - Repeated `stop` succeeds; `stop` succeeds when only the proxy exists.
-- Bare launch and `up` atomically create a missing default `jailbox.conf` with
-  `READONLY_PATHS=` before loading it.
-- Concurrent default-config creation never overwrites either writer, exposes a
-  partial config, or leaves a temporary file; the winning complete file is
-  loaded and validated.
+- `up` uses the default-config anchor behavior established and tested by the
+  protected-path implementation; command mode adds no second creation or
+  validation path.
 - `exec` and `shell` fail with the `jailbox up` instruction when the default
   config is absent and create nothing.
 - `stop`, `doctor`, `ssh-config`, and `--clean` create no config.
-- An explicit missing `--config PATH` fails and is never created.
+- For `up`, `exec`, and `shell`, an explicit missing `--config PATH` fails and is
+  never created; `stop` ignores it as established by the protected-path
+  lifecycle.
 - A changed `jailbox.conf` makes `exec` fail with the relaunch message without
   running the command, and does not stop or replace the container; a missing
   `jailbox.config-digest` label fails the same way; a reformatted config with

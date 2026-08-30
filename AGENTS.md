@@ -74,7 +74,9 @@ documented security-model change:
 - No Docker or Podman socket mounted into the development container.
 - Project-scoped runtime state outside the project tree.
 - Fresh SSH credentials and strict host-key checking.
-- Built-in protected project paths remain additive and read-only.
+- Protected project paths are validated before launch and mounted read-only,
+  and project configuration cannot remove a path jailbox protects
+  automatically.
 - Egress mode has no direct external route; outbound HTTP(S) passes through the
   allowlisting proxy sidecar.
 - Configuration remains a strict data format and cannot execute shell syntax.
@@ -142,6 +144,8 @@ host-side edit.
 - Whenever the user gives a new standing instruction about how agents should
   work in this repository, update this `AGENTS.md` in the same change so later
   sessions inherit it.
+- Do not cite a plan document from `AGENTS.md`. Plans are ephemeral and are
+  archived once implemented; every instruction here must stand on its own.
 
 ## Handoff expectations
 
