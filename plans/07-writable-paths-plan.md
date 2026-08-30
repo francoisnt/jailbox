@@ -18,6 +18,7 @@ digest coverage of the new key. Its safe-reuse requirement — that changing the
 allowlist prevents a stale sandbox from being used — is only enforceable once
 `05-exec-command-plan.md` and `06-shell-command-plan.md` gate attachment on the
 digest, so it lands after the full command-mode sequence.
+`08-hidden-paths-plan.md` follows and extends this plan's mount precedence.
 
 ## Configuration
 
@@ -25,7 +26,7 @@ digest, so it lands after the full command-mode sequence.
 strict data grammar:
 
 ```conf
-WRITABLE_PATHS=sections/checkout,.git
+WRITABLE_PATHS=sections/checkout,.git,build-status.json
 ```
 
 - Empty or omitted: mount the project read-write, then apply the effective
@@ -55,6 +56,12 @@ protected read-only overlay > writable lane > read-only project base
 `WRITABLE_PATHS` does not hide secrets. Sensitive material that must not be read
 should not be placed in the mounted checkout.
 
+An existing regular file may be listed for programs that modify it in place.
+Its parent directory remains read-only, so replacement patterns that create a
+sibling temporary file and rename it over the configured file can fail. List
+the parent directory instead when an application requires creation, deletion,
+or atomic replacement.
+
 ## Path safety
 
 Path validation is part of the security boundary.
@@ -62,18 +69,21 @@ Path validation is part of the security boundary.
 Each entry must:
 
 - be a non-empty project-relative path;
-- contain no `.` or `..` segment and no trailing slash;
+- contain no `.` or `..` segment, colon, or trailing slash;
 - exist before launch;
-- be a directory, not a file;
+- be a regular file or directory;
 - contain no symlink component; and
 - resolve canonically beneath canonical `$PROJECT_DIR` immediately before its
   mount is constructed.
 
 Reject duplicate lanes and a lane nested under another writable lane as
-redundant. Do not silently normalize unsafe input.
+redundant. Reject devices, FIFOs, sockets, and other special files. Do not
+silently normalize unsafe input.
 
-The same canonical containment helper should be used for other project-relative
-mount inputs, including `READONLY_PATHS`, so policy does not vary by feature.
+Use the shared project-relative mount-path validation established by plan 1.0,
+including its colon rejection, and the same canonical containment helper for
+`READONLY_PATHS` so policy does not vary by feature. Add only the writable
+policy's type and overlap decisions on top of those shared low-level results.
 
 ## Interaction with protected paths
 
@@ -157,7 +167,7 @@ no `start` command, and no automatic replacement anywhere.
 - Build the project base mount separately from its overlays.
 - Empty allowlist: base is read-write.
 - Non-empty allowlist: base is read-only.
-- Build one read-write bind per validated lane.
+- Build one read-write bind per validated regular file or directory.
 - Emit read-only protected overlays after writable overlays.
 - Expand possibly empty mount arrays as `"${array[@]}"`. This is `host/` code,
   which targets Bash 4.4 or newer; the `${array[@]+"${array[@]}"}` form belongs
@@ -168,6 +178,8 @@ no `start` command, and no automatic replacement anywhere.
 Extend post-start validation to prove both sides of the boundary:
 
 - a write inside every configured lane succeeds;
+- an in-place write to every configured regular file succeeds, while creating a
+  sibling or replacing it by rename fails under a file-only policy;
 - a write outside the lanes fails;
 - protected files nested within a lane remain read-only; and
 - no configured source path resolves outside the project.
@@ -178,11 +190,13 @@ Validation markers must be created and cleaned without overwriting user files.
 
 - Empty `WRITABLE_PATHS` is byte-for-byte compatible with current mount mode.
 - A write inside a lane succeeds and a sibling write fails.
+- An existing regular file accepts in-place writes without making its parent
+  directory writable; document and test the failed sibling-temp-and-rename case.
 - A protected path inside a lane remains read-only.
 - With `.git` writable and `.git/config` plus `.git/hooks` listed in
   `READONLY_PATHS`, a commit succeeds while those paths remain protected.
-- Absolute, traversing, missing, file-valued, duplicate, nested, and symlinked
-  lanes are rejected.
+- Absolute, traversing, colon-containing, missing, special-file, duplicate,
+  nested, and symlinked lanes are rejected.
 - A symlink to a host path outside the project can never become a writable
   mount.
 - A writable lane equal to or beneath a protected path is rejected.

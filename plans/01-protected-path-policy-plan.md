@@ -40,7 +40,7 @@ still interpreted relative to `$PROJECT_DIR`.
 Each entry must:
 
 - be a non-empty project-relative path;
-- contain no `.` or `..` segment and have no trailing slash;
+- contain no `.` or `..` segment, colon, or trailing slash;
 - exist at launch;
 - have no symlink component below the canonical project root;
 - resolve canonically beneath the canonical project root; and
@@ -52,6 +52,15 @@ unsafe input, skip missing entries, or silently remove duplicates.
 Symlink checks begin below the canonical project root. The spelling used to
 reach the project root itself may contain a symlinked prefix, as commonly occurs
 with `/var` and `/private/var` on macOS.
+
+Implement lexical checks, component-wise symlink detection, canonicalization,
+project containment, existence checks, and file-type classification as focused
+low-level helpers. `READONLY_PATHS`, `WRITABLE_PATHS`, and `HIDDEN_PATHS` must
+reuse the same applicable helpers so their common safety rules cannot drift.
+Other path-bearing inputs, including `DEV_CONTAINERFILE`, `DEV_BUILD_CONTEXT`,
+and `--config`, must reuse those helpers wherever their different semantics
+permit; do not force them through one top-level validator when, for example, an
+external path is intentionally valid.
 
 ## Effective read-only paths
 
@@ -114,7 +123,10 @@ must still list every other path they want protected.
   public-API expectations.
 - In `host/common.sh`, assign parsed array values to `READONLY_PATHS`. Replace
   `validate_readonly_extra` with a lexical `READONLY_PATHS` validator for empty,
-  absolute, dot-segment, trailing-slash, and duplicate entries.
+  absolute, dot-segment, colon-containing, trailing-slash, and duplicate
+  entries. Reject colon because the validated paths are later placed in
+  colon-delimited Podman volume arguments; make this part of the shared
+  project-relative mount-path validation used by later path-policy plans.
 - In `host/container-runtime.sh`, keep public configured `READONLY_PATHS`
   separate from runtime-owned `EFFECTIVE_READONLY_PATHS`. Its initializer resets
   only the effective array and mount arguments; it must not erase configuration
@@ -195,8 +207,8 @@ cover:
 - removal and rejection of `READONLY_EXTRA`;
 - preservation of configured order;
 - read-only mount construction for files and directories;
-- rejection of absolute, empty, dot-segment, trailing-slash, duplicate,
-  missing, outside-project, and symlinked entries;
+- rejection of absolute, empty, dot-segment, colon-containing, trailing-slash,
+  duplicate, missing, outside-project, and symlinked entries;
 - rejection of leaf and intermediate-component symlinks;
 - acceptance when only the canonical project root's host spelling has a
   symlinked prefix;
