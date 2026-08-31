@@ -445,6 +445,11 @@ test_launch_reports_missing_podman_first() {
 
     restricted="$FIXTURE/no-podman-bin"
     mkdir -p "$restricted"
+    # jailbox is launched through /usr/bin/env bash. Linux commonly colocates
+    # bash and sed in /usr/bin, while macOS keeps bash in /bin, so make the
+    # interpreter explicit without adding its whole directory (which may also
+    # contain Podman on Homebrew installations).
+    ln -s "$(command -v bash)" "$restricted/bash"
     new_project
     project="$PROJECT"
     output=$( (cd "$project" && PATH="$restricted:$(dirname "$(command -v sed)")" \
