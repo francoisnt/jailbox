@@ -5,6 +5,21 @@
 # during the existing integration container launch instead of starting another
 # Podman-heavy suite.
 
+runtime_file_digest() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1"
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1"
+    else
+        cksum "$1"
+    fi
+}
+
+runtime_file_metadata() {
+    stat -c '%a:%s:%Y:%i' "$1" 2>/dev/null ||
+        stat -f '%Lp:%z:%m:%i' "$1"
+}
+
 assert_runtime_dir_valid() {
     local config="$1" desc="$2"
 
@@ -149,7 +164,7 @@ assert_probe_hardening() {
 # (Dockerfile, .github/workflows), and require it to flag exactly the decoys.
 assert_readonly_mount_validation() {
     local config="$1" project_dir="$2"
-    local output
+    local output before_hash after_hash before_stat after_stat
 
     # shellcheck source=host/validation.sh
     source "$JAILBOX_DIR/host/validation.sh"
@@ -162,7 +177,7 @@ assert_readonly_mount_validation() {
     REMOTE_PATH="/home/jailbox/project"
     WARNINGS=0
 
-    READONLY_PATHS=("Containerfile" ".git/hooks")
+    EFFECTIVE_READONLY_PATHS=("Containerfile" ".git/hooks")
     output=$(check_readonly_mounts)
     if printf '%s\n' "$output" | grep -q "Read-only mounts validated (2 entries checked)"; then
         pass "read-only validation passes for correctly mounted paths"
@@ -171,14 +186,23 @@ assert_readonly_mount_validation() {
         printf '%s\n' "$output" | sed 's/^/    /'
     fi
 
-    READONLY_PATHS=("Containerfile" ".git/hooks" "Dockerfile" ".github/workflows")
+    before_hash=$(runtime_file_digest "$project_dir/Dockerfile")
+    before_stat=$(runtime_file_metadata "$project_dir/Dockerfile")
+    EFFECTIVE_READONLY_PATHS=("Containerfile" ".git/hooks" "Dockerfile" ".github/workflows")
     output=$(check_readonly_mounts)
+    after_hash=$(runtime_file_digest "$project_dir/Dockerfile")
+    after_stat=$(runtime_file_metadata "$project_dir/Dockerfile")
 
     if printf '%s\n' "$output" | grep -q "appears writable: Dockerfile"; then
         pass "read-only validation flags writable file"
     else
         fail "read-only validation flags writable file"
         printf '%s\n' "$output" | sed 's/^/    /'
+    fi
+    if [ "$before_hash" = "$after_hash" ] && [ "$before_stat" = "$after_stat" ] && [ ! -L "$project_dir/Dockerfile" ]; then
+        pass "regular-file validation leaves bytes, metadata, and link type unchanged"
+    else
+        fail "regular-file validation leaves bytes, metadata, and link type unchanged"
     fi
 
     if printf '%s\n' "$output" | grep -q "appears writable: .github/workflows"; then

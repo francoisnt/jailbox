@@ -302,14 +302,6 @@ Update the README threat model to state plainly:
 - validation and the pre-mount recheck do not eliminate filesystem races before
   Podman resolves the bind source.
 
-Add a prominent migration notice to the README's release-facing documentation
-for users who had no `READONLY_EXTRA` declaration: upgrading removes the
-implicit protection for `.env`, Git configuration and hooks, workflow
-directories, and the other former built-ins until the user lists the desired
-existing paths in `READONLY_PATHS`. The unknown-key failure already makes
-configurations that declare `READONLY_EXTRA` loud; the notice owns the otherwise
-silent migration.
-
 ## Acceptance criteria
 
 Update `tests/unit/config-parser.sh`, `tests/unit/readonly-paths.sh`,

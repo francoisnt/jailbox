@@ -102,13 +102,13 @@ echo 'DEV_IMAGE=node:22-bookworm' > jailbox.conf
 jailbox
 ```
 
-### Protect extra project files
+### Protect project files
 
 Paths the host or CI later executes deserve read-only overlays inside the
-container:
+container. List only paths that already exist in the project:
 
 ```conf
-READONLY_EXTRA=Makefile,.husky,scripts/deploy.sh
+READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
 ```
 
 ---
@@ -126,8 +126,7 @@ jailbox --uninstall  # Remove the jailbox installation from this machine
 **State**: per-project runtime state (SSH keys/config, editor profiles) lives
 under `~/.local/state/jailbox/`; `--clean` removes the current project's
 share of it. Nothing is written to your project except an optional
-`jailbox.conf` you create and the protected-path stubs described in the
-threat model.
+`jailbox.conf` you create.
 
 **Upgrade**: re-run the install command (see Quick Start); it replaces the
 previous install cleanly.
@@ -159,7 +158,7 @@ read-only in the sandbox.
 | `DEV_TARGET_STAGE` | final stage | Multi-stage build target to use as dev image |
 | `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`) |
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
-| `READONLY_EXTRA` | — | Extra project paths mounted read-only (additive only) |
+| `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |
 
 Annotated example:
 
@@ -175,9 +174,8 @@ EDITOR=codium
 
 EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com,claude.ai
 
-# Additional project paths to mount read-only inside the container, on top of
-# the built-in protected set. Comma-separated, relative to the project root.
-READONLY_EXTRA=Makefile,.husky,scripts/deploy.sh
+# Existing paths to mount read-only. Every listed path must exist before launch.
+READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
 ```
 
 Alpine-based dev images require `EDITOR=codium`: VS Code Remote SSH does not
@@ -224,17 +222,19 @@ unrestricted outbound internet access.
 ### Important realities
 - The container runs with your **host UID**, so it can read and write your
   project files
-- Project files are mounted writable; selected paths like `.git/config`,
-  `.github/workflows`, and `Containerfile` are overlaid read-only. The
-  built-in list is illustrative, not exhaustive — anything the host or CI
-  later executes (`Makefile`, `.envrc`, `package.json` scripts, editor task
-  files, …) is writable unless you add it via `READONLY_EXTRA`
-- `READONLY_EXTRA` extends the built-in protected set and can never remove
-  from it
-- High-risk paths that are absent at launch (`.env`, `.github/workflows`,
-  `.gitea/workflows`) are created as empty stubs so they can be mounted
-  read-only; other absent paths — including `READONLY_EXTRA` entries, which
-  produce a launch warning — are not protected
+- Project files are mounted writable. An existing default `jailbox.conf`, the
+  selected in-project config, and the exact in-project Containerfile used for
+  the build are overlaid read-only automatically. Selecting an external config
+  does not remove protection from the default config.
+- Only additional paths explicitly listed in `READONLY_PATHS` receive
+  read-only overlays. They must already exist as regular files or directories;
+  missing paths are rejected and no stubs are created. Every other project
+  path, including unused Containerfile candidates, remains writable.
+- Read-only overlays protect integrity, not secrecy: code in the sandbox can
+  still read their contents.
+- Paths are validated before launch and rechecked while mount arguments are
+  assembled, but host-side filesystem races before Podman resolves each bind
+  source are not eliminated.
 - The AI (or any code running in the container) can still exfiltrate or
   destroy project contents
 - You still share the kernel and container runtime trust boundary

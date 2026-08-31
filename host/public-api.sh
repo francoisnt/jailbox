@@ -16,7 +16,7 @@ CONFIG_SCALAR_KEYS=(
 
 CONFIG_ARRAY_KEYS=(
     EGRESS_ALLOW
-    READONLY_EXTRA
+    READONLY_PATHS
 )
 
 CONFIG_DEFAULTS=(
@@ -26,7 +26,7 @@ CONFIG_DEFAULTS=(
     "DEV_TARGET_STAGE="
     "EDITOR="
     "EGRESS_ALLOW="
-    "READONLY_EXTRA="
+    "READONLY_PATHS="
 )
 
 CLI_FLAGS_WITH_VALUES=(
@@ -105,8 +105,8 @@ apply_config_defaults() {
             EGRESS_ALLOW)
                 EGRESS_ALLOW=()
                 ;;
-            READONLY_EXTRA)
-                READONLY_EXTRA=()
+            READONLY_PATHS)
+                READONLY_PATHS=()
                 ;;
         esac
     done

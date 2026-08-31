@@ -1,127 +1,69 @@
 # Read-only mounts, persistent home, cleanup, and container launch.
 
-READONLY_PATHS=()
+EFFECTIVE_READONLY_PATHS=()
 READONLY_MOUNTS=()
 GITCONFIG_MOUNT=()
 ROOTFS_FLAG=()
 
 initialize_container_runtime_state() {
-    READONLY_PATHS=()
+    EFFECTIVE_READONLY_PATHS=()
     READONLY_MOUNTS=()
     GITCONFIG_MOUNT=()
     ROOTFS_FLAG=()
 }
 
-configure_readonly_paths() {
-    READONLY_PATHS=(
-        "Containerfile"
-        "Dockerfile"
-        ".devcontainer/Containerfile"
-        ".devcontainer/Dockerfile"
-        ".git/config"
-        ".git/config.lock"
-        ".git/hooks"
-        ".gitignore"
-        ".gitmodules"
-        # Intentionally narrow: protect only the exact .env file, not
-        # .env.local, .env.production, .env.*.local, or other Node/Next.js
-        # variants that projects may expect to edit during development.
-        ".env"
-        ".gitea/workflows"
-        ".github/workflows"
-        "jailbox"
-        "jailbox.conf"
-    )
-
-    # If jailbox lives inside the project, protect the whole submodule/directory.
-    if [[ "$SCRIPT_DIR" == "$PROJECT_DIR/"* ]]; then
-        local submodule_rel
-        submodule_rel="${SCRIPT_DIR#$PROJECT_DIR/}"
-        READONLY_PATHS=("$submodule_rel" "${READONLY_PATHS[@]}")
-    fi
-
-    # A configured DEV_CONTAINERFILE is a build input the next launch executes
-    # via podman build, exactly like the default candidates above. Protect it
-    # when it resolves inside the project; a containerfile outside the project
-    # is not reachable through the project mount and needs no overlay.
-    if [ -n "$DEV_CONTAINERFILE" ]; then
-        local containerfile_abs containerfile_rel
-        case "$DEV_CONTAINERFILE" in
-            /*) containerfile_abs="$DEV_CONTAINERFILE" ;;
-            *)  containerfile_abs="$PROJECT_DIR/$DEV_CONTAINERFILE" ;;
-        esac
-        # Canonicalize both sides: macOS temp paths may be lexical /var paths
-        # whose physical spelling is below /private/var.
-        if containerfile_rel=$(canonical_project_relative_path "$containerfile_abs"); then
-            readonly_paths_contain "$containerfile_rel" || READONLY_PATHS+=("$containerfile_rel")
-        fi
-    fi
-
-    # READONLY_EXTRA is additive only: project config can extend the protected
-    # set but never remove or replace the built-in defaults. Skip entries
-    # already in the list so podman never sees duplicate mount destinations.
-    local extra config_rel
-    for extra in "${READONLY_EXTRA[@]}"; do
-        readonly_paths_contain "$extra" || READONLY_PATHS+=("$extra")
+validate_configured_readonly_paths() {
+    local path
+    for path in "${READONLY_PATHS[@]}"; do
+        check_readonly_path "$path" >/dev/null
     done
-
-    # An in-project config is executable launch policy for the next run.
-    # Protect its canonical project path from container writes.
-    if [ -n "$CONFIG_FILE" ] && config_rel=$(canonical_project_relative_path "$CONFIG_FILE"); then
-        readonly_paths_contain "$config_rel" || READONLY_PATHS+=("$config_rel")
-    fi
 }
 
-readonly_paths_contain() {
-    local path candidate
-
+effective_readonly_contains() {
+    local candidate path
     candidate="$1"
-    for path in "${READONLY_PATHS[@]}"; do
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
         [ "$path" = "$candidate" ] && return 0
     done
     return 1
 }
 
-# A protected path that is absent at launch gets no read-only overlay, so
-# anything inside the container could create it — and .env or CI workflow
-# files materializing on the host is exactly what the overlays exist to
-# prevent. Stub the high-risk entries: empty directories are invisible to git
-# and an empty .env is inert. Containerfile candidates are deliberately not
-# stubbed; an empty Containerfile would break dev-image discovery.
-ensure_readonly_stubs() {
-    local stub_dirs stub_files path
-
-    stub_dirs=(".gitea/workflows" ".github/workflows")
-    stub_files=(".env")
-
-    for path in "${stub_dirs[@]}"; do
-        if [ ! -e "$PROJECT_DIR/$path" ]; then
-            mkdir -p "$PROJECT_DIR/$path"
-            echo "🔒 Created stub for protected path: $path/"
-        fi
+finalize_effective_readonly_paths() {
+    local path relative classified status
+    local -a automatic_inputs
+    EFFECTIVE_READONLY_PATHS=()
+    for path in "${READONLY_PATHS[@]}"; do
+        status=0
+        relative=$(check_readonly_path "$path") || status=$?
+        [ "$status" -eq 0 ] || return "$status"
+        effective_readonly_contains "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
     done
-    for path in "${stub_files[@]}"; do
-        if [ ! -e "$PROJECT_DIR/$path" ]; then
-            touch "$PROJECT_DIR/$path"
-            echo "🔒 Created stub for protected path: $path"
-        fi
+    # The default config is optional, but once observed it and every selected
+    # input must still exist at each recheck.
+    automatic_inputs=()
+    [ "$DEFAULT_CONFIG_PRESENT" -eq 1 ] && automatic_inputs+=("$DEFAULT_CONFIG_INPUT")
+    [ -n "$SELECTED_CONFIG_INPUT" ] && automatic_inputs+=("$SELECTED_CONFIG_INPUT")
+    [ -n "$SELECTED_DEV_CONTAINERFILE_INPUT" ] && automatic_inputs+=("$SELECTED_DEV_CONTAINERFILE_INPUT")
+    for path in "${automatic_inputs[@]}"; do
+        status=0
+        classified=$(classify_trusted_file "$path" "launch input") || status=$?
+        [ "$status" -eq 0 ] || return "$status"
+        relative="${classified#*$'\t'}"
+        [ -n "$relative" ] || continue
+        effective_readonly_contains "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
     done
 }
 
 build_readonly_mounts() {
-    local path
+    local path status
+    # Reassemble from original trusted-input spellings immediately before
+    # creating mount arguments so a path replaced with a symlink is rejected.
+    status=0
+    finalize_effective_readonly_paths || status=$?
+    [ "$status" -eq 0 ] || return "$status"
     READONLY_MOUNTS=()
-    for path in "${READONLY_PATHS[@]}"; do
-        [ -e "$PROJECT_DIR/$path" ] && READONLY_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,ro")
-    done
-
-    # Default paths are skipped silently when absent, but READONLY_EXTRA was
-    # requested explicitly — a missing path gets no read-only mount and could
-    # be created writable from inside the container, so surface that.
-    for path in "${READONLY_EXTRA[@]}"; do
-        if [ ! -e "$PROJECT_DIR/$path" ]; then
-            echo "⚠️  READONLY_EXTRA path does not exist and is not protected: $path"
-        fi
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
+        READONLY_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,ro")
     done
 }
 

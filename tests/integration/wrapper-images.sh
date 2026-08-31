@@ -340,7 +340,7 @@ run_case() {
     assert_host_container_sockets_absent "$ssh_dir/config"
     assert_zero_effective_capabilities "$ssh_dir/config"
     assert_local_forwarding "$ssh_dir/config" "$forward_port" "SSH local forwarding works"
-    # Last: mutates READONLY_PATHS and other host-module globals (safe in this
+    # Last: mutates effective read-only and other host-module globals (safe in this
     # per-stage subshell, but keep it after the plain container assertions).
     assert_readonly_mount_validation "$ssh_dir/config" "$project_dir"
 }

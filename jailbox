@@ -18,7 +18,7 @@ fi
 # CONFIGURATION
 #   jailbox.conf in the project root is parsed if present. Supported settings:
 #     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
-#     EDITOR, EGRESS_ALLOW, READONLY_EXTRA.
+#     EDITOR, EGRESS_ALLOW, READONLY_PATHS.
 #
 # REQUIREMENTS
 #   podman, ssh, ssh-keygen, VSCodium/VSCode with open-remote-ssh extension
@@ -69,15 +69,16 @@ source "$SCRIPT_DIR/host/validation.sh"
 
 run_launch() {
     initialize_runtime_ids
+    validate_configured_readonly_paths
     check_local_port_available
     build_or_select_dev_image
+    finalize_effective_readonly_paths
     validate_dev_image
     warn_if_alpine_dev_image_with_vscode
     build_jailbox_image
     configure_runtime_mounts
     configure_network
     setup_ssh_keys
-    ensure_readonly_stubs
     build_readonly_mounts
     ensure_home_volume
     start_jailbox_container
@@ -122,7 +123,6 @@ initialize_launch_state() {
     initialize_editor_state
     initialize_network_state
     initialize_container_runtime_state
-    configure_readonly_paths
 }
 
 main() {
@@ -140,13 +140,15 @@ main() {
     fi
 
     parse_args "$@"
-    prepare_config_selection
-    load_project_config
 
-    # Before host_preflight: uninstalling must not require podman or SSH tooling.
+    # Uninstall delegates to the installed copy and must not inspect project
+    # configuration or require any launch dependency.
     if [[ "${1:-}" == "--uninstall" ]]; then
         run_uninstall
     fi
+
+    prepare_config_selection
+    load_project_config
 
     host_preflight "$@"
     initialize_launch_state

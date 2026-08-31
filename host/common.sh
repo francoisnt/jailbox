@@ -7,6 +7,9 @@ declare -A CONFIG_SEEN_KEYS=()
 
 CONFIG_PATH_ARG=""
 CONFIG_FILE=""
+DEFAULT_CONFIG_INPUT=""
+SELECTED_CONFIG_INPUT=""
+DEFAULT_CONFIG_PRESENT=0
 
 PROJECT_HASH=""
 PROJECT_RESOURCE_PREFIX=""
@@ -64,25 +67,161 @@ canonical_project_relative_path() {
     printf '%s\n' "${candidate_abs#"$project_abs"/}"
 }
 
-prepare_config_selection() {
-    if [ -n "$CONFIG_PATH_ARG" ]; then
-        CONFIG_FILE="$CONFIG_PATH_ARG"
-    else
-        CONFIG_FILE=""
-        [ -f "$PROJECT_DIR/jailbox.conf" ] && CONFIG_FILE="$PROJECT_DIR/jailbox.conf"
-    fi
+validate_project_mount_path_lexical() {
+    local path
 
-    [ -n "$CONFIG_FILE" ] || return 0
+    path="$1"
+    case "$path" in
+        "") return 1 ;;
+        /*) return 1 ;;
+        *//* ) return 1 ;;
+        .|..|./*|../*|*/.|*/..|*/./*|*/../*) return 1 ;;
+        *:*) return 1 ;;
+        */) return 1 ;;
+    esac
+}
+
+check_project_path_no_symlinks() {
+    local relative current component
+    local -a components
+
+    relative="$1"
+    current=$(realpath -- "$PROJECT_DIR" 2>/dev/null) || return 1
+    IFS='/' read -ra components <<< "$relative"
+    for component in "${components[@]}"; do
+        current="$current/$component"
+        [ ! -L "$current" ] || return 1
+    done
+}
+
+project_path_type() {
+    local path
+
+    path="$1"
+    if [ -f "$path" ]; then
+        printf 'file\n'
+    elif [ -d "$path" ]; then
+        printf 'directory\n'
+    else
+        printf 'special\n'
+    fi
+}
+
+check_project_mount_path() {
+    local path candidate relative type
+
+    path="$1"
+    validate_project_mount_path_lexical "$path" || return 1
+    candidate="$(realpath -- "$PROJECT_DIR" 2>/dev/null)/$path"
+    check_project_path_no_symlinks "$path" || return 3
+    [ -e "$candidate" ] || return 2
+    relative=$(canonical_project_relative_path "$candidate") || return 4
+    type=$(project_path_type "$candidate")
+    [ "$type" != special ] || return 5
+    printf '%s\n' "$relative"
+}
+
+check_readonly_path() {
+    local path result status
+
+    path="$1"
+    status=0
+    result=$(check_project_mount_path "$path") || status=$?
+    if [ "$status" -eq 0 ]; then
+        printf '%s\n' "$result"
+        return 0
+    fi
+    case "$status" in
+        1) die "invalid READONLY_PATHS path '$path' (use a non-empty project-relative path without dot segments, colons, or a trailing slash)" ;;
+        2) die "READONLY_PATHS path does not exist: $path" ;;
+        3) die "READONLY_PATHS path contains a symlink: $path" ;;
+        4) die "READONLY_PATHS path resolves outside the project: $path" ;;
+        5) die "READONLY_PATHS path is not a regular file or directory: $path" ;;
+    esac
+}
+
+check_path_no_symlinks() {
+    local path current component
+    local -a components
+
+    path="$1"
+    case "$path" in
+        /*) current=/ ;;
+        *) current="$PWD" ;;
+    esac
+    IFS='/' read -ra components <<< "$path"
+    for component in "${components[@]}"; do
+        [ -z "$component" ] && continue
+        [ "$component" = . ] && continue
+        if [ "$component" = .. ]; then
+            current=$(dirname "$current")
+            continue
+        fi
+        current="${current%/}/$component"
+        [ ! -L "$current" ] || return 1
+    done
+}
+
+classify_trusted_file() {
+    local path description canonical relative
+
+    path="$1"
+    description="$2"
+    check_path_no_symlinks "$path" || die "$description path contains a symlink: $path"
+    [ -e "$path" ] || die "$description path does not exist: $path"
+    [ -f "$path" ] || die "$description path is not a regular file: $path"
+    [ -r "$path" ] || die "$description path is not readable: $path"
+    canonical=$(realpath -- "$path") || die "cannot canonicalize $description path: $path"
+    relative=""
+    relative=$(canonical_project_relative_path "$canonical" 2>/dev/null || true)
+    printf '%s\t%s\n' "$canonical" "$relative"
+}
+
+classify_trusted_directory() {
+    local path description canonical
+
+    path="$1"
+    description="$2"
+    check_path_no_symlinks "$path" || die "$description path contains a symlink: $path"
+    [ -e "$path" ] || die "$description path does not exist: $path"
+    [ -d "$path" ] || die "$description path is not a directory: $path"
+    [ -r "$path" ] && [ -x "$path" ] || die "$description path is not accessible: $path"
+    canonical=$(realpath -- "$path") || die "cannot canonicalize $description path: $path"
+    printf '%s\n' "$canonical"
+}
+
+prepare_config_selection() {
+    local selected classified status
 
     require_command realpath
-    CONFIG_FILE=$(realpath -- "$CONFIG_FILE" 2>/dev/null) || \
-        die "config path does not exist: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
-    [ -e "$CONFIG_FILE" ] || \
-        die "config path does not exist: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
-    [ -f "$CONFIG_FILE" ] || \
-        die "config path is not a regular file: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
-    [ -r "$CONFIG_FILE" ] || \
-        die "config path is not readable: ${CONFIG_PATH_ARG:-$PROJECT_DIR/jailbox.conf}"
+    DEFAULT_CONFIG_INPUT="$PROJECT_DIR/jailbox.conf"
+    DEFAULT_CONFIG_PRESENT=0
+    SELECTED_CONFIG_INPUT=""
+    if [ -e "$DEFAULT_CONFIG_INPUT" ] || [ -L "$DEFAULT_CONFIG_INPUT" ]; then
+        status=0
+        classified=$(classify_trusted_file "$DEFAULT_CONFIG_INPUT" "default config") || status=$?
+        [ "$status" -eq 0 ] || return "$status"
+        DEFAULT_CONFIG_PRESENT=1
+    fi
+
+    if [ -n "$CONFIG_PATH_ARG" ]; then
+        case "$CONFIG_PATH_ARG" in
+            /*) selected="$CONFIG_PATH_ARG" ;;
+            *) selected="$PWD/$CONFIG_PATH_ARG" ;;
+        esac
+    else
+        selected=""
+        [ -e "$DEFAULT_CONFIG_INPUT" ] && selected="$DEFAULT_CONFIG_INPUT"
+    fi
+
+    CONFIG_FILE=""
+    [ -n "$selected" ] || return 0
+
+    SELECTED_CONFIG_INPUT="$selected"
+    status=0
+    classified=$(classify_trusted_file "$SELECTED_CONFIG_INPUT" "config") || status=$?
+    [ "$status" -eq 0 ] || return "$status"
+    CONFIG_FILE="${classified%%$'\t'*}"
 }
 
 load_project_config() {
@@ -266,14 +405,14 @@ set_config_array() {
 
     case "$key" in
         EGRESS_ALLOW) EGRESS_ALLOW=("$@") ;;
-        READONLY_EXTRA) READONLY_EXTRA=("$@") ;;
+        READONLY_PATHS) READONLY_PATHS=("$@") ;;
     esac
 }
 
 validate_config() {
     validate_editor_config
     validate_egress_allow
-    validate_readonly_extra
+    validate_readonly_paths_lexical
 }
 
 validate_editor_config() {
@@ -297,25 +436,15 @@ validate_egress_allow() {
     done
 }
 
-validate_readonly_extra() {
-    local path
+validate_readonly_paths_lexical() {
+    local path seen
+    declare -A seen=()
 
-    for path in "${READONLY_EXTRA[@]}"; do
-        # Paths are mounted as "$PROJECT_DIR/$path", so only plain relative
-        # paths make sense; absolute or traversing paths could target host
-        # locations outside the project tree. Trailing slashes are rejected so
-        # each path has one canonical spelling for duplicate detection.
-        case "$path" in
-            /*)
-                die "invalid READONLY_EXTRA path '$path' (use paths relative to the project root)"
-                ;;
-            .|..|./*|../*|*/.|*/..|*/./*|*/../*)
-                die "invalid READONLY_EXTRA path '$path' ('.' and '..' segments are not allowed)"
-                ;;
-            */)
-                die "invalid READONLY_EXTRA path '$path' (remove the trailing slash)"
-                ;;
-        esac
+    for path in "${READONLY_PATHS[@]}"; do
+        validate_project_mount_path_lexical "$path" || \
+            die "invalid READONLY_PATHS path '$path' (use a non-empty project-relative path without dot segments, colons, or a trailing slash)"
+        [[ ! -v seen[$path] ]] || die "duplicate READONLY_PATHS path: $path"
+        seen["$path"]=1
     done
 }
 

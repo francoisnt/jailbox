@@ -50,13 +50,30 @@ check_readonly_mounts() {
     printf -v qpath '%q' "$REMOTE_PATH"
     marker=".jailbox-ro-check-$$"
 
-    for ro_path in "${READONLY_PATHS[@]}"; do
+    for ro_path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
         if [ -f "$PROJECT_DIR/$ro_path" ]; then
             checked=$((checked + 1))
             printf -v qro '%q' "$ro_path"
-            if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-                "{ echo x >> $qpath/$qro; } 2>/dev/null && echo writable || true" \
-                2>/dev/null | grep -q "^writable"; then
+            if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
+                "REMOTE_PATH=$qpath RO_PATH=$qro sh -s" <<'REMOTE' 2>/dev/null; then
+awk -v target="$REMOTE_PATH/$RO_PATH" '
+    BEGIN { status = 1 }
+    {
+        mount_path = $5
+        gsub(/\\040/, " ", mount_path)
+        gsub(/\\011/, "\t", mount_path)
+        gsub(/\\012/, "\n", mount_path)
+        gsub(/\\134/, "\\", mount_path)
+        if (mount_path != target) next
+
+        count = split($6, options, ",")
+        for (i = 1; i <= count; i++) {
+            if (options[i] == "ro") status = 0
+        }
+    }
+    END { exit status }
+' /proc/self/mountinfo
+REMOTE
                 echo "  ⚠️  Read-only mount appears writable: $ro_path"
                 failed=$((failed + 1))
             fi
@@ -89,8 +106,7 @@ REMOTE
     done
 
     if [ "$checked" -eq 0 ]; then
-        echo "  ⚠️  No read-only mounts were available to validate"
-        WARNINGS=$((WARNINGS + 1))
+        return 0
     elif [ "$failed" -eq 0 ]; then
         echo "  ✅ Read-only mounts validated ($checked entries checked)"
     else

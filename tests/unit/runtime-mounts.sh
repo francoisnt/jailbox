@@ -121,17 +121,19 @@ test_container_launch_preconditions() {
 
 test_initialize_container_runtime_state_clears_outputs() {
     READONLY_PATHS=(stale)
+    EFFECTIVE_READONLY_PATHS=(stale)
     READONLY_MOUNTS=(stale)
     GITCONFIG_MOUNT=(stale)
     ROOTFS_FLAG=(stale)
 
     initialize_container_runtime_state
 
-    if [[ "${#READONLY_PATHS[@]}" -eq 0 && "${#READONLY_MOUNTS[@]}" -eq 0 && \
+    if [[ "${READONLY_PATHS[*]}" = stale && "${#EFFECTIVE_READONLY_PATHS[@]}" -eq 0 && \
+        "${#READONLY_MOUNTS[@]}" -eq 0 && \
         "${#GITCONFIG_MOUNT[@]}" -eq 0 && "${#ROOTFS_FLAG[@]}" -eq 0 ]]; then
-        pass "runtime initialization clears stale outputs"
+        pass "runtime initialization preserves config and clears outputs"
     else
-        fail "runtime initialization clears stale outputs"
+        fail "runtime initialization preserves config and clears outputs"
     fi
 }
 

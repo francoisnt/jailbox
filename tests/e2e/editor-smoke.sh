@@ -13,10 +13,13 @@
 # via the vscode.tasks API; which path was used is recorded as diagnostics
 # and is deliberately not part of the pass/fail gate.
 #
-# Prerequisites: run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
+# Prerequisites: run tests/integration/wrapper-images.sh first to build the
+# jailbox-test-* and jailbox-wrapper-* images.
 #
 # Usage: tests/e2e/editor-smoke.sh [stage...]
-# Env:   JAILBOX_EDITOR_TIMEOUT seconds to wait for editor attach (default: 45)
+# Env:   JAILBOX_EDITOR_TIMEOUT seconds to wait for a cached editor attach (default: 45)
+#        JAILBOX_EDITOR_CACHE_FILL_TIMEOUT seconds for a cold cache fill (default: 300)
+#        JAILBOX_EDITOR_COLD_BOOTSTRAP=1 bypasses the shared test cache
 #        JAILBOX_KEEP_FAILED=1 keeps failed temp projects/containers for diagnosis
 set -euo pipefail
 
@@ -36,12 +39,19 @@ EXT_ACTIVATION_MARKER=".jailbox-editor-ext-activated"
 EXT_TASK_RESULT=".jailbox-editor-task-result"
 TASK_LABEL="jailbox: validate remote session"
 EDITOR_TIMEOUT="${JAILBOX_EDITOR_TIMEOUT:-45}"
+EDITOR_CACHE_FILL_TIMEOUT="${JAILBOX_EDITOR_CACHE_FILL_TIMEOUT:-300}"
 
 PASSED=0
 FAILED=0
 LOG_DIR=""
 RUN_LOG=""
 PROOF_VSIX=""
+EDITOR_CACHE_ROOT=""
+EDITOR_CACHE_BASE=""
+EDITOR_CACHE_VERSION=""
+EDITOR_CACHE_COMMIT=""
+EDITOR_CACHE_ARCH=""
+EDITOR_CACHE_SEEDED=0
 # PIDs of backgrounded success-path teardowns, joined in main() before exit.
 TEARDOWN_PIDS=()
 
@@ -53,6 +63,10 @@ fail()  { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 jailbox_container_name() {
     jailbox_resource_prefix_for_path "$1"
+}
+
+jailbox_home_volume_name() {
+    printf '%s-home\n' "$(jailbox_resource_prefix_for_path "$1")"
 }
 
 jailbox_ssh_config() {
@@ -77,6 +91,13 @@ stage_test_image() {
     esac
 }
 
+stage_wrapper_image() {
+    case "$1" in
+        egress) echo "jailbox-wrapper-debian" ;;
+        *) echo "jailbox-wrapper-$1" ;;
+    esac
+}
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [stage...]
@@ -91,12 +112,20 @@ Default: all stages in order.
 VS Code default: ${VSCODE_STAGES[*]} (VS Code Remote SSH does not support Alpine SSH hosts).
 
 Requires: podman, ssh, ssh-keygen, python3, VSCodium or VS Code CLI.
-Run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
+Run tests/integration/wrapper-images.sh first to build the jailbox-test-* and
+jailbox-wrapper-* images.
 
 Environment:
   JAILBOX_EDITOR_TIMEOUT  Seconds to wait for editor attach (default: 45)
+  JAILBOX_EDITOR_CACHE_FILL_TIMEOUT
+                          Seconds to allow the first uncached server install (default: 300)
+  JAILBOX_EDITOR_COLD_BOOTSTRAP=1
+                          Bypass the shared test cache and exercise remote download
   JAILBOX_EDITOR          Editor CLI to test: codium or code (default: auto)
   JAILBOX_KEEP_FAILED=1   Keep failed temp workspaces/containers for diagnosis
+
+The shared cache is under ${XDG_CACHE_HOME:-$HOME/.cache}/jailbox/editor-server.
+Remove that directory to clear it. Old editor versions are pruned automatically.
 EOF
 }
 
@@ -171,6 +200,203 @@ editor_server_dirs() {
             printf '%s\n' ".vscode-server" ".vscodium-server"
             ;;
     esac
+}
+
+initialize_editor_server_cache() {
+    local bin
+    local -a version_output
+
+    bin=$(editor_bin) || return 1
+    mapfile -t version_output < <("$bin" --version)
+    [[ "${#version_output[@]}" -ge 3 ]] || die "cannot determine editor version, commit, and architecture"
+
+    EDITOR_CACHE_VERSION="${version_output[0]}"
+    EDITOR_CACHE_COMMIT="${version_output[1]}"
+    EDITOR_CACHE_ARCH="${version_output[2]}"
+    [[ "$EDITOR_CACHE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe editor version: $EDITOR_CACHE_VERSION"
+    [[ "$EDITOR_CACHE_COMMIT" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe editor commit: $EDITOR_CACHE_COMMIT"
+    [[ "$EDITOR_CACHE_ARCH" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe editor architecture: $EDITOR_CACHE_ARCH"
+
+    EDITOR_CACHE_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/jailbox/editor-server/$(editor_name)"
+    EDITOR_CACHE_ROOT="$EDITOR_CACHE_BASE/${EDITOR_CACHE_VERSION}-${EDITOR_CACHE_COMMIT}"
+}
+
+prune_editor_server_cache() {
+    local old_dir
+
+    [[ -n "$EDITOR_CACHE_BASE" && -n "$EDITOR_CACHE_ROOT" ]] || return 1
+    [[ "$EDITOR_CACHE_ROOT" == "$EDITOR_CACHE_BASE/"* ]] || return 1
+    mkdir -p "$EDITOR_CACHE_BASE"
+
+    # The cache is disposable test data. Keep only the installed editor's
+    # version so editor upgrades cannot accumulate server archives indefinitely.
+    for old_dir in "$EDITOR_CACHE_BASE"/*; do
+        [[ -d "$old_dir" && ! -L "$old_dir" ]] || continue
+        [[ "$old_dir" != "$EDITOR_CACHE_ROOT" ]] || continue
+        rm -rf -- "$old_dir"
+    done
+}
+
+editor_cache_platform() {
+    case "$1" in
+        alpine) printf 'alpine\n' ;;
+        *) printf 'linux\n' ;;
+    esac
+}
+
+editor_cache_archive() {
+    printf '%s/%s-%s.tar.gz\n' "$EDITOR_CACHE_ROOT" "$(editor_cache_platform "$1")" "$EDITOR_CACHE_ARCH"
+}
+
+editor_server_relative_path() {
+    case "$(editor_name)" in
+        codium) printf '.vscodium-server/bin/%s\n' "$EDITOR_CACHE_COMMIT" ;;
+        code) printf '.vscode-server/bin/%s\n' "$EDITOR_CACHE_COMMIT" ;;
+        *) return 1 ;;
+    esac
+}
+
+editor_server_cli_name() {
+    case "$(editor_name)" in
+        codium) printf 'codium-server\n' ;;
+        code) printf 'code-server\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+editor_cache_archive_valid() {
+    local archive="$1" cli
+
+    [[ -s "$archive" ]] || return 1
+    cli=$(editor_server_cli_name) || return 1
+    tar -tzf "$archive" 2>/dev/null |
+        awk -v expected="${EDITOR_CACHE_COMMIT}/bin/$cli" '
+            $0 == expected { found = 1 }
+            END { exit !found }
+        '
+}
+
+seed_editor_server_cache() {
+    local project_dir="$1" stage="$2"
+    local archive volume volume_path image relative cli
+
+    EDITOR_CACHE_SEEDED=0
+    [[ "${JAILBOX_EDITOR_COLD_BOOTSTRAP:-}" != "1" ]] || {
+        echo "  Editor server cache bypassed (JAILBOX_EDITOR_COLD_BOOTSTRAP=1)"
+        return 0
+    }
+
+    archive=$(editor_cache_archive "$stage")
+    if ! editor_cache_archive_valid "$archive"; then
+        echo "  Editor server cache miss: $(editor_cache_platform "$stage")-$EDITOR_CACHE_ARCH"
+        return 0
+    fi
+
+    volume=$(jailbox_home_volume_name "$project_dir")
+    image=$(stage_wrapper_image "$stage")
+    relative=$(editor_server_relative_path)
+    cli=$(editor_server_cli_name)
+    podman volume create --label "jailbox.project=$project_dir" "$volume" >/dev/null || return 1
+    volume_path=$(podman volume inspect "$volume" --format '{{.Mountpoint}}') || return 1
+    podman unshare chown "$(id -u):$(id -g)" "$volume_path" || return 1
+
+    if ! podman run --rm \
+        --network=none \
+        --userns=keep-id \
+        --user "$(id -u):$(id -g)" \
+        --entrypoint /bin/sh \
+        -v "$volume:/home/jailbox" \
+        -v "$archive:/seed/server.tar.gz:ro,z" \
+        "$image" -c \
+        "mkdir -p '/home/jailbox/${relative%/*}' && tar -xzf /seed/server.tar.gz -C '/home/jailbox/${relative%/*}' && test -x '/home/jailbox/$relative/bin/$cli'"; then
+        echo "  Warning: could not seed editor server cache; falling back to cold bootstrap" >&2
+        podman volume rm "$volume" >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    EDITOR_CACHE_SEEDED=1
+    echo "  Editor server cache hit: $(editor_cache_platform "$stage")-$EDITOR_CACHE_ARCH"
+}
+
+acquire_editor_cache_lock() {
+    local lock_dir="$1" attempts owner stale
+
+    attempts=0
+    while ! mkdir "$lock_dir" 2>/dev/null; do
+        owner=$(cat "$lock_dir/pid" 2>/dev/null || true)
+        stale=""
+        if [[ ! "$owner" =~ ^[0-9]+$ ]]; then
+            # A newly-created lock may not have its pid file yet. Only reclaim
+            # a pid-less lock after its directory has aged beyond that window.
+            stale=$(find "$lock_dir" -prune -mmin +1 -print 2>/dev/null || true)
+            [[ -n "$stale" ]] || {
+                attempts=$((attempts + 1))
+                [[ "$attempts" -lt 300 ]] || return 1
+                sleep 0.2
+                continue
+            }
+        elif kill -0 "$owner" 2>/dev/null; then
+            attempts=$((attempts + 1))
+            [[ "$attempts" -lt 300 ]] || return 1
+            sleep 0.2
+            continue
+        fi
+
+        rm -f -- "$lock_dir/pid"
+        if rmdir "$lock_dir" 2>/dev/null; then
+            continue
+        fi
+        return 1
+    done
+    printf '%s\n' "$$" > "$lock_dir/pid"
+}
+
+release_editor_cache_lock() {
+    local lock_dir="$1"
+
+    rm -f -- "$lock_dir/pid"
+    rmdir "$lock_dir" 2>/dev/null || true
+}
+
+capture_editor_server_cache() {
+    local project_dir="$1" stage="$2" ctr="$3"
+    local archive lock_dir tmp_archive relative parent status ssh_cfg
+
+    [[ "${JAILBOX_EDITOR_COLD_BOOTSTRAP:-}" != "1" ]] || return 0
+    [[ "$EDITOR_CACHE_SEEDED" -eq 0 ]] || return 0
+    archive=$(editor_cache_archive "$stage")
+    editor_cache_archive_valid "$archive" && return 0
+
+    mkdir -p "$(dirname "$archive")"
+    lock_dir="${archive}.lock"
+    if ! acquire_editor_cache_lock "$lock_dir"; then
+        echo "  Warning: timed out waiting for editor server cache lock" >&2
+        return 0
+    fi
+
+    if editor_cache_archive_valid "$archive"; then
+        release_editor_cache_lock "$lock_dir"
+        return 0
+    fi
+
+    tmp_archive=$(mktemp "$(dirname "$archive")/.server.tar.gz.tmp.XXXXXX")
+    relative=$(editor_server_relative_path)
+    parent="${relative%/*}"
+    ssh_cfg=$(jailbox_ssh_config "$project_dir")
+    status=0
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
+        "test -d '/home/jailbox/$relative' && tar -C '/home/jailbox/$parent' -czf - '$EDITOR_CACHE_COMMIT'" \
+        > "$tmp_archive" || status=$?
+
+    if [[ "$status" -eq 0 ]] && editor_cache_archive_valid "$tmp_archive"; then
+        chmod 600 "$tmp_archive"
+        mv "$tmp_archive" "$archive"
+        echo "  Cached editor server: $(editor_cache_platform "$stage")-$EDITOR_CACHE_ARCH"
+    else
+        echo "  Warning: could not capture editor server cache" >&2
+        rm -f "$tmp_archive"
+    fi
+    release_editor_cache_lock "$lock_dir"
 }
 
 default_editor_stages() {
@@ -352,10 +578,11 @@ prune_stale_jailbox_resources() {
 wait_for_remote_editor_ready() {
     local project_dir="$1"
     local ctr="$2"
+    local timeout="${3:-$EDITOR_TIMEOUT}"
     local ssh_cfg deadline
 
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
-    deadline=$((SECONDS + EDITOR_TIMEOUT))
+    deadline=$((SECONDS + timeout))
     while (( SECONDS < deadline )); do
         # "Launched Extension Host Process" is logged only once an editor
         # window has attached to the remote server; "Extension host agent
@@ -724,7 +951,7 @@ run_stage() {
     local stage="$1"
     local idx="$2"
     local total="$3"
-    local proof_path run_id rc
+    local proof_path ready_timeout run_id rc
 
     # Not declared local: the EXIT trap fires after this function returns, at
     # which point local variables are out of scope.
@@ -754,6 +981,13 @@ run_stage() {
 
     write_fixture "$project_dir" "$stage" "$run_id"
 
+    if ! seed_editor_server_cache "$project_dir" "$stage"; then
+        fail "editor server cache prepared"
+        cleanup_stage "$project_dir"
+        project_dir=""
+        return 1
+    fi
+
     if (
         cd "$project_dir"
         JAILBOX_EDITOR_SMOKE_TEST_SETTINGS=1 "$JAILBOX_DIR/jailbox"
@@ -766,9 +1000,14 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
-        echo "  Waiting up to ${EDITOR_TIMEOUT}s for an editor window to attach to the remote..."
-        if wait_for_remote_editor_ready "$project_dir" "$ctr"; then
+        ready_timeout="$EDITOR_TIMEOUT"
+        if [[ "$EDITOR_CACHE_SEEDED" -eq 0 ]]; then
+            ready_timeout="$EDITOR_CACHE_FILL_TIMEOUT"
+        fi
+        echo "  Waiting up to ${ready_timeout}s for an editor window to attach to the remote..."
+        if wait_for_remote_editor_ready "$project_dir" "$ctr" "$ready_timeout"; then
             pass "editor window attached to remote (extension host launched)"
+            capture_editor_server_cache "$project_dir" "$stage" "$ctr"
         else
             fail "editor window attached to remote (extension host launched)"
             rc=1
@@ -890,7 +1129,12 @@ main() {
     have_display || die "no graphical display session found; run tests/run runtime on headless hosts"
     [[ "$EDITOR_TIMEOUT" =~ ^[0-9]+$ ]] || die "JAILBOX_EDITOR_TIMEOUT must be a positive integer"
     [[ "$EDITOR_TIMEOUT" -gt 0 ]] || die "JAILBOX_EDITOR_TIMEOUT must be greater than zero"
-
+    [[ "$EDITOR_CACHE_FILL_TIMEOUT" =~ ^[0-9]+$ ]] || die "JAILBOX_EDITOR_CACHE_FILL_TIMEOUT must be a positive integer"
+    [[ "$EDITOR_CACHE_FILL_TIMEOUT" -gt 0 ]] || die "JAILBOX_EDITOR_CACHE_FILL_TIMEOUT must be greater than zero"
+    case "${JAILBOX_EDITOR_COLD_BOOTSTRAP:-}" in
+        ""|0|1) ;;
+        *) die "JAILBOX_EDITOR_COLD_BOOTSTRAP must be 0 or 1" ;;
+    esac
     local stages=("$@")
     if [[ -z "${stages[*]-}" ]]; then
         stages=()
@@ -910,12 +1154,23 @@ main() {
         fi
     done
 
-    local required_image
+    local required_image wrapper_image
     for stage in "${stages[@]}"; do
         required_image=$(stage_test_image "$stage")
         podman image exists "$required_image" 2>/dev/null || \
             die "$required_image not found - run tests/integration/wrapper-images.sh first"
+        if [[ "${JAILBOX_EDITOR_COLD_BOOTSTRAP:-}" != "1" ]]; then
+            wrapper_image=$(stage_wrapper_image "$stage")
+            podman image exists "$wrapper_image" 2>/dev/null || \
+                die "$wrapper_image not found - run tests/integration/wrapper-images.sh first"
+        fi
     done
+
+    if [[ "${JAILBOX_EDITOR_COLD_BOOTSTRAP:-}" != "1" ]]; then
+        command -v tar >/dev/null 2>&1 || die "tar is required for editor server caching"
+        initialize_editor_server_cache
+        prune_editor_server_cache || die "could not initialize the editor server cache"
+    fi
 
     prune_stale_jailbox_resources
     setup_logging
@@ -925,8 +1180,13 @@ main() {
 
     log_run "jailbox editor smoke test"
     log_run "Stages : ${stages[*]}"
-    log_run "Timeout: ${EDITOR_TIMEOUT}s"
+    log_run "Timeout: cached attach ${EDITOR_TIMEOUT}s; cold cache fill ${EDITOR_CACHE_FILL_TIMEOUT}s"
     log_run "Editor : $(editor_name)"
+    if [[ "${JAILBOX_EDITOR_COLD_BOOTSTRAP:-}" == "1" ]]; then
+        log_run "Cache  : bypassed (cold bootstrap)"
+    else
+        log_run "Cache  : $EDITOR_CACHE_ROOT"
+    fi
     log_run "Logs   : $LOG_DIR"
     log_run ""
     log_run "This test opens a graphical editor window and automates validation after launch."

@@ -107,7 +107,7 @@ EDITOR=code
 
 # Arrays
 EGRESS_ALLOW="github.com,api.github.com"
-READONLY_EXTRA="Makefile,.husky,scripts/deploy.sh"
+READONLY_PATHS="Makefile,.husky,scripts/deploy.sh"
 ')
     load_config_from_dir "$dir"
     assert_eq "scalar value parsed" "docker.io/library/debian:slim" "$DEV_IMAGE"
@@ -115,8 +115,8 @@ READONLY_EXTRA="Makefile,.husky,scripts/deploy.sh"
     assert_eq "editor value parsed" "code" "$EDITOR"
     assert_eq "array length parsed" "2" "${#EGRESS_ALLOW[@]}"
     assert_eq "array item parsed" "api.github.com" "${EGRESS_ALLOW[1]}"
-    assert_eq "readonly extra length parsed" "3" "${#READONLY_EXTRA[@]}"
-    assert_eq "readonly extra item parsed" "scripts/deploy.sh" "${READONLY_EXTRA[2]}"
+    assert_eq "readonly paths length parsed" "3" "${#READONLY_PATHS[@]}"
+    assert_eq "readonly paths item parsed" "scripts/deploy.sh" "${READONLY_PATHS[2]}"
     rm -rf "$dir"
 }
 
@@ -224,13 +224,19 @@ test_selected_config() {
     printf 'DEV_IMAGE=target\n' > "$project/config/target.conf"
     ln -s target.conf "$project/config/link.conf"
     CONFIG_PATH_ARG="$project/config/link.conf"
-    prepare_config_selection
-    assert_eq "in-project config symlink resolves target" "$project/config/target.conf" "$CONFIG_FILE"
+    if (prepare_config_selection) >/dev/null 2>&1; then
+        fail "in-project config symlink rejected"
+    else
+        pass "in-project config symlink rejected"
+    fi
 
     ln -s "$external/lane config.conf" "$project/config/escape.conf"
     CONFIG_PATH_ARG="$project/config/escape.conf"
-    prepare_config_selection
-    assert_eq "in-project symlink resolves external target" "$external/lane config.conf" "$CONFIG_FILE"
+    if (prepare_config_selection) >/dev/null 2>&1; then
+        fail "project config symlink to external target rejected"
+    else
+        pass "project config symlink to external target rejected"
+    fi
 
     CONFIG_PATH_ARG="$external/missing.conf"
     if (prepare_config_selection) >/dev/null 2>&1; then
@@ -346,6 +352,71 @@ test_config_path_diagnostics() {
     rm -rf "$project"
 }
 
+test_trusted_config_inputs() {
+    local project external external_link
+
+    project=$(mktemp -d)
+    external=$(mktemp -d)
+    external_link="${external}-link"
+    printf 'DEV_IMAGE=selected\n' > "$external/lane.conf"
+    ln -s "$external" "$external_link"
+    PROJECT_DIR="$project"
+
+    CONFIG_PATH_ARG="$external_link/lane.conf"
+    if (prepare_config_selection) >/dev/null 2>&1; then
+        fail "external config through symlinked prefix rejected"
+    else
+        pass "external config through symlinked prefix rejected"
+    fi
+    CONFIG_PATH_ARG="$external/lane.conf"
+    if prepare_config_selection; then
+        pass "external config through physical path accepted"
+    else
+        fail "external config through physical path accepted"
+    fi
+
+    mkdir "$project/jailbox.conf"
+    CONFIG_PATH_ARG="$external/lane.conf"
+    if (prepare_config_selection) >/dev/null 2>&1; then
+        fail "non-regular default config rejected under external selection"
+    else
+        pass "non-regular default config rejected under external selection"
+    fi
+    rmdir "$project/jailbox.conf"
+    printf 'DEV_IMAGE=default\n' > "$project/jailbox.conf"
+    chmod 000 "$project/jailbox.conf"
+    if (prepare_config_selection) >/dev/null 2>&1; then
+        fail "unreadable default config rejected under external selection"
+    else
+        pass "unreadable default config rejected under external selection"
+    fi
+    chmod 600 "$project/jailbox.conf"
+    rm "$project/jailbox.conf"
+    printf 'DEV_IMAGE=default\n' > "$project/default-target.conf"
+    ln -s default-target.conf "$project/jailbox.conf"
+    if (prepare_config_selection) >/dev/null 2>&1; then
+        fail "symlinked default config rejected under external selection"
+    else
+        pass "symlinked default config rejected under external selection"
+    fi
+
+    rm -f "$external_link"
+    rm -rf "$project" "$external"
+}
+
+test_uninstall_ignores_project_config() {
+    local project output
+
+    project=$(mktemp -d)
+    ln -s missing.conf "$project/jailbox.conf"
+    output=$( (cd "$project"; "$JAILBOX_UNDER_TEST" --uninstall) 2>&1 || true)
+    case "$output" in
+        *"not an installed copy"*) pass "uninstall ignores project config" ;;
+        *) fail "uninstall ignores project config (got: $output)" ;;
+    esac
+    rm -rf "$project"
+}
+
 main() {
     assert_loads "empty config loads" ""
     assert_loads "comments load" $'# comment\n\nDEV_IMAGE=node:22'
@@ -361,12 +432,17 @@ main() {
     assert_rejects "bad editor rejected" "EDITOR=vim"
     assert_rejects "bad egress host rejected" "EGRESS_ALLOW=https://github.com"
     assert_rejects "single-label egress host rejected" "EGRESS_ALLOW=localhost"
-    assert_loads "readonly extra loads" "READONLY_EXTRA=Makefile,.husky"
-    assert_rejects "absolute readonly extra rejected" "READONLY_EXTRA=/etc/passwd"
-    assert_rejects "traversing readonly extra rejected" "READONLY_EXTRA=../outside"
-    assert_rejects "embedded dotdot readonly extra rejected" "READONLY_EXTRA=docs/../.git"
-    assert_rejects "dot readonly extra rejected" "READONLY_EXTRA=."
-    assert_rejects "trailing slash readonly extra rejected" "READONLY_EXTRA=.husky/"
+    assert_loads "readonly paths loads" "READONLY_PATHS=Makefile,.husky"
+    assert_loads "empty readonly paths loads" "READONLY_PATHS="
+    assert_rejects "removed readonly extra rejected" "READONLY_EXTRA=Makefile"
+    assert_rejects "absolute readonly paths rejected" "READONLY_PATHS=/etc/passwd"
+    assert_rejects "traversing readonly paths rejected" "READONLY_PATHS=../outside"
+    assert_rejects "embedded dotdot readonly paths rejected" "READONLY_PATHS=docs/../.git"
+    assert_rejects "dot readonly paths rejected" "READONLY_PATHS=."
+    assert_rejects "trailing slash readonly paths rejected" "READONLY_PATHS=.husky/"
+    assert_rejects "colon readonly paths rejected" "READONLY_PATHS=docs:ro"
+    assert_rejects "empty path component rejected" "READONLY_PATHS=docs//api"
+    assert_rejects "duplicate readonly paths rejected" "READONLY_PATHS=Makefile,Makefile"
     assert_rejects "whitespace in value rejected" "DEV_IMAGE=node 22"
     test_injection_rejected
     test_cli_lookup_injection_rejected
@@ -376,6 +452,8 @@ main() {
     test_explicit_help_ignores_missing_config
     test_config_selection_precedence
     test_config_path_diagnostics
+    test_trusted_config_inputs
+    test_uninstall_ignores_project_config
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

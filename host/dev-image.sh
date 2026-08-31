@@ -4,12 +4,18 @@ PROJECT_DEV_IMAGE=""
 JAILBOX_IMAGE=""
 USABLE_SHELL=""
 PKG_MANAGER=""
+SELECTED_DEV_CONTAINERFILE=""
+SELECTED_DEV_CONTAINERFILE_INPUT=""
+SELECTED_DEV_BUILD_CONTEXT=""
 
 initialize_dev_image_state() {
     PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
     JAILBOX_IMAGE="${PROJECT_RESOURCE_PREFIX}-image"
     USABLE_SHELL=""
     PKG_MANAGER=""
+    SELECTED_DEV_CONTAINERFILE=""
+    SELECTED_DEV_CONTAINERFILE_INPUT=""
+    SELECTED_DEV_BUILD_CONTEXT=""
 }
 
 assert_dev_image_state_initialized() {
@@ -27,28 +33,60 @@ podman_probe() {
 
 build_or_select_dev_image() {
     assert_dev_image_state_initialized
+    SELECTED_DEV_CONTAINERFILE=""
+    SELECTED_DEV_CONTAINERFILE_INPUT=""
+    SELECTED_DEV_BUILD_CONTEXT=""
     if [ -n "$DEV_IMAGE" ]; then
         echo "📦 Using dev image: $DEV_IMAGE"
         PROJECT_DEV_IMAGE="$DEV_IMAGE"
         return 0
     fi
 
-    discover_dev_containerfile
+    local discovery_status
+    if discover_dev_containerfile; then
+        :
+    else
+        discovery_status=$?
+        if [ "$discovery_status" -eq 2 ]; then
+            die "configured Containerfile does not exist: $DEV_CONTAINERFILE"
+        fi
+        [ "$discovery_status" -eq 1 ] || return "$discovery_status"
+        die "no Containerfile found. Set DEV_IMAGE or DEV_CONTAINERFILE in jailbox.conf, or add a Containerfile to the project root."
+    fi
 
-    local build_context
-    build_context="${DEV_BUILD_CONTEXT:-$PROJECT_DIR}"
-    BUILD_CMD=(podman build -t "$PROJECT_DEV_IMAGE" -f "$DEV_CONTAINERFILE")
+    local build_context_input display_path context_status
+    if [ -n "$DEV_BUILD_CONTEXT" ]; then
+        case "$DEV_BUILD_CONTEXT" in
+            /*) build_context_input="$DEV_BUILD_CONTEXT" ;;
+            *) build_context_input="$PROJECT_DIR/$DEV_BUILD_CONTEXT" ;;
+        esac
+    else
+        build_context_input="$PROJECT_DIR"
+    fi
+    context_status=0
+    SELECTED_DEV_BUILD_CONTEXT=$(classify_trusted_directory "$build_context_input" "build context") || context_status=$?
+    [ "$context_status" -eq 0 ] || return "$context_status"
+    BUILD_CMD=(podman build -t "$PROJECT_DEV_IMAGE" -f "$SELECTED_DEV_CONTAINERFILE")
     [ -n "$DEV_TARGET_STAGE" ] && BUILD_CMD+=(--target "$DEV_TARGET_STAGE")
-    BUILD_CMD+=("$build_context")
+    BUILD_CMD+=("$SELECTED_DEV_BUILD_CONTEXT")
 
-    echo "🏗️  Building dev image from $(realpath --relative-to="$PROJECT_DIR" "$DEV_CONTAINERFILE")..."
+    display_path=$(realpath --relative-to="$PROJECT_DIR" "$SELECTED_DEV_CONTAINERFILE" 2>/dev/null || printf '%s' "$SELECTED_DEV_CONTAINERFILE")
+    echo "🏗️  Building dev image from $display_path..."
     "${BUILD_CMD[@]}"
 }
 
 discover_dev_containerfile() {
-    local candidate
+    local candidate classified
 
     if [ -n "$DEV_CONTAINERFILE" ]; then
+        case "$DEV_CONTAINERFILE" in
+            /*) candidate="$DEV_CONTAINERFILE" ;;
+            *) candidate="$PROJECT_DIR/$DEV_CONTAINERFILE" ;;
+        esac
+        [ -e "$candidate" ] || [ -L "$candidate" ] || return 2
+        SELECTED_DEV_CONTAINERFILE_INPUT="$candidate"
+        classified=$(classify_trusted_file "$candidate" "Containerfile") || return 3
+        SELECTED_DEV_CONTAINERFILE="${classified%%$'\t'*}"
         return 0
     fi
 
@@ -58,13 +96,15 @@ discover_dev_containerfile() {
         "$PROJECT_DIR/.devcontainer/Containerfile" \
         "$PROJECT_DIR/.devcontainer/Dockerfile"
     do
-        if [ -f "$candidate" ]; then
-            DEV_CONTAINERFILE="$candidate"
+        if [ -f "$candidate" ] || [ -L "$candidate" ]; then
+            SELECTED_DEV_CONTAINERFILE_INPUT="$candidate"
+            classified=$(classify_trusted_file "$candidate" "Containerfile") || return 3
+            SELECTED_DEV_CONTAINERFILE="${classified%%$'\t'*}"
             return 0
         fi
     done
 
-    die "no Containerfile found. Set DEV_IMAGE or DEV_CONTAINERFILE in jailbox.conf, or add a Containerfile to the project root."
+    return 1
 }
 
 validate_dev_image() {
