@@ -12,11 +12,16 @@ Serialize launch, stop, and cleanup operations per project. Removing Podman's
 `--replace` behavior prevents silent container replacement but does not protect
 shared SSH, network, volume, or proxy state from concurrent lifecycle commands.
 
-### Ownership-aware cleanup
+### Digest diagnostics in `doctor`
 
-Before `--clean` removes containers, volumes, or networks by derived name,
-verify their `jailbox.project` labels. Skip and report unlabeled or mismatched
-resources while continuing to remove resources jailbox can prove it owns.
+After the configuration-digest attachment gate lands, extend `doctor` to report
+the digest recorded on an owned development container and, when the current
+configuration can be selected and validated without changing doctor's
+config-optional contract, whether it matches the reproducible current digest.
+Define useful output for absent, stopped, foreign, unlabeled, stale, and
+configuration-unavailable states without making `doctor` mutate resources or
+require an editor. Do not expose the NUL-delimited serialization or imply that
+the digest identifies which individual setting changed.
 
 ## Trusted launch inputs
 

@@ -74,6 +74,9 @@ here.
   alongside `CLI_HELP`.
 
 Preflight for `shell` requires Podman and SSH tooling but no editor.
+It uses plan 5's attach-specific preflight branch, does not require the
+exec-only Base64 encoder, and returns before plan 2's wrapper-build-only
+`cksum` requirement.
 
 Review the generated diff from `scripts/public-api-diff.sh`: adding one command
 is a minor bump pre-1.0.
@@ -94,6 +97,8 @@ bare launch, `up`, `exec`, `shell`, `stop`, `--clean` — as one table.
   either is not a TTY.
 - `shell` works with no `code` or `codium` executable and never opens or
   configures an editor.
+- With a supported SHA-256 implementation but no `cksum`, `shell` reaches its
+  normal attach decision; it does not inherit a wrapper-build requirement.
 - `shell` against an absent, stopped, or unresponsive sandbox fails with the
   `jailbox up` message and creates nothing.
 - A changed `jailbox.conf` or a missing `jailbox.config-digest` label makes

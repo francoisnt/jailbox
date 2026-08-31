@@ -5,7 +5,8 @@
 Replace implicit container replacement with a two-command lifecycle. Add
 `jailbox stop`, require both project containers to be absent before launch, and
 remove `--replace` from the `podman run` invocations so jailbox never destroys a
-sandbox the user did not ask it to destroy.
+sandbox the user did not ask it to destroy. Make `--clean` apply the same
+ownership boundary to every resource it removes by deterministic name.
 
 ## Sequence
 
@@ -49,6 +50,27 @@ must resolve the mismatch before relaunching.
 
 `stop` never creates or loads configuration and never validates project paths.
 
+### Ownership-safe `--clean`
+
+`--clean` remains the full teardown command, but it must not treat a derived
+resource name as proof of ownership. Before mutating anything, inspect every
+present development container, proxy container, home volume, and project
+network that `clean_jailbox` would remove and require its `jailbox.project`
+label to equal canonical `$PROJECT_DIR`. This covers `$CONTAINER_NAME`,
+`$PROXY_NAME`, `$VOLUME_NAME`, `$NETWORK_NAME`, `${NETWORK_NAME}-internal`, and
+`${NETWORK_NAME}-external`.
+
+If any present target is unlabeled or mismatched, fail before stopping or
+removing any resource and name each collision for manual Podman inspection.
+Missing targets are harmless. After the complete ownership preflight succeeds,
+remove the owned targets with the existing best-effort/idempotent teardown
+semantics and remove the project SSH state. Images remain outside `--clean`'s
+scope as they are today.
+
+This makes the guidance for foreign container collisions consistent: neither
+`stop` nor `--clean` may remove them. The user must resolve an unowned collision
+with Podman directly.
+
 ### Launch requires both names absent
 
 Bare launch inspects `$CONTAINER_NAME` and `$PROXY_NAME` before path
@@ -63,6 +85,12 @@ validation or image work, and fails without mutating anything:
 Relaunch is therefore a two-command operation. A failed build after
 `jailbox stop` leaves no sandbox running; keeping a writable fallback alive
 during the build would reintroduce the replacement this boundary removes.
+
+The absence check also precedes required-config selection. When both a sandbox
+is present and `jailbox.conf` is missing, launch reports the `jailbox stop`
+precondition first; only the next launch attempt after stopping can report the
+`jailbox init` requirement. `init` itself remains an early, config-independent
+command and does not perform the launch absence check.
 
 Do not add a flag that relaunches over a running sandbox. The two-command flow
 is the boundary this change exists to establish, and an opt-out would reintroduce
@@ -87,6 +115,12 @@ lifecycle commands remain unsupported; locking them is separate work tracked in
   or mismatched collision, which names manual Podman inspection and removal.
   `stop_jailbox` validates the ownership label of every present target, then
   stops and removes both containers without deleting persistent resources.
+- Refactor the ownership-label inspection into a focused helper shared by
+  `stop_jailbox`, `require_sandbox_absent`, and `clean_jailbox`, with
+  resource-type-specific Podman inspection where required. Before cleanup,
+  resolve and validate all six possible resource targets above into an owned
+  removal set; do not interleave validation and deletion. Only after the full
+  set passes may `clean_jailbox` remove resources and SSH state.
 - Move `initialize_project_names` out of `initialize_launch_state` and call it
   once after argument parsing, before command-specific dispatch. Project and
   resource identity depends only on canonical `$PROJECT_DIR`, not on loaded
@@ -159,7 +193,10 @@ remain unsupported because they can corrupt shared state even though they no
 longer silently replace containers.
 
 Update the README command reference and lifecycle section with the distinction
-between `stop` and `--clean`.
+between `stop` and `--clean`. State that both refuse unowned name collisions,
+that `--clean` checks containers, the home volume, and all project networks
+before deleting anything, and that foreign resources require manual Podman
+resolution.
 
 ## Tests
 
@@ -182,9 +219,18 @@ between `stop` and `--clean`.
 - `--uninstall` succeeds without Podman, without a hash tool, and with a
   malformed, unreadable, or missing `jailbox.conf`, and initializes no derived
   resource names.
+- `--clean` validates every present container, volume, and network target before
+  mutation; an unlabeled or mismatched target of any resource type prevents all
+  resource and SSH-state removal and names manual Podman resolution.
+- `--clean` remains idempotent when targets are absent and removes all owned
+  targets plus SSH state after the complete ownership preflight succeeds.
 - Launch reports `jailbox stop` for an owned development or proxy container, and
   reports an unlabeled or mismatched name collision with manual Podman
   inspection/removal guidance; neither case mutates the existing container.
+- When an owned sandbox is present and the default config is also missing, bare
+  launch reports `jailbox stop` before `jailbox init`; after stopping, the next
+  launch reports the initialization requirement. The `init` command itself is
+  not blocked by launch precondition dispatch.
 - Development and proxy runs do not use `--replace`, and their dead replacement
   notices are removed.
 - A foreign listener holding the derived port produces the clear port-conflict
@@ -200,5 +246,4 @@ because this changes container lifecycle.
 
 - Any new launch or attach command; `03-launch-core-and-up-plan.md` owns `up`.
 - Lifecycle locking for concurrent commands.
-- Ownership-aware `--clean` teardown.
 - A `podman start` fast path for a stopped sandbox.

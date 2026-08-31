@@ -32,26 +32,32 @@ development container in `start_jailbox_container`.
 Hash the *parsed* values rather than the config file's bytes, so reformatting is
 not a policy change.
 
-Two inputs beyond the public config keys must be included explicitly, because
-neither is a member of `CONFIG_SCALAR_KEYS` or `CONFIG_ARRAY_KEYS`:
+Three inputs beyond the public config keys must be included explicitly, none of
+which is a member of `CONFIG_SCALAR_KEYS` or `CONFIG_ARRAY_KEYS`:
 
-- the canonical selected-config identity; and
+- the canonical selected-config identity;
+- the classified identity of the exact Containerfile selected for the
+  development-image build, or an explicit `none` marker when `DEV_IMAGE` means
+  no Containerfile is used; and
 - the effective `JAILBOX_EDITOR` override.
 
 `01.1-init-config-plan.md` makes an absent selected config unreachable for every
 launch and attach command, so the digest has no absent-config marker or
 defaults-only state.
 
-### Only declared inputs, never launch-derived state
+### Reproducible inputs, never launch-derived state
 
-Every digest input must be reproducible from configuration and environment
-alone, by any command, without knowing how the sandbox was launched. `exec`
-performs no editor discovery, so it cannot observe a resolved `EDITOR_BIN` or
-the editor bootstrap hosts `effective_egress_allowlist` (`host/network.sh`)
-appends from one. Hashing either would make `exec` compute a "no editor" digest
-and reject every sandbox bare `jailbox` created, with no configuration change at
-all — breaking the primary workflow, where an editor session and `exec` run side
-by side against one sandbox.
+Every digest input must be reproducible from configuration, environment, and
+read-only inspection of the project inputs, by any launch or attach command,
+without knowing how the sandbox was launched. This permits the deterministic
+Containerfile discovery that selects the first existing candidate, but excludes
+state produced by launching. `exec` performs no editor discovery, so it cannot
+observe a resolved `EDITOR_BIN` or the editor bootstrap hosts
+`effective_egress_allowlist` (`host/network.sh`) appends from one. Hashing either
+would make `exec` compute a "no editor" digest and reject every sandbox bare
+`jailbox` created, with no configuration change at all — breaking the primary
+workflow, where an editor session and `exec` run side by side against one
+sandbox.
 
 `JAILBOX_EDITOR` and `EDITOR` are declarations and belong in the digest. The
 editor jailbox *discovered*, and the hosts it added as a consequence, are
@@ -74,23 +80,61 @@ jailbox-config-digest-v1 NUL
 scalar NUL KEY NUL VALUE NUL                         for each scalar key
 array NUL KEY NUL COUNT NUL value NUL ITEM NUL ...  for each array key
 selected-config NUL CANONICAL_PATH NUL
+containerfile NUL none NUL
 editor-override NUL inactive NUL
 ```
 
+When a Containerfile is used, replace its record with
+`containerfile NUL path NUL CANONICAL_PATH NUL`. When no Containerfile can be
+classified because an explicit configured path is now absent or implicit
+discovery has no candidate, replace it with
+`containerfile NUL missing NUL`. This state cannot produce a successful launch,
+but an attach command can observe it after the file used by the running sandbox
+was deleted. The scalar records still distinguish explicit from implicit
+configuration; the identity record does not need separate missing variants.
 When a non-empty `JAILBOX_EDITOR` override is active, replace the final record
 with `editor-override NUL active NUL VALUE NUL`. An unset and explicitly empty
-`JAILBOX_EDITOR` are equivalent because `${JAILBOX_EDITOR:-$EDITOR}` gives them
-identical behavior. Scalar and array keys are emitted in their declaration
-order from `host/public-api.sh`; an empty scalar still has its terminating NUL,
-and an empty array has count zero and no item records. Encode `COUNT` as
-canonical unsigned decimal with no leading zeroes except `0`; emit each item as
-the repeated `value NUL ITEM NUL` record shown above. Stream records directly to
-the hash command; never store the NUL-containing serialization in a Bash
-variable.
+`JAILBOX_EDITOR` are equivalent because
+`${JAILBOX_EDITOR:-$EDITOR}` gives them identical behavior. Scalar and array
+keys are emitted in their declaration order from `host/public-api.sh`; an empty
+scalar still has its terminating NUL, and an empty array has count zero and no
+item records. Encode `COUNT` as canonical unsigned decimal with no leading
+zeroes except `0`; emit each item as the repeated
+`value NUL ITEM NUL` record shown above. Stream records directly to the hash
+command; never store the NUL-containing serialization in a Bash variable.
 
 The canonical selected-config path is the classified absolute path used for
 that invocation. This intentionally distinguishes two selected files with the
 same parsed values.
+
+The Containerfile identity uses the same discovery order and trusted-input
+classification as `build_or_select_dev_image`, without building or inspecting
+an image. Adding or removing a higher-priority default candidate therefore
+changes the digest when it changes the exact file that would be consumed and
+protected. Keep discovery in one shared helper so launch and attach cannot
+select different identities. `DEV_IMAGE` always emits `none`, even if candidate
+files exist or `DEV_CONTAINERFILE` is also configured with an invalid or missing
+path, because that launch consumes and protects no Containerfile. Digest
+computation short-circuits before Containerfile discovery or classification in
+this mode; the configured `DEV_CONTAINERFILE` remains present in its ordinary
+scalar record.
+
+`DEV_CONTAINERFILE` in the scalar records is always the parsed configured value:
+empty when discovery is implicit and the caller's configured spelling when it
+is explicit. Discovery must not mutate that public configuration variable.
+Plan 1 stores the discovered or explicit classified result separately as
+`SELECTED_DEV_CONTAINERFILE`; the dedicated identity record uses that result.
+Launch and attach both call the shared selection helper before serialization,
+so the scalar and identity records cannot depend on whether an image build has
+already run.
+
+The shared selector reports either kind of missing selection without exiting. A
+launch caller reports a path-specific configured-input error for an explicit
+miss or retains the existing actionable discovery error for an implicit miss,
+because launch cannot proceed. An attach digest emits the canonical `missing`
+record, compares it with the running container's recorded path digest, and
+reaches plan 5's ordinary stale-sandbox failure naming `jailbox up`. Do not leak
+either launch-oriented Containerfile error from `exec` or `shell`.
 
 Hash array keys in **declared order by default**. Sort only keys named as
 set-valued, which today is `EGRESS_ALLOW` alone: it is a domain allowlist that
@@ -166,10 +210,15 @@ session.
 
 ## Implementation
 
-- Compute the digest from parsed configuration and environment only. It must not
-  read `EDITOR_BIN`, the output of `effective_egress_allowlist`, or any other
-  value produced by the launch path, so that every command computes the same
-  digest from the same declaration regardless of how it dispatches.
+- Compute the digest from parsed configuration, environment, and the shared
+  read-only Containerfile discovery/classification helper. It must not read
+  `EDITOR_BIN`, the output of `effective_egress_allowlist`, or any other value
+  produced by the launch path, so that every command computes the same digest
+  from the same reproducible inputs regardless of how it dispatches.
+- Keep parsed configuration immutable during digest computation and image
+  selection. Refactor `discover_dev_containerfile` so it returns or assigns
+  image-owned `SELECTED_DEV_CONTAINERFILE` without overwriting
+  `DEV_CONTAINERFILE`; both launch and attach use the same helper.
 - Implement the exact versioned NUL-delimited serialization and portable
   SHA-256 selection above. Validate the normalized digest before adding it to a
   Podman label or comparing it.
@@ -213,6 +262,20 @@ to `05-exec-command-plan.md`, which introduces it.
   stable digests. The v1 byte stream is covered by fixed digest vectors.
 - Selecting a different config file with identical values still changes the
   digest, because the selected-config identity is an input.
+- With implicit discovery, adding or removing a higher-priority Containerfile
+  candidate changes the digest when it changes the exact selected file. An
+  explicit `DEV_CONTAINERFILE` hashes its classified canonical identity, while
+  `DEV_IMAGE` emits the stable `none` marker regardless of candidate files or an
+  invalid concurrently configured `DEV_CONTAINERFILE`, without inspecting that
+  path.
+- Implicit discovery leaves the `DEV_CONTAINERFILE` scalar record empty in both
+  launch and attach even after image selection. The selected path appears only
+  in the dedicated Containerfile identity record.
+- If an explicitly configured or implicitly discovered Containerfile is deleted
+  after launch, `exec` and `shell` serialize the same `missing` identity, reject
+  the digest mismatch, and show their normal `jailbox up` stale-sandbox guidance
+  rather than either launch-only Containerfile error. The explicit and implicit
+  cases remain distinguishable through the `DEV_CONTAINERFILE` scalar record.
 - Changing a non-empty `JAILBOX_EDITOR` or changing `EDITOR` changes the digest,
   because both are declarations. Unset and explicitly empty `JAILBOX_EDITOR`
   produce the same digest, while a non-empty override produces a distinct

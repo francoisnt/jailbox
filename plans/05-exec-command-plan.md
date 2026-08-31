@@ -45,11 +45,11 @@ outcomes are attach and fail:
 A missing or mismatched ownership label is a foreign name collision, not a
 stale jailbox. Refuse it before reading the digest or opening SSH, and direct the
 user to inspect the container with Podman; do not suggest `jailbox --clean`,
-which must not be used as permission to remove an unowned object. When egress
-filtering requires the proxy, require its ownership label to match as well as
-requiring it to be running. These checks prevent a container that merely
-occupies jailbox's deterministic name from being treated as this project's
-sandbox.
+which plan 2 makes ownership-safe and which will therefore refuse the same
+foreign object. When egress filtering requires the proxy, require its ownership
+label to match as well as requiring it to be running. These checks prevent a
+container that merely occupies jailbox's deterministic name from being treated
+as this project's sandbox.
 
 Because `exec` never mutates anything, it needs no locking, no double-checked
 state, and no decision about whether a sandbox is close enough to reuse. Two
@@ -178,6 +178,12 @@ command substitution, requires a final NUL and a non-empty argv, removes the
 temporary file on every pre-exec path, changes to `$REMOTE_PATH`, and `exec`s the
 target argv. Create the temporary file with `mktemp` under a restrictive umask.
 
+The installed helper is static and does not inherit host-shell variables. Give
+it the literal protocol path `/home/jailbox/project`, matching `REMOTE_PATH` in
+`host/common.sh`, and have portable coverage assert that the host and helper
+constants remain identical. Do not pass a caller-controlled working directory
+through the SSH command or add it to the framed argv protocol.
+
 Implement the helper as the new executable Bash file
 `container/jailbox-exec-argv`. Install it as
 `/usr/local/bin/jailbox-exec-argv` in `container/Containerfile.wrapper` with mode
@@ -233,6 +239,13 @@ development-image validation. Extend plan 4's SHA-256 preflight requirement to
 requirements of `init`, `stop`, `doctor`, `ssh-config`, `--clean`, or
 `--uninstall`.
 
+Plan 2's `cksum` requirement belongs only to commands that build the wrapper
+image. Route `exec` through an attach-specific preflight branch that returns
+before `require_command cksum` while still requiring Podman, `ssh`, `realpath`,
+a Base64 encoder, and plan 4's SHA-256 implementation. Plan 6 reuses that attach
+branch for `shell` without the Base64 requirement. Neither attach command may
+acquire an incidental `cksum` or editor dependency.
+
 Review the generated diff from `scripts/public-api-diff.sh`: adding one command
 is a minor bump pre-1.0.
 
@@ -255,6 +268,8 @@ Transport fidelity:
 - Malformed or truncated argv frames fail without evaluating payload contents.
 - `container/jailbox-exec-argv` is installed with mode 0755, included in the
   wrapper cache-bust, checked as Bash by ShellCheck, and covered by `bash -n`.
+- The helper's fixed `/home/jailbox/project` working directory matches the host
+  `REMOTE_PATH` constant; changing either alone fails portable coverage.
 - An argv above the encoded-frame limit fails with the explicit message.
 - A remote command exiting 255 returns 255. No test asserts a distinction between
   that and a transport failure; there is none.
@@ -303,6 +318,9 @@ Attach and staleness:
 - `exec` fails clearly before Podman inspection or SSH attachment when neither
   `sha256sum` nor `shasum` is available, while commands outside the launch and
   attach classes retain their lighter preflight requirements.
+- On a host with a supported SHA-256 implementation but no `cksum`, `exec`
+  reaches its normal attach decision. Plan 6 repeats this for `shell`; wrapper-
+  building launch commands continue to require `cksum`.
 
 Add focused unit coverage for command parsing, argv framing/decoding, and the
 attach/fail decision table. Put real SSH, stdin, signal, proxy, and lifecycle

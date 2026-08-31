@@ -82,6 +82,10 @@ need them must not acquire that work implicitly.
   command; it is bare launch minus editor discovery, integration writes,
   compatibility warnings, and `open_editor`. Shared editor state initialization
   is unaffected, as described under "Editor separation".
+- Route both bare launch and `up` through plan 2's pre-config
+  `require_sandbox_absent` check before either command enters the shared launch
+  core. Adding the `up` dispatch branch must not bypass or duplicate that
+  ownership-aware absence decision.
 
 ## Editor separation
 
@@ -113,16 +117,20 @@ neither is created automatically.
 
 ## Egress allowlist difference
 
-A sandbox brought up by `up` omits the editor CDN hosts that
-`effective_egress_allowlist` adds from a discovered `EDITOR_BIN`, because `up`
-never discovers an editor. That is correct — no editor is attached — and needs no
-code change. Document that after an explicit stop, bare `jailbox` launches a
-sandbox whose allowlist includes them.
+A sandbox brought up by `up` with egress filtering enabled omits the editor CDN
+hosts that `effective_egress_allowlist` adds from a discovered `EDITOR_BIN`,
+because `up` never discovers an editor. That is correct — no editor is attached
+— and needs no code change. Document that after an explicit stop, bare
+`jailbox` launches a filtered sandbox whose allowlist includes them. With empty
+`EGRESS_ALLOW`, `configure_network` selects the ordinary network instead of the
+allowlisting proxy, so neither command has an enforced host allowlist and this
+difference does not arise.
 
-This difference is real policy, not cosmetic: a bare-launch sandbox permits
-egress a fresh `up` would not, and for `EDITOR=codium` that includes `github.com`
-and `githubusercontent.com`. It is nonetheless deliberately outside the config
-digest — `04-config-digest-plan.md` records why — because `exec` cannot observe a
+When filtering is enabled, this difference is real policy, not cosmetic: a
+bare-launch sandbox permits egress a fresh `up` would not, and for
+`EDITOR=codium` that includes `github.com` and `githubusercontent.com`. It is
+nonetheless deliberately outside the config digest —
+`04-config-digest-plan.md` records why — because `exec` cannot observe a
 discovered editor without performing the discovery it is defined not to do.
 Gating on it would reject every editor-launched sandbox. Document it in the
 threat model instead, as a consequence of which command the user ran.
@@ -161,6 +169,10 @@ allowlist difference above.
   missing selected path retains its path-specific error.
 - The Alpine/VS Code warning still fires for bare launch at its current point in
   the sequence, and does not fire for `up`.
+- With non-empty `EGRESS_ALLOW`, bare launch adds the discovered editor's fixed
+  bootstrap hosts to the rendered proxy filter while `up` does not. With empty
+  `EGRESS_ALLOW`, both commands use the ordinary network and neither renders an
+  allowlist merely because an editor is discoverable.
 - `up` appears in the literal `Usage:` synopsis, in the generated `Options:`
   block, and as an addition in the generated public-API diff.
 

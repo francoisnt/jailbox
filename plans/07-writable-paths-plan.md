@@ -175,7 +175,8 @@ public-API change before 1.0.
 ### Runtime mounts
 
 - Build the project base mount separately from its overlays.
-- Empty allowlist: base is read-write.
+- Empty allowlist: preserve the current base argument byte-for-byte as
+  `-v "$PROJECT_DIR:$REMOTE_PATH:Z"`; do not add an explicit `rw` suffix.
 - Non-empty allowlist: base is read-only.
 - Build one read-write bind per validated regular file or directory.
 - Emit read-only protected overlays after writable overlays.
@@ -191,7 +192,12 @@ Extend post-start validation to prove both sides of the boundary:
   marker inside that directory succeeds;
 - for a configured regular-file lane, inspect the container's effective mount
   table and mount flags but do not modify the user file;
-- a write outside the lanes fails;
+- when `WRITABLE_PATHS` is empty, retain the existing check that the project
+  root is writable;
+- in allowlist mode, replace `check_project_write_access`'s unconditional
+  writable-root assertion with a mode-aware base check: a controlled write
+  outside every lane must fail, and an intentionally read-only project root
+  must not produce the current UID-mismatch warning;
 - protected files nested within a lane remain read-only; and
 - no configured source path resolves outside the project.
 
@@ -203,10 +209,27 @@ contents the test owns. Production validation must never alter and restore an
 arbitrary user file: restoration races with concurrent writers and cannot be
 made lossless.
 
+Choose the denied-write probe destination from a validated existing directory
+that is outside every writable lane and effective protected overlay. It must
+not depend on the project root itself accepting new entries, because a
+writable lane may cover one child while the base remains read-only. If the
+current project contains no safe existing directory for the production probe —
+including a configuration made entirely of regular-file lanes — validate the
+read-only base and individual mount flags from the container's effective mount
+table and report that the destructive write probe was not applicable; do not
+create a host path merely to test denial. Controlled runtime fixtures must
+include an outside directory and prove an actual denied creation there.
+
 ## Tests
 
 - Empty `WRITABLE_PATHS` is byte-for-byte compatible with current mount mode.
+- Empty `WRITABLE_PATHS` retains the existing writable-project validation. A
+  non-empty allowlist expects the project base to be read-only and produces no
+  false UID-mismatch warning from `check_project_write_access`.
 - A write inside a lane succeeds and a sibling write fails.
+- Allowlist configurations containing only regular-file lanes still validate
+  mount flags without creating a host-side probe path; controlled fixtures
+  separately prove an actual denied write outside those lanes.
 - An existing regular file accepts in-place writes without making its parent
   directory writable; document and test the failed sibling-temp-and-rename case.
 - A protected path inside a lane remains read-only.
@@ -223,6 +246,13 @@ made lossless.
 
 Run the portable gate and, because this changes host mounts and the security
 contract, the runtime gate wherever Podman is available.
+
+Before relying on the layering implementation, cover the smallest real-Podman
+fixture that mounts a nested read-write lane inside a read-only project base and
+then applies a nested read-only overlay. Plan 8 extends the same fixture with a
+mask over a bound path. These assertions are the executable compatibility
+contract for Podman/OCI precedence; argument order alone is not evidence that
+the security boundary holds.
 
 ## Non-goals
 

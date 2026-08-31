@@ -87,6 +87,15 @@ configured value can inject another path because lexical validation rejects
 colons before option construction. Pass the complete option as one quoted Bash
 array element and never evaluate or word-split it.
 
+Masking creates mounts inside the container's mount namespace. Its promise that
+host content and host path visibility remain unchanged therefore requires
+private bind propagation. When this plan lands, make `rprivate` explicit on the
+project base bind and every project-path overlay rather than relying on Podman's
+default. Never use `shared` or `rshared` propagation for these mounts: a mask or
+another nested mount must not propagate back to the host. This intentionally
+changes the spelling of the mount arguments established by plan 7 while
+preserving their read/write and SELinux `Z` semantics.
+
 The versioned Podman 4.0 manual documents native `mask=` support, which is enough
 to show that this plan does not raise jailbox's existing 4.0 floor; it does not
 establish which earlier release first introduced the option. Recording and
@@ -159,6 +168,10 @@ ignore files automatically.
   container side effects.
 - Resolve overlap with writable and protected paths, translate the remaining
   entries to container-absolute paths, and build the single quoted mask option.
+- Add explicit `rprivate` propagation to the project base, writable-lane, and
+  protected-overlay bind arguments in every mount mode. Extend launch-state
+  assertions so a missing or non-private propagation option is an internal
+  error before container creation.
 - Emit the native mask option in the container invocation; an option error is a
   launch failure and must never trigger an unmasked retry.
 - Extend `assert_container_launch_state` to require the initialized mask option
@@ -215,7 +228,10 @@ Option construction:
   configuration grammar's existing rejection and are not accepted by this
   feature;
 - no bind source, project placeholder, or new runtime-state directory is
-  created; and
+  created;
+- the project base and every project-path overlay explicitly use `rprivate`
+  propagation; no `shared` or `rshared` project bind can reach container
+  creation;
 - an option failure is returned without an unmasked retry.
 
 Runtime policy:
@@ -226,6 +242,9 @@ Runtime policy:
 - both file and directory masks remain effective with jailbox's read-only
   container root filesystem enabled;
 - host files and directories remain unchanged after container access attempts;
+- the host path remains mounted and visible with its original content while the
+  corresponding container path is masked, proving that the container-side mask
+  did not propagate to the host;
 - a pre-existing hardlink and an ordinary copy at unmasked paths remain
   readable, explicitly demonstrating the pathname-scoped limitation;
 - masks win over exact and nested read-only or writable overlaps;
@@ -239,6 +258,14 @@ Runtime policy:
 Add focused parser, path-validation, overlap, and option-construction tests at
 the unit layer. Put real content-isolation, OCI-runtime behavior, and precedence
 assertions in the runtime suite.
+
+Extend plan 7's minimal real-Podman nested-mount fixture with a mask over a bound
+path and prove that the mask wins without a child mount re-exposing content.
+This shared fixture de-risks both precedence contracts directly; do not treat
+CLI argument order or inspect output alone as proof of effective isolation.
+Update plan 7's exact empty-allowlist mount-argument expectation from `:Z` to
+`:Z,rprivate` when this plan lands; the order-7 test protects compatibility at
+that stage, while order 8 deliberately strengthens the argument spelling.
 
 Run `tests/run portable` and `tests/run runtime` wherever Podman is available.
 Run `tests/run editor` only if implementation changes editor integration beyond
