@@ -11,13 +11,15 @@
 # Each stage gets its own SSH port so all stages can run simultaneously.
 # Output is buffered per stage and printed in order once all finish.
 #
-# Usage: tests/integration/wrapper-images.sh [stage...]
+# Usage: tests/integration/wrapper-images.sh [--prepare-only] [stage...]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ALL_STAGES=(debian alpine fedora uid-owned-by-other-user user-conflict)
+PREPARATION_STAGES=(debian alpine fedora)
+PREPARE_ONLY=false
 
 PASSED=0
 FAILED=0
@@ -30,13 +32,15 @@ fail()  { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [stage...]
+Usage: $(basename "$0") [--prepare-only] [stage...]
 
 Run jailbox integration tests. With no arguments all stages run in parallel.
+With --prepare-only, build positive-stage images without contract assertions.
 
 Stages: ${ALL_STAGES[*]}
 
-Requires: podman, ssh, ssh-keygen, cksum
+Requires: podman and cksum; full contract validation also requires ssh and
+ssh-keygen.
 EOF
 }
 
@@ -277,6 +281,11 @@ run_case() {
 
     pass "images build"
 
+    # Editor tests consume the positive test and wrapper images but do not own
+    # the editor-independent security contract. Runtime continues below and
+    # performs every wrapper/container assertion.
+    [ "$PREPARE_ONLY" = false ] || return 0
+
     assert_probe_hardening "$test_image"
 
     setup_ssh_keys "$ssh_dir" "$port"
@@ -359,19 +368,38 @@ main() {
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         usage; exit 0
     fi
+    if [[ "${1:-}" == "--prepare-only" ]]; then
+        PREPARE_ONLY=true
+        shift
+    fi
 
-    command -v podman     >/dev/null 2>&1 || die "podman is required"
-    command -v ssh        >/dev/null 2>&1 || die "ssh is required"
-    command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
-    command -v cksum      >/dev/null 2>&1 || die "cksum is required"
+    command -v podman >/dev/null 2>&1 || die "podman is required"
+    command -v cksum  >/dev/null 2>&1 || die "cksum is required"
+    if [ "$PREPARE_ONLY" = false ]; then
+        command -v ssh        >/dev/null 2>&1 || die "ssh is required"
+        command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
+    fi
 
     local stages=("$@")
-    [ ${#stages[@]} -eq 0 ] && stages=("${ALL_STAGES[@]}")
+    if [ -z "${stages[*]-}" ]; then
+        if [ "$PREPARE_ONLY" = true ]; then
+            stages=("${PREPARATION_STAGES[@]}")
+        else
+            stages=("${ALL_STAGES[@]}")
+        fi
+    fi
 
     for s in "${stages[@]}"; do
         local valid=0
         for a in "${ALL_STAGES[@]}"; do [ "$s" = "$a" ] && valid=1 && break; done
         [ $valid -eq 1 ] || die "unknown stage '$s'. Valid: ${ALL_STAGES[*]}"
+        if [ "$PREPARE_ONLY" = true ]; then
+            case "$s" in
+                uid-owned-by-other-user|user-conflict)
+                    die "--prepare-only accepts positive stages only: ${PREPARATION_STAGES[*]}"
+                    ;;
+            esac
+        fi
     done
 
     local log_dir
@@ -379,7 +407,11 @@ main() {
     mkdir -p "$log_dir"
     write_run_meta "$log_dir"
 
-    echo "jailbox integration tests (parallel)"
+    if [ "$PREPARE_ONLY" = true ]; then
+        echo "jailbox wrapper image preparation (parallel)"
+    else
+        echo "jailbox integration tests (parallel)"
+    fi
     echo "Stages : ${stages[*]}"
     echo ""
 
@@ -434,11 +466,21 @@ main() {
         wait "$pid" 2>/dev/null || true
     done
 
-    # Base images were pulled by the stage builds; record what the tags
-    # resolved to for this run.
-    run_meta_image "$log_dir" debian "$BASE_IMAGE_DEBIAN"
-    run_meta_image "$log_dir" alpine "$BASE_IMAGE_ALPINE"
-    run_meta_image "$log_dir" fedora "$BASE_IMAGE_FEDORA"
+    # Record only base images selected for this run. In particular, VS Code
+    # preparation omits Alpine and must not pull it merely for metadata.
+    local base_stage base_ref
+    for base_stage in debian alpine fedora; do
+        case " ${stages[*]} " in
+            *" $base_stage "*) ;;
+            *) continue ;;
+        esac
+        case "$base_stage" in
+            debian) base_ref="$BASE_IMAGE_DEBIAN" ;;
+            alpine) base_ref="$BASE_IMAGE_ALPINE" ;;
+            fedora) base_ref="$BASE_IMAGE_FEDORA" ;;
+        esac
+        run_meta_image "$log_dir" "$base_stage" "$base_ref"
+    done
 
     # Print full per-stage output in defined order and keep the same files in
     # testlog for terminals that clip long runs.

@@ -98,8 +98,11 @@ tests/run editor
   syntax checks, release packaging, and the install/update/uninstall lifecycle.
 - `runtime`: wrapper-image/container security assertions and the headless CLI
   system test. Requires Linux and Podman.
-- `editor`: wrapper-image validation followed by real VS Code or VSCodium Remote
-  SSH behavior. Requires Podman, an editor, and a display or Xvfb.
+- `editor`: preparation of the positive wrapper images required by the selected
+  editor, followed by real VS Code or VSCodium Remote SSH behavior. The runtime
+  gate exclusively owns the editor-independent wrapper/container security
+  contract and its negative image cases. Requires Podman, an editor, and a
+  display or Xvfb.
 
 Run `tests/run portable` for every code change. Also run `tests/run runtime`
 for host, container, SSH, mount, network, or lifecycle changes when Podman is

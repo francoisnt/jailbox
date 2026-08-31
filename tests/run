@@ -25,6 +25,20 @@ have_editor() {
     command -v codium >/dev/null 2>&1 || command -v code >/dev/null 2>&1
 }
 
+selected_editor() {
+    case "${JAILBOX_EDITOR:-}" in
+        codium|code) printf '%s\n' "$JAILBOX_EDITOR" ;;
+        "")
+            if command -v codium >/dev/null 2>&1; then
+                printf 'codium\n'
+            else
+                printf 'code\n'
+            fi
+            ;;
+        *) die "invalid JAILBOX_EDITOR='$JAILBOX_EDITOR' (expected codium or code)" ;;
+    esac
+}
+
 rerun_with_xvfb_if_needed() {
     [[ "$(uname -s)" == "Linux" ]] || return 1
     [[ "${JAILBOX_UNDER_XVFB:-}" != "1" ]] || return 1
@@ -116,9 +130,15 @@ case "$GATE" in
             rerun_with_xvfb_if_needed "$@"
             die "a graphical display session or xvfb-run is required for the editor gate"
         fi
-        # The editor suite consumes the test images produced by the contract
-        # suite, so the gate builds and validates them before opening an editor.
-        run_suite "container-contract" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
+        # Runtime owns the editor-independent security contract. Prepare only
+        # the positive images this editor consumes on its isolated test host.
+        if [[ "$(selected_editor)" == codium ]]; then
+            editor_stages=(debian alpine fedora)
+        else
+            editor_stages=(debian fedora)
+        fi
+        run_suite "wrapper-image-preparation" \
+            bash "$SCRIPT_DIR/integration/wrapper-images.sh" --prepare-only "${editor_stages[@]}"
         run_suite "system/editor" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
         ;;
 esac
