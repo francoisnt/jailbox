@@ -47,35 +47,47 @@ command_requires_config() {
     [ -z "${1:-}" ]
 }
 
-init_project_config() {
-    local destination tmp_file
+init_project_config() (
+    local destination nested_link tmp_file
 
     destination="$PROJECT_DIR/jailbox.conf"
     if [ -e "$destination" ] || [ -L "$destination" ]; then
         die "jailbox.conf already exists; refusing to overwrite it"
     fi
 
+    tmp_file=""
+    trap '[ -z "$tmp_file" ] || rm -f -- "$tmp_file"' EXIT
+    trap 'exit 1' HUP INT TERM
+
     tmp_file=$(mktemp "$PROJECT_DIR/.jailbox.conf.tmp.XXXXXX") || \
         die "could not create temporary project configuration"
     if ! printf '%s\n' \
         '# Additional project paths mounted read-only inside the sandbox.' \
         'READONLY_PATHS=' > "$tmp_file"; then
-        rm -f -- "$tmp_file"
         die "could not write temporary project configuration"
     fi
 
     if ln -- "$tmp_file" "$destination" 2>/dev/null; then
-        rm -f -- "$tmp_file"
-        echo "Created $destination"
-        return 0
+        # ln treats an existing directory (and, on some hosts, a symlink to
+        # one) as a directory operand. A destination introduced after the
+        # check above must not turn publication into a hidden link inside that
+        # directory while jailbox reports success.
+        if [ "$tmp_file" -ef "$destination" ]; then
+            echo "Created $destination"
+            return 0
+        fi
+
+        nested_link="$destination/${tmp_file##*/}"
+        if [ -e "$nested_link" ] && [ "$tmp_file" -ef "$nested_link" ]; then
+            rm -f -- "$nested_link"
+        fi
     fi
 
-    rm -f -- "$tmp_file"
     if [ -e "$destination" ] || [ -L "$destination" ]; then
         die "jailbox.conf already exists; refusing to overwrite it"
     fi
     die "could not publish $destination"
-}
+)
 
 die() {
     echo "Error: $*" >&2

@@ -192,6 +192,40 @@ test_publication_failure_without_destination() {
     fi
 }
 
+# ln interprets an existing destination directory as a request to create a
+# link inside it. Force that race after init's initial absence check and ensure
+# jailbox neither reports success nor leaves the unintended nested hard link.
+test_publication_race_with_directory() {
+    local project racing real_ln output leftovers
+
+    project=$(mktemp -d "$FIXTURE/project.XXXXXX")
+    racing="$FIXTURE/racing-bin"
+    mkdir -p "$racing"
+    real_ln=$(command -v ln)
+    cat > "$racing/ln" <<'EOF_LN'
+#!/bin/sh
+destination="$3"
+mkdir "$destination" || exit 1
+exec "$REAL_LN" "$@"
+EOF_LN
+    chmod +x "$racing/ln"
+
+    output=$( (cd "$project" && REAL_LN="$real_ln" PATH="$racing:$FIXTURE/bin:$PATH" \
+        "$JAILBOX_DIR/jailbox" init) 2>&1 || true)
+    case "$output" in
+        *"Created "*) fail "directory publication race is not reported as success" ;;
+        *"already exists"*) pass "directory publication race is rejected" ;;
+        *) fail "directory publication race is rejected (got: $output)" ;;
+    esac
+
+    leftovers=$(find "$project" -name '.jailbox.conf.tmp.*' -print)
+    if [ -d "$project/jailbox.conf" ] && [ -z "$leftovers" ]; then
+        pass "directory publication race leaves no temporary hard link"
+    else
+        fail "directory publication race leaves no temporary hard link"
+    fi
+}
+
 test_generated_config_is_selected() {
     local project
 
@@ -241,6 +275,7 @@ test_container_collisions
 test_concurrent_publication
 test_init_needs_podman_only
 test_publication_failure_without_destination
+test_publication_race_with_directory
 test_generated_config_is_selected
 test_init_documented_in_help
 
