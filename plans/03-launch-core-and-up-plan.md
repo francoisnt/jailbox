@@ -45,6 +45,7 @@ calls `stop` before a deliberate relaunch.
 
 ```sh
 bring_up_sandbox() {
+    initialize_runtime_ids
     validate_configured_readonly_paths
     check_local_port_available
     build_or_select_dev_image
@@ -64,6 +65,13 @@ bring_up_sandbox() {
     post_start_validation
 }
 ```
+
+Keep `initialize_runtime_ids` as the first operation in the shared launch core.
+It derives `LOCAL_PORT` and `MY_UID`, which later launch steps require, from the
+project identity plan 2 initializes before dispatch. It is not part of global
+command initialization: `doctor` and `ssh-config` retain their existing focused
+calls because they also consume runtime identifiers, while commands that do not
+need them must not acquire that work implicitly.
 
 - **Bare launch**: initialize editor state, call the core with
   `warn_if_alpine_dev_image_with_vscode` as the pre-build hook, then

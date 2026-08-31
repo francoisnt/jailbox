@@ -60,3 +60,65 @@ mount arguments, but Podman resolves those paths later. Explore whether
 descriptor-relative filesystem APIs, lifecycle locking, or another design can
 bind validation to the object ultimately mounted. Document residual host-side
 races if they cannot be eliminated.
+
+## Runtime isolation
+
+### SELinux development-container policy
+
+jailbox currently uses Podman's private `:Z` relabel option on the project and
+other bind mounts. On an SELinux-enforcing host, this allows the confined
+development container to access the checkout, but it persistently changes local
+filesystem labels that Git does not track or restore. Repeated private labels on
+nested project overlays may also be redundant.
+
+Reassess the development-container policy independently of the numbered path
+and command plans. Compare at least:
+
+- retaining private `:Z` labeling, ideally once on each independent bind source
+  with nested project mounts inheriting the project label;
+- using `--security-opt label=disable` and no `z`/`Z` suffixes for development-
+  container binds, accepting that rootless Podman, namespaces, mount selection,
+  dropped capabilities, and `no-new-privileges` become the principal host
+  boundary; and
+- exposing an explicit strict configuration choice between those modes without
+  any silent fallback from private labeling to disabled labeling.
+
+Keep the proxy container's label policy separate: it does not mount the project
+and has no equivalent repository-relabeling concern. Any selected design must
+document whether checkout labels persist after `stop`, `--clean`, failure, or
+uninstall; must not attempt to guess and restore prior labels; and must be tested
+on a disposable Fedora VM where `getenforce` reports exactly `Enforcing`.
+Non-enforcing CI can report a skip but cannot verify the SELinux contract.
+
+The numbered plans preserve the existing `:Z` convention in the meantime and
+do not depend on resolving this investigation.
+
+### KVM-backed development runtime
+
+Investigate an optional VM-backed OCI runtime that gives the development
+workload a guest kernel while preserving jailbox's Podman-oriented lifecycle.
+The closest current candidate is libkrun through Podman's
+`--runtime=krun`, but availability and behavior must be verified rather than
+assuming the flag is a drop-in isolation upgrade.
+
+The investigation must cover:
+
+- supported Linux distributions, architectures, hardware virtualization, KVM
+  access, rootless operation, and installation burden;
+- ordinary OCI development images and the jailbox wrapper build;
+- project binds, nested read-only/writable overlays, named home storage,
+  ownership, `--read-only`, and tmpfs behavior through the VM file-sharing
+  layer;
+- SSH port forwarding, Podman networks, the egress proxy sidecar, and lifecycle
+  inspection/removal;
+- resource limits and the meaning of existing capability, seccomp,
+  `no-new-privileges`, and SELinux options under the alternate runtime;
+- explicit failure when the requested runtime or KVM is unavailable, with no
+  silent fallback to the ordinary host-kernel runtime; and
+- whether a private VM filesystem plus controlled Git patch/commit export would
+  provide a stronger and simpler boundary than sharing the live host checkout.
+
+Do not make `krun`, Kata Containers, `crun-vm`, or another alternate runtime a
+prerequisite for the numbered implementation sequence. If an experimental
+runtime setting is later added, include it in the configuration digest and run
+the complete portable, runtime, and editor gates for each supported mode.

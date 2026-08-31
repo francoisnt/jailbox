@@ -59,10 +59,50 @@ launch-mode state and must not gate attachment.
 
 ### Canonical serialization
 
+Use SHA-256. On the host, prefer `sha256sum`; otherwise use
+`shasum -a 256`. Launch and attach commands require one of those implementations
+and normalize their output to a lowercase 64-hex-character digest. Do not use
+`cksum`, because this label is a security-sensitive comparison rather than a
+short resource-name hash.
+
+Feed the hash command one versioned, NUL-delimited byte stream. Configuration
+values cannot contain NUL because Unix argv and shell variables cannot contain
+it, so the delimiter is unambiguous. Emit exactly:
+
+```text
+jailbox-config-digest-v1 NUL
+scalar NUL KEY NUL VALUE NUL                         for each scalar key
+array NUL KEY NUL COUNT NUL value NUL ITEM NUL ...  for each array key
+selected-config NUL CANONICAL_PATH NUL
+editor-override NUL inactive NUL
+```
+
+When a non-empty `JAILBOX_EDITOR` override is active, replace the final record
+with `editor-override NUL active NUL VALUE NUL`. An unset and explicitly empty
+`JAILBOX_EDITOR` are equivalent because `${JAILBOX_EDITOR:-$EDITOR}` gives them
+identical behavior. Scalar and array keys are emitted in their declaration
+order from `host/public-api.sh`; an empty scalar still has its terminating NUL,
+and an empty array has count zero and no item records. Encode `COUNT` as
+canonical unsigned decimal with no leading zeroes except `0`; emit each item as
+the repeated `value NUL ITEM NUL` record shown above. Stream records directly to
+the hash command; never store the NUL-containing serialization in a Bash
+variable.
+
+The canonical selected-config path is the classified absolute path used for
+that invocation. This intentionally distinguishes two selected files with the
+same parsed values.
+
 Hash array keys in **declared order by default**. Sort only keys named as
 set-valued, which today is `EGRESS_ALLOW` alone: it is a domain allowlist that
 `effective_egress_allowlist` deduplicates, so its order carries no meaning and
 reordering it must not force a relaunch.
+
+Before serialization, render a set-valued array as its bytewise `LC_ALL=C`
+sorted unique values. Keep the names of set-valued arrays in one explicit
+`DIGEST_SET_ARRAY_KEYS` declaration next to the digest implementation. The
+portable coverage test must verify that every name in that declaration is a
+public array key; all public arrays not named there automatically retain their
+declared order.
 
 Path arrays keep declared order. `01-protected-path-policy-plan.md` constructs
 mounts in configuration order and tests for it, and `07-writable-paths-plan.md`
@@ -130,6 +170,9 @@ session.
   read `EDITOR_BIN`, the output of `effective_egress_allowlist`, or any other
   value produced by the launch path, so that every command computes the same
   digest from the same declaration regardless of how it dispatches.
+- Implement the exact versioned NUL-delimited serialization and portable
+  SHA-256 selection above. Validate the normalized digest before adding it to a
+  Podman label or comparing it.
 - Add a portable-gate assertion that the digest computation depends on no
   launch-derived state. The reproducibility requirement above is the property
   `exec` relies on, and it is easy to break by adding an input that happens to be
@@ -156,10 +199,15 @@ to `05-exec-command-plan.md`, which introduces it.
   adding a key without covering it fails the portable gate.
 - A reformatted config with unchanged values produces an unchanged digest;
   changing any single key's parsed value changes it.
+- Empty scalars, empty arrays, multi-element arrays, and values that could be
+  ambiguous under newline or delimiter-based concatenation produce distinct,
+  stable digests. The v1 byte stream is covered by fixed digest vectors.
 - Selecting a different config file with identical values still changes the
   digest, because the selected-config identity is an input.
-- Changing `JAILBOX_EDITOR` or `EDITOR` changes the digest, because both are
-  declarations.
+- Changing a non-empty `JAILBOX_EDITOR` or changing `EDITOR` changes the digest,
+  because both are declarations. Unset and explicitly empty `JAILBOX_EDITOR`
+  produce the same digest, while a non-empty override produces a distinct
+  digest.
 - `up` and bare `jailbox` produce the *same* digest from identical
   configuration, and `exec` attaches to either. This is the reproducibility
   property the design depends on: assert it directly, because it is the
@@ -174,6 +222,8 @@ to `05-exec-command-plan.md`, which introduces it.
   digest, because path arrays are hashed in declared order.
 - A launched development container carries a non-empty `jailbox.config-digest`
   label.
+- Launch and attach fail clearly before Podman inspection or mutation when
+  neither `sha256sum` nor `shasum` is available.
 
 Run `tests/run portable`, and `tests/run runtime` where Podman is available to
 confirm the label reaches the container.

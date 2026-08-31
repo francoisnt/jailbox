@@ -81,7 +81,8 @@ lifecycle commands remain unsupported; locking them is separate work tracked in
 
 - Add `require_sandbox_absent` and `stop_jailbox` to
   `host/container-runtime.sh`. `require_sandbox_absent` is a read-only check
-  used by top-level launch dispatch before any path validation or image work; it
+  used by top-level launch dispatch before required-config selection or loading,
+  path validation, or image work; it
   distinguishes an owned leftover, which names `jailbox stop`, from an unlabeled
   or mismatched collision, which names manual Podman inspection and removal.
   `stop_jailbox` validates the ownership label of every present target, then
@@ -110,11 +111,6 @@ lifecycle commands remain unsupported; locking them is separate work tracked in
   specifically would reject a host that hashes correctly. Any guard added here
   must accept any of the three; on supported platforms at least one is always
   present, so it would never fire in practice.
-- Leave `require_command cksum` in `host_preflight` unchanged. It is not there
-  for the project hash: `jailbox_install_cache_bust` (`host/dev-image.sh`) pipes
-  through `cksum` twice with no fallback, making it a genuine requirement for
-  every command that builds the wrapper image. Relocating or relaxing that check
-  would weaken a guard that is currently correct.
 - Add `stop` to `CLI_FLAGS_WITHOUT_VALUES` and `CLI_HELP` in
   `host/public-api.sh`, and update parsing, dispatch, and generated public-API
   expectations. The `Options:` block in `usage` (`host/common.sh`) is generated

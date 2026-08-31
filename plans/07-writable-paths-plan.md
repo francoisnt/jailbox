@@ -12,8 +12,8 @@ profiles or multiple identities for one checkout.
 
 ## Sequence
 
-Order 7.0. Requires `01-protected-path-policy-plan.md` for the
-`check_readonly_path` primitive and `04-config-digest-plan.md` for automatic
+Order 7.0. Requires `01-protected-path-policy-plan.md` for the shared
+`check_project_mount_path` primitive and `04-config-digest-plan.md` for automatic
 digest coverage of the new key. Its safe-reuse requirement — that changing the
 allowlist prevents a stale sandbox from being used — is only enforceable once
 `05-exec-command-plan.md` and `06-shell-command-plan.md` gate attachment on the
@@ -82,8 +82,10 @@ silently normalize unsafe input.
 
 Use the shared project-relative mount-path validation established by plan 1.0,
 including its colon rejection, and the same canonical containment helper for
-`READONLY_PATHS` so policy does not vary by feature. Add only the writable
-policy's type and overlap decisions on top of those shared low-level results.
+`READONLY_PATHS` so policy does not vary by feature. Implement
+`check_writable_path` as a policy-specific wrapper around
+`check_project_mount_path`; add only the writable policy's duplicate, nesting,
+and protected-path overlap decisions on top of the shared result.
 
 ## Interaction with protected paths
 
@@ -101,10 +103,13 @@ Mount project-tree paths parent-first:
 2. writable lanes, shallowest first;
 3. protected read-only overlays, shallowest first where necessary.
 
-Implement the project-label policy established by
-`selinux-mount-labels-recommendation.md`. Complete its enforcing-host
-verification before adding writable lanes, then verify this mount ordering on
-the supported Podman/SELinux matrix.
+Preserve jailbox's existing Podman relabel convention in this plan: the project
+base uses private `Z` (`Z,ro` in allowlist mode), writable lane binds use
+`Z,rw`, and protected overlays use `Z,ro`. Verify mount ordering and effective
+read/write behavior in the ordinary runtime gate. A broader decision about
+private relabeling, disabling development-container labels, persistent checkout
+metadata, or enforcing-host-specific coverage is independent future work in
+`backlog.md`; it does not block this path-policy feature.
 
 ## Git commits
 
@@ -177,14 +182,21 @@ no `start` command, and no automatic replacement anywhere.
 
 Extend post-start validation to prove both sides of the boundary:
 
-- a write inside every configured lane succeeds;
-- an in-place write to every configured regular file succeeds, while creating a
-  sibling or replacing it by rename fails under a file-only policy;
+- for each configured directory lane, creation and removal of a uniquely named
+  marker inside that directory succeeds;
+- for a configured regular-file lane, inspect the container's effective mount
+  table and mount flags but do not modify the user file;
 - a write outside the lanes fails;
 - protected files nested within a lane remain read-only; and
 - no configured source path resolves outside the project.
 
-Validation markers must be created and cleaned without overwriting user files.
+Directory validation markers must use collision-resistant names, be created
+with no-clobber semantics, and be removed on success and failure without
+overwriting user files. Prove actual in-place regular-file writes and the failed
+sibling-temp-and-rename behavior only in controlled unit/runtime fixtures whose
+contents the test owns. Production validation must never alter and restore an
+arbitrary user file: restoration races with concurrent writers and cannot be
+made lossless.
 
 ## Tests
 

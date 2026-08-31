@@ -12,8 +12,9 @@ not protection during development-image builds.
 
 ## Sequence
 
-Order 8. Requires `01-protected-path-policy-plan.md` for project-relative path
-validation and trusted automatic overlays, `04-config-digest-plan.md` for
+Order 8.0. Requires `01-protected-path-policy-plan.md` for project-relative path
+validation through `check_project_mount_path` and for trusted automatic
+overlays, `04-config-digest-plan.md` for
 automatic public-key coverage, and `07-writable-paths-plan.md` for the complete
 project-path precedence model.
 
@@ -40,15 +41,17 @@ Each entry must:
 Use the same lexical, symlink, canonical-containment, and canonical-project-root
 rules as `READONLY_PATHS`. Paths from an external selected config remain
 relative to `$PROJECT_DIR`. Reuse plan 1.0's low-level helpers and add only the
-hidden policy's type, overlap, and mask-construction decisions on top.
+hidden policy's overlap and mask-construction decisions on top. Implement
+`check_hidden_path` as a policy-specific wrapper around
+`check_project_mount_path`, not around `check_readonly_path`.
 
 Plan 1.0 owns colon rejection for every project path placed in a
 colon-delimited Podman argument; Podman's mask option has the same delimiter.
 Reject missing entries: this policy deliberately makes no promise that masking
-an absent destination reserves its name against later creation. Existing
-regular files, directories, FIFOs, and Unix sockets are valid. Reject character
-and block device nodes, whose portable masking behavior is outside this plan's
-supported contract. Do not follow or mask symlinks.
+an absent destination reserves its name against later creation. Only existing
+regular files and directories are valid. Reject FIFOs, Unix sockets, character
+and block devices, and every other special file, whose portable masking behavior
+is outside this plan's supported contract. Do not follow or mask symlinks.
 
 ## Visible behavior
 
@@ -191,9 +194,9 @@ Parser and validation:
 
 - empty and multiple `HIDDEN_PATHS` values parse correctly;
 - absolute, empty, dot-segment, colon-containing, trailing-slash, duplicate,
-  missing, outside, symlinked, and character- or block-device entries are
-  rejected;
-- regular files, directories, FIFOs, and Unix sockets are accepted;
+  missing, outside, symlinked, FIFO, socket, device, and other special-file
+  entries are rejected;
+- regular files and directories are accepted;
 - project roots reached through a host symlink prefix remain valid; and
 - invalid entries fail before launch side effects exist.
 
@@ -201,7 +204,10 @@ Option construction:
 
 - every entry becomes the expected absolute container path;
 - multiple paths form one quoted `--security-opt mask=...` argument;
-- spaces, glob characters, and option-like path segments remain literal;
+- grammar-valid glob characters such as `*` and `?`, and option-like path
+  segments remain literal; whitespace and bracket characters retain the strict
+  configuration grammar's existing rejection and are not accepted by this
+  feature;
 - no bind source, project placeholder, or new runtime-state directory is
   created; and
 - an option failure is returned without an unmasked retry.
@@ -211,8 +217,6 @@ Runtime policy:
 - a masked file inside the bind-mounted project cannot be read or written;
 - a masked directory inside the bind-mounted project cannot have its original
   entries listed, read, or written;
-- masked FIFOs and Unix sockets inside the bind-mounted project cannot be
-  opened through their original paths;
 - both file and directory masks remain effective with jailbox's read-only
   container root filesystem enabled;
 - host files and directories remain unchanged after container access attempts;

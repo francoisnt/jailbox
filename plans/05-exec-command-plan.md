@@ -32,12 +32,24 @@ idempotent.
 `exec` decides what to do from the sandbox's live state, and the only two
 outcomes are attach and fail:
 
-- **Container running, SSH answers, and its recorded configuration matches the
+- **Container running, its `jailbox.project` ownership label equals canonical
+  `$PROJECT_DIR`, SSH answers, and its recorded configuration matches the
   current one** — attach to it as-is. It was created by an explicit `up` or bare
   launch, and that launch defined its policy.
-- **Anything else** — absent, stopped, unresponsive, or configured differently —
-  fail with an actionable message naming `jailbox up` to launch or relaunch and
+- **Absent, stopped, unresponsive, or configured differently** — fail with an
+  actionable message naming `jailbox up` to launch or relaunch and
   `jailbox --clean` to start over.
+- **Present but not owned by this project** — fail as a foreign name collision
+  with manual Podman inspection guidance.
+
+A missing or mismatched ownership label is a foreign name collision, not a
+stale jailbox. Refuse it before reading the digest or opening SSH, and direct the
+user to inspect the container with Podman; do not suggest `jailbox --clean`,
+which must not be used as permission to remove an unowned object. When egress
+filtering requires the proxy, require its ownership label to match as well as
+requiring it to be running. These checks prevent a container that merely
+occupies jailbox's deterministic name from being treated as this project's
+sandbox.
 
 Because `exec` never mutates anything, it needs no locking, no double-checked
 state, and no decision about whether a sandbox is close enough to reuse. Two
@@ -93,12 +105,13 @@ non-interactive.
 
 Do not interpolate caller arguments into a remote shell command. Encode argv as a
 NUL-delimited payload and convert it to a single-line Base64 frame. Pass that
-validated frame as one argument to a fixed remote decoder command; Base64's
-restricted alphabet makes this safe without evaluating caller data. The remote
-decoder decodes it into a Bash array, changes to `$REMOTE_PATH`, and `exec`s the
-array. Stdin remains exclusively attached to the remote command so pipelines work
-without a framing collision. Unix argv cannot contain NUL; every other byte
-accepted by the host shell must round-trip without reinterpretation.
+validated frame as the sole argument to an installed fixed helper,
+`/usr/local/bin/jailbox-exec-argv`; Base64's restricted alphabet makes this safe
+in OpenSSH's remote command string without evaluating caller data. The Bash
+helper validates and decodes it into an array, changes to `$REMOTE_PATH`, and
+`exec`s the array. Stdin remains exclusively attached to the remote command so
+pipelines work without a framing collision. Unix argv cannot contain NUL; every
+other byte accepted by the host shell must round-trip without reinterpretation.
 
 Base64 line folding is not portable and must not be papered over with a flag: GNU
 `base64` spells single-line output `-w0`, macOS spells it `-b 0`, and busybox
@@ -108,9 +121,13 @@ with plain `base64 -d`, which tolerates wrapping in either direction.
 The frame travels as one argument inside the sshd command string, so total argv
 size is bounded by the remote `ARG_MAX` minus Base64's 33% inflation, and stdin
 is unavailable as a side channel because it belongs to the remote command.
-Enforce a conservative encoded-frame limit on the host and fail with an explicit
-"argument list too long for jailbox exec" message rather than letting sshd or the
-remote `exec` fail opaquely.
+Set the maximum encoded frame to 49,152 bytes (48 KiB), measured after newline
+folding and before invoking SSH. This leaves ample room for the fixed command and
+environment on supported Linux development images while giving identical
+behavior across hosts. Fail above it with the explicit message "argument list
+too long for jailbox exec" rather than letting sshd or the remote `exec` fail
+opaquely. This is a jailbox protocol limit, not a dynamically calculated
+fraction of the current host's `ARG_MAX`.
 
 The implementation must:
 
@@ -153,8 +170,26 @@ Ctrl-C terminates `jailbox exec` promptly with a non-zero status.
 An opt-in `-t` mode is deliberately excluded: allocating a PTY would enable signal
 delivery but break byte fidelity through CR/LF translation.
 
-The remote decoder must `exec` the target argv so no wrapper shell lingers after a
-disconnect.
+Install `jailbox-exec-argv` through the wrapper image alongside the other
+jailbox-owned runtime helpers. It accepts exactly one frame, rejects characters
+outside `[A-Za-z0-9+/=]`, decodes into a private temporary file under `/tmp`,
+checks Base64 decoding success, reads NUL-delimited elements with Bash without
+command substitution, requires a final NUL and a non-empty argv, removes the
+temporary file on every pre-exec path, changes to `$REMOTE_PATH`, and `exec`s the
+target argv. Create the temporary file with `mktemp` under a restrictive umask.
+
+Implement the helper as the new executable Bash file
+`container/jailbox-exec-argv`. Install it as
+`/usr/local/bin/jailbox-exec-argv` in `container/Containerfile.wrapper` with mode
+0755; keeping it under `container/` also places it under the existing wrapper
+image cache-bust. Bash is intentional here because reconstructing arbitrary
+NUL-delimited argv safely requires arrays. Do not add Bash syntax to the POSIX
+`container/setup.sh` or `container/entrypoint.sh` scripts.
+
+Add the helper to the Bash section of `scripts/lint.sh` so the portable gate
+runs ShellCheck on it. Add a direct `bash -n` assertion alongside the existing
+syntax checks as well. The transport component that parses untrusted framed argv
+must not sit outside lint or syntax-test coverage.
 
 ## Working directory and environment
 
@@ -207,6 +242,8 @@ Transport fidelity:
 - Binary stdin, including bytes that resemble framing and embedded newlines,
   reaches the command unchanged.
 - Malformed or truncated argv frames fail without evaluating payload contents.
+- `container/jailbox-exec-argv` is installed with mode 0755, included in the
+  wrapper cache-bust, checked as Bash by ShellCheck, and covered by `bash -n`.
 - An argv above the encoded-frame limit fails with the explicit message.
 - A remote command exiting 255 returns 255. No test asserts a distinction between
   that and a transport failure; there is none.
@@ -235,6 +272,10 @@ Attach and staleness:
   attaching.
 - With egress filtering enabled, a missing or stopped proxy fails before the
   command runs.
+- A development container or required proxy with a missing or mismatched
+  `jailbox.project` label is rejected as a foreign collision before digest
+  inspection or SSH; the error names manual Podman inspection and does not name
+  `--clean`.
 - Concurrent `exec` invocations against one running sandbox all succeed; none of
   them mutates sandbox state.
 - `exec` creates no configuration file; an explicit missing `--config PATH` fails

@@ -16,8 +16,8 @@ resource ownership, or concurrent-launch behavior.
 Order 1.0. Requires nothing earlier and is independent of the command-mode
 sequence in plans 2 through 6, which can land before or after it.
 `01.1-init-config-plan.md` uses its public setting, and
-`07-writable-paths-plan.md` requires the `check_readonly_path` primitive defined
-here.
+`07-writable-paths-plan.md` and `08-hidden-paths-plan.md` require the shared
+`check_project_mount_path` primitive defined here.
 
 ## Configuration
 
@@ -42,6 +42,7 @@ Each entry must:
 - be a non-empty project-relative path;
 - contain no `.` or `..` segment, colon, or trailing slash;
 - exist at launch;
+- be a regular file or directory;
 - have no symlink component below the canonical project root;
 - resolve canonically beneath the canonical project root; and
 - be unique within `READONLY_PATHS`.
@@ -53,10 +54,26 @@ Symlink checks begin below the canonical project root. The spelling used to
 reach the project root itself may contain a symlinked prefix, as commonly occurs
 with `/var` and `/private/var` on macOS.
 
-Implement lexical checks, component-wise symlink detection, canonicalization,
-project containment, existence checks, and file-type classification as focused
-low-level helpers. `READONLY_PATHS`, `WRITABLE_PATHS`, and `HIDDEN_PATHS` must
-reuse the same applicable helpers so their common safety rules cannot drift.
+Implement the common layer in `host/common.sh` with focused, named helpers:
+
+- `validate_project_mount_path_lexical` checks relative spelling, dot segments,
+  colons, trailing slashes, and empty entries;
+- `check_project_path_no_symlinks` walks components below the canonical project
+  root without following a project-controlled component;
+- `canonical_project_relative_path` canonicalizes an existing candidate and
+  proves containment beneath canonical `$PROJECT_DIR`; and
+- `project_path_type` classifies the canonical result as a regular file,
+  directory, or special file.
+
+Compose them in `check_project_mount_path`, which verifies lexical shape,
+existence, regular-file-or-directory type, absence of symlink components, and
+canonical containment, and returns the canonical project-relative spelling.
+`READONLY_PATHS`, `WRITABLE_PATHS`, and `HIDDEN_PATHS` must call this common
+primitive from their policy-specific checks so their shared safety rules cannot
+drift. Their array-level duplicate and overlap rules remain policy-specific.
+All three policies accept only regular files and directories. Reject FIFOs,
+Unix sockets, character and block devices, and every other special file; no
+policy silently follows or mounts a symlink.
 Other path-bearing inputs, including `DEV_CONTAINERFILE`, `DEV_BUILD_CONTEXT`,
 and `--config`, must reuse those helpers wherever their different semantics
 permit; do not force them through one top-level validator when, for example, an
@@ -126,16 +143,19 @@ must still list every other path they want protected.
   absolute, dot-segment, colon-containing, trailing-slash, and duplicate
   entries. Reject colon because the validated paths are later placed in
   colon-delimited Podman volume arguments; make this part of the shared
-  project-relative mount-path validation used by later path-policy plans.
+  `validate_project_mount_path_lexical` helper used by later path-policy plans.
 - In `host/container-runtime.sh`, keep public configured `READONLY_PATHS`
   separate from runtime-owned `EFFECTIVE_READONLY_PATHS`. Its initializer resets
   only the effective array and mount arguments; it must not erase configuration
   already loaded. Remove `configure_readonly_paths`, `readonly_paths_contain`,
   and `ensure_readonly_stubs`.
-- Add one `check_readonly_path` primitive that verifies lexical shape,
-  existence, symlink components below the canonical project root, and canonical
-  containment. Use it both in the pre-launch validation pass and the pre-mount
-  recheck so the two passes cannot drift.
+- Add `check_project_mount_path` and its named low-level helpers as the shared
+  primitive above. Add a policy-specific `check_readonly_path` wrapper that
+  calls it and supplies read-only-policy diagnostics. Use that wrapper both in
+  the pre-launch validation pass and the pre-mount recheck so the two passes
+  cannot drift. Plans 7 and 8 add `check_writable_path` and `check_hidden_path`
+  wrappers around the same common primitive rather than calling the read-only
+  wrapper.
 - Add a trusted-input classifier for the default config, selected configs, and
   Containerfiles. It distinguishes a valid directly external path from an
   in-project path without first following a project-controlled symlink. For an
@@ -208,7 +228,7 @@ cover:
 - preservation of configured order;
 - read-only mount construction for files and directories;
 - rejection of absolute, empty, dot-segment, colon-containing, trailing-slash,
-  duplicate, missing, outside-project, and symlinked entries;
+  duplicate, missing, outside-project, symlinked, and special-file entries;
 - rejection of leaf and intermediate-component symlinks;
 - acceptance when only the canonical project root's host spelling has a
   symlinked prefix;
