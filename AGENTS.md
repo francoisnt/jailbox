@@ -132,6 +132,15 @@ host-side edit.
 - Write plans as final, settled implementation documents. If the user's intent
   is unclear, ask before writing the plan; do not put unresolved approval
   questions, speculative alternatives, or requests for decisions into it.
+- Center plans on observable behavior, security invariants, public interfaces,
+  migration, ordering constraints, acceptance criteria, and non-goals. Leave
+  helper names, internal state choreography, exact shell techniques, and test
+  fixture construction to the implementer unless one of those details is
+  necessary to preserve correctness, portability, or a security boundary.
+- Treat any implementation notes retained in a plan as non-binding guidance.
+  An implementer may choose a simpler internal design when it satisfies the
+  complete contract and acceptance criteria and respects this file's module
+  ownership rules.
 - When revising a plan removes or replaces earlier behavior, rewrite the
   affected passages as though the superseded material had never been present.
   Do not retain history about the discarded direction or statements that the

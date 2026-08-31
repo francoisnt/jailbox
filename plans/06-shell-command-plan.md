@@ -28,7 +28,8 @@ jailbox [--config PATH] shell
 
 `shell` uses the attach-or-fail rules, digest enforcement, and proxy liveness
 check defined in `05-exec-command-plan.md` without change. It adds one precondition
-of its own and one difference in transport.
+of its own and one difference in transport. It follows plan 5's attach-state
+boundary and does not initialize editor, network, or mount launch state.
 
 ## TTY requirement
 
@@ -89,7 +90,7 @@ from `exec`. Note that `shell` opens a login shell while `exec` does not.
 With this change the command reference is complete: document the full lifecycle —
 bare launch, `up`, `exec`, `shell`, `stop`, `--clean` — as one table.
 
-## Tests
+## Acceptance criteria
 
 - `shell` opens a login Bash in the remote project directory.
 - A failed remote `cd` aborts rather than opening a shell in the home directory.

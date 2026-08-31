@@ -63,6 +63,12 @@ sandbox.
 editor jailbox *discovered*, and the hosts it added as a consequence, are
 launch-mode state and must not gate attachment.
 
+An attach invocation must therefore repeat a non-empty `JAILBOX_EDITOR`
+override used for launch. Omitting or changing it is a declaration change and
+fails conservatively even where discovery happened to choose the same editor;
+the digest cannot prove equality without performing the editor discovery attach
+commands deliberately avoid.
+
 ### Canonical serialization
 
 Use SHA-256. On the host, prefer `sha256sum`; otherwise use
@@ -208,8 +214,16 @@ the digest deliberately declines to gate on, because gating on it would reject
 every editor-launched sandbox and make `exec` unusable alongside an editor
 session.
 
-## Implementation
+## Non-binding implementation notes
 
+The digest byte format, input set, and timing constraints are normative. Helper
+names, state variables, and Bash mechanisms are suggestions unless required by
+the safety rules stated here.
+
+- Amend plan 3's launch sequence so SHA-256 availability is checked after
+  required configuration is loaded and before launch mutation. Compute and
+  validate the digest after the exact Containerfile identity is known and before
+  container creation; the container receives that digest as a label.
 - Compute the digest from parsed configuration, environment, and the shared
   read-only Containerfile discovery/classification helper. It must not read
   `EDITOR_BIN`, the output of `effective_egress_allowlist`, or any other value
@@ -241,6 +255,10 @@ session.
 - Add the key-coverage assertion to the portable gate. It must fail when a key
   present in `CONFIG_SCALAR_KEYS` or `CONFIG_ARRAY_KEYS` is not reachable by the
   digest computation.
+- Iterate the public key declarations without duplicating their names. Any shell
+  indirection must use only validated, repository-owned key declarations; never
+  use a parsed configuration value as a variable name, associative-array
+  subscript, or arithmetic expression.
 
 This adds no configuration key and no CLI flag, so it carries no public-API
 diff.
@@ -251,7 +269,7 @@ Document that jailbox records the configuration a sandbox was launched with, and
 state all three documented gaps above. Defer describing the enforcement behavior
 to `05-exec-command-plan.md`, which introduces it.
 
-## Tests
+## Acceptance criteria
 
 - The digest covers every key in `CONFIG_SCALAR_KEYS` and `CONFIG_ARRAY_KEYS`;
   adding a key without covering it fails the portable gate.

@@ -90,7 +90,8 @@ The absence check also precedes required-config selection. When both a sandbox
 is present and `jailbox.conf` is missing, launch reports the `jailbox stop`
 precondition first; only the next launch attempt after stopping can report the
 `jailbox init` requirement. `init` itself remains an early, config-independent
-command and does not perform the launch absence check.
+command and performs the same read-only absence check before publishing the
+policy anchor.
 
 Do not add a flag that relaunches over a running sandbox. The two-command flow
 is the boundary this change exists to establish, and an opt-out would reintroduce
@@ -105,12 +106,17 @@ and other lifecycle state before one loses the container-name race. Concurrent
 lifecycle commands remain unsupported; locking them is separate work tracked in
 `backlog.md`.
 
-## Implementation
+## Non-binding implementation notes
 
-- Add `require_sandbox_absent` and `stop_jailbox` to
-  `host/container-runtime.sh`. `require_sandbox_absent` is a read-only check
-  used by top-level launch dispatch before required-config selection or loading,
-  path validation, or image work; it
+The helper boundaries below are suggestions. Resource ownership must be fully
+validated before mutation, but the implementer may choose the internal API and
+dispatch structure.
+
+- Reuse the read-only `require_sandbox_absent` helper introduced for safe
+  initialization by plan 1.1, and add `stop_jailbox` to
+  `host/container-runtime.sh`. Extend the helper's owned-leftover diagnostic to
+  name the new `jailbox stop` command. Top-level launch dispatch uses it before
+  required-config selection or loading, path validation, or image work; it
   distinguishes an owned leftover, which names `jailbox stop`, from an unlabeled
   or mismatched collision, which names manual Podman inspection and removal.
   `stop_jailbox` validates the ownership label of every present target, then
@@ -198,7 +204,7 @@ that `--clean` checks containers, the home volume, and all project networks
 before deleting anything, and that foreign resources require manual Podman
 resolution.
 
-## Tests
+## Acceptance criteria
 
 - `stop` removes owned development and proxy container objects, leaves networks,
   images, the home volume, and SSH state in place, and creates no config.

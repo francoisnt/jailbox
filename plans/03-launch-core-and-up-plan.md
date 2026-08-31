@@ -41,7 +41,11 @@ editor. `up` never launches or requires an editor.
 when the sandbox is already running. Automation runs `up` once during setup and
 calls `stop` before a deliberate relaunch.
 
-## Implementation outline
+## Non-binding implementation notes
+
+The sequence below is normative only where ordering affects validation,
+security, or visible behavior. Function names and extraction boundaries are
+illustrative and may change during implementation.
 
 ```sh
 bring_up_sandbox() {
@@ -153,7 +157,7 @@ Update README usage with the `up` command, the bare-launch/`up` split, and the
 fact that `up` neither requires nor opens an editor. Document the egress
 allowlist difference above.
 
-## Tests
+## Acceptance criteria
 
 - Bare `jailbox` retains current editor behavior.
 - `up` works with no `code` or `codium` executable and never opens or configures

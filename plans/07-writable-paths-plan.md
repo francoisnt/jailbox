@@ -157,7 +157,11 @@ settled in `05-exec-command-plan.md`: `exec` and `shell` never replace a sandbox
 they *fail* on a digest mismatch and direct the user to `jailbox up`. There is
 no `start` command, and no automatic replacement anywhere.
 
-## Implementation outline
+## Non-binding implementation notes
+
+Mount behavior, precedence, validation safety, and acceptance tests are the
+contract. The implementer may choose different internal arrays, helper names,
+or assembly steps.
 
 ### Public API and parser
 
@@ -220,7 +224,7 @@ table and report that the destructive write probe was not applicable; do not
 create a host path merely to test denial. Controlled runtime fixtures must
 include an outside directory and prove an actual denied creation there.
 
-## Tests
+## Acceptance criteria
 
 - Empty `WRITABLE_PATHS` is byte-for-byte compatible with current mount mode.
 - Empty `WRITABLE_PATHS` retains the existing writable-project validation. A

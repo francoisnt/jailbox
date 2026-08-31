@@ -150,7 +150,12 @@ The existing default config, selected in-project config, and used in-project
 Containerfile are protected without appearing in `READONLY_PATHS`. Projects
 must still list every other path they want protected.
 
-## Implementation
+## Non-binding implementation notes
+
+The names and decomposition below describe one viable approach, not a required
+internal API. The implementation may use different helpers or state flow if it
+preserves the validation rules, ordering, module ownership, and acceptance
+criteria in this plan.
 
 - In `host/public-api.sh`, replace `READONLY_EXTRA` with `READONLY_PATHS` in
   `CONFIG_ARRAY_KEYS`, `CONFIG_DEFAULTS`, and default assignment.
@@ -259,6 +264,16 @@ must still list every other path they want protected.
   predicate is that zero entries were checked. Plan 1.1 makes the anchor
   mandatory and owns restoring that zero-checked branch as an internal
   regression signal.
+- Replace the existing regular-file probe in `check_readonly_mounts`; it must
+  never append to a project file to discover whether an overlay failed. For a
+  regular file, inspect the container's effective mount table and require a
+  mount at the exact container path with read-only flags. Keep an actual denied
+  creation probe only for protected directories, where the collision-resistant
+  marker and cleanup logic cannot alter a pre-existing user file. Add a
+  controlled runtime fixture that deliberately omits or weakens a regular-file
+  overlay and proves validation reports the failure without changing the file's
+  bytes, metadata, or link target. Plan 7 reuses this non-destructive
+  regular-file rule for writable-lane validation.
 - Update the supported-settings header in `jailbox`, README configuration table,
   examples, recipes, and threat model. Remove claims about built-in protection
   and stub creation.
@@ -287,7 +302,15 @@ Update the README threat model to state plainly:
 - validation and the pre-mount recheck do not eliminate filesystem races before
   Podman resolves the bind source.
 
-## Tests
+Add a prominent migration notice to the README's release-facing documentation
+for users who had no `READONLY_EXTRA` declaration: upgrading removes the
+implicit protection for `.env`, Git configuration and hooks, workflow
+directories, and the other former built-ins until the user lists the desired
+existing paths in `READONLY_PATHS`. The unknown-key failure already makes
+configurations that declare `READONLY_EXTRA` loud; the notice owns the otherwise
+silent migration.
+
+## Acceptance criteria
 
 Update `tests/unit/config-parser.sh`, `tests/unit/readonly-paths.sh`,
 `tests/unit/runtime-mounts.sh`, and `tests/integration/runtime-security.sh` to
@@ -334,6 +357,9 @@ cover:
   missing, symlinked, unreadable, or non-regular path; no Containerfile enters
   the effective read-only set in this mode;
 - enforcement of every effective overlay in a running sandbox.
+- regular-file post-start validation never writes, appends to, replaces, or
+  restores the user file; a controlled failed-overlay fixture is detected while
+  the file's bytes, metadata, and link target remain unchanged.
 
 Run `tests/run portable`. Also run `tests/run runtime` because this changes
 project mounts and the documented security contract.

@@ -154,7 +154,11 @@ build cache, generated artifact, Git history, log, or another project file.
 Build-context filtering or validation is separate work. This plan does not edit
 ignore files automatically.
 
-## Implementation
+## Non-binding implementation notes
+
+Native Podman masking, private propagation, precedence, and failure behavior are
+normative. The internal state and helper decomposition are left to the
+implementer.
 
 - Add `HIDDEN_PATHS` to `CONFIG_ARRAY_KEYS`, `CONFIG_DEFAULTS`, parser
   assignment, the supported-settings header, documentation, and
@@ -207,7 +211,7 @@ Document:
 Do not describe hidden paths as cryptographically erased, undetectable, or safe
 after their contents have been copied elsewhere.
 
-## Tests
+## Acceptance criteria
 
 Parser and validation:
 

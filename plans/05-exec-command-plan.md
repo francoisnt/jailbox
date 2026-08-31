@@ -51,12 +51,20 @@ label to match as well as requiring it to be running. These checks prevent a
 container that merely occupies jailbox's deterministic name from being treated
 as this project's sandbox.
 
-Because `exec` never mutates anything, it needs no locking, no double-checked
-state, and no decision about whether a sandbox is close enough to reuse. Two
-`exec` calls racing each other is uninteresting. jailbox never has to judge
+Because the attach path never mutates jailbox lifecycle resources, it needs no
+locking, no double-checked state, and no decision about whether a sandbox is
+close enough to reuse. The caller's remote command may of course modify paths
+the sandbox policy makes writable. Two `exec` calls racing each other is
+uninteresting. jailbox never has to judge
 whether a running sandbox still matches the configuration well enough to repair;
 staleness is surfaced and the user resolves it. That matches how the tool already
 behaves — an editor session likewise keeps running until the user relaunches.
+
+Before digest computation or transport, attach commands initialize only the
+read-only project identity, Containerfile-selection state needed by the digest,
+and existing project-scoped SSH paths. They must not perform editor discovery,
+initialize launch-only network or mount state, or write lifecycle resources.
+Plan 6 follows the same boundary.
 
 ### Digest enforcement
 
@@ -193,9 +201,10 @@ NUL-delimited argv safely requires arrays. Do not add Bash syntax to the POSIX
 `container/setup.sh` or `container/entrypoint.sh` scripts.
 
 Add the helper to the Bash section of `scripts/lint.sh` so the portable gate
-runs ShellCheck on it. Add a direct `bash -n` assertion alongside the existing
-syntax checks as well. The transport component that parses untrusted framed argv
-must not sit outside lint or syntax-test coverage.
+runs ShellCheck on it. Also add it explicitly to the `bash -n` command in
+`tests/portable/smoke.sh`; its extensionless name means neither file's existing
+`*.sh` discovery or glob includes it. The transport component that parses
+untrusted framed argv must not sit outside lint or syntax-test coverage.
 
 ## Working directory and environment
 
@@ -255,7 +264,7 @@ Update README usage with `exec`, the attach/fail rules, the digest enforcement
 behavior and its documented gaps, and the limits of SSH disconnect and
 exit-status semantics — including that 255 is ambiguous.
 
-## Tests
+## Acceptance criteria
 
 Transport fidelity:
 
@@ -267,7 +276,8 @@ Transport fidelity:
   reaches the command unchanged.
 - Malformed or truncated argv frames fail without evaluating payload contents.
 - `container/jailbox-exec-argv` is installed with mode 0755, included in the
-  wrapper cache-bust, checked as Bash by ShellCheck, and covered by `bash -n`.
+  wrapper cache-bust, checked as Bash by ShellCheck through `scripts/lint.sh`,
+  and covered by the explicit `bash -n` list in `tests/portable/smoke.sh`.
 - The helper's fixed `/home/jailbox/project` working directory matches the host
   `REMOTE_PATH` constant; changing either alone fails portable coverage.
 - An argv above the encoded-frame limit fails with the explicit message.
