@@ -28,7 +28,7 @@ usage() {
     local flag
 
     cat <<EOF_USAGE
-Usage: $(basename "$0") [--config PATH] [doctor|ssh-config|--clean|--uninstall|--help]
+Usage: $(basename "$0") [--config PATH] [init|doctor|ssh-config|--clean|--uninstall|--help]
 
 Launch this project inside a hardened jailbox container.
 
@@ -41,6 +41,40 @@ EOF_USAGE
     for flag in "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
         printf '  %-14s %s\n' "$flag" "$(cli_flag_help "$flag")"
     done
+}
+
+command_requires_config() {
+    [ -z "${1:-}" ]
+}
+
+init_project_config() {
+    local destination tmp_file
+
+    destination="$PROJECT_DIR/jailbox.conf"
+    if [ -e "$destination" ] || [ -L "$destination" ]; then
+        die "jailbox.conf already exists; refusing to overwrite it"
+    fi
+
+    tmp_file=$(mktemp "$PROJECT_DIR/.jailbox.conf.tmp.XXXXXX") || \
+        die "could not create temporary project configuration"
+    if ! printf '%s\n' \
+        '# Additional project paths mounted read-only inside the sandbox.' \
+        'READONLY_PATHS=' > "$tmp_file"; then
+        rm -f -- "$tmp_file"
+        die "could not write temporary project configuration"
+    fi
+
+    if ln -- "$tmp_file" "$destination" 2>/dev/null; then
+        rm -f -- "$tmp_file"
+        echo "Created $destination"
+        return 0
+    fi
+
+    rm -f -- "$tmp_file"
+    if [ -e "$destination" ] || [ -L "$destination" ]; then
+        die "jailbox.conf already exists; refusing to overwrite it"
+    fi
+    die "could not publish $destination"
 }
 
 die() {
@@ -191,7 +225,9 @@ classify_trusted_directory() {
 }
 
 prepare_config_selection() {
-    local selected classified status
+    local command selected classified status
+
+    command="${1:-}"
 
     require_command realpath
     DEFAULT_CONFIG_INPUT="$PROJECT_DIR/jailbox.conf"
@@ -202,6 +238,8 @@ prepare_config_selection() {
         classified=$(classify_trusted_file "$DEFAULT_CONFIG_INPUT" "default config") || status=$?
         [ "$status" -eq 0 ] || return "$status"
         DEFAULT_CONFIG_PRESENT=1
+    elif command_requires_config "$command"; then
+        die "Project is not initialized: jailbox.conf is required even with --config so the sandbox cannot create policy for a later bare launch. Run 'jailbox init'."
     fi
 
     if [ -n "$CONFIG_PATH_ARG" ]; then

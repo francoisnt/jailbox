@@ -44,12 +44,13 @@ curl -fsSL https://raw.githubusercontent.com/francoisnt/jailbox/master/install.s
 
 ```bash
 cd /path/to/your/project
+jailbox init
 jailbox
 ```
 
-jailbox discovers or builds your dev image, starts the hardened container,
-and opens the project in VS Code or VSCodium via Remote SSH. If your repo has
-a `Containerfile` or `Dockerfile`, there is nothing to configure.
+`jailbox init` creates a minimal `jailbox.conf` without overwriting any existing
+path. jailbox then discovers or builds your dev image, starts the hardened
+container, and opens the project in VS Code or VSCodium via Remote SSH.
 
 ### Updating
 
@@ -77,9 +78,9 @@ macOS system Bash 3.2.
 
 ### Run an AI coding agent with egress control
 
-The setup jailbox is built for. Create `jailbox.conf` in the project root and
-allow only the hosts your agent and toolchain need — everything else is
-blocked at the network level:
+The setup jailbox is built for. Run `jailbox init`, then edit `jailbox.conf`
+in the project root to allow only the hosts your agent and toolchain need —
+everything else is blocked at the network level:
 
 ```conf
 # Claude Code + npm toolchain (check your agent's docs for its endpoints):
@@ -95,10 +96,11 @@ allowlist is strongly recommended.
 
 ### Project without a Containerfile
 
-Point jailbox at any image with a one-line config:
+Point jailbox at any image by adding one line to the generated config:
 
 ```bash
-echo 'DEV_IMAGE=node:22-bookworm' > jailbox.conf
+jailbox init
+echo 'DEV_IMAGE=node:22-bookworm' >> jailbox.conf
 jailbox
 ```
 
@@ -116,7 +118,8 @@ READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
 ## Command Reference
 
 ```bash
-jailbox              # Launch the environment (default)
+jailbox init         # Create the default project configuration
+jailbox              # Launch the environment (default; requires jailbox.conf)
 jailbox doctor       # Check SSH and editor integration status
 jailbox ssh-config   # Show SSH configuration instructions
 jailbox --clean      # Remove container, volume, networks and jailbox runtime state
@@ -125,8 +128,7 @@ jailbox --uninstall  # Remove the jailbox installation from this machine
 
 **State**: per-project runtime state (SSH keys/config, editor profiles) lives
 under `~/.local/state/jailbox/`; `--clean` removes the current project's
-share of it. Nothing is written to your project except an optional
-`jailbox.conf` you create.
+share of it. `init` writes only the new default `jailbox.conf`.
 
 **Upgrade**: re-run the install command (see Quick Start); it replaces the
 previous install cleanly.
@@ -141,14 +143,34 @@ This command requires Bash 4.4 or newer; without it, run the installed
 
 ## Configuration (`jailbox.conf`)
 
-Optional `jailbox.conf` in the project root, strict `KEY=value` lines (no
-shell syntax, values cannot contain whitespace):
+Every launch requires a `jailbox.conf` in the project root. Create the minimal
+default safely with `jailbox init`:
+
+```conf
+# Additional project paths mounted read-only inside the sandbox.
+READONLY_PATHS=
+```
+
+`init` refuses to overwrite any existing file or other filesystem object. It
+also requires both deterministic project container names to be absent: an
+existing writable sandbox could otherwise alter the policy anchor while it is
+being published. Stop and remove such containers with Podman before retrying.
+
+Configuration uses strict `KEY=value` lines (no shell syntax, values cannot
+contain whitespace):
 
 Use `jailbox --config PATH [COMMAND]` to select a different complete config
 file. The option must precede the command; the selected file replaces rather
 than merges with the project config. Relative settings still resolve from the
-project root. A selected config inside the project is automatically mounted
-read-only in the sandbox.
+project root. The default `jailbox.conf` is still required when selecting an
+external file; it remains a persistent read-only anchor so a sandbox cannot
+plant policy for a later bare launch. The selected file is the only file
+parsed. A selected config inside the project is also mounted read-only; an
+external config is outside the project mount and needs no overlay.
+
+Default, selected in-project, and directly selected external config paths
+reject a symlink in any supplied path component. Pass the physical path to an
+external config directly rather than a symlinked spelling.
 
 | Key | Default | Purpose |
 |---|---|---|
@@ -226,6 +248,9 @@ unrestricted outbound internet access.
   selected in-project config, and the exact in-project Containerfile used for
   the build are overlaid read-only automatically. Selecting an external config
   does not remove protection from the default config.
+- Launch requires that default config even when an external config is selected.
+  Keeping this anchor present and read-only prevents the sandbox from creating
+  policy that a later bare launch would trust.
 - Only additional paths explicitly listed in `READONLY_PATHS` receive
   read-only overlays. They must already exist as regular files or directories;
   missing paths are rejected and no stubs are created. Every other project

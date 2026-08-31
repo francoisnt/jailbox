@@ -106,7 +106,8 @@ REMOTE
     done
 
     if [ "$checked" -eq 0 ]; then
-        return 0
+        echo "  ⚠️  No read-only mounts were available to validate"
+        WARNINGS=$((WARNINGS + 1))
     elif [ "$failed" -eq 0 ]; then
         echo "  ✅ Read-only mounts validated ($checked entries checked)"
     else

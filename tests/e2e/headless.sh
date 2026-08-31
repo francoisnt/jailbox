@@ -395,6 +395,17 @@ EOF
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/config/runtime.conf"
     fi
+
+    # Launch requires the default policy anchor even when it selects another
+    # config. Create it with the real command so this gate covers the
+    # init -> launch flow rather than a hand-written fixture file.
+    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" init) >/dev/null; then
+        pass "init creates the default policy anchor"
+    else
+        fail "init could not create the default policy anchor"
+        return 1
+    fi
+
     export JAILBOX_E2E_PROJECT="$project_dir"
 
     # ── Phase 1: full jailbox pipeline ────────────────────────────────────────
@@ -437,6 +448,10 @@ EOF
         "git -C /home/jailbox/project add editor-write.txt"
     assert_ssh "$ssh_cfg" "$ctr" "selected in-project config is immutable" \
         "! printf 'DEV_IMAGE=attacker\\n' >> /home/jailbox/project/config/runtime.conf 2>/dev/null && ! rm /home/jailbox/project/config/runtime.conf 2>/dev/null"
+    # The anchor is not the selected config for this run; it must still be
+    # read-only so the sandbox cannot author policy for a later bare launch.
+    assert_ssh "$ssh_cfg" "$ctr" "default config anchor is immutable under external selection" \
+        "! printf 'READONLY_PATHS=attacker\\n' >> /home/jailbox/project/jailbox.conf 2>/dev/null && ! rm /home/jailbox/project/jailbox.conf 2>/dev/null"
     if [[ "$stage" != "egress" ]]; then
         assert_ssh "$ssh_cfg" "$ctr" "no stale managed downloader proxy blocks" \
             "! { { test -f \"\$HOME/.curlrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\"; } || { test -f \"\$HOME/.wgetrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\"; }; }"

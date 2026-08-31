@@ -19,8 +19,19 @@ pass() { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail() { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 assert_success() { local name="$1"; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
 assert_failure() { local name="$1"; shift; if ("$@") >/dev/null 2>&1; then fail "$name"; else pass "$name"; fi; }
+
+# Fixture directories are supplied to code that rejects every symlinked
+# component of a trusted input path. macOS places TMPDIR under the symlinked
+# /var, so canonicalize unconditionally; tests that need a symlinked spelling
+# build one explicitly from the canonical directory.
+fixture_dir() {
+    local dir
+
+    dir=$(mktemp -d)
+    (cd "$dir" && pwd -P)
+}
 with_project() {
-    PROJECT_DIR=$(mktemp -d)
+    PROJECT_DIR=$(fixture_dir)
     apply_config_defaults
     PROJECT_RESOURCE_PREFIX="test"
     initialize_dev_image_state
@@ -82,19 +93,25 @@ test_order_and_mounts() {
     assert_failure "duplicate configured path rejected" validate_readonly_paths_lexical
     rm -rf "$PROJECT_DIR"
 }
-test_empty_and_external() {
-    local external
+test_anchor_and_empty_regression() {
+    local external output_file
     with_project
-    external=$(mktemp -d)
+    external=$(fixture_dir)
     : > "$external/lane.conf"
     READONLY_PATHS=()
-    DEFAULT_CONFIG_INPUT="$PROJECT_DIR/missing.conf"
+    : > "$PROJECT_DIR/jailbox.conf"
+    DEFAULT_CONFIG_INPUT="$PROJECT_DIR/jailbox.conf"
+    DEFAULT_CONFIG_PRESENT=1
     SELECTED_CONFIG_INPUT="$external/lane.conf"
     SELECTED_DEV_CONTAINERFILE_INPUT=""
     finalize_effective_readonly_paths
-    if [ -z "${EFFECTIVE_READONLY_PATHS[*]-}" ]; then pass "external-only launch yields empty effective set"; else fail "external-only launch yields empty effective set"; fi
+    if [ "${EFFECTIVE_READONLY_PATHS[*]-}" = jailbox.conf ]; then pass "external config launch retains default anchor"; else fail "external config launch retains default anchor"; fi
+    EFFECTIVE_READONLY_PATHS=()
     WARNINGS=0
-    if [ -z "$(check_readonly_mounts)" ] && [ "$WARNINGS" -eq 0 ]; then pass "empty effective set validates silently"; else fail "empty effective set validates silently"; fi
+    output_file=$(mktemp)
+    check_readonly_mounts > "$output_file"
+    if [ -s "$output_file" ] && [ "$WARNINGS" -eq 1 ]; then pass "empty effective set produces regression warning"; else fail "empty effective set produces regression warning"; fi
+    rm -f "$output_file"
     if [ ! -e "$PROJECT_DIR/.env" ] && [ ! -e "$PROJECT_DIR/.github/workflows" ]; then pass "no legacy built-ins or stubs"; else fail "no legacy built-ins or stubs"; fi
     rm -rf "$PROJECT_DIR" "$external"
 }
@@ -110,7 +127,7 @@ test_recheck() {
 }
 test_symlinked_project_root() {
     local project_real project_link
-    project_real=$(mktemp -d)
+    project_real=$(fixture_dir)
     project_link="${project_real}-link"
     mkdir -p "$project_real/docs"
     : > "$project_real/docs/policy"
@@ -159,7 +176,7 @@ test_containerfile_state() {
     DEV_BUILD_CONTEXT=context-link
     assert_failure "symlinked build context rejected" build_or_select_dev_image
 
-    external=$(mktemp -d)
+    external=$(fixture_dir)
     external_link="${external}-link"
     : > "$external/Containerfile"
     ln -s "$external" "$external_link"
@@ -190,7 +207,7 @@ test_containerfile_state() {
 main() {
     test_validation
     test_order_and_mounts
-    test_empty_and_external
+    test_anchor_and_empty_regression
     test_recheck
     test_symlinked_project_root
     test_containerfile_state

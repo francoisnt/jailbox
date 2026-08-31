@@ -89,6 +89,12 @@ run_launch() {
     open_editor
 }
 
+run_init() {
+    require_command podman
+    require_sandbox_absent
+    init_project_config
+}
+
 run_doctor() {
     initialize_runtime_ids
     doctor_jailbox
@@ -147,7 +153,15 @@ main() {
         run_uninstall
     fi
 
-    prepare_config_selection
+    initialize_project_names
+
+    if [[ "${1:-}" == "init" ]]; then
+        [ -z "$CONFIG_PATH_ARG" ] || die "--config cannot be used with init; initialization always creates $PROJECT_DIR/jailbox.conf"
+        run_init
+        return 0
+    fi
+
+    prepare_config_selection "${1:-}"
     load_project_config
 
     host_preflight "$@"

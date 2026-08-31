@@ -18,11 +18,22 @@ JAILBOX_UNDER_TEST="$JAILBOX_DIR/jailbox"
 pass() { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail() { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
+# Fixture directories are supplied to code that rejects every symlinked
+# component of a trusted input path. macOS places TMPDIR under the symlinked
+# /var, so canonicalize unconditionally; tests that need a symlinked spelling
+# build one explicitly from the canonical directory.
+fixture_dir() {
+    local dir
+
+    dir=$(mktemp -d)
+    (cd "$dir" && pwd -P)
+}
+
 with_config() {
     local body="$1"
     local dir
 
-    dir=$(mktemp -d)
+    dir=$(fixture_dir)
     printf '%s\n' "$body" > "$dir/jailbox.conf"
     printf '%s\n' "$dir"
 }
@@ -203,8 +214,8 @@ test_global_config_args() {
 test_selected_config() {
     local project external output
 
-    project=$(mktemp -d)
-    external=$(mktemp -d)
+    project=$(fixture_dir)
+    external=$(fixture_dir)
     printf 'DEV_IMAGE=default\n' > "$project/jailbox.conf"
     printf 'DEV_IMAGE=selected\n' > "$external/lane config.conf"
     PROJECT_DIR="$project"
@@ -294,14 +305,14 @@ test_explicit_help_ignores_missing_config() {
 test_config_selection_precedence() {
     local project external
 
-    project=$(mktemp -d)
-    external=$(mktemp -d)
+    project=$(fixture_dir)
+    external=$(fixture_dir)
     PROJECT_DIR="$project"
 
     CONFIG_PATH_ARG=""
     CONFIG_FILE=stale
-    prepare_config_selection
-    assert_eq "no config clears stale selection" "" "$CONFIG_FILE"
+    prepare_config_selection doctor
+    assert_eq "optional command with no config clears stale selection" "" "$CONFIG_FILE"
 
     printf 'DEV_IMAGE=default\n' > "$project/jailbox.conf"
     prepare_config_selection
@@ -336,8 +347,9 @@ test_config_selection_precedence() {
 test_config_path_diagnostics() {
     local project output
 
-    project=$(mktemp -d)
+    project=$(fixture_dir)
     PROJECT_DIR="$project"
+    : > "$project/jailbox.conf"
     CONFIG_PATH_ARG="$project/missing.conf"
     output=$( (prepare_config_selection) 2>&1 || true)
     case "$output" in
@@ -355,12 +367,13 @@ test_config_path_diagnostics() {
 test_trusted_config_inputs() {
     local project external external_link
 
-    project=$(mktemp -d)
-    external=$(mktemp -d)
+    project=$(fixture_dir)
+    external=$(fixture_dir)
     external_link="${external}-link"
     printf 'DEV_IMAGE=selected\n' > "$external/lane.conf"
     ln -s "$external" "$external_link"
     PROJECT_DIR="$project"
+    : > "$project/jailbox.conf"
 
     CONFIG_PATH_ARG="$external_link/lane.conf"
     if (prepare_config_selection) >/dev/null 2>&1; then
@@ -375,6 +388,7 @@ test_trusted_config_inputs() {
         fail "external config through physical path accepted"
     fi
 
+    rm "$project/jailbox.conf"
     mkdir "$project/jailbox.conf"
     CONFIG_PATH_ARG="$external/lane.conf"
     if (prepare_config_selection) >/dev/null 2>&1; then
@@ -404,10 +418,38 @@ test_trusted_config_inputs() {
     rm -rf "$project" "$external"
 }
 
+test_launch_requires_default_anchor() {
+    local project external output command
+
+    project=$(fixture_dir)
+    external=$(fixture_dir)
+    printf 'DEV_IMAGE=selected\n' > "$external/lane.conf"
+    PROJECT_DIR="$project"
+    CONFIG_PATH_ARG="$external/lane.conf"
+    output=$( (prepare_config_selection) 2>&1 || true)
+    case "$output" in
+        *"Project is not initialized"*"jailbox init"*)
+            pass "bare launch requires default anchor before explicit config"
+            ;;
+        *)
+            fail "bare launch requires default anchor before explicit config"
+            ;;
+    esac
+    # Inspection and lifecycle commands must stay usable before initialization.
+    for command in doctor ssh-config --clean; do
+        if prepare_config_selection "$command"; then
+            pass "$command does not require the default anchor"
+        else
+            fail "$command does not require the default anchor"
+        fi
+    done
+    rm -rf "$project" "$external"
+}
+
 test_uninstall_ignores_project_config() {
     local project output
 
-    project=$(mktemp -d)
+    project=$(fixture_dir)
     ln -s missing.conf "$project/jailbox.conf"
     output=$( (cd "$project"; "$JAILBOX_UNDER_TEST" --uninstall) 2>&1 || true)
     case "$output" in
@@ -453,6 +495,7 @@ main() {
     test_config_selection_precedence
     test_config_path_diagnostics
     test_trusted_config_inputs
+    test_launch_requires_default_anchor
     test_uninstall_ignores_project_config
 
     echo ""

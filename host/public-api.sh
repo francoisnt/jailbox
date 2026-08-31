@@ -34,6 +34,7 @@ CLI_FLAGS_WITH_VALUES=(
 )
 
 CLI_FLAGS_WITHOUT_VALUES=(
+    init
     doctor
     ssh-config
     --clean
@@ -43,6 +44,7 @@ CLI_FLAGS_WITHOUT_VALUES=(
 
 CLI_HELP=(
     "--config=Load configuration from PATH instead of project jailbox.conf"
+    "init=Create the default project jailbox.conf"
     "doctor=Report editor and SSH config integration for this project"
     "ssh-config=Print manual SSH config instructions for this project"
     "--clean=Stop/remove jailbox containers, networks, and home volume"

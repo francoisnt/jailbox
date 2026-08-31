@@ -12,6 +12,20 @@ initialize_container_runtime_state() {
     ROOTFS_FLAG=()
 }
 
+require_sandbox_absent() {
+    local name owner
+
+    for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
+        podman container exists "$name" 2>/dev/null || continue
+        owner=$(podman container inspect "$name" \
+            --format '{{ index .Config.Labels "jailbox.project" }}' 2>/dev/null || true)
+        if [ "$owner" = "$PROJECT_DIR" ]; then
+            die "project sandbox container '$name' already exists; stop and remove it manually with Podman before running jailbox init"
+        fi
+        die "container name '$name' is already used by a foreign container; inspect and remove it directly with Podman before running jailbox init"
+    done
+}
+
 validate_configured_readonly_paths() {
     local path
     for path in "${READONLY_PATHS[@]}"; do
@@ -38,8 +52,9 @@ finalize_effective_readonly_paths() {
         [ "$status" -eq 0 ] || return "$status"
         effective_readonly_contains "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
     done
-    # The default config is optional, but once observed it and every selected
-    # input must still exist at each recheck.
+    # Launch requires the default config, so a finalized launch set always
+    # contains it. The presence flag still gates the non-launch callers that
+    # finalize without one. Every observed input must exist at each recheck.
     automatic_inputs=()
     [ "$DEFAULT_CONFIG_PRESENT" -eq 1 ] && automatic_inputs+=("$DEFAULT_CONFIG_INPUT")
     [ -n "$SELECTED_CONFIG_INPUT" ] && automatic_inputs+=("$SELECTED_CONFIG_INPUT")
