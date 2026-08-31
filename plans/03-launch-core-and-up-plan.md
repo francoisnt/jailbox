@@ -130,8 +130,8 @@ threat model instead, as a consequence of which command the user ran.
 ## Public API
 
 - Add `up` to `CLI_FLAGS_WITHOUT_VALUES` and `CLI_HELP` in
-  `host/public-api.sh`, and update dispatch and generated public-API
-  expectations.
+  `host/public-api.sh`, and update dispatch and
+  `tests/unit/public-api-diff.sh` expectations.
 - `usage()` in `host/common.sh` hardcodes the command list in its literal
   `Usage:` synopsis and must be updated alongside `CLI_HELP`.
 - Do not add a `HEADLESS` configuration key.

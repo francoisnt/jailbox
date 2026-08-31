@@ -94,6 +94,14 @@ Deduplicate identical destinations. jailbox adds no other implicit paths: `.env`
 Git files, workflow directories, its source tree, and unused Containerfile
 candidates remain writable unless configured explicitly.
 
+The official jailbox repository needs no special source-tree protection merely
+because it uses jailbox to develop itself. Its source is project content and
+follows the same explicit `READONLY_PATHS` policy as every other project. Remove
+the current in-project `SCRIPT_DIR` special case with the other built-in paths.
+Automatic protection remains limited to project inputs that jailbox identifies
+and consumes as part of a launch: the default policy anchor, selected
+in-project config, and exact used in-project Containerfile.
+
 An external selected config or Containerfile is not reachable through the
 project mount and receives no overlay. Selecting an external config does not
 remove the separate default-config overlay. `01.1-init-config-plan.md` owns its
@@ -136,8 +144,17 @@ must still list every other path they want protected.
 ## Implementation
 
 - In `host/public-api.sh`, replace `READONLY_EXTRA` with `READONLY_PATHS` in
-  `CONFIG_ARRAY_KEYS`, `CONFIG_DEFAULTS`, default assignment, and generated
-  public-API expectations.
+  `CONFIG_ARRAY_KEYS`, `CONFIG_DEFAULTS`, and default assignment.
+- Add `tests/unit/public-api-diff.sh` as focused coverage for
+  `scripts/public-api-diff.sh`. Build an isolated temporary Git fixture with a
+  baseline `host/public-api.sh`, copy the real diff script into the fixture's
+  `scripts/` directory, and run that copy so its `BASH_SOURCE`-derived
+  `ROOT_DIR` resolves to the fixture rather than the jailbox checkout. Assert
+  unchanged, added, and removed outcomes for configuration and CLI declarations.
+  Keep the fixture independent of published tags and network access. Unit
+  scripts are discovered automatically, so this places public-API release
+  classification in the portable gate and gives later command plans a concrete
+  suite to extend.
 - In `host/common.sh`, assign parsed array values to `READONLY_PATHS`. Replace
   `validate_readonly_extra` with a lexical `READONLY_PATHS` validator for empty,
   absolute, dot-segment, colon-containing, trailing-slash, and duplicate
@@ -200,6 +217,10 @@ must still list every other path they want protected.
 Do not retain `READONLY_EXTRA` as an alias. The strict parser reports it as an
 unknown setting.
 
+Review `scripts/public-api-diff.sh`: replacing `READONLY_EXTRA` with
+`READONLY_PATHS` includes a removal, so it is a minor public-API change before
+1.0 and would be a major change after 1.0 under the repository's release policy.
+
 ## Security documentation
 
 Update the README threat model to state plainly:
@@ -225,6 +246,9 @@ cover:
 
 - empty `READONLY_PATHS` parsing and launch behavior;
 - removal and rejection of `READONLY_EXTRA`;
+- portable-gate coverage of `scripts/public-api-diff.sh` using an isolated Git
+  baseline, including unchanged, added, and removed public configuration and
+  CLI declarations;
 - preservation of configured order;
 - read-only mount construction for files and directories;
 - rejection of absolute, empty, dot-segment, colon-containing, trailing-slash,

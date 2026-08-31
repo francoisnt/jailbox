@@ -87,12 +87,18 @@ configured value can inject another path because lexical validation rejects
 colons before option construction. Pass the complete option as one quoted Bash
 array element and never evaluate or word-split it.
 
-Native mask support is covered by jailbox's existing Podman 4.0 minimum and does
-not raise that version floor. Recording and enforcing the currently unenforced
-general minimum remains the work identified by `supported-versions.md`, not a
-new feature probe in this plan. If Podman rejects the option, container
-creation fails normally. Do not probe by creating a separate container,
-silently fall back to empty bind mounts, or retry launch without the masks.
+The versioned Podman 4.0 manual documents native `mask=` support, which is enough
+to show that this plan does not raise jailbox's existing 4.0 floor; it does not
+establish which earlier release first introduced the option. Recording and
+enforcing the currently unenforced general minimum, including confirmation from
+release notes before assigning introduction versions, remains the work
+identified by `supported-versions.md`, not a new feature probe in this plan.
+`HIDDEN_PATHS` does bring a feature covered by that floor onto the non-egress
+launch path for the first time. Until the general floor is enforced, an older
+Podman may therefore fail only when this setting is used. If Podman rejects the
+option, container creation fails normally. Do not probe by creating a separate
+container, silently fall back to empty bind mounts, or retry launch without the
+masks.
 
 ## Precedence and overlap
 
@@ -142,8 +148,8 @@ ignore files automatically.
 ## Implementation
 
 - Add `HIDDEN_PATHS` to `CONFIG_ARRAY_KEYS`, `CONFIG_DEFAULTS`, parser
-  assignment, the supported-settings header, documentation, and generated
-  public-API expectations.
+  assignment, the supported-settings header, documentation, and
+  `tests/unit/public-api-diff.sh` expectations.
 - Add lexical validation in `host/common.sh`. Add semantic existence, type,
   symlink, and containment validation alongside the project path-policy helpers
   established by plan 1.0; do not duplicate their containment logic.

@@ -112,10 +112,10 @@ lifecycle commands remain unsupported; locking them is separate work tracked in
   must accept any of the three; on supported platforms at least one is always
   present, so it would never fire in practice.
 - Add `stop` to `CLI_FLAGS_WITHOUT_VALUES` and `CLI_HELP` in
-  `host/public-api.sh`, and update parsing, dispatch, and generated public-API
-  expectations. The `Options:` block in `usage` (`host/common.sh`) is generated
-  from those arrays, but the literal `Usage:` synopsis above it must be edited by
-  hand to list `stop`.
+  `host/public-api.sh`, and update parsing, dispatch, and
+  `tests/unit/public-api-diff.sh` expectations. The `Options:` block in `usage`
+  (`host/common.sh`) is generated from those arrays, but the literal `Usage:`
+  synopsis above it must be edited by hand to list `stop`.
 - In `host_preflight` (`host/preflight.sh`), add `stop` to the existing
   Podman-only early-return branch used by `--clean`, before SSH, `realpath`, and
   editor checks.

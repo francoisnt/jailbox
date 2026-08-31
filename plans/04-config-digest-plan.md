@@ -173,6 +173,15 @@ session.
 - Implement the exact versioned NUL-delimited serialization and portable
   SHA-256 selection above. Validate the normalized digest before adding it to a
   Podman label or comparing it.
+- Add a focused preflight helper that accepts either `sha256sum` or
+  `shasum -a 256` and fails clearly when neither is available. Invoke it for
+  bare launch and `up` after command dispatch has excluded `init`, `stop`,
+  `doctor`, `ssh-config`, `--clean`, and `--uninstall`. Run it after plan 2's
+  read-only `require_sandbox_absent` name check and required-config loading, but
+  before digest computation and every launch mutation. Do not put it at the top
+  of `host_preflight`: plan 2's config-independent and Podman-only command
+  contracts must remain intact. Plan 5 extends the same requirement to `exec`,
+  and plan 6 inherits it for `shell` through the shared attach preflight.
 - Add a portable-gate assertion that the digest computation depends on no
   launch-derived state. The reproducibility requirement above is the property
   `exec` relies on, and it is easy to break by adding an input that happens to be
@@ -209,21 +218,26 @@ to `05-exec-command-plan.md`, which introduces it.
   produce the same digest, while a non-empty override produces a distinct
   digest.
 - `up` and bare `jailbox` produce the *same* digest from identical
-  configuration, and `exec` attaches to either. This is the reproducibility
-  property the design depends on: assert it directly, because it is the
-  regression that would make `exec` unusable alongside an editor session.
+  configuration. This is the launch-side reproducibility property the design
+  depends on. Plan 5 owns the corresponding assertion that `exec` attaches to
+  either sandbox, because `exec` does not exist at order 4.0.
 - With `EDITOR` and `JAILBOX_EDITOR` both unset, changing which editor is
   discoverable on `PATH` does not change the digest.
-- The digest is identical whether computed on the launch path or by a command
-  that never runs editor discovery.
+- The digest implementation has a focused test entry point that computes it
+  with no editor discovery or launch-derived state initialized and produces the
+  same result as both launch modes. Plan 5 repeats this through the real attach
+  command once that consumer exists.
 - Adding a host to `EGRESS_ALLOW` changes the digest; reordering `EGRESS_ALLOW`
   without changing its members does not.
 - Reordering `READONLY_PATHS` without changing its members *does* change the
   digest, because path arrays are hashed in declared order.
 - A launched development container carries a non-empty `jailbox.config-digest`
   label.
-- Launch and attach fail clearly before Podman inspection or mutation when
-  neither `sha256sum` nor `shasum` is available.
+- After plan 2's read-only sandbox-absence check, bare launch and `up` fail
+  clearly before digest computation or any launch mutation when neither
+  `sha256sum` nor `shasum` is available. `init`, `stop`, `doctor`, `ssh-config`,
+  `--clean`, and `--uninstall` retain their lighter requirements. Plan 5 owns
+  the attach-command assertion.
 
 Run `tests/run portable`, and `tests/run runtime` where Podman is available to
 confirm the label reaches the container.

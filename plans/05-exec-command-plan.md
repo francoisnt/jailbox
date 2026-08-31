@@ -208,6 +208,14 @@ login-shell wrapper.
 
 - add a third list — `CLI_COMMANDS_WITH_ARGS=(exec)` — to `host/public-api.sh`.
   Extend `CLI_HELP` and `initialize_public_api_lookups` accordingly;
+- extend `cli_api_values` in `scripts/public-api-diff.sh` to read
+  `CLI_COMMANDS_WITH_ARGS` as well as the two existing CLI arrays, so adding
+  `exec` is reported as a public-API addition and release-version selection
+  cannot under-report the change. Preserve compatibility with older refs where
+  that declaration is absent. Extend the portable
+  `tests/unit/public-api-diff.sh` suite introduced by plan 1 with a baseline
+  lacking `CLI_COMMANDS_WITH_ARGS`, an `exec` addition through that declaration,
+  and the resulting `added` classification;
 - `parse_args` currently rejects any second argument; relax that for `exec` only
   and keep the rejection for every other command;
 - `is_cli_flag_allowed`'s regex rejects `--`, which is fine: the optional `--` is
@@ -220,7 +228,10 @@ login-shell wrapper.
 
 Preflight for `exec` requires Podman and SSH tooling but no editor. The host
 Base64 encoder is checked only for `exec`; the remote decoder is part of
-development-image validation.
+development-image validation. Extend plan 4's SHA-256 preflight requirement to
+`exec` before Podman inspection or SSH attachment. This must not broaden the
+requirements of `init`, `stop`, `doctor`, `ssh-config`, `--clean`, or
+`--uninstall`.
 
 Review the generated diff from `scripts/public-api-diff.sh`: adding one command
 is a minor bump pre-1.0.
@@ -281,6 +292,17 @@ Attach and staleness:
 - `exec` creates no configuration file; an explicit missing `--config PATH` fails
   and is never created.
 - `jailbox exec -- foo --config bar` is not misdiagnosed as misplaced `--config`.
+- `exec` is included through `CLI_COMMANDS_WITH_ARGS` in the generated
+  public-API diff, which reports it as an addition; the release-version path
+  consumes that result rather than treating the command as unchanged. The
+  assertion lives in `tests/unit/public-api-diff.sh` and therefore runs in the
+  portable gate.
+- `exec` computes the same digest as both bare launch and `up` from identical
+  declarations without running editor discovery, and attaches successfully to
+  a sandbox created by either launch mode.
+- `exec` fails clearly before Podman inspection or SSH attachment when neither
+  `sha256sum` nor `shasum` is available, while commands outside the launch and
+  attach classes retain their lighter preflight requirements.
 
 Add focused unit coverage for command parsing, argv framing/decoding, and the
 attach/fail decision table. Put real SSH, stdin, signal, proxy, and lifecycle

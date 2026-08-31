@@ -67,9 +67,9 @@ here.
 ## CLI parsing and public API
 
 - Add `shell` to `CLI_FLAGS_WITHOUT_VALUES` and `CLI_HELP` in
-  `host/public-api.sh`, and update dispatch and generated public-API
-  expectations. It takes no arguments, so it does not join
-  `CLI_COMMANDS_WITH_ARGS`.
+  `host/public-api.sh`, and update dispatch and
+  `tests/unit/public-api-diff.sh` expectations. It takes no arguments, so it
+  does not join `CLI_COMMANDS_WITH_ARGS`.
 - `usage()` in `host/common.sh` hardcodes the command list and must be updated
   alongside `CLI_HELP`.
 

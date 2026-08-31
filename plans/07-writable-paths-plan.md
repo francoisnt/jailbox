@@ -164,8 +164,13 @@ no `start` command, and no automatic replacement anywhere.
 - Add `WRITABLE_PATHS` to `CONFIG_ARRAY_KEYS` and defaults.
 - Reset it to an empty array in `apply_config_defaults`.
 - Add it to `set_config_array`.
+- Update `tests/unit/public-api-diff.sh` expectations for the new public
+  configuration key.
 - Perform lexical validation after parsing and filesystem/canonical validation
   after project initialization.
+
+Review `scripts/public-api-diff.sh`: adding `WRITABLE_PATHS` is a minor
+public-API change before 1.0.
 
 ### Runtime mounts
 
