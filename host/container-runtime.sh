@@ -12,18 +12,133 @@ initialize_container_runtime_state() {
     ROOTFS_FLAG=()
 }
 
+# Ownership is proven by the jailbox.project label, never by a derived resource
+# name. Podman exposes labels differently per resource type, so inspection is
+# type-specific while the ownership decision is not.
+jailbox_resource_exists() {
+    case "$1" in
+        container) podman container exists "$2" 2>/dev/null ;;
+        volume) podman volume exists "$2" 2>/dev/null ;;
+        network) podman network exists "$2" 2>/dev/null ;;
+        *) die "internal error: unknown jailbox resource type '$1'" ;;
+    esac
+}
+
+jailbox_resource_owner() {
+    case "$1" in
+        container)
+            podman container inspect "$2" \
+                --format '{{ index .Config.Labels "jailbox.project" }}' 2>/dev/null || true
+            ;;
+        volume)
+            podman volume inspect "$2" \
+                --format '{{ index .Labels "jailbox.project" }}' 2>/dev/null || true
+            ;;
+        network)
+            podman network inspect "$2" \
+                --format '{{ index .Labels "jailbox.project" }}' 2>/dev/null || true
+            ;;
+        *) die "internal error: unknown jailbox resource type '$1'" ;;
+    esac
+}
+
+# absent | owned | foreign for one "TYPE:NAME" resource target.
+jailbox_resource_ownership() {
+    local kind name owner status
+
+    kind="${1%%:*}"
+    name="${1#*:}"
+    status=0
+    jailbox_resource_exists "$kind" "$name" || status=$?
+    case "$status" in
+        0) ;;
+        1) printf 'absent\n'; return 0 ;;
+        *) die "could not determine whether $kind '$name' exists with Podman" ;;
+    esac
+    owner=$(jailbox_resource_owner "$kind" "$name")
+    if [ "$owner" = "$PROJECT_DIR" ]; then
+        printf 'owned\n'
+    else
+        printf 'foreign\n'
+    fi
+}
+
+# Resolve "TYPE:NAME" targets into the owned removal set named by the first
+# argument. Every present target is inspected before anything is removed, so a
+# single foreign collision aborts the whole operation with nothing mutated.
+resolve_owned_resources() {
+    local -n owned_ref="$1"
+    shift
+    local target collisions
+
+    owned_ref=()
+    collisions=""
+    for target in "$@"; do
+        case "$(jailbox_resource_ownership "$target")" in
+            owned) owned_ref+=("$target") ;;
+            foreign) collisions="${collisions:+$collisions, }${target%%:*} '${target#*:}'" ;;
+            absent) ;;
+            *) die "internal error: could not classify resource '$target'" ;;
+        esac
+    done
+    [ -z "$collisions" ] || \
+        die "refusing to remove resources jailbox does not own: $collisions; inspect and remove them directly with Podman"
+}
+
+remove_owned_resource() {
+    local kind name
+
+    kind="${1%%:*}"
+    name="${1#*:}"
+    case "$kind" in
+        container)
+            podman stop "$name" 2>/dev/null || true
+            podman rm "$name" 2>/dev/null || true
+            ;;
+        volume) podman volume rm "$name" 2>/dev/null || true ;;
+        network) podman network rm "$name" 2>/dev/null || true ;;
+    esac
+}
+
 require_sandbox_absent() {
-    local name owner
+    local name
 
     for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
-        podman container exists "$name" 2>/dev/null || continue
-        owner=$(podman container inspect "$name" \
-            --format '{{ index .Config.Labels "jailbox.project" }}' 2>/dev/null || true)
-        if [ "$owner" = "$PROJECT_DIR" ]; then
-            die "project sandbox container '$name' already exists; stop and remove it manually with Podman before running jailbox init"
-        fi
-        die "container name '$name' is already used by a foreign container; inspect and remove it directly with Podman before running jailbox init"
+        case "$(jailbox_resource_ownership "container:$name")" in
+            owned)
+                die "project sandbox container '$name' is still present; run 'jailbox stop' to remove it"
+                ;;
+            foreign)
+                die "container name '$name' is already used by a container jailbox does not own; inspect and remove it directly with Podman"
+                ;;
+            absent) ;;
+            *) die "internal error: could not classify container '$name'" ;;
+        esac
     done
+}
+
+# Remove the ephemeral container objects only. The home volume, networks,
+# images, and the project state directory survive: the next launch creates
+# fresh containers, and setup_ssh_keys rotates SSH credentials on every
+# bring-up.
+stop_jailbox() {
+    local target
+    local -a owned=()
+
+    resolve_owned_resources owned \
+        "container:$CONTAINER_NAME" \
+        "container:$PROXY_NAME"
+
+    if [ -z "${owned[*]-}" ]; then
+        echo "No jailbox containers to stop."
+        return 0
+    fi
+
+    echo "🛑 Stopping jailbox..."
+    for target in "${owned[@]}"; do
+        remove_owned_resource "$target"
+    done
+    echo "✅ Stopped"
 }
 
 validate_configured_readonly_paths() {
@@ -134,16 +249,23 @@ assert_container_launch_state() {
 }
 
 clean_jailbox() {
-    echo "🧹 Cleaning up..."
+    local target
+    local -a owned=()
 
-    podman stop "$CONTAINER_NAME" 2>/dev/null || true
-    podman rm "$CONTAINER_NAME" 2>/dev/null || true
-    podman stop "$PROXY_NAME" 2>/dev/null || true
-    podman rm "$PROXY_NAME" 2>/dev/null || true
-    podman volume rm "$VOLUME_NAME" 2>/dev/null || true
-    podman network rm "$NETWORK_NAME" 2>/dev/null || true
-    podman network rm "${NETWORK_NAME}-internal" 2>/dev/null || true
-    podman network rm "${NETWORK_NAME}-external" 2>/dev/null || true
+    # Ownership is validated for every present target before anything is
+    # removed; containers first so networks and the volume are free.
+    resolve_owned_resources owned \
+        "container:$CONTAINER_NAME" \
+        "container:$PROXY_NAME" \
+        "volume:$VOLUME_NAME" \
+        "network:$NETWORK_NAME" \
+        "network:${NETWORK_NAME}-internal" \
+        "network:${NETWORK_NAME}-external"
+
+    echo "🧹 Cleaning up..."
+    for target in "${owned[@]}"; do
+        remove_owned_resource "$target"
+    done
     rm -rf -- "$SSH_DIR"
     echo "✅ Done"
 }
@@ -164,9 +286,6 @@ ensure_home_volume() {
 start_jailbox_container() {
     assert_container_launch_state
 
-    if podman container exists "$CONTAINER_NAME" 2>/dev/null; then
-        echo "Replacing existing jailbox container: $CONTAINER_NAME"
-    fi
     echo "🚢 Starting jailbox..."
     # Keep the runtime non-privileged. SSH auth state is copied into a
     # user-owned runtime directory mounted at /run/jailbox-sshd. Do not make
@@ -180,7 +299,6 @@ start_jailbox_container() {
     podman run -d \
         --name "$CONTAINER_NAME" \
         --label "jailbox.project=$PROJECT_DIR" \
-        --replace \
         --userns=keep-id \
         --network "${NETWORK_STATE[selected_network]}" \
         "${ROOTFS_FLAG[@]}" \

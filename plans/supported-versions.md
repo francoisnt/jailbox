@@ -60,12 +60,11 @@ urgent gap in this document.
 
 | Feature | Introduced | Used at |
 | --- | --- | --- |
-| `--replace` | 2.x | `container-runtime.sh`, `network.sh` |
 | `--userns=keep-id` | 2.x | `container-runtime.sh` |
 | `podman network exists`, `volume exists` | 3.x | `network.sh`, `container-runtime.sh` |
 | Internal networks (`--internal`) | 3.x | `network.sh` |
-| **`--network <name>:ip=<addr>`** | **4.0** | `network.sh:80` |
-| Two `--network` flags on one `run` | 4.0 | `network.sh:79-80` |
+| **`--network <name>:ip=<addr>`** | **4.0** | `network.sh:97` |
+| Two `--network` flags on one `run` | 4.0 | `network.sh:96-97` |
 
 The binding constraint is the per-network options syntax. Before Podman 4.0 a
 static address was `--ip`, and a named network could not carry options this way.
@@ -95,7 +94,7 @@ presence only. It should test version too, in `host_preflight`, before
 relative to config loading. `podman version --format '{{.Client.Version}}'`
 gives a parseable value.
 
-Skip the check for `--clean`, `doctor`, and `ssh-config`, matching how
+Skip the check for `stop`, `--clean`, `doctor`, and `ssh-config`, matching how
 `host_preflight` already short-circuits those paths.
 
 ### The Podman ceiling

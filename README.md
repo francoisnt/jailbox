@@ -120,15 +120,54 @@ READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
 ```bash
 jailbox init         # Create the default project configuration
 jailbox              # Launch the environment (default; requires jailbox.conf)
+jailbox stop         # Stop and remove this project's containers
 jailbox doctor       # Check SSH and editor integration status
 jailbox ssh-config   # Show SSH configuration instructions
 jailbox --clean      # Remove container, volume, networks and jailbox runtime state
 jailbox --uninstall  # Remove the jailbox installation from this machine
 ```
 
+### Lifecycle
+
+Launch requires both of the project's containers to be absent. jailbox never
+replaces a running sandbox, so relaunching is a two-command operation:
+
+```bash
+jailbox stop
+jailbox
+```
+
+`stop` removes only the ephemeral development and proxy containers. The home
+volume, networks, images, and the project state directory are preserved —
+the next launch creates fresh containers and rotates the SSH key pair. It is
+idempotent, succeeds when either or both containers are already gone, and
+never reads or creates configuration, so it stays usable when `jailbox.conf`
+is missing or malformed. There is deliberately no flag that relaunches over a
+running sandbox.
+
+Because nothing is kept alive as a fallback, a launch that fails after
+`jailbox stop` — a broken dev image build, for example — leaves no sandbox
+running. Run `jailbox` again once the build is fixed.
+
+`--clean` is the full teardown: containers, the home volume, all three
+project networks, and the project's runtime state. Images are not removed.
+
+Both commands prove ownership from the `jailbox.project` label rather than
+from the derived resource name. `--clean` inspects every container, the home
+volume, and every project network before deleting anything; a single
+unlabelled or foreign resource aborts the whole operation with nothing
+removed. Neither command will touch a resource jailbox does not own — resolve
+those name collisions with Podman directly (`podman rm`, `podman volume rm`,
+`podman network rm`).
+
+Concurrent lifecycle commands for one project are unsupported. They no longer
+silently replace each other's containers, but they still race over shared SSH,
+network, and image state; run one at a time.
+
 **State**: per-project runtime state (SSH keys/config, editor profiles) lives
 under `~/.local/state/jailbox/`; `--clean` removes the current project's
-share of it. `init` writes only the new default `jailbox.conf`.
+share of it, and `stop` leaves it in place. `init` writes only the new default
+`jailbox.conf`.
 
 **Upgrade**: re-run the install command (see Quick Start); it replaces the
 previous install cleanly.
@@ -154,7 +193,9 @@ READONLY_PATHS=
 `init` refuses to overwrite any existing file or other filesystem object. It
 also requires both deterministic project container names to be absent: an
 existing writable sandbox could otherwise alter the policy anchor while it is
-being published. Stop and remove such containers with Podman before retrying.
+being published. Clear an existing project sandbox with `jailbox stop`; a name
+collision with a container jailbox does not own must be resolved with Podman
+directly.
 
 Configuration uses strict `KEY=value` lines (no shell syntax, values cannot
 contain whitespace):
@@ -330,6 +371,9 @@ editor integration for the current project.
 | `dev image has no usable shell` / `no supported package manager` | The selected image/stage is production or distroless; set `DEV_TARGET_STAGE` to a dev stage or use `DEV_IMAGE` |
 | `managed user 'jailbox' already exists in the dev image` | Remove/rename that user in the dev image; jailbox manages its own user |
 | `host UID N already belongs to existing image user` | Use a dev image where your UID is free; jailbox will not mutate existing users |
+| `project sandbox container ... is still present` | A previous sandbox is still running; run `jailbox stop`, then launch again |
+| `container name ... is already used by a container jailbox does not own` | Something outside jailbox holds the derived name; inspect it with `podman inspect <name>` and remove it yourself |
+| `refusing to remove resources jailbox does not own` | `stop`/`--clean` found an unlabelled or foreign container, volume, or network; remove the named resources with Podman |
 | `local port N is already in use` | Another process holds the project's derived SSH port; stop it and relaunch |
 | A request from inside the container fails in egress mode | Check the proxy log: `podman logs <project>-proxy` (find the name with `podman ps`). Blocked hosts appear as `Proxying refused on filtered domain` — add the domain to `EGRESS_ALLOW` and relaunch |
 | VS Code cannot connect to an Alpine-based container | VS Code Remote SSH does not support Alpine hosts; set `EDITOR=codium` |

@@ -85,15 +85,15 @@ test_container_collisions() {
     name=$(cd "$project" && source "$JAILBOX_DIR/host/project-id.sh" && jailbox_resource_prefix_for_path "$project")
     output=$( (cd "$project" && FAKE_CONTAINER_NAME="$name" FAKE_CONTAINER_OWNER="$project" run_jailbox init) 2>&1 || true)
     case "$output" in
-        *"project sandbox"*"Podman"*) pass "owned container blocks init with manual stop guidance" ;;
-        *) fail "owned container blocks init with manual stop guidance" ;;
+        *"project sandbox"*"jailbox stop"*) pass "owned container blocks init and names jailbox stop" ;;
+        *) fail "owned container blocks init and names jailbox stop (got: $output)" ;;
     esac
     [ ! -e "$project/jailbox.conf" ] || fail "owned collision created no config"
 
     output=$( (cd "$project" && FAKE_CONTAINER_NAME="${name}-proxy" FAKE_CONTAINER_OWNER=/different run_jailbox init) 2>&1 || true)
     case "$output" in
-        *"foreign container"*"Podman"*) pass "foreign proxy collision blocks init" ;;
-        *) fail "foreign proxy collision blocks init" ;;
+        *"does not own"*"Podman"*) pass "foreign proxy collision blocks init" ;;
+        *) fail "foreign proxy collision blocks init (got: $output)" ;;
     esac
     [ ! -e "$project/jailbox.conf" ] || fail "foreign collision created no config"
 }
@@ -222,7 +222,7 @@ test_init_documented_in_help() {
     project=$(mktemp -d "$FIXTURE/project.XXXXXX")
     output=$( (cd "$project" && run_jailbox --help) 2>&1 || true)
     case "$output" in
-        *"Usage:"*"[init|doctor|"*) pass "init appears in the literal usage synopsis" ;;
+        *"Usage:"*"[init|stop|doctor|"*) pass "init appears in the literal usage synopsis" ;;
         *) fail "init appears in the literal usage synopsis (got: $output)" ;;
     esac
     case "$output" in

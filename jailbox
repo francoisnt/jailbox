@@ -112,6 +112,10 @@ run_clean() {
     clean_jailbox
 }
 
+run_stop() {
+    stop_jailbox
+}
+
 run_uninstall() {
     # Delegate to the installer copy shipped inside this install, so the
     # uninstall logic always matches the installed version's layout.
@@ -123,7 +127,6 @@ run_uninstall() {
 }
 
 initialize_launch_state() {
-    initialize_project_names
     initialize_dev_image_state
     initialize_ssh_state
     initialize_editor_state
@@ -159,6 +162,24 @@ main() {
         [ -z "$CONFIG_PATH_ARG" ] || die "--config cannot be used with init; initialization always creates $PROJECT_DIR/jailbox.conf"
         run_init
         return 0
+    fi
+
+    # stop restores the launch precondition, so it must stay reachable when
+    # configuration is missing or malformed. It never selects or loads config,
+    # and a supplied --config is deliberately ignored.
+    if [[ "${1:-}" == "stop" ]]; then
+        host_preflight stop
+        run_stop
+        return 0
+    fi
+
+    # Both project containers must be absent before launch mutates anything.
+    # This precedes config selection so a present sandbox is reported before an
+    # uninitialized project. host_preflight checks podman again later; the
+    # duplicate guard keeps this dispatch order independently correct.
+    if [ -z "${1:-}" ]; then
+        require_command podman
+        require_sandbox_absent
     fi
 
     prepare_config_selection "${1:-}"

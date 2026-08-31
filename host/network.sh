@@ -82,9 +82,6 @@ configure_proxy_network() {
     NETWORK_STATE[proxy_conf_file]="$SSH_DIR/tinyproxy.conf"
     render_tinyproxy_conf "${NETWORK_STATE[proxy_conf_file]}" "$proxy_internal_subnet"
 
-    if podman container exists "$PROXY_NAME" 2>/dev/null; then
-        echo "Replacing existing proxy container: $PROXY_NAME"
-    fi
     echo "🔒 Starting egress proxy (${#effective_egress_allow[@]} allowed hosts)..."
     # Attach both networks at start time so external_net remains the primary
     # (default-route) interface. A subsequent `podman network connect` can
@@ -96,7 +93,6 @@ configure_proxy_network() {
     podman run -d \
         --name "$PROXY_NAME" \
         --label "jailbox.project=$PROJECT_DIR" \
-        --replace \
         --network "$external_net" \
         --network "$internal_net:ip=$proxy_internal_ip" \
         --user tinyproxy \

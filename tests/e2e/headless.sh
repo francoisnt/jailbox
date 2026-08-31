@@ -539,6 +539,62 @@ EOF
         echo "  [diag] tinyproxy logs:"
         podman logs "$proxy_ctr" 2>&1 || true
     fi
+
+    # ── Phase 3: explicit stop boundary ───────────────────────────────────────
+    # Relaunch is a two-command operation: jailbox never replaces a running
+    # sandbox, and stop removes only the ephemeral containers.
+    local relaunch_output volume_name
+    volume_name="${ctr}-home"
+
+    relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf) 2>&1 || true)
+    case "$relaunch_output" in
+        *"jailbox stop"*) pass "relaunch over a running sandbox is refused and names jailbox stop" ;;
+        *) fail "relaunch over a running sandbox is refused and names jailbox stop (got: $relaunch_output)" ;;
+    esac
+    if podman container exists "$ctr" 2>/dev/null; then
+        pass "refused relaunch left the running container in place"
+    else
+        fail "refused relaunch left the running container in place"
+    fi
+
+    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
+        pass "stop removes the running sandbox"
+    else
+        fail "stop removes the running sandbox"
+    fi
+    if ! podman container exists "$ctr" 2>/dev/null && \
+        ! podman container exists "${ctr}-proxy" 2>/dev/null; then
+        pass "stop leaves no development or proxy container"
+    else
+        fail "stop leaves no development or proxy container"
+    fi
+    if podman volume exists "$volume_name" 2>/dev/null; then
+        pass "stop preserves the home volume"
+    else
+        fail "stop preserves the home volume"
+    fi
+    if [[ -f "$ssh_cfg" ]]; then
+        pass "stop preserves the project state directory"
+    else
+        fail "stop preserves the project state directory"
+    fi
+    if [[ "$stage" == "egress" ]]; then
+        if podman network exists "${ctr}-net-internal" 2>/dev/null && \
+            podman network exists "${ctr}-net-external" 2>/dev/null; then
+            pass "stop preserves the egress networks"
+        else
+            fail "stop preserves the egress networks"
+        fi
+    elif podman network exists "${ctr}-net" 2>/dev/null; then
+        pass "stop preserves the project network"
+    else
+        fail "stop preserves the project network"
+    fi
+    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
+        pass "repeated stop succeeds"
+    else
+        fail "repeated stop succeeds"
+    fi
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
