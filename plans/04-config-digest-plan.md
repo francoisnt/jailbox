@@ -10,8 +10,9 @@ coverage; nothing reads it yet.
 ## Sequence
 
 Order 4.0; third of the five command-mode changes. Requires
-`03-launch-core-and-up-plan.md`. `05-exec-command-plan.md` follows and is the first
-consumer.
+`03.1-environment-config-overrides-plan.md`, which completes the effective
+configuration model after `03-launch-core-and-up-plan.md`.
+`05-exec-command-plan.md` follows and is the first consumer.
 
 ## Why this lands before its consumer
 
@@ -32,14 +33,13 @@ development container in `start_jailbox_container`.
 Hash the *parsed* values rather than the config file's bytes, so reformatting is
 not a policy change.
 
-Three inputs beyond the public config keys must be included explicitly, none of
+Two inputs beyond the public config keys must be included explicitly, neither of
 which is a member of `CONFIG_SCALAR_KEYS` or `CONFIG_ARRAY_KEYS`:
 
 - the canonical selected-config identity;
 - the classified identity of the exact Containerfile selected for the
   development-image build, or an explicit `none` marker when `DEV_IMAGE` means
-  no Containerfile is used; and
-- the effective `JAILBOX_EDITOR` override.
+  no Containerfile is used.
 
 `01.1-init-config-plan.md` makes an absent selected config unreachable for every
 launch and attach command, so the digest has no absent-config marker or
@@ -59,15 +59,16 @@ would make `exec` compute a "no editor" digest and reject every sandbox bare
 workflow, where an editor session and `exec` run side by side against one
 sandbox.
 
-`JAILBOX_EDITOR` and `EDITOR` are declarations and belong in the digest. The
-editor jailbox *discovered*, and the hosts it added as a consequence, are
-launch-mode state and must not gate attachment.
+Plan 3.1 applies `JAILBOX_CONFIG_EDITOR` through the same environment-override
+path as every public key before digest computation. The effective `EDITOR`
+value is therefore covered by its scalar record without a separate override
+record. The editor jailbox discovers, and the bootstrap hosts added as a
+consequence, are launch-mode state and must not gate attachment.
 
-An attach invocation must therefore repeat a non-empty `JAILBOX_EDITOR`
-override used for launch. Omitting or changing it is a declaration change and
-fails conservatively even where discovery happened to choose the same editor;
-the digest cannot prove equality without performing the editor discovery attach
-commands deliberately avoid.
+An attach invocation must repeat any environment overrides needed to reproduce
+the effective launch configuration. Omitting or changing one fails
+conservatively when it changes the effective value; provenance alone does not
+change the digest.
 
 ### Canonical serialization
 
@@ -87,7 +88,6 @@ scalar NUL KEY NUL VALUE NUL                         for each scalar key
 array NUL KEY NUL COUNT NUL value NUL ITEM NUL ...  for each array key
 selected-config NUL CANONICAL_PATH NUL
 containerfile NUL none NUL
-editor-override NUL inactive NUL
 ```
 
 When a Containerfile is used, replace its record with
@@ -98,11 +98,8 @@ discovery has no candidate, replace it with
 but an attach command can observe it after the file used by the running sandbox
 was deleted. The scalar records still distinguish explicit from implicit
 configuration; the identity record does not need separate missing variants.
-When a non-empty `JAILBOX_EDITOR` override is active, replace the final record
-with `editor-override NUL active NUL VALUE NUL`. An unset and explicitly empty
-`JAILBOX_EDITOR` are equivalent because
-`${JAILBOX_EDITOR:-$EDITOR}` gives them identical behavior. Scalar and array
-keys are emitted in their declaration order from `host/public-api.sh`; an empty
+Scalar and array keys are emitted in their declaration order from
+`host/public-api.sh`; an empty
 scalar still has its terminating NUL, and an empty array has count zero and no
 item records. Encode `COUNT` as canonical unsigned decimal with no leading
 zeroes except `0`; emit each item as the repeated
@@ -199,7 +196,10 @@ Three categories are deliberately excluded, each to be stated in the README:
   the discovered editor's Remote SSH hosts; one created by `up` does not, as
   `03-launch-core-and-up-plan.md` describes. Those hosts are a consequence of the
   command the user ran, not of what they declared, and `exec` cannot observe them
-  without performing the editor discovery it is defined not to do. For
+  without performing the editor discovery it is defined not to do. Plan 3.1
+  makes this path explicitly selectable: a present-empty
+  `JAILBOX_CONFIG_EDITOR=` produces an empty effective `EDITOR`, so bare launch
+  may discover an editor while `up` and attach commands do not. For effective
   `EDITOR=codium` the difference includes `github.com` and
   `githubusercontent.com`, so state it plainly rather than describing the
   allowlist as fully determined by `EGRESS_ALLOW`.
@@ -294,16 +294,15 @@ to `05-exec-command-plan.md`, which introduces it.
   the digest mismatch, and show their normal `jailbox up` stale-sandbox guidance
   rather than either launch-only Containerfile error. The explicit and implicit
   cases remain distinguishable through the `DEV_CONTAINERFILE` scalar record.
-- Changing a non-empty `JAILBOX_EDITOR` or changing `EDITOR` changes the digest,
-  because both are declarations. Unset and explicitly empty `JAILBOX_EDITOR`
-  produce the same digest, while a non-empty override produces a distinct
-  digest.
+- A `JAILBOX_CONFIG_EDITOR` override changes the digest exactly when applying
+  it changes the effective `EDITOR` value. A present empty override clears a
+  configured editor; an unset override preserves it.
 - `up` and bare `jailbox` produce the *same* digest from identical
   configuration. This is the launch-side reproducibility property the design
   depends on. Plan 5 owns the corresponding assertion that `exec` attaches to
   either sandbox, because `exec` does not exist at order 4.0.
-- With `EDITOR` and `JAILBOX_EDITOR` both unset, changing which editor is
-  discoverable on `PATH` does not change the digest.
+- With effective `EDITOR` empty, changing which editor is discoverable on
+  `PATH` does not change the digest.
 - The digest implementation has a focused test entry point that computes it
   with no editor discovery or launch-derived state initialized and produces the
   same result as both launch modes. Plan 5 repeats this through the real attach

@@ -21,7 +21,25 @@ config-optional contract, whether it matches the reproducible current digest.
 Define useful output for absent, stopped, foreign, unlabeled, stale, and
 configuration-unavailable states without making `doctor` mutate resources or
 require an editor. Do not expose the NUL-delimited serialization or imply that
-the digest identifies which individual setting changed.
+the aggregate digest alone identifies which individual setting changed. If the
+per-input diagnostics below land, they replace this aggregate-only diagnosis
+rather than being added alongside it.
+
+### Per-input digest mismatch diagnostics
+
+After aggregate configuration-digest enforcement lands, consider advisory
+per-input hashes that can name covered configuration inputs which differ without
+printing their values. The aggregate digest must remain the only attachment
+security decision, and older or incomplete diagnostic metadata must fall back
+to the ordinary aggregate mismatch message.
+
+Publishing an input hash must be explicitly opted into after reviewing whether
+the value may be secret or easily guessed; future configuration keys must not be
+enrolled automatically. Any resulting diagnostic replaces plan 5's current
+aggregate-only mismatch explanation and the `doctor` diagnostic above rather
+than adding another overlapping message. A later design should settle coverage,
+compatibility, metadata exposure, and honest reporting for inputs it cannot
+compare.
 
 ## Trusted launch inputs
 

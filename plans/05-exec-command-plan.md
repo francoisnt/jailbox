@@ -9,7 +9,8 @@ exit status. This is the primary automation entry point.
 ## Sequence
 
 Order 5.0; fourth of the five command-mode changes. Requires
-`03-launch-core-and-up-plan.md` for a sandbox to attach to and
+`03-launch-core-and-up-plan.md` for a sandbox to attach to,
+`03.1-environment-config-overrides-plan.md` for effective configuration, and
 `04-config-digest-plan.md` for the label it compares.
 `06-shell-command-plan.md` follows and reuses the attach machinery defined here.
 
@@ -60,11 +61,13 @@ whether a running sandbox still matches the configuration well enough to repair;
 staleness is surfaced and the user resolves it. That matches how the tool already
 behaves — an editor session likewise keeps running until the user relaunches.
 
-Before digest computation or transport, attach commands initialize only the
-read-only project identity, Containerfile-selection state needed by the digest,
-and existing project-scoped SSH paths. They must not perform editor discovery,
-initialize launch-only network or mount state, or write lifecycle resources.
-Plan 6 follows the same boundary.
+Before digest computation or transport, attach commands load and validate the
+selected configuration baseline, apply and validate plan 3.1's
+`JAILBOX_CONFIG_*` overrides, and initialize only the read-only project identity,
+Containerfile-selection state needed by the digest, and existing project-scoped
+SSH paths. They must not perform editor discovery, initialize launch-only
+network or mount state, or write lifecycle resources. Plan 6 follows the same
+boundary.
 
 ### Digest enforcement
 
@@ -73,6 +76,14 @@ before attaching, and refuse to run on mismatch, naming what is stale — mount 
 egress policy — and telling the user to run `jailbox up` to apply it. A missing
 label is a mismatch, so containers created by older jailbox versions fail the
 same way and are resolved by a relaunch.
+
+On a digest mismatch, write a diagnostic to stderr listing the public keys the
+current invocation takes from `JAILBOX_CONFIG_*`, in declaration order and
+without their values. If there are none, say so explicitly. The digest cannot
+reveal which keys or override sources created the running sandbox, so do not
+claim that this list identifies the difference; explain that launch and attach
+must produce the same effective configuration and that the caller may need to
+repeat the launch overrides. Keep the existing `jailbox up` relaunch guidance.
 
 Failing is the point, not a warning. If egress or read-only path policy was
 tightened, the running sandbox holds broader permissions than the configuration
@@ -299,6 +310,16 @@ Attach and staleness:
   running the command, and does not stop or replace the container; a missing
   `jailbox.config-digest` label fails the same way; a reformatted config with
   unchanged values runs normally.
+- A sandbox launched with `JAILBOX_CONFIG_*` overrides accepts `exec` when the
+  attach invocation reproduces the same effective configuration. Omitting,
+  changing, or clearing an override fails when it changes an effective value;
+  supplying the same effective value through the file instead of the
+  environment succeeds because provenance is not hashed.
+- A digest-mismatch diagnostic lists the current invocation's overridden key
+  names in public declaration order, never their values, and explicitly reports
+  when the current invocation has none. It explains the list's current-side
+  scope and does not claim to identify the differing key or the launch-side
+  overrides.
 - Tightening egress or read-only path policy cannot be bypassed by an `exec`
   against the sandbox launched under the looser policy.
 - With no default policy anchor, `exec` fails before attachment with the

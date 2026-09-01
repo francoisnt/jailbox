@@ -8,9 +8,10 @@ command-mode changes.
 
 ## Sequence
 
-Order 6.0; last of the five command-mode changes. Requires `05-exec-command-plan.md`,
-whose attach decision, digest enforcement, and proxy liveness check `shell`
-reuses unchanged.
+Order 6.0; last of the five command-mode changes. Requires
+`03.1-environment-config-overrides-plan.md` for effective configuration and
+`05-exec-command-plan.md`, whose attach decision, digest enforcement, override
+mismatch diagnostic, and proxy liveness check `shell` reuses unchanged.
 
 ## Commands
 
@@ -29,7 +30,9 @@ jailbox [--config PATH] shell
 `shell` uses the attach-or-fail rules, digest enforcement, and proxy liveness
 check defined in `05-exec-command-plan.md` without change. It adds one precondition
 of its own and one difference in transport. It follows plan 5's attach-state
-boundary and does not initialize editor, network, or mount launch state.
+boundary: it loads the selected baseline and applies `JAILBOX_CONFIG_*`
+overrides before digest computation, but does not initialize editor, network,
+or mount launch state.
 
 ## TTY requirement
 
@@ -104,6 +107,10 @@ bare launch, `up`, `exec`, `shell`, `stop`, `--clean` — as one table.
   `jailbox up` message and creates nothing.
 - A changed `jailbox.conf` or a missing `jailbox.config-digest` label makes
   `shell` fail with the relaunch message without attaching.
+- A sandbox launched with `JAILBOX_CONFIG_*` overrides accepts `shell` when the
+  invocation reproduces the same effective configuration. A mismatch uses plan
+  5's current-side override-key diagnostic, including its no-values and
+  declaration-order guarantees.
 - With egress filtering enabled, a missing or stopped proxy fails before the
   session opens.
 - `shell` creates no configuration file. With no default policy anchor it fails
