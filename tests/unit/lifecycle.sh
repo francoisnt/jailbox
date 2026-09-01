@@ -359,51 +359,53 @@ test_clean_refuses_unowned_targets_of_any_type() {
 }
 
 test_launch_requires_absent_sandbox() {
-    local project output name
+    local project output name command
 
-    for name in "" -proxy; do
-        new_project
-        project="$PROJECT"
-        declare_resource container "$PREFIX$name" "$project"
-        output=$(run_jailbox "$project" || true)
-        case "$output" in
-            *"jailbox stop"*)
-                pass "launch names jailbox stop for an owned ${name:-development} container"
-                ;;
-            *)
-                fail "launch names jailbox stop for an owned ${name:-development} container (got: $output)"
-                ;;
-        esac
-        if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
-            pass "the owned ${name:-development} container is left untouched"
-        else
-            fail "the owned ${name:-development} container is left untouched"
-        fi
+    for command in "" up; do
+        for name in "" -proxy; do
+            new_project
+            project="$PROJECT"
+            declare_resource container "$PREFIX$name" "$project"
+            output=$(run_jailbox "$project" $command || true)
+            case "$output" in
+                *"jailbox stop"*)
+                    pass "launch names jailbox stop for an owned ${name:-development} container"
+                    ;;
+                *)
+                    fail "launch names jailbox stop for an owned ${name:-development} container (got: $output)"
+                    ;;
+            esac
+            if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
+                pass "the owned ${name:-development} container is left untouched"
+            else
+                fail "the owned ${name:-development} container is left untouched"
+            fi
 
-        new_project
-        project="$PROJECT"
-        declare_resource container "$PREFIX$name" /somewhere/else
-        output=$(run_jailbox "$project" || true)
-        case "$output" in
-            *"does not own"*"Podman"*)
-                case "$output" in
-                    *"jailbox stop"*)
-                        fail "a foreign ${name:-development} collision must not name jailbox stop"
-                        ;;
-                    *)
-                        pass "a foreign ${name:-development} collision names manual Podman removal"
-                        ;;
-                esac
-                ;;
-            *)
-                fail "a foreign ${name:-development} collision names manual Podman removal (got: $output)"
-                ;;
-        esac
-        if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
-            pass "the foreign ${name:-development} container is left untouched"
-        else
-            fail "the foreign ${name:-development} container is left untouched"
-        fi
+            new_project
+            project="$PROJECT"
+            declare_resource container "$PREFIX$name" /somewhere/else
+            output=$(run_jailbox "$project" $command || true)
+            case "$output" in
+                *"does not own"*"Podman"*)
+                    case "$output" in
+                        *"jailbox stop"*)
+                            fail "a foreign ${name:-development} collision must not name jailbox stop"
+                            ;;
+                        *)
+                            pass "a foreign ${name:-development} collision names manual Podman removal"
+                            ;;
+                    esac
+                    ;;
+                *)
+                    fail "a foreign ${name:-development} collision names manual Podman removal (got: $output)"
+                    ;;
+            esac
+            if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
+                pass "the foreign ${name:-development} container is left untouched"
+            else
+                fail "the foreign ${name:-development} container is left untouched"
+            fi
+        done
     done
 }
 
@@ -411,33 +413,35 @@ test_launch_requires_absent_sandbox() {
 # precondition is reported first because launch must not mutate anything while
 # a sandbox holds the project mounted writable.
 test_stop_precondition_precedes_initialization() {
-    local project output
+    local project output command
 
-    new_project
-    project="$PROJECT"
-    rm "$project/jailbox.conf"
-    declare_resource container "$PREFIX" "$project"
+    for command in "" up; do
+        new_project
+        project="$PROJECT"
+        rm "$project/jailbox.conf"
+        declare_resource container "$PREFIX" "$project"
 
-    output=$(run_jailbox "$project" || true)
-    case "$output" in
-        *"jailbox stop"*) pass "launch reports the stop precondition before initialization" ;;
-        *) fail "launch reports the stop precondition before initialization (got: $output)" ;;
-    esac
-    case "$output" in
-        *"jailbox init"*) fail "the initialization requirement is not reported yet" ;;
-        *) pass "the initialization requirement is not reported yet" ;;
-    esac
+        output=$(run_jailbox "$project" $command || true)
+        case "$output" in
+            *"jailbox stop"*) pass "launch reports the stop precondition before initialization" ;;
+            *) fail "launch reports the stop precondition before initialization (got: $output)" ;;
+        esac
+        case "$output" in
+            *"jailbox init"*) fail "the initialization requirement is not reported yet" ;;
+            *) pass "the initialization requirement is not reported yet" ;;
+        esac
 
-    run_jailbox "$project" stop >/dev/null
-    output=$(run_jailbox "$project" || true)
-    case "$output" in
-        *"Project is not initialized"*"jailbox init"*)
-            pass "the next launch after stopping reports the initialization requirement"
-            ;;
-        *)
-            fail "the next launch after stopping reports the initialization requirement (got: $output)"
-            ;;
-    esac
+        run_jailbox "$project" stop >/dev/null
+        output=$(run_jailbox "$project" $command || true)
+        case "$output" in
+            *"Project is not initialized"*"jailbox init"*)
+                pass "the next launch after stopping reports the initialization requirement"
+                ;;
+            *)
+                fail "the next launch after stopping reports the initialization requirement (got: $output)"
+                ;;
+        esac
+    done
 }
 
 test_launch_reports_missing_podman_first() {
@@ -546,7 +550,7 @@ test_stop_documented_in_help() {
     project="$PROJECT"
     output=$(run_jailbox "$project" --help)
     case "$output" in
-        *"Usage:"*"[init|stop|doctor|"*) pass "stop appears in the literal usage synopsis" ;;
+        *"Usage:"*"[init|up|stop|doctor|"*) pass "stop appears in the literal usage synopsis" ;;
         *) fail "stop appears in the literal usage synopsis (got: $output)" ;;
     esac
     case "$output" in
@@ -555,6 +559,44 @@ test_stop_documented_in_help() {
             ;;
         *)
             fail "stop appears in the generated options block (got: $output)"
+            ;;
+    esac
+}
+
+test_up_documented_in_help() {
+    local project output
+
+    new_project
+    project="$PROJECT"
+    output=$(run_jailbox "$project" --help)
+    case "$output" in
+        *"Usage:"*"[init|up|stop|doctor|"*) pass "up appears in the literal usage synopsis" ;;
+        *) fail "up appears in the literal usage synopsis (got: $output)" ;;
+    esac
+    case "$output" in
+        *"up"*"Launch the sandbox without opening an editor"*)
+            pass "up appears in the generated options block"
+            ;;
+        *) fail "up appears in the generated options block (got: $output)" ;;
+    esac
+}
+
+test_up_ignores_editor_environment_override() {
+    local project output
+
+    new_project
+    project="$PROJECT"
+    printf 'DEV_IMAGE=example.invalid/dev\n' > "$project/jailbox.conf"
+    output=$(JAILBOX_EDITOR=not-an-editor run_jailbox "$project" up || true)
+    case "$output" in
+        *"invalid EDITOR="*|*"neither 'codium' nor 'code'"*)
+            fail "up ignores the editor environment override (got: $output)"
+            ;;
+        *"Using dev image: example.invalid/dev"*)
+            pass "up ignores the editor environment override and enters the shared launch core"
+            ;;
+        *)
+            fail "up ignores the editor environment override and enters the shared launch core (got: $output)"
             ;;
     esac
 }
@@ -591,6 +633,8 @@ test_launch_reports_missing_podman_first
 test_cksum_is_required_only_by_launch
 test_uninstall_needs_no_podman_or_hash_tool
 test_stop_documented_in_help
+test_up_documented_in_help
+test_up_ignores_editor_environment_override
 test_launch_runs_without_replace
 
 echo ""

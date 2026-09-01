@@ -28,7 +28,7 @@ usage() {
     local flag
 
     cat <<EOF_USAGE
-Usage: $(basename "$0") [--config PATH] [init|stop|doctor|ssh-config|--clean|--uninstall|--help]
+Usage: $(basename "$0") [--config PATH] [init|up|stop|doctor|ssh-config|--clean|--uninstall|--help]
 
 Launch this project inside a hardened jailbox container.
 
@@ -43,8 +43,16 @@ EOF_USAGE
     done
 }
 
-command_requires_config() {
+command_starts_sandbox() {
+    [ -z "${1:-}" ] || [ "${1:-}" = up ]
+}
+
+command_launches_editor() {
     [ -z "${1:-}" ]
+}
+
+command_requires_config() {
+    command_starts_sandbox "${1:-}"
 }
 
 init_project_config() (

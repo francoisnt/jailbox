@@ -35,6 +35,7 @@ CLI_FLAGS_WITH_VALUES=(
 
 CLI_FLAGS_WITHOUT_VALUES=(
     init
+    up
     stop
     doctor
     ssh-config
@@ -46,6 +47,7 @@ CLI_FLAGS_WITHOUT_VALUES=(
 CLI_HELP=(
     "--config=Load configuration from PATH instead of project jailbox.conf"
     "init=Create the default project jailbox.conf"
+    "up=Launch the sandbox without opening an editor"
     "stop=Stop and remove this project's jailbox containers"
     "doctor=Report editor and SSH config integration for this project"
     "ssh-config=Print manual SSH config instructions for this project"

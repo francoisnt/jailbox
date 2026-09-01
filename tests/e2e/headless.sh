@@ -339,6 +339,7 @@ for arg in "$@"; do
 done
 
 [[ -n "${JAILBOX_E2E_PROJECT:-}" ]] || { echo "stub: JAILBOX_E2E_PROJECT not set" >&2; exit 1; }
+[[ "${JAILBOX_E2E_REJECT_EDITOR:-}" != "1" ]] || { echo "stub: editor must not be called by up" >&2; exit 1; }
 [[ -n "$user_data_dir" ]] || { echo "stub: no --user-data-dir argument received" >&2; exit 1; }
 [[ -f "$user_data_dir/User/settings.json" ]] || { echo "stub: user-data settings missing" >&2; exit 1; }
 grep -Fq '"remote.SSH.configFile":' "$user_data_dir/User/settings.json" || {
@@ -411,9 +412,10 @@ EOF
     # ── Phase 1: full jailbox pipeline ────────────────────────────────────────
     if (
         cd "$project_dir"
-        PATH="$stub_dir:$PATH" "$JAILBOX_DIR/jailbox" --config config/runtime.conf
+        JAILBOX_E2E_REJECT_EDITOR=1 PATH="$stub_dir:$PATH" \
+            "$JAILBOX_DIR/jailbox" --config config/runtime.conf up
     ) 2>&1; then
-        pass "pipeline (build → start → SSH wait → validation → editor stub)"
+        pass "up pipeline (build → start → SSH wait → validation)"
     else
         fail "pipeline failed"
         return 1
@@ -457,16 +459,14 @@ EOF
             "! { { test -f \"\$HOME/.curlrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\"; } || { test -f \"\$HOME/.wgetrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\"; }; }"
     fi
 
-    # Editor settings (host-side file written by jailbox before launching editor)
+    # Command mode must not create host-side editor settings.
     local settings_hash settings_path
     settings_hash=$(jailbox_project_hash_for_path "$project_dir")
     settings_path="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/editor-profiles/$settings_hash/User/settings.json"
-    if [[ "$stage" != "egress" ]]; then
-        if [[ -f "$settings_path" ]] && ! grep -Fq '"terminal.integrated.env.linux"' "$settings_path"; then
-            pass "editor settings have no terminal proxy env"
-        else
-            fail "editor settings have no terminal proxy env"
-        fi
+    if [[ ! -e "$settings_path" ]]; then
+        pass "up creates no editor settings"
+    else
+        fail "up creates no editor settings"
     fi
 
     # Egress policy (only run for the egress stage)
@@ -476,14 +476,6 @@ EOF
         proxy_url=$(grep -Eo 'HTTPS_PROXY=[^ ]+' "$ssh_cfg" | head -1 | cut -d= -f2-)
         state_hash=$(jailbox_project_hash_for_path "$project_dir")
         filter_path="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/projects/$state_hash/tinyproxy-filter"
-
-        if [[ -f "$settings_path" ]] && \
-           grep -Fq '"terminal.integrated.env.linux"' "$settings_path" && \
-           grep -Fq "\"HTTPS_PROXY\": \"$proxy_url\"" "$settings_path"; then
-            pass "editor settings include terminal proxy env"
-        else
-            fail "editor settings include terminal proxy env"
-        fi
 
         assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
             "[ -n \"\$HTTPS_PROXY\" ]"
@@ -501,10 +493,11 @@ EOF
             "command -v getent >/dev/null 2>&1 && getent hosts api.ipify.org"
         if [[ -f "$filter_path" ]] &&
             grep -Fxq '^api\.ipify\.org$' "$filter_path" &&
-            grep -Fxq '^github\.com$' "$filter_path"; then
-            pass "tinyproxy filter is generated in project state"
+            ! grep -Fxq '^github\.com$' "$filter_path" &&
+            ! grep -Fxq '^githubusercontent\.com$' "$filter_path"; then
+            pass "up filter contains configured hosts without editor bootstrap hosts"
         else
-            fail "tinyproxy filter is generated in project state"
+            fail "up filter contains configured hosts without editor bootstrap hosts"
         fi
         assert_ssh_fails "$ssh_cfg" "$ctr" "direct HTTP(S) bypassing proxy is blocked" \
             "curl --noproxy '*' --connect-timeout 5 --max-time 5 -fs https://example.com"
@@ -594,6 +587,38 @@ EOF
         pass "repeated stop succeeds"
     else
         fail "repeated stop succeeds"
+    fi
+
+    # A bare launch after the explicit stop restores the positive editor-stub
+    # coverage and proves that editor discovery changes only filtered policy.
+    if (
+        cd "$project_dir"
+        PATH="$stub_dir:$PATH" "$JAILBOX_DIR/jailbox" --config config/runtime.conf
+    ) 2>&1; then
+        pass "bare launch completes through the editor stub"
+    else
+        fail "bare launch through the editor stub failed"
+        return 1
+    fi
+    if [[ -f "$settings_path" ]] && grep -Fq '"remote.SSH.configFile"' "$settings_path"; then
+        pass "bare launch writes editor SSH settings"
+    else
+        fail "bare launch writes editor SSH settings"
+    fi
+    if [[ "$stage" == "egress" ]]; then
+        if grep -Fxq '^api\.ipify\.org$' "$filter_path" &&
+            grep -Fxq '^github\.com$' "$filter_path" &&
+            grep -Fxq '^githubusercontent\.com$' "$filter_path"; then
+            pass "bare VSCodium launch adds editor bootstrap hosts"
+        else
+            fail "bare VSCodium launch adds editor bootstrap hosts"
+        fi
+    fi
+
+    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
+        pass "stop removes the bare-launch sandbox"
+    else
+        fail "stop removes the bare-launch sandbox"
     fi
 }
 

@@ -68,6 +68,13 @@ host_preflight() {
     require_command ssh
     require_command ssh-keygen
     require_command realpath
+
+    # Command mode launches the same sandbox without discovering, validating,
+    # configuring, or warning about a host editor.
+    if ! command_launches_editor "${1:-}"; then
+        return 0
+    fi
+
     warn_low_inotify_watch_limit
 
     local requested_editor

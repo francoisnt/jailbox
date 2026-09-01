@@ -21,7 +21,8 @@ fi
 #     EDITOR, EGRESS_ALLOW, READONLY_PATHS.
 #
 # REQUIREMENTS
-#   podman, ssh, ssh-keygen, VSCodium/VSCode with open-remote-ssh extension
+#   podman, ssh, ssh-keygen; bare launch also requires VSCodium/VSCode with
+#   the open-remote-ssh extension
 # =============================================================================
 set -euo pipefail
 
@@ -67,14 +68,21 @@ source "$SCRIPT_DIR/host/container-runtime.sh"
 # shellcheck source=host/validation.sh
 source "$SCRIPT_DIR/host/validation.sh"
 
-run_launch() {
+bring_up_sandbox() {
+    local pre_build_hook="${1:-}"
+
     initialize_runtime_ids
     validate_configured_readonly_paths
     check_local_port_available
     build_or_select_dev_image
-    finalize_effective_readonly_paths
     validate_dev_image
-    warn_if_alpine_dev_image_with_vscode
+    if [ -n "$pre_build_hook" ]; then
+        "$pre_build_hook"
+    fi
+    # Classify launch inputs before the wrapper build or other persistent
+    # launch setup. build_readonly_mounts repeats this immediately before
+    # constructing mount arguments to catch subsequent path replacement.
+    finalize_effective_readonly_paths
     build_jailbox_image
     configure_runtime_mounts
     configure_network
@@ -86,7 +94,15 @@ run_launch() {
     wait_for_ssh
     configure_downloader_proxy
     post_start_validation
+}
+
+run_launch() {
+    bring_up_sandbox warn_if_alpine_dev_image_with_vscode
     open_editor
+}
+
+run_up() {
+    bring_up_sandbox
 }
 
 run_init() {
@@ -177,7 +193,7 @@ main() {
     # This precedes config selection so a present sandbox is reported before an
     # uninitialized project. host_preflight checks podman again later; the
     # duplicate guard keeps this dispatch order independently correct.
-    if [ -z "${1:-}" ]; then
+    if command_starts_sandbox "${1:-}"; then
         require_command podman
         require_sandbox_absent
     fi
@@ -189,6 +205,9 @@ main() {
     initialize_launch_state
 
     case "${1:-}" in
+        up)
+            run_up
+            ;;
         doctor)
             run_doctor
             ;;

@@ -180,6 +180,22 @@ test_effective_egress_allowlist_array_output() {
         fail "effective allowlist preserves order and removes duplicates (got ${actual[*]})"
     fi
 
+    EDITOR_BIN="/usr/bin/codium"
+    effective_egress_allowlist actual
+    if [[ "${actual[*]}" == "github.com api.github.com githubusercontent.com" ]]; then
+        pass "bare VSCodium launch adds editor bootstrap hosts"
+    else
+        fail "bare VSCodium launch adds editor bootstrap hosts (got ${actual[*]})"
+    fi
+
+    EDITOR_BIN=""
+    effective_egress_allowlist actual
+    if [[ "${actual[*]}" == "github.com api.github.com" ]]; then
+        pass "up-style launch omits editor bootstrap hosts"
+    else
+        fail "up-style launch omits editor bootstrap hosts (got ${actual[*]})"
+    fi
+
     EGRESS_ALLOW=()
     actual=(stale)
     effective_egress_allowlist actual

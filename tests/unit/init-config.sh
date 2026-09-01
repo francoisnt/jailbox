@@ -256,7 +256,7 @@ test_init_documented_in_help() {
     project=$(mktemp -d "$FIXTURE/project.XXXXXX")
     output=$( (cd "$project" && run_jailbox --help) 2>&1 || true)
     case "$output" in
-        *"Usage:"*"[init|stop|doctor|"*) pass "init appears in the literal usage synopsis" ;;
+        *"Usage:"*"[init|up|stop|doctor|"*) pass "init appears in the literal usage synopsis" ;;
         *) fail "init appears in the literal usage synopsis (got: $output)" ;;
     esac
     case "$output" in

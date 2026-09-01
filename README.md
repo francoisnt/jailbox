@@ -50,7 +50,9 @@ jailbox
 
 `jailbox init` creates a minimal `jailbox.conf` without overwriting any existing
 path. jailbox then discovers or builds your dev image, starts the hardened
-container, and opens the project in VS Code or VSCodium via Remote SSH.
+container, and opens the project in VS Code or VSCodium via Remote SSH. Use
+`jailbox up` instead to launch for terminal or automation use without requiring
+or opening an editor.
 
 ### Updating
 
@@ -120,6 +122,7 @@ READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
 ```bash
 jailbox init         # Create the default project configuration
 jailbox              # Launch the environment (default; requires jailbox.conf)
+jailbox up           # Launch without requiring or opening an editor
 jailbox stop         # Stop and remove this project's containers
 jailbox doctor       # Check SSH and editor integration status
 jailbox ssh-config   # Show SSH configuration instructions
@@ -136,6 +139,12 @@ replaces a running sandbox, so relaunching is a two-command operation:
 jailbox stop
 jailbox
 ```
+
+Bare `jailbox` launches the sandbox and opens the configured editor. `jailbox
+up` performs the same sandbox launch but does no editor discovery, editor
+configuration, or editor launch; it returns once the sandbox is ready. Only
+these two commands start containers, and both require `jailbox.conf` and the
+same explicit `stop` boundary before relaunch.
 
 `stop` removes only the ephemeral development and proxy containers. The home
 volume, networks, images, and the project state directory are preserved —
@@ -245,11 +254,18 @@ Alpine-based dev images require `EDITOR=codium`: VS Code Remote SSH does not
 support Alpine SSH hosts. See the [tested configurations](#tested-configurations)
 matrix for the supported editor/OS combinations.
 
-When `EGRESS_ALLOW` is configured, jailbox automatically adds the selected
-editor's Remote SSH bootstrap hosts so the editor can install its remote server:
+When `EGRESS_ALLOW` is configured, a bare editor launch automatically adds the
+selected editor's Remote SSH bootstrap hosts so the editor can install its
+remote server:
 
 - `EDITOR=code`: `update.code.visualstudio.com`, `vscode.download.prss.microsoft.com`, `main.vscode-cdn.net`, `vo.msecnd.net`
 - `EDITOR=codium`: `github.com`, `githubusercontent.com`
+
+`jailbox up` does not discover an editor, so it does not add these bootstrap
+hosts; its filtered sandbox contains only the configured allowlist. After an
+explicit `jailbox stop`, a bare `jailbox` launch creates a sandbox whose policy
+also permits the selected editor's hosts. Without `EGRESS_ALLOW`, both commands
+use the ordinary unrestricted network and no allowlist is rendered.
 
 **How egress enforcement works:** When `EGRESS_ALLOW` is set, jailbox places
 the container on an internal-only Podman network — created with no external
@@ -316,6 +332,10 @@ unrestricted outbound internet access.
   cannot inspect TLS payload; allowed endpoints can still receive exfiltrated
   data; this is not equivalent to a firewall, VM network isolation, or
   kernel-enforced packet filtering
+- In filtered mode, the effective allowlist depends on the launch command:
+  bare `jailbox` includes the discovered editor's bootstrap hosts, while
+  `jailbox up` does not. In particular, VSCodium adds `github.com` and
+  `githubusercontent.com` to a bare-launch sandbox
 
 jailbox focuses on reducing accidental host exposure and limiting common
 container escape vectors, not defending against a determined kernel- or

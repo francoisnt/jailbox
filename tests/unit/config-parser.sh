@@ -435,6 +435,15 @@ test_launch_requires_default_anchor() {
             fail "bare launch requires default anchor before explicit config"
             ;;
     esac
+    output=$( (prepare_config_selection up) 2>&1 || true)
+    case "$output" in
+        *"Project is not initialized"*"jailbox init"*)
+            pass "up requires default anchor before explicit config"
+            ;;
+        *)
+            fail "up requires default anchor before explicit config"
+            ;;
+    esac
     # Inspection and lifecycle commands must stay usable before initialization.
     for command in doctor ssh-config --clean; do
         if prepare_config_selection "$command"; then
