@@ -445,18 +445,21 @@ test_stop_precondition_precedes_initialization() {
 }
 
 test_launch_reports_missing_podman_first() {
-    local project restricted output
+    local project restricted tool resolved output
 
     restricted="$FIXTURE/no-podman-bin"
     mkdir -p "$restricted"
-    # jailbox is launched through /usr/bin/env bash. Linux commonly colocates
-    # bash and sed in /usr/bin, while macOS keeps bash in /bin, so make the
-    # interpreter explicit without adding its whole directory (which may also
-    # contain Podman on Homebrew installations).
-    ln -s "$(command -v bash)" "$restricted/bash"
+    # Link only the tools needed to reach the launch dependency check. Adding
+    # a system directory to PATH is not safe here: Podman commonly lives
+    # beside sed and the test would accidentally expose the command it is
+    # meant to exclude.
+    for tool in bash dirname basename tr cut sha256sum shasum; do
+        resolved=$(command -v "$tool" 2>/dev/null) || continue
+        ln -sf "$resolved" "$restricted/$tool"
+    done
     new_project
     project="$PROJECT"
-    output=$( (cd "$project" && PATH="$restricted:$(dirname "$(command -v sed)")" \
+    output=$( (cd "$project" && PATH="$restricted" \
         XDG_STATE_HOME="$FIXTURE/xdg-state" "$JAILBOX_DIR/jailbox") 2>&1 || true)
     case "$output" in
         *"required command not found: podman"*)
