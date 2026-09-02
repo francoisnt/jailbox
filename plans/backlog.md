@@ -6,6 +6,28 @@ commitments.
 
 ## Lifecycle safety
 
+### Named project instances
+
+Consider an explicit jailbox instance selector so one physical project can have
+multiple independently managed sandboxes, with JailIDE exposing instances as
+named profiles. Derive resource identity from the physical project identity and
+the validated instance name. Keep one project hash for the physical checkout
+and include a normalized instance-name component in every Podman container,
+network, and volume name, as well as its SSH alias and runtime-state path. This
+lets multiple configurations share the same project hash while Podman's name
+uniqueness keeps their resources separate. Keep the effective configuration and
+Containerfile identity in the separate compatibility digest rather than hashing
+configuration into resource names. Preserve the current single-instance
+behavior by default.
+
+A later design must cover the selector for every lifecycle and connection
+command, instance-aware deterministic resource and runtime-state names, SSH
+aliases, `connection-info`, status and cleanup behavior, validation and
+normalization of instance names, concurrent access to the same project
+checkout, and migration from existing unqualified resources. Use a neutral core
+concept such as an instance; the human-facing profile name remains owned by
+JailIDE.
+
 ### Lifecycle locking
 
 Serialize launch, stop, and cleanup operations per project. Removing Podman's
@@ -15,10 +37,10 @@ shared SSH, network, volume, or proxy state from concurrent lifecycle commands.
 ### Digest diagnostics in `doctor`
 
 After the configuration-digest attachment gate lands, extend `doctor` to report
-the digest recorded on an owned development container and, when the current
+the digests recorded on the derived project resource set and, when the current
 configuration can be selected and validated without changing doctor's
-config-optional contract, whether it matches the reproducible current digest.
-Define useful output for absent, stopped, foreign, unlabeled, stale, and
+config-optional contract, whether they all match the reproducible current
+digest. Define useful output for absent, stopped, partial, unlabeled, stale, and
 configuration-unavailable states without making `doctor` mutate resources or
 require an editor. Do not expose the NUL-delimited serialization or imply that
 the aggregate digest alone identifies which individual setting changed. If the
@@ -42,6 +64,23 @@ compatibility, metadata exposure, and honest reporting for inputs it cannot
 compare.
 
 ## Trusted launch inputs
+
+### New-home bootstrap
+
+Consider a trusted setup artifact that a caller can request only when jailbox
+creates a new empty sandbox home. This would make the default
+`EPHEMERAL_HOME=true` mode convenient by reinstalling shell configuration,
+development tools, and other reproducible user state without preserving files
+written by an earlier sandbox generation.
+
+A later design must define artifact selection and trusted-path validation,
+read-only protection for an in-project artifact, content identity, execution as
+the managed user after SSH readiness, access only through the sandbox's effective
+egress policy, retry and partial-failure behavior, idempotence expectations, and
+an out-of-project completion record. It must not inject credentials implicitly
+or run on a reused non-empty home. Executing an explicitly selected trusted
+artifact is caller-authorized code execution, not evaluation of configuration as
+shell syntax.
 
 ### Policy-aware project initialization
 
@@ -85,6 +124,28 @@ bind validation to the object ultimately mounted. Document residual host-side
 races if they cannot be eliminated.
 
 ## Runtime isolation
+
+### Downstream wrapper setup extensions
+
+Consider a public, generic wrapper-image extension that lets a trusted host
+caller supply setup code during jailbox's wrapper build. This could move remote
+IDE-server compatibility packages from core to JailIDE and let other downstream
+tools own their runtime additions without teaching jailbox about each client.
+Until such an interface is implemented, jailbox continues to own those runtime
+prerequisites and a compatibility fix detected by JailIDE's editor gate requires
+a jailbox release.
+
+A later design must define the setup language and versioned execution contract,
+root execution and trust boundary, build-time network policy, ordering relative
+to core SSH setup, available environment and filesystem inputs, single versus
+multiple extensions, failure and rollback behavior, and portability across
+supported base distributions. Jailbox must copy only explicitly supplied inputs
+into its generated build context, expose no credentials or unrelated host
+files, include all extension bytes and declared inputs in wrapper-cache and
+configuration-digest identity, and protect an in-project extension from the
+sandbox. Configuration remains strict data: running a separately identified
+trusted setup artifact is intentional caller-authorized code execution, not
+evaluation of a configuration value as shell syntax.
 
 ### SELinux development-container policy
 

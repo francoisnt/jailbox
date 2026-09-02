@@ -24,6 +24,9 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
 
 ## Git and release safety
 
+- Do not stage changes unless the user explicitly asks for staging. In
+  particular, when reviewing staged changes and then applying requested fixes,
+  leave those fixes unstaged so the user can inspect the new diff separately.
 - Do not create or amend a commit unless the user explicitly asks for a commit.
 - Do not infer permission to commit from a request to fix, implement, test, or
   finish a change.
