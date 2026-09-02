@@ -1,131 +1,67 @@
-# 6. `jailbox shell` — interactive shell in the running sandbox
+# 6. jailbox shell
 
 ## Goal
 
-Attach to the project's running sandbox and open an interactive login Bash in
-`$REMOTE_PATH`. This is the interactive counterpart to `exec` and the last of the
-command-mode changes.
+Open one interactive login shell in an already-running compatible sandbox.
 
 ## Sequence
 
-Order 6.0; last of the five command-mode changes. Requires
-`03.1-environment-config-overrides-plan.md` for effective configuration and
-`05-exec-command-plan.md`, whose attach decision, digest enforcement, override
-mismatch diagnostic, and proxy liveness check `shell` reuses unchanged.
+Requires `03.1-environment-only-configuration-plan.md` and
+`05-exec-command-plan.md`, reusing its preflight, transport, and
+`03.2.09-connection-info-and-doctor-plan.md` validator rather than duplicating
+digest/lifecycle/network/editor behavior.
 
-## Commands
+## Behavior
 
-```text
-jailbox [--config PATH] shell
-```
-
-| Command | Behavior |
-|---|---|
-| `shell` | Attach to the project's running sandbox and open an interactive login Bash in `$REMOTE_PATH`; requires local TTYs. |
-
-`shell` never creates, replaces, or repairs a sandbox.
-
-## Sandbox handling
-
-`shell` uses the attach-or-fail rules, digest enforcement, and proxy liveness
-check defined in `05-exec-command-plan.md` without change. It adds one precondition
-of its own and one difference in transport. It follows plan 5's attach-state
-boundary: it loads the selected baseline and applies `JAILBOX_CONFIG_*`
-overrides before digest computation, but does not initialize editor, network,
-or mount launch state.
-
-## TTY requirement
-
-`shell` requires both stdin and stdout to be local TTYs. When either is not a
-TTY, fail clearly before attaching rather than opening a session that cannot be
-driven. This is the one precondition `exec` does not share: `exec` is explicitly
-non-interactive and forwards non-TTY stdin as data.
-
-## Transport
-
-Use the same generated SSH config and strict host-key state as `exec`, with
-`-tt` rather than `-T`:
+`jailbox shell` consumes canonical environment policy, validates every
+policy-bearing resource, and either attaches or refuses without mutation. Use
+strict-host-key generated SSH as:
 
 ```sh
 ssh -F "$SSH_CONFIG" -tt -- "$CONTAINER_NAME" <remote-command>
 ```
 
-The remote command changes to `$REMOTE_PATH` and opens an interactive login Bash
-explicitly. A failed remote `cd` must abort rather than silently opening a shell
-in the home directory — a shell in the wrong directory is worse than no shell,
-because the user will not notice before running something.
+Require both local stdin and stdout to be TTYs before attaching. The fixed
+remote command must `cd` to `/home/jailbox/project` and then explicitly open
+interactive login Bash; failed `cd` aborts instead of silently opening in
+home. Preserve terminal size, signals, disconnect
+semantics, exit status, working directory, and remote session environment,
+including jailbox-owned proxy variables. No command arguments are accepted.
 
-`shell` needs no argv framing: it passes no caller arguments. The Base64 encoder
-requirement belongs to `exec` alone.
+Require attach tooling but no Base64, cksum, editor, file config, or launch-only
+initialization. Missing/incompatible/unhealthy states use the validator's
+recovery and plan 5's current-side no-values digest diagnostic, and never
+relaunch automatically.
 
-## Working directory and environment
+Add `shell` to `CLI_FLAGS_WITHOUT_VALUES` and `CLI_HELP` in
+`host/public-api.sh`, dispatch and generated public-API comparison, and the
+literal `usage()` list in `host/common.sh`. It does not join
+`CLI_COMMANDS_WITH_ARGS`. Reuse plan 5's attach-specific preflight without its
+Base64 requirement and return before wrapper-build `cksum`.
 
-As with `exec`, the session starts in `$REMOTE_PATH` under the sshd-created
-session environment, including the proxy variables rendered through the generated
-SSH host block when egress filtering is enabled.
+## Tests and documentation
 
-Because `shell` opens a login shell, profile and PATH semantics apply
-automatically; the explicit `bash -lc` workaround `exec` documents is not needed
-here.
+Portable/runtime tests cover parsing, real TTY/login behavior, cwd/environment,
+resize/signals/status/disconnect, all shared-validator refusals, filtered proxy,
+and no lifecycle mutation. Explicitly cover either local stream not being a
+TTY, failed remote cd, absent/stopped/unresponsive sandbox, no editor, supported
+SHA-256 without cksum, proxy liveness, and public API/help output.
 
-## CLI parsing and public API
-
-- Add `shell` to `CLI_FLAGS_WITHOUT_VALUES` and `CLI_HELP` in
-  `host/public-api.sh`, and update dispatch and
-  `tests/unit/public-api-diff.sh` expectations. It takes no arguments, so it
-  does not join `CLI_COMMANDS_WITH_ARGS`.
-- `usage()` in `host/common.sh` hardcodes the command list and must be updated
-  alongside `CLI_HELP`.
-
-Preflight for `shell` requires Podman and SSH tooling but no editor.
-It uses plan 5's attach-specific preflight branch, does not require the
-exec-only Base64 encoder, and returns before plan 2's wrapper-build-only
-`cksum` requirement.
-
-Review the generated diff from `scripts/public-api-diff.sh`: adding one command
-is a minor bump pre-1.0.
-
-## Documentation
-
-Update README usage with `shell`, its local-TTY requirement, and the distinction
-from `exec`. Note that `shell` opens a login shell while `exec` does not.
-
-With this change the command reference is complete: document the full lifecycle —
-bare launch, `up`, `exec`, `shell`, `stop`, `--clean` — as one table.
+README distinguishes login `shell` from non-login `exec` and presents the
+complete final lifecycle command table. Run `tests/run portable` and
+`tests/run runtime`.
 
 ## Acceptance criteria
 
-- `shell` opens a login Bash in the remote project directory.
-- A failed remote `cd` aborts rather than opening a shell in the home directory.
-- `shell` requires local TTYs on both stdin and stdout, and fails clearly when
-  either is not a TTY.
-- `shell` works with no `code` or `codium` executable and never opens or
-  configures an editor.
-- With a supported SHA-256 implementation but no `cksum`, `shell` reaches its
-  normal attach decision; it does not inherit a wrapper-build requirement.
-- `shell` against an absent, stopped, or unresponsive sandbox fails with the
-  `jailbox up` message and creates nothing.
-- A changed `jailbox.conf` or a missing `jailbox.config-digest` label makes
-  `shell` fail with the relaunch message without attaching.
-- A sandbox launched with `JAILBOX_CONFIG_*` overrides accepts `shell` when the
-  invocation reproduces the same effective configuration. A mismatch uses plan
-  5's current-side override-key diagnostic, including its no-values and
-  declaration-order guarantees.
-- With egress filtering enabled, a missing or stopped proxy fails before the
-  session opens.
-- `shell` creates no configuration file. With no default policy anchor it fails
-  with the explanatory `jailbox init` message even when an external config is
-  selected; an external-config sandbox requires both the anchor and the same
-  canonical `--config PATH`, and a missing selected path fails without being
-  created.
-- `shell` appears in the literal `Usage:` synopsis, in the generated `Options:`
-  block, and as an addition in the generated public-API diff.
-
-SSH disconnect behavior is covered by the runtime system tests. Run
-`tests/run portable`, plus `tests/run runtime` where Podman is available.
+- A compatible running sandbox opens the expected interactive login shell.
+- Every validator failure refuses before SSH and preserves state.
+- Shell-specific terminal behavior works without redefining shared contracts.
+- Both stdin and stdout must be TTYs, and remote cd failure never opens a shell
+  in the wrong directory.
+- Shell requires neither Base64, cksum, nor an editor.
 
 ## Non-goals
 
-- Sandbox creation, replacement, or repair by `shell`.
-- Argument passing; use `exec` for that.
-- A non-TTY fallback mode.
+- Non-interactive commands, automatic launch/repair, editor behavior, or a
+  separate compatibility mechanism.
+- Argument passing or a non-TTY fallback.

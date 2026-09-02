@@ -100,5 +100,6 @@ another service upstream.
 
 Prototype Squid in isolation and compare compatibility, startup time, image
 size, and maintenance cost with the phase 1 tinyproxy design. Only after the
-runtime and editor gates pass should the project decide whether strict mode is
-an opt-in policy, becomes the default, or is rejected as disproportionate.
+jailbox runtime gate and JailIDE editor gate pass against the same candidate
+should the project decide whether strict mode is an opt-in policy, becomes the
+default, or is rejected as disproportionate.

@@ -2,9 +2,10 @@
 
 ## What this document is for
 
-jailbox depends on external software — Bash, Podman, an editor, and whatever
-base image a project brings. This document records the **minimum version** of
-each, and the reasoning that produced it.
+jailbox depends on Bash, Podman, and whatever base image a project brings.
+JailIDE separately depends on a compatible jailbox and supported editor. This
+document records the inherited minimum-version investigations; each product
+must move the applicable floor into its own repository when the split lands.
 
 A floor is not a pin. `versions.env` holds pins: the exact versions jailbox is
 tested against, bumped forward by the canary workflow when a run goes green. A
@@ -94,8 +95,9 @@ presence only. It should test version too, in `host_preflight`, before
 relative to config loading. `podman version --format '{{.Client.Version}}'`
 gives a parseable value.
 
-Skip the check for `stop`, `--clean`, `doctor`, and `ssh-config`, matching how
-`host_preflight` already short-circuits those paths.
+Apply the check to commands that create or attach to containers. Keep
+`--version`, `--help`, `config-schema`, `status`, `doctor`, `stop`,
+`--clean`, and uninstall on their documented lighter preflight paths.
 
 ### The Podman ceiling
 
@@ -116,13 +118,12 @@ for older. A dev image based on Debian 9, CentOS 7, or Ubuntu 16.04 completes
 every jailbox step and then fails inside the editor's own bootstrap, with an
 error that does not mention glibc.
 
-This is a warning, not a hard failure: jailbox itself works, only the editor
-workflow breaks, and `jailbox ssh-config` remains useful.
+This is a JailIDE warning, not a jailbox hard failure: core SSH and shell/exec
+transport still work while the selected editor workflow does not.
 
-The pattern already exists. `warn_if_alpine_dev_image_with_vscode` in
-`host/dev-image.sh:87` probes `/etc/os-release` and warns when a musl-based
-image is paired with VS Code. A glibc check belongs beside it, using the same
-probe, and should extend to VSCodium rather than only `code`.
+JailIDE should probe the selected image through jailbox's documented boundary
+and apply the warning consistently to VS Code and VSCodium. No editor-specific
+probe or editor selection returns to core.
 
 `README.md` "Project image requirements" documents the shell and package
 manager a dev image must provide. glibc belongs in that list.
@@ -143,8 +144,9 @@ that exists to serve it.
 - **OpenSSH.** jailbox uses `-F`, `ConnectTimeout`, and ed25519 keys, all
   available since 2014. No realistic host fails this.
 - **git.** Optional, already guarded by `command -v` before the gitconfig mount.
-- **`cksum`, `sha256sum`, `shasum`.** POSIX or already behind a fallback chain
-  in `host/project-id.sh`.
+- **`cksum`.** POSIX and required only by the remaining wrapper-cache path.
+- **`sha256sum`, `shasum`.** Core requires one for deterministic identity
+  and the security-sensitive compatibility digest; there is no cksum fallback.
 
 Recording these is part of the point: an unversioned dependency should be a
 decision, not an omission.

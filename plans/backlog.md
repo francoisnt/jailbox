@@ -11,8 +11,9 @@ commitments.
 Consider an explicit jailbox instance selector so one physical project can have
 multiple independently managed sandboxes, with JailIDE exposing instances as
 named profiles. Derive resource identity from the physical project identity and
-the validated instance name. Keep one project hash for the physical checkout
-and include a normalized instance-name component in every Podman container,
+the validated instance name. Keep one project hash for the physical checkout;
+deterministic names, not removable ownership labels, establish identity.
+Include a normalized instance-name component in every Podman container,
 network, and volume name, as well as its SSH alias and runtime-state path. This
 lets multiple configurations share the same project hash while Podman's name
 uniqueness keeps their resources separate. Keep the effective configuration and
@@ -30,11 +31,16 @@ JailIDE.
 
 ### Lifecycle locking
 
-Serialize launch, stop, and cleanup operations per project. Removing Podman's
-`--replace` behavior prevents silent container replacement but does not protect
-shared SSH, network, volume, or proxy state from concurrent lifecycle commands.
+Serialize lifecycle operations per project. Validation before mutation is a
+check-then-act sequence, and JailIDE runs `up` then `connection-info` as two
+processes, so concurrent work can invalidate either decision.
 
 ### Digest diagnostics in `doctor`
+
+Doctor already diagnoses missing and inconsistent version-bound digest labels
+on the development container, proxy container, and network. Narrow this future
+work to comparing those labels with an explicitly supplied current policy;
+ordinary doctor remains configuration-independent.
 
 After the configuration-digest attachment gate lands, extend `doctor` to report
 the digests recorded on the derived project resource set and, when the current
@@ -67,7 +73,8 @@ compare.
 
 ### New-home bootstrap
 
-Consider a trusted setup artifact that a caller can request only when jailbox
+Consider a trusted setup artifact that an orchestrator or JailIDE can request
+through jailbox only when jailbox
 creates a new empty sandbox home. This would make the default
 `EPHEMERAL_HOME=true` mode convenient by reinstalling shell configuration,
 development tools, and other reproducible user state without preserving files
@@ -84,7 +91,7 @@ shell syntax.
 
 ### Policy-aware project initialization
 
-Consider extending `jailbox init` to seed `READONLY_PATHS` from existing
+Consider extending `jailide init` to seed `READONLY_PATHS` from existing
 security-sensitive project paths, such as `.env`, Git policy files and hooks,
 Gitea or GitHub workflow directories, and an in-project jailbox source
 directory.
@@ -106,8 +113,9 @@ The current initialization plan deliberately creates the minimal
 
 ### Trusted-input validation
 
-Extend the trusted-input validation established for selected configs and
-Containerfiles to `DEV_BUILD_CONTEXT` before exposing it to the build.
+Under the caller contract, extend core's Containerfile validation to
+`DEV_BUILD_CONTEXT`, and require callers to validate and protect policy inputs
+such as selected `jailide.conf`.
 
 Project-reachable spellings with leaf or intermediate symlinks could be
 rejected so a writable sandbox cannot redirect a later host invocation outside
@@ -146,6 +154,13 @@ configuration-digest identity, and protect an in-project extension from the
 sandbox. Configuration remains strict data: running a separately identified
 trusted setup artifact is intentional caller-authorized code execution, not
 evaluation of a configuration value as shell syntax.
+
+### Shared Bash utilities
+
+The split deliberately keeps common host helpers duplicated instead of creating
+a third repository. Reassess extraction after both public boundaries stabilize,
+including release cadence, portability, security review, and actual duplication
+cost.
 
 ### SELinux development-container policy
 
@@ -205,4 +220,5 @@ The investigation must cover:
 Do not make `krun`, Kata Containers, `crun-vm`, or another alternate runtime a
 prerequisite for the numbered implementation sequence. If an experimental
 runtime setting is later added, include it in the configuration digest and run
-the complete portable, runtime, and editor gates for each supported mode.
+jailbox's complete portable/runtime gates and JailIDE's complete
+portable/editor gates for each supported mode.
