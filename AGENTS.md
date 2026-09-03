@@ -30,6 +30,11 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
 - Do not create or amend a commit unless the user explicitly asks for a commit.
 - Do not infer permission to commit from a request to fix, implement, test, or
   finish a change.
+- Treat a request to commit as an instruction to commit the current state, not
+  as authorization to make further edits. If review before the commit reveals
+  a change that still appears necessary, describe it before acting and wait for
+  the user's direction; do not silently include additional edits in the
+  requested commit.
 - Do not push, force-push, create tags, open pull requests, or trigger releases
   unless the user explicitly requests that specific action.
 - Before an explicitly requested commit, inspect the complete staged diff and

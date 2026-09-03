@@ -82,12 +82,12 @@ written by an earlier sandbox generation.
 
 A later design must define artifact selection and trusted-path validation,
 read-only protection for an in-project artifact, content identity, execution as
-the managed user after SSH readiness, access only through the sandbox's effective
-egress policy, retry and partial-failure behavior, idempotence expectations, and
-an out-of-project completion record. It must not inject credentials implicitly
-or run on a reused non-empty home. Executing an explicitly selected trusted
-artifact is caller-authorized code execution, not evaluation of configuration as
-shell syntax.
+the managed user after SSH readiness, access only through the sandbox's
+effective egress policy, retry and partial-failure behavior, idempotence
+expectations, and an out-of-project completion record. It must not inject
+credentials implicitly or run on a reused non-empty home. Executing an
+explicitly selected trusted artifact is caller-authorized code execution, not
+evaluation of configuration as shell syntax.
 
 ### Policy-aware project initialization
 
@@ -197,15 +197,14 @@ code execution, not evaluation of a configuration value as shell syntax.
 
 ### Shared Bash utilities
 
-The split plans create `jailutils` for the Base64 record codec shared with
-identical Jailbox/JailIDE semantics. Reassess additional candidates only after
-both public boundaries stabilize. A candidate belongs there only when both
-products need the same runtime semantics, its contract necessarily concerns the
-Jailbox/JailIDE ecosystem without branching on caller identity, and independent
-fixtures can test it completely. Otherwise keep it product-owned or, for a
-product-agnostic contract proven by two real independent consumers, consider
-Shell Release Toolkit. Include compatibility, portability, security review,
-history retention, and actual duplication cost in the decision.
+No shared runtime source repository is planned. Reassess one only after both
+public boundaries stabilize and a concrete candidate is needed by both products
+with identical runtime semantics, has a contract that does not branch on caller
+identity, and can be tested completely through independent fixtures. Until that
+bar is met, keep the mechanism product-owned. A product-agnostic contract proven
+by two real independent consumers may instead belong in Shell Release Toolkit.
+Include compatibility, portability, security review, history retention, and
+actual duplication cost in the decision.
 
 ### SELinux development-container policy
 
@@ -230,8 +229,8 @@ and command plans. Compare at least:
 Keep the proxy container's label policy separate: it does not mount the project
 and has no equivalent repository-relabeling concern. Any selected design must
 document whether checkout labels persist after `stop`, `--clean`, failure, or
-uninstall; must not attempt to guess and restore prior labels; and must be tested
-on a disposable Fedora VM where `getenforce` reports exactly `Enforcing`.
+uninstall; must not attempt to guess and restore prior labels; and must be
+tested on a disposable Fedora VM where `getenforce` reports exactly `Enforcing`.
 Non-enforcing CI can report a skip but cannot verify the SELinux contract.
 
 The numbered plans preserve the existing `:Z` convention in the meantime and

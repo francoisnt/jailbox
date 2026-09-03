@@ -37,7 +37,7 @@ Add `shell` to `CLI_FLAGS_WITHOUT_VALUES` and `CLI_HELP` in
 `host/public-api.sh`, dispatch and generated public-API comparison, and the
 literal `usage()` list in `host/common.sh`. It does not join
 `CLI_COMMANDS_WITH_ARGS`. Reuse plan 5's attach-specific preflight without its
-Base64 requirement and return before wrapper-build `cksum`.
+exec-only Base64 requirement and return before wrapper-build `cksum`.
 
 ## Tests and documentation
 
