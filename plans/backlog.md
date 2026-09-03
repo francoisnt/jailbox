@@ -155,12 +155,12 @@ protected source paths, and every contribution to jailbox wrapper-cache and
 configuration-digest identity. Output must be declarative data rather than
 shell fragments or commands for the orchestrator to evaluate.
 
-Container preparation depends on the generic downstream wrapper-setup boundary
-below. JailIDE owns the editor-specific setup contribution; jailbox validates
-and incorporates it without editor knowledge; the orchestrator owns final
-policy composition and calls `jailbox up`. The design must define merge and
-conflict rules so neither JailIDE nor the orchestrator can silently override
-core security policy or one another's declared inputs.
+Container preparation uses the numbered plans' ordered `WRAPPER_SETUP`
+interface. JailIDE owns the editor-specific setup contribution; jailbox
+validates and incorporates it without editor knowledge; the orchestrator owns
+final policy composition and calls `jailbox up`. The design must define merge
+and conflict rules so neither JailIDE nor the orchestrator can silently
+override core security policy or one another's declared inputs.
 
 The attach phase receives the same effective jailbox environment used for
 creation and the same JailIDE configuration identity. It resolves one compatible
@@ -179,27 +179,21 @@ and filtered-egress failures. Portable tests should use a fake jailbox client;
 the editor gate should cover both direct launch and orchestrator-managed
 requirements/up/attach using immutable artifacts.
 
-### Downstream wrapper setup extensions
+### Richer wrapper setup inputs
 
-Consider a public, generic wrapper-image extension that lets a trusted host
-caller supply setup code during jailbox's wrapper build. This could move remote
-IDE-server compatibility packages from core to JailIDE and let other downstream
-tools own their runtime additions without teaching jailbox about each client.
-Until such an interface is implemented, jailbox continues to own those runtime
-prerequisites and a compatibility fix detected by JailIDE's editor gate requires
-a jailbox release.
+The numbered plans provide ordered, content-addressed caller setup scripts and
+use one for JailIDE's editor dependencies. Reassess a richer extension bundle
+only after a real consumer needs auxiliary files or metadata that cannot
+reasonably be embedded or created by its script.
 
-A later design must define the setup language and versioned execution contract,
-root execution and trust boundary, build-time network policy, ordering relative
-to core SSH setup, available environment and filesystem inputs, single versus
-multiple extensions, failure and rollback behavior, and portability across
-supported base distributions. Jailbox must copy only explicitly supplied inputs
-into its generated build context, expose no credentials or unrelated host
-files, include all extension bytes and declared inputs in wrapper-cache and
-configuration-digest identity, and protect an in-project extension from the
-sandbox. Configuration remains strict data: running a separately identified
-trusted setup artifact is intentional caller-authorized code execution, not
-evaluation of a configuration value as shell syntax.
+A later design must preserve the existing root-code trust boundary, validation
+before mutation, deterministic ordering, isolated build context, build-network
+contract, read-only protection, wrapper-cache/configuration-digest identity,
+and final jailbox hardening. It must define an allowlisted file inventory,
+destination conflicts, symlink/special-file refusal, bundle compatibility, and
+whether multiple scripts can share assets. Configuration remains strict data:
+running a separately selected trusted artifact is intentional caller-authorized
+code execution, not evaluation of a configuration value as shell syntax.
 
 ### Shared Bash utilities
 
