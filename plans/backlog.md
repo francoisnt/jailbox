@@ -133,6 +133,52 @@ races if they cannot be eliminated.
 
 ## Runtime isolation
 
+### Orchestrator-managed JailIDE launch
+
+Support a host orchestrator that owns a jailbox lifecycle but wants JailIDE to
+launch a host editor against the resulting sandbox. The orchestrator must be
+able to obtain every editor-specific launch contribution before `jailbox up`,
+then ask JailIDE to attach without transferring lifecycle ownership.
+
+A later design should define a two-phase public contract:
+
+1. a non-mutating JailIDE requirements command consumes canonical JailIDE
+   configuration and emits strict machine-readable jailbox inputs; and
+2. after the orchestrator creates the matching sandbox, a non-mutating JailIDE
+   attach command validates it and launches the selected host editor.
+
+The requirements phase must cover more than egress. It needs a settled
+environment-variable configuration interface for JailIDE automation, selected
+editor and server-version identity, bootstrap/download hosts, container runtime
+packages and dependencies, bootstrap destinations, required mounts/environment,
+protected source paths, and every contribution to jailbox wrapper-cache and
+configuration-digest identity. Output must be declarative data rather than
+shell fragments or commands for the orchestrator to evaluate.
+
+Container preparation depends on the generic downstream wrapper-setup boundary
+below. JailIDE owns the editor-specific setup contribution; jailbox validates
+and incorporates it without editor knowledge; the orchestrator owns final
+policy composition and calls `jailbox up`. The design must define merge and
+conflict rules so neither JailIDE nor the orchestrator can silently override
+core security policy or one another's declared inputs.
+
+The attach phase receives the same effective jailbox environment used for
+creation and the same JailIDE configuration identity. It resolves one compatible
+installed jailbox executable, requires an already-running healthy digest match,
+uses documented machine interfaces, generates the JailIDE-owned profile and
+settings, and launches the host editor. It never calls `up`, `stop`, or `clean`,
+invokes Podman directly, changes container policy, or obtains a container-engine
+socket. Host-only SSH credentials remain host-only.
+
+Bind requirements and attach with a reproducible JailIDE contribution digest or
+equivalent receipt so changed editor, configuration, egress, dependency, or
+setup inputs cannot attach as though they created the running sandbox. Define
+behavior for absent/stopped resources, stale requirements, incompatible jailbox
+versions, missing editor prerequisites, direct non-orchestrated JailIDE launch,
+and filtered-egress failures. Portable tests should use a fake jailbox client;
+the editor gate should cover both direct launch and orchestrator-managed
+requirements/up/attach using immutable artifacts.
+
 ### Downstream wrapper setup extensions
 
 Consider a public, generic wrapper-image extension that lets a trusted host
@@ -157,10 +203,15 @@ evaluation of a configuration value as shell syntax.
 
 ### Shared Bash utilities
 
-The split deliberately keeps common host helpers duplicated instead of creating
-a third repository. Reassess extraction after both public boundaries stabilize,
-including release cadence, portability, security review, and actual duplication
-cost.
+The split plans create `jailutils` for the Base64 record codec shared with
+identical Jailbox/JailIDE semantics. Reassess additional candidates only after
+both public boundaries stabilize. A candidate belongs there only when both
+products need the same runtime semantics, its contract necessarily concerns the
+Jailbox/JailIDE ecosystem without branching on caller identity, and independent
+fixtures can test it completely. Otherwise keep it product-owned or, for a
+product-agnostic contract proven by two real independent consumers, consider
+Shell Release Toolkit. Include compatibility, portability, security review,
+history retention, and actual duplication cost in the decision.
 
 ### SELinux development-container policy
 

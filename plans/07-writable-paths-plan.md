@@ -47,7 +47,7 @@ delete, or atomic replacement must list the parent directory.
 Core automatically protects its selected Containerfile. It no longer knows or
 protects config files. JailIDE deterministically adds its default and selected
 in-project configuration/policy files to final read-only paths. JailIDE's human
-format uses repeated lines and documents 03.2.11's newline limitation; confirm
+format uses repeated lines and documents 03.2.12's newline limitation; confirm
 that limitation remains acceptable before shipping.
 
 A policy change makes resources incompatible. Recovery is explicit stop/up
@@ -68,7 +68,12 @@ README. Use normal Bash 4.4 empty-array expansion in host code.
 Retain read-only roots, dropped capabilities, no-new-privileges, socket
 isolation, containment, and protected-input precedence. Portable/runtime tests
 cover indexed values including commas, overlap combinations, protected
-Containerfile, JailIDE composition boundary, digest changes, and refusal.
+Containerfile, JailIDE composition boundary, digest changes, and refusal. The
+runtime regression retains the 512-array-entry support floor with combined
+configured overlays that include writable lanes, preserving the core contract
+that arrays have no application-defined maximum. Replace 03.1's read-only-only
+512-entry runtime fixture with this combined fixture rather than adding a second
+large-mount container launch; retain the same first/last effective-mount proof.
 
 Production readiness proves directory-lane marker create/remove with
 collision-resistant no-clobber cleanup; never modifies an arbitrary user file.

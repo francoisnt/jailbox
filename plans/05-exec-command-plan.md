@@ -11,7 +11,8 @@ Requires `archive/03-launch-core-and-up-plan.md`,
 `03.1-environment-only-configuration-plan.md`,
 `03.2.02-configuration-digest-plan.md`,
 `03.2.06-constrained-up-plan.md`, and
-`03.2.09-connection-info-and-doctor-plan.md`. Plan 6 reuses its transport and
+`03.2.09-connection-info-and-doctor-plan.md`, plus the pinned `jailutils`
+integration from 03.2.10.1 and 03.2.14. Plan 6 reuses its transport and
 validator boundary.
 
 ## Attach behavior
@@ -32,8 +33,9 @@ requires the same effective policy, not the same provenance.
 ## Transport
 
 Use generated strict-host-key SSH with `-T`. Encode NUL-delimited argv to
-single-line Base64 using the shared portable helper, validate its alphabet, and
-send one frame to installed Bash helper `/usr/local/bin/jailbox-exec-argv`.
+single-line Base64 using the pinned `jailutils` Base64 primitive, validate its
+alphabet, and send one frame to installed Bash helper
+`/usr/local/bin/jailbox-exec-argv`.
 The helper securely decodes to an array, requires final NUL/non-empty argv,
 changes to literal `/home/jailbox/project`, and execs without evaluation.
 Preserve empty, whitespace, quote, glob, newline, and non-UTF-8 arguments.
@@ -47,12 +49,15 @@ No PTY is allocated.
 Create executable Bash source `container/jailbox-exec-argv`, install it from
 `container/Containerfile.wrapper` as
 `/usr/local/bin/jailbox-exec-argv` mode 0755, and keep it under the wrapper
-cache-bust. It accepts exactly one frame, validates `[A-Za-z0-9+/=]`, decodes
-under restrictive umask into a `mktemp` file, reconstructs NUL-delimited argv
-without command substitution, requires a final NUL and non-empty argv, removes
-temporary data on every pre-exec path, changes directory, and `exec`s the
-array. Run under Bash explicitly; do not add Bash syntax to POSIX
-`container/setup.sh` or `entrypoint.sh`.
+cache-bust. Package the allowlisted `jailutils` codec from the pinned submodule
+into a fixed jailbox-owned library path in the wrapper image and have the helper
+load only that path for Base64 decoding. The helper remains product-owned: it
+accepts exactly one frame, validates `[A-Za-z0-9+/=]`, decodes under restrictive
+umask into a `mktemp` file, reconstructs NUL-delimited argv without command
+substitution, requires a final NUL and non-empty argv, removes temporary data on
+every pre-exec path, changes directory, and `exec`s the array. Run under Bash
+explicitly; do not add Bash syntax to POSIX `container/setup.sh` or
+`entrypoint.sh`.
 
 Use `base64 | tr -d '\n'` on the host and plain `base64 -d` remotely rather
 than GNU/macOS-specific wrapping flags. The 49,152-byte limit is measured after
@@ -76,7 +81,7 @@ Teach `initialize_public_api_lookups`, `scripts/public-api-diff.sh`'s
 about that declaration, including compatibility with older refs lacking it.
 Relax `parse_args` only for exec; consume optional leading `--`; keep
 `is_cli_flag_allowed` away from caller argv; and restrict the old misplaced
-`--config` guard to pre-command arguments until 03.2.13 removes that guard.
+`--config` guard to pre-command arguments until 03.2.14 removes that guard.
 Update hard-coded `usage()` in `host/common.sh`.
 
 Update the preflight command classification: remove `init` and `ssh-config`
@@ -92,6 +97,11 @@ Add `container/jailbox-exec-argv` explicitly to Bash ShellCheck discovery in
 `tests/portable/smoke.sh`; its extensionless name is not covered by `*.sh`
 globs. Host code requires Bash 4.4; `install.sh` and the entrypoint's
 pre-version-guard prefix retain their separate Bash 3.2 rules.
+
+Record the image copy's `jailutils` full commit and file digest in wrapper build
+metadata. Runtime tests compare it with the host package metadata
+and the pinned gitlink and fail on a missing, additional, or changed common
+file. Image construction never initializes or fetches a submodule.
 
 ## Tests and documentation
 
