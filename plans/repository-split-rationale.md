@@ -1,9 +1,11 @@
 # Repository split and language rationale
 
-Decision record, September 2026. This document explains three settled
-decisions that shape the 03.2 plan series: splitting the project into jailbox
-and JailIDE, implementing JailIDE in Go, and keeping jailbox in Bash. It also
-records why the planned shared shell release toolkit was retired. It is
+Decision record, September 2026. This document explains three decisions that
+shaped the 03.2 plan series: splitting the project into jailbox and JailIDE,
+implementing JailIDE in Go, and keeping jailbox in Bash. It also records why
+the planned shared shell release toolkit was retired. The addendum at the end
+records the later deferral of the split itself; the sections before it are
+kept as the rationale that will apply if the split is revived. It is
 rationale, not an implementation plan; the numbered plans remain normative.
 
 ## Why split into jailbox and JailIDE
@@ -136,3 +138,41 @@ maintaining a product whose reason to exist has collapsed.
 - jailbox continues paying the Bash rigor tax (strict quoting, adversarial
   input tests, portability discipline) for its remaining scope. Accepted
   while the core stays small; revisited at the tipping point above.
+
+## Addendum: the split is deferred (September 2026)
+
+The 03.2 series now builds the machine/human boundary inside one repository
+and one installed command instead of two products; the charter is
+`plans/03.2-machine-boundary-plan.md`. What changed in the assessment: the
+valuable content of the split was always the interface — environment-only
+configuration, the compatibility digest, deterministic identity,
+`config-schema`, `status`, `connection-info` — and all of it lands
+regardless. The editor workflow is restructured as a frontend layer that
+reaches core only by executing the public CLI as child processes (plan
+03.2.11), which makes it the reference consumer the split promised, at a
+process boundary instead of a repository boundary. Meanwhile the split's
+costs were concrete and immediate — two release pipelines, artifact-boundary
+test harnesses, version-range machinery, a coordinated dual release, and the
+generic `WRAPPER_SETUP` trusted-script mechanism whose only planned consumer
+was JailIDE's single embedded script — while its benefits scale with
+orchestrator adoption; the planned first-party orchestrator consumes the
+machine interface identically whether the frontend lives in-repo or out, so
+it does not require the split. That is the same shape of justification that
+retired the shared shell toolkit above.
+
+Deferred with the split: the JailIDE repository, the Go implementation,
+`jailide.toml`, the `WRAPPER_SETUP` mechanism (editor-server packages stay in
+core's generic wrapper contract), and the coordinated release. Plans 03.1.1
+and 03.2.11–03.2.15 are archived as deferral stubs whose full text is
+preserved in git history at `9a04def`.
+
+Revival triggers, any one of which reopens the decision:
+
+- a third-party orchestrator (beyond the planned first-party one) consuming
+  the machine interface in earnest;
+- editor churn that forces core releases despite the layering; or
+- the human-facing surface outgrowing Bash — the same protocol-complexity
+  tipping point recorded above for jailbox itself.
+
+Because the boundary is enforced now, extraction later is mechanical: the
+frontend already speaks only the interfaces a standalone JailIDE would.

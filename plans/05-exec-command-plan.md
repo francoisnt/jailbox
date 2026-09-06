@@ -77,12 +77,15 @@ Teach `initialize_public_api_lookups`, `scripts/public-api-diff.sh`'s
 about that declaration, including compatibility with older refs lacking it.
 Relax `parse_args` only for exec; consume optional leading `--`; keep
 `is_cli_flag_allowed` away from caller argv; and restrict the old misplaced
-`--config` guard to pre-command arguments until 03.2.14 removes that guard.
+`--config` guard to pre-command arguments until 03.2.11 confines `--config`
+to the frontend launch path.
 Update hard-coded `usage()` in `host/common.sh`.
 
-Update the preflight command classification: remove `init` and `ssh-config`
-from the final list and include `up`, `config-schema`, `status`, and
-`connection-info` with their owning requirements. Exec's attach branch
+Update the preflight command classification: remove `ssh-config` from the
+final list; `init` and the frontend launch paths keep their frontend-owned
+preflight (03.2.11) outside the machine command classes; and include `up`,
+`config-schema`, `status`, and `connection-info` with their owning
+requirements. Exec's attach branch
 requires Podman, SSH, realpath, SHA-256, and Base64, but no wrapper-build
 `cksum` or editor. It performs only configuration, identity, Containerfile
 classification, existing SSH-path, and shared-validator initialization—never

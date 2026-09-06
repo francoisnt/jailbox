@@ -4,6 +4,13 @@ Potential future improvements that are deliberately outside current
 implementation plans. These are ideas to reassess, not approved designs or
 commitments.
 
+> Note (September 2026): the JailIDE repository split is deferred; the editor
+> workflow is an in-repo frontend layer over the machine interface (plan
+> 03.2.11) and the generic `WRAPPER_SETUP` mechanism is archived with the
+> split. Entries below that name JailIDE, `jailide.toml`, or `WRAPPER_SETUP`
+> read against that frontend layer today and apply as written only if the
+> split is revived; see the addendum in `repository-split-rationale.md`.
+
 ## Lifecycle safety
 
 ### Named project instances
@@ -75,7 +82,7 @@ compare.
 
 Consider a trusted setup artifact that an orchestrator or JailIDE can request
 through jailbox only when jailbox
-creates a new empty sandbox home. This would make the default
+creates a new empty sandbox home. This would make the opt-in
 `EPHEMERAL_HOME=true` mode convenient by reinstalling shell configuration,
 development tools, and other reproducible user state without preserving files
 written by an earlier sandbox generation.

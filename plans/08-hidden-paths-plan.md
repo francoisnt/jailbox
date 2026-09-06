@@ -19,8 +19,8 @@ Declare `HIDDEN_PATHS` as a canonical indexed array with automatic schema,
 validation, API, and digest coverage. Preserve path validation, mask mount
 behavior, overlap precedence, symlink handling, and the limitation that runtime
 masking does not remove content from a development-image build context.
-Protected selected Containerfiles cannot be hidden. Core has no config-file
-cases; JailIDE owns/protects its policy files.
+Protected selected Containerfiles cannot be hidden. Core machine commands
+have no config-file cases; the frontend layer owns/protects its config files.
 
 Each entry must be non-empty, project-relative, existing regular file/directory,
 unique and non-overlapping with another hidden ancestor, without dot segments,
@@ -46,7 +46,7 @@ Exact hidden/read-only overlap and hidden paths beneath read-only/writable paths
 are valid and hidden wins. A read-only/writable child beneath a hidden directory
 is validated then omitted so it cannot re-expose content. Automatic selected
 Containerfile may be hidden after host consumption and counts as stronger than
-read-only; config-file cases belong only to JailIDE.
+read-only; config-file cases belong only to the frontend layer.
 
 Writable/read-only/hidden composition is deterministic and fails before
 mutation on invalid or contradictory protected inputs. Changes make existing
@@ -70,8 +70,8 @@ project-state behavior is introduced.
 Portable/runtime tests cover indexed members, comma-bearing paths, every
 overlap/ancestor relationship, files/directories/missing paths, Containerfile
 protection, digest mismatch, mount isolation, and build-context documentation.
-No jailbox editor-gate requirement remains; later editor-specific coverage gets
-a new JailIDE plan when needed.
+No editor-gate requirement applies here; later editor-specific coverage gets
+a new frontend plan when needed.
 
 Also cover literal glob/option-like segments, quoted option construction,
 explicit private propagation, option failure without retry, masked file and

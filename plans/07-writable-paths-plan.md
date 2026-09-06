@@ -44,11 +44,13 @@ An existing regular-file lane supports in-place writes but not sibling-temp
 plus rename because its parent stays read-only. Applications needing create,
 delete, or atomic replacement must list the parent directory.
 
-Core automatically protects its selected Containerfile. It no longer knows or
-protects config files. JailIDE deterministically adds its default and selected
-in-project configuration/policy files to final read-only paths. JailIDE's human
-format uses repeated lines and documents 03.2.12's newline limitation; confirm
-that limitation remains acceptable before shipping.
+Core machine commands automatically protect their selected Containerfile but
+no longer know or protect config files. The frontend layer deterministically
+adds its default and selected in-project configuration files to final
+read-only paths. Both the `KEY=value` file grammar and the environment model
+reject control characters, so control-character-bearing paths are not
+representable;
+confirm that limitation remains acceptable before shipping.
 
 A policy change makes resources incompatible. Recovery is explicit stop/up
 under 03.2.04/06, not replacement by up.
@@ -68,12 +70,10 @@ README. Use normal Bash 4.4 empty-array expansion in host code.
 Retain read-only roots, dropped capabilities, no-new-privileges, socket
 isolation, containment, and protected-input precedence. Portable/runtime tests
 cover indexed values including commas, overlap combinations, protected
-Containerfile, JailIDE composition boundary, digest changes, and refusal. The
-runtime regression retains the 512-array-entry support floor with combined
-configured overlays that include writable lanes, preserving the core contract
-that arrays have no application-defined maximum. Replace 03.1's read-only-only
-512-entry runtime fixture with this combined fixture rather than adding a second
-large-mount container launch; retain the same first/last effective-mount proof.
+Containerfile, the frontend composition boundary, digest changes, and refusal.
+Cover many-member configurations with combined overlays that include writable
+lanes; jailbox imposes no application-defined member maximum, and no dedicated
+large-mount runtime fixture is required.
 
 Production readiness proves directory-lane marker create/remove with
 collision-resistant no-clobber cleanup; never modifies an arbitrary user file.
@@ -91,7 +91,7 @@ with real Podman; argument order alone is not evidence.
 
 - Only validated declared subpaths become writable and protected paths always
   win.
-- Core and JailIDE each protect only inputs they know.
+- Core and the frontend each protect only inputs they know.
 - Policy changes refuse compatible attach/up until explicit recovery.
 - Empty policy preserves prior mount spelling/validation; non-empty policy
   permits only declared lanes.

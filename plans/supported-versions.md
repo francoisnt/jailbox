@@ -3,9 +3,10 @@
 ## What this document is for
 
 jailbox depends on Bash, Podman, and whatever base image a project brings.
-JailIDE separately depends on a compatible jailbox and supported editor. This
-document records the inherited minimum-version investigations; each product
-must move the applicable floor into its own repository when the split lands.
+The editor frontend layer additionally depends on a supported editor. This
+document records the minimum-version investigations; if the deferred
+repository split is ever revived, each product moves its applicable floors
+into its own repository.
 
 A floor is not a pin. `versions.env` holds pins: the exact versions jailbox is
 tested against, bumped forward by the canary workflow when a run goes green. A
@@ -118,12 +119,12 @@ for older. A dev image based on Debian 9, CentOS 7, or Ubuntu 16.04 completes
 every jailbox step and then fails inside the editor's own bootstrap, with an
 error that does not mention glibc.
 
-This is a JailIDE warning, not a jailbox hard failure: core SSH and shell/exec
+This is a frontend warning, not a core hard failure: core SSH and shell/exec
 transport still work while the selected editor workflow does not.
 
-JailIDE should probe the selected image through jailbox's documented boundary
-and apply the warning consistently to VS Code and VSCodium. No editor-specific
-probe or editor selection returns to core.
+The frontend should probe the selected image through the documented machine
+boundary and apply the warning consistently to VS Code and VSCodium. No
+editor-specific probe or editor selection belongs in core machine commands.
 
 `README.md` "Project image requirements" documents the shell and package
 manager a dev image must provide. glibc belongs in that list.
