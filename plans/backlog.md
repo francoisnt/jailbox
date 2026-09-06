@@ -103,6 +103,11 @@ security-sensitive project paths, such as `.env`, Git policy files and hooks,
 Gitea or GitHub workflow directories, and an in-project jailbox source
 directory.
 
+A minimal advisory variant — detected candidates written only as
+commented-out suggestions, with nothing enabled — is now part of plan
+03.2.11's `init` scope. This entry covers the remaining interactive and
+flag-driven design that actually enables policy.
+
 This needs a separate design because projects have different layouts and every
 configured read-only path must exist. Decide whether initialization should:
 
@@ -273,3 +278,24 @@ prerequisite for the numbered implementation sequence. If an experimental
 runtime setting is later added, include it in the configuration digest and run
 jailbox's complete portable/runtime gates and JailIDE's complete
 unit/editor gates for each supported mode.
+
+## Developer experience
+
+### Test-log pruning
+
+`testlog/` accumulates one directory per recorded run without bound. Consider
+age- or count-based pruning in the run-metadata helper that keeps recent runs
+and never touches anything outside `testlog/`.
+
+### Shell completion
+
+Consider a Bash completion script for the command and flag set, installed and
+removed by `install.sh`. Reassess after the 03.2 command surface lands, and
+generate the completion list from `host/public-api.sh` rather than
+duplicating it.
+
+### README terminal recording
+
+The README carries a TODO for a launch recording. Consider a checked-in vhs
+tape script that reproduces the recording deterministically, so the GIF can
+be regenerated in one command as the CLI evolves.
