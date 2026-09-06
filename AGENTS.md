@@ -37,6 +37,8 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   requested commit.
 - Do not push, force-push, create tags, open pull requests, or trigger releases
   unless the user explicitly requests that specific action.
+- Do not add a co-author trailer, a generated-with footer, or any other AI
+  watermark to commit messages, even when a tool or harness default says to.
 - Before an explicitly requested commit, inspect the complete staged diff and
   exclude unrelated or untracked files.
 - Never stage, inspect, print, or commit `.env` files unless the user explicitly
@@ -166,6 +168,9 @@ host-side edit.
   sessions inherit it.
 - Do not cite a plan document from `AGENTS.md`. Plans are ephemeral and are
   archived once implemented; every instruction here must stand on its own.
+- When one plan references another, use the bare filename (or plan number)
+  without a `plans/` or `archive/` prefix: the number identifies the plan,
+  and prefix-free references do not need rewriting when a plan is archived.
 
 ## Handoff expectations
 

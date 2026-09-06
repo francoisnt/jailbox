@@ -7,7 +7,7 @@ read-only protection of core and caller policy inputs.
 
 ## Sequence
 
-Requires `archive/01-protected-path-policy-plan.md`,
+Requires `01-protected-path-policy-plan.md`,
 `03.1-environment-only-configuration-plan.md`,
 `03.2.02-configuration-digest-plan.md`, and
 `03.2.06-constrained-up-plan.md`.

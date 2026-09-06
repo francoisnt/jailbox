@@ -11,7 +11,7 @@ Requires `07-writable-paths-plan.md`,
 `03.1-environment-only-configuration-plan.md`,
 `03.2.02-configuration-digest-plan.md`,
 `03.2.06-constrained-up-plan.md`, and
-`archive/01-protected-path-policy-plan.md` for path classification.
+`01-protected-path-policy-plan.md` for path classification.
 
 ## Policy
 

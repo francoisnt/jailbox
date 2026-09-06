@@ -7,7 +7,7 @@ byte-faithful argv/stdin and the remote exit status.
 
 ## Sequence
 
-Requires `archive/03-launch-core-and-up-plan.md`,
+Requires `03-launch-core-and-up-plan.md`,
 `03.1-environment-only-configuration-plan.md`,
 `03.2.02-configuration-digest-plan.md`,
 `03.2.06-constrained-up-plan.md`, and
