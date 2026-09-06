@@ -115,7 +115,7 @@ The current initialization plan deliberately creates the minimal
 
 Under the caller contract, extend core's Containerfile validation to
 `DEV_BUILD_CONTEXT`, and require callers to validate and protect policy inputs
-such as selected `jailide.conf`.
+such as selected `jailide.toml`.
 
 Project-reachable spellings with leaf or intermediate symlinks could be
 rejected so a writable sandbox cannot redirect a later host invocation outside
@@ -195,16 +195,16 @@ whether multiple scripts can share assets. Configuration remains strict data:
 running a separately selected trusted artifact is intentional caller-authorized
 code execution, not evaluation of a configuration value as shell syntax.
 
-### Shared Bash utilities
+### Shared runtime source
 
-No shared runtime source repository is planned. Reassess one only after both
-public boundaries stabilize and a concrete candidate is needed by both products
-with identical runtime semantics, has a contract that does not branch on caller
-identity, and can be tested completely through independent fixtures. Until that
-bar is met, keep the mechanism product-owned. A product-agnostic contract proven
-by two real independent consumers may instead belong in Shell Release Toolkit.
-Include compatibility, portability, security review, history retention, and
-actual duplication cost in the decision.
+No shared runtime source is planned, and the products no longer share a
+language: jailbox is Bash and JailIDE is Go, so a common source library is
+off the table by construction. Shared behavior lives only in jailbox's
+documented machine interfaces (environment configuration, `config-schema`,
+`status`, `connection-info`), which any language can consume. Reassess only
+if a future same-language sibling product needs an identical,
+caller-independent contract that can be tested completely through
+independent fixtures.
 
 ### SELinux development-container policy
 
@@ -265,4 +265,4 @@ Do not make `krun`, Kata Containers, `crun-vm`, or another alternate runtime a
 prerequisite for the numbered implementation sequence. If an experimental
 runtime setting is later added, include it in the configuration digest and run
 jailbox's complete portable/runtime gates and JailIDE's complete
-portable/editor gates for each supported mode.
+unit/editor gates for each supported mode.
