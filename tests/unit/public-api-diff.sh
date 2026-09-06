@@ -61,6 +61,12 @@ assert_result "removed configuration detected" removed
 git -C "$FIXTURE" checkout -q -- host/public-api.sh
 delete_line '    doctor'
 assert_result "removed CLI declaration detected" removed
+git -C "$FIXTURE" checkout -q -- host/public-api.sh
+delete_line '    EDITOR'
+assert_result "removed frontend declaration detected" removed
+git -C "$FIXTURE" checkout -q -- host/public-api.sh
+insert_after_line 'FRONTEND_SCALAR_KEYS=(' '    TEST_FRONTEND'
+assert_result "added frontend declaration detected" added
 
 echo ""
 if [ "$FAILED" -eq 0 ]; then

@@ -6,12 +6,16 @@
 # - After v1.0.0, adding a config key or CLI flag suggests a minor bump.
 # - Other changes suggest a patch bump.
 
+# Machine configuration keys. Each declared key has exactly one derived
+# environment spelling: KEY -> JAILBOX_CONFIG_KEY (scalars) or contiguous
+# JAILBOX_CONFIG_KEY_0.. members / a bare empty variable (arrays). The
+# namespace is declared here once; adding or removing a key changes the
+# derived interface.
 CONFIG_SCALAR_KEYS=(
     DEV_IMAGE
     DEV_CONTAINERFILE
     DEV_BUILD_CONTEXT
     DEV_TARGET_STAGE
-    EDITOR
 )
 
 CONFIG_ARRAY_KEYS=(
@@ -19,14 +23,23 @@ CONFIG_ARRAY_KEYS=(
     READONLY_PATHS
 )
 
+# Frontend-only keys: accepted in jailbox.conf for the human editor workflow,
+# never part of the JAILBOX_CONFIG_* machine namespace.
+FRONTEND_SCALAR_KEYS=(
+    EDITOR
+)
+
 CONFIG_DEFAULTS=(
     "DEV_IMAGE="
     "DEV_CONTAINERFILE="
     "DEV_BUILD_CONTEXT="
     "DEV_TARGET_STAGE="
-    "EDITOR="
     "EGRESS_ALLOW="
     "READONLY_PATHS="
+)
+
+FRONTEND_DEFAULTS=(
+    "EDITOR="
 )
 
 CLI_FLAGS_WITH_VALUES=(
@@ -58,6 +71,7 @@ CLI_HELP=(
 
 declare -A CONFIG_SCALAR_KEY_SET=()
 declare -A CONFIG_ARRAY_KEY_SET=()
+declare -A FRONTEND_SCALAR_KEY_SET=()
 declare -A CLI_FLAG_SET=()
 declare -A CLI_HELP_BY_FLAG=()
 
@@ -69,6 +83,9 @@ initialize_public_api_lookups() {
     done
     for key in "${CONFIG_ARRAY_KEYS[@]}"; do
         CONFIG_ARRAY_KEY_SET["$key"]=1
+    done
+    for key in "${FRONTEND_SCALAR_KEYS[@]}"; do
+        FRONTEND_SCALAR_KEY_SET["$key"]=1
     done
     for key in "${CLI_FLAGS_WITH_VALUES[@]}" "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
         CLI_FLAG_SET["$key"]=1
@@ -96,10 +113,18 @@ is_config_array_key() {
     [[ -v CONFIG_ARRAY_KEY_SET[$key] ]]
 }
 
+is_frontend_scalar_key() {
+    local key
+
+    key="$1"
+    [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || return 1
+    [[ -v FRONTEND_SCALAR_KEY_SET[$key] ]]
+}
+
 apply_config_defaults() {
     local entry key value
 
-    for entry in "${CONFIG_DEFAULTS[@]}"; do
+    for entry in "${CONFIG_DEFAULTS[@]}" "${FRONTEND_DEFAULTS[@]}"; do
         key="${entry%%=*}"
         value="${entry#*=}"
         case "$key" in
@@ -115,6 +140,51 @@ apply_config_defaults() {
                 READONLY_PATHS=()
                 ;;
         esac
+    done
+}
+
+# Declaration integrity for the derived machine namespace: every declared key
+# is unique, scalar/array classes are disjoint, defaults cover exactly the
+# declared machine keys, and no declared key spells another array key's
+# indexed member. Runs before configuration is interpreted.
+validate_public_api_declaration() {
+    local key entry other suffix
+    local -A machine_keys=() default_keys=()
+
+    for key in "${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}"; do
+        [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || \
+            die "public API declares invalid configuration key '$key'"
+        [[ ! -v machine_keys[$key] ]] || \
+            die "public API declares configuration key '$key' more than once"
+        machine_keys["$key"]=1
+    done
+    for key in "${FRONTEND_SCALAR_KEYS[@]}"; do
+        [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || \
+            die "public API declares invalid frontend key '$key'"
+        [[ ! -v machine_keys[$key] ]] || \
+            die "public API declares '$key' as both machine and frontend configuration"
+    done
+    for entry in "${CONFIG_DEFAULTS[@]}"; do
+        key="${entry%%=*}"
+        [[ -v machine_keys[$key] ]] || \
+            die "public API default '$key' has no declared machine key"
+        [[ ! -v default_keys[$key] ]] || \
+            die "public API declares a default for '$key' more than once"
+        default_keys["$key"]=1
+    done
+    for key in "${!machine_keys[@]}"; do
+        [[ -v default_keys[$key] ]] || \
+            die "public API key '$key' has no declared default"
+    done
+    for key in "${CONFIG_ARRAY_KEYS[@]}"; do
+        for other in "${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}" \
+            "${FRONTEND_SCALAR_KEYS[@]}"; do
+            [[ "$other" == "${key}_"* ]] || continue
+            suffix="${other#"${key}_"}"
+            if [[ "$suffix" =~ ^(0|[1-9][0-9]*)$ ]]; then
+                die "public API key '$other' collides with indexed members of array '$key'"
+            fi
+        done
     done
 }
 

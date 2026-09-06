@@ -143,8 +143,10 @@ jailbox
 Bare `jailbox` launches the sandbox and opens the configured editor. `jailbox
 up` performs the same sandbox launch but does no editor discovery, editor
 configuration, or editor launch; it returns once the sandbox is ready. Only
-these two commands start containers, and both require `jailbox.conf` and the
-same explicit `stop` boundary before relaunch.
+these two commands start containers, and both require configuration —
+`JAILBOX_CONFIG_*` environment variables, or a `jailbox.conf` when none is
+set (see Configuration) — and the same explicit `stop` boundary before
+relaunch.
 
 `stop` removes only the ephemeral development and proxy containers. The home
 volume, networks, images, and the project state directory are preserved —
@@ -189,10 +191,54 @@ This command requires Bash 4.4 or newer; without it, run the installed
 
 ---
 
-## Configuration (`jailbox.conf`)
+## Configuration
 
-Every launch requires a `jailbox.conf` in the project root. Create the minimal
-default safely with `jailbox init`:
+jailbox has one canonical machine configuration model: declared
+`JAILBOX_CONFIG_*` environment variables. When none is present, a temporary
+adapter parses `jailbox.conf` into the same effective values instead — the
+file remains the human editing surface, and a later release moves its parsing
+into the editor frontend without affecting environment callers. The two
+sources are exclusive: if any `JAILBOX_CONFIG_*` variable is set, it is the
+complete configuration, the file is not read, and a notice on stderr says so.
+`--config` cannot be combined with environment configuration.
+
+### Environment configuration (`JAILBOX_CONFIG_*`)
+
+Every configuration key has exactly one derived spelling:
+
+```bash
+JAILBOX_CONFIG_DEV_IMAGE=node:22-bookworm \
+JAILBOX_CONFIG_EGRESS_ALLOW_0=github.com \
+JAILBOX_CONFIG_EGRESS_ALLOW_1=api.github.com \
+JAILBOX_CONFIG_READONLY_PATHS= \
+jailbox up
+```
+
+- Scalars: `KEY` becomes `JAILBOX_CONFIG_KEY`. An absent variable receives
+  the key's default; a present empty variable is an empty value.
+- Arrays: contiguous members `JAILBOX_CONFIG_KEY_0`, `JAILBOX_CONFIG_KEY_1`,
+  … starting at zero, each non-empty; a bare empty `JAILBOX_CONFIG_KEY=`
+  declares an explicitly empty array. Indices are `0` or a nonzero decimal
+  without leading zeros; gaps, `_01`-style suffixes, mixing the bare form
+  with indexed members, and non-empty bare variables are rejected before
+  anything is mutated, naming the offending variable.
+- Values are ordinary bytes including commas and spaces; any ASCII control
+  character (including newline) is rejected. jailbox imposes no member-count
+  maximum — total environment/argument size and host runtime capacity are the
+  operational ceilings.
+- Unknown `JAILBOX_CONFIG_*` names are rejected. There is no
+  `JAILBOX_CONFIG_EDITOR`: `EDITOR` (in `jailbox.conf`) and `JAILBOX_EDITOR`
+  are frontend-only inputs for the bare editor launch.
+
+With environment configuration, `jailbox up` needs no `jailbox.conf` at all.
+Only `up`, the bare editor launch, and (for now) `ssh-config` consume
+configuration; `stop`, `doctor`, `init`, `--clean`, `--help`, and
+`--uninstall` never read it.
+
+### File configuration (`jailbox.conf`)
+
+Without environment configuration, every launch requires a `jailbox.conf` in
+the project root. Create the minimal default safely with `jailbox init`:
 
 ```conf
 # Additional project paths mounted read-only inside the sandbox.
@@ -210,8 +256,10 @@ Configuration uses strict `KEY=value` lines (no shell syntax, values cannot
 contain whitespace):
 
 Use `jailbox --config PATH [COMMAND]` to select a different complete config
-file. The option must precede the command; the selected file replaces rather
-than merges with the project config. Relative settings still resolve from the
+file. The option belongs to the file adapter: it fails when `JAILBOX_CONFIG_*`
+environment configuration is present, and it moves to the editor frontend with
+the rest of file handling. The option must precede the command; the selected
+file replaces rather than merges with the project config. Relative settings still resolve from the
 project root. The default `jailbox.conf` is still required when selecting an
 external file; it remains a persistent read-only anchor so a sandbox cannot
 plant policy for a later bare launch. The selected file is the only file
@@ -228,7 +276,7 @@ external config directly rather than a symlinked spelling.
 | `DEV_CONTAINERFILE` | auto-discovered | Containerfile to build the dev image from |
 | `DEV_BUILD_CONTEXT` | project root | Build context for `DEV_CONTAINERFILE` |
 | `DEV_TARGET_STAGE` | final stage | Multi-stage build target to use as dev image |
-| `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`) |
+| `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`); frontend-only, file-exclusive key |
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
 | `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |
 

@@ -55,6 +55,17 @@ command_requires_config() {
     command_starts_sandbox "${1:-}"
 }
 
+# Commands that consume effective configuration. Besides the launch commands,
+# ssh-config stays a consumer for now: its proxy SetEnv output depends on
+# EGRESS_ALLOW until connection-info supersedes it. stop, doctor, --clean,
+# init, --help, and --uninstall never read configuration.
+command_consumes_config() {
+    case "${1:-}" in
+        ""|up|ssh-config) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 init_project_config() (
     local destination nested_link tmp_file
 
@@ -292,7 +303,175 @@ load_project_config() {
     # grammar explicitly so user config can never execute code through source,
     # command substitution, arithmetic expansion, or shell metacharacters.
     parse_config_file "$config_file" || return $?
-    validate_config
+    validate_editor_config
+    validate_machine_config
+}
+
+# --- Environment configuration (JAILBOX_CONFIG_*) ------------------------
+#
+# The canonical machine configuration model: one derived spelling per key
+# declared in host/public-api.sh. Names are discovered through name-only
+# shell metadata (compgen), never by parsing serialized name=value output,
+# because not-yet-validated values may contain newlines that are only
+# rejected afterwards with a named diagnostic. Environment entries whose
+# names are not valid shell identifiers never become shell parameters and
+# are outside the interface.
+
+ENV_CONFIG_PREFIX="JAILBOX_CONFIG_"
+
+environment_config_present() {
+    compgen -A export "$ENV_CONFIG_PREFIX" >/dev/null 2>&1
+}
+
+environment_config_names() {
+    compgen -A export "$ENV_CONFIG_PREFIX" || true
+}
+
+validate_environment_value() {
+    local name value LC_ALL=C
+
+    name="$1"
+    value="$2"
+    # Legal values are ordinary bytes including commas and spaces;
+    # newline-bearing values are deliberately not representable.
+    if [[ "$value" =~ [$'\x01'-$'\x1f'$'\x7f'] ]]; then
+        die "configuration value in '$name' contains an ASCII control character"
+    fi
+}
+
+assign_config_scalar() {
+    local key value
+
+    key="$1"
+    value="$2"
+    case "$key" in
+        DEV_IMAGE) DEV_IMAGE="$value" ;;
+        DEV_CONTAINERFILE) DEV_CONTAINERFILE="$value" ;;
+        DEV_BUILD_CONTEXT) DEV_BUILD_CONTEXT="$value" ;;
+        DEV_TARGET_STAGE) DEV_TARGET_STAGE="$value" ;;
+    esac
+}
+
+load_environment_config() {
+    local name key bare suffix value expected first_missing
+    local gap_member count i
+    local -a names=() member_names=() items=()
+    local -A discovered=() handled=() expected_set=()
+
+    mapfile -t names < <(environment_config_names)
+
+    # Every discovered name is an exported shell parameter, so its charset is
+    # already a valid identifier; restrict further to the uppercase namespace
+    # grammar before any name is used as an associative-array subscript.
+    for name in "${names[@]}"; do
+        [[ "$name" =~ ^JAILBOX_CONFIG_[A-Z0-9_]+$ ]] || \
+            die "unknown configuration variable '$name'"
+        discovered["$name"]=1
+    done
+
+    for key in "${CONFIG_SCALAR_KEYS[@]}"; do
+        name="${ENV_CONFIG_PREFIX}${key}"
+        [[ -v discovered[$name] ]] || continue
+        # Absent values receive defaults; a present empty scalar stays empty.
+        value="${!name}"
+        validate_environment_value "$name" "$value"
+        assign_config_scalar "$key" "$value"
+        handled["$name"]=1
+    done
+
+    for key in "${CONFIG_ARRAY_KEYS[@]}"; do
+        bare="${ENV_CONFIG_PREFIX}${key}"
+        member_names=()
+        count=0
+        for name in "${names[@]}"; do
+            [[ "$name" == "${bare}_"* ]] || continue
+            suffix="${name#"${bare}_"}"
+            [[ "$suffix" =~ ^(0|[1-9][0-9]*)$ ]] || \
+                die "malformed configuration array member name '$name' (indices are 0 or nonzero decimal without leading zeros)"
+            member_names+=("$name")
+            handled["$name"]=1
+            # The member count is trusted local state; the caller-supplied
+            # suffix is never interpreted through arithmetic or subscripts.
+            count=$((count + 1))
+        done
+
+        if [[ -v discovered[$bare] ]]; then
+            handled["$bare"]=1
+            [ "$count" -eq 0 ] || \
+                die "configuration array '$key' mixes the bare variable '$bare' with indexed members"
+            value="${!bare}"
+            [ -z "$value" ] || \
+                die "non-empty bare configuration array variable '$bare' (use indexed ${bare}_0.. members; leave it empty for an explicitly empty array)"
+            set_config_array "$key"
+            continue
+        fi
+        [ "$count" -gt 0 ] || continue
+
+        # Check the exact expected names _0.._(count-1); any expected name
+        # missing means some discovered member sits past the contiguous range.
+        items=()
+        expected_set=()
+        first_missing=""
+        for ((i = 0; i < count; i++)); do
+            expected="${bare}_${i}"
+            expected_set["$expected"]=1
+            if [[ ! -v discovered[$expected] ]]; then
+                [ -n "$first_missing" ] || first_missing="$expected"
+                continue
+            fi
+            [ -n "$first_missing" ] && continue
+            value="${!expected}"
+            validate_environment_value "$expected" "$value"
+            [ -n "$value" ] || \
+                die "empty configuration array member '$expected'"
+            items+=("$value")
+        done
+        if [ -n "$first_missing" ]; then
+            gap_member=""
+            for name in "${member_names[@]}"; do
+                if [[ ! -v expected_set[$name] ]]; then
+                    gap_member="$name"
+                    break
+                fi
+            done
+            die "configuration array '$key' has a gap: found member '$gap_member' but '$first_missing' is missing"
+        fi
+        set_config_array "$key" "${items[@]}"
+    done
+
+    for name in "${names[@]}"; do
+        [[ -v handled[$name] ]] || \
+            die "unknown configuration variable '$name'"
+    done
+
+    validate_machine_config
+}
+
+# Load the effective configuration for a consuming command. Declared
+# JAILBOX_CONFIG_* variables are the complete configuration; otherwise a
+# temporary in-core adapter parses jailbox.conf into the same effective
+# values and runs the same machine validator. The two paths are exclusive:
+# never precedence, never merge.
+load_effective_config() {
+    local command
+
+    command="${1:-}"
+    validate_public_api_declaration
+
+    if environment_config_present; then
+        [ -z "$CONFIG_PATH_ARG" ] || \
+            die "JAILBOX_CONFIG_* environment configuration is present; --config cannot select a file (environment configuration is complete and exclusive)"
+        if [ -e "$PROJECT_DIR/jailbox.conf" ] || [ -L "$PROJECT_DIR/jailbox.conf" ]; then
+            echo "Notice: $PROJECT_DIR/jailbox.conf is not read because JAILBOX_CONFIG_* environment configuration is present." >&2
+        fi
+        load_environment_config
+        return 0
+    fi
+
+    # Temporary file adapter until the frontend layer owns jailbox.conf
+    # parsing and composes the environment itself.
+    prepare_config_selection "$command"
+    load_project_config
 }
 
 config_die() {
@@ -339,7 +518,8 @@ parse_config_file() {
         if ! [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
             config_die "$line_no" "invalid key '${key}' (use KEY=value with no spaces around =)"
         fi
-        if ! is_config_scalar_key "$key" && ! is_config_array_key "$key"; then
+        if ! is_config_scalar_key "$key" && ! is_config_array_key "$key" && \
+            ! is_frontend_scalar_key "$key"; then
             config_die "$line_no" "unknown setting '$key'"
         fi
         if config_key_seen "$key"; then
@@ -467,8 +647,10 @@ set_config_array() {
     esac
 }
 
-validate_config() {
-    validate_editor_config
+# The effective machine validator: runs on the final configuration values
+# whether they came from the environment model or the temporary file adapter.
+# Editor validation is frontend-only and belongs to the file path.
+validate_machine_config() {
     validate_egress_allow
     validate_readonly_paths_lexical
 }

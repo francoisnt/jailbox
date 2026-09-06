@@ -16,9 +16,13 @@ fi
 #   as the project's dev environment — no bridge, no exec proxy.
 #
 # CONFIGURATION
-#   jailbox.conf in the project root is parsed if present. Supported settings:
+#   Declared JAILBOX_CONFIG_* environment variables are the canonical machine
+#   configuration (see host/public-api.sh): scalars as JAILBOX_CONFIG_KEY,
+#   arrays as contiguous JAILBOX_CONFIG_KEY_0.. members. When none is present,
+#   a temporary adapter parses jailbox.conf in the project root instead:
 #     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
-#     EDITOR, EGRESS_ALLOW, READONLY_PATHS.
+#     EGRESS_ALLOW, READONLY_PATHS, and the frontend-only EDITOR.
+#   The two sources are exclusive; they never merge.
 #
 # REQUIREMENTS
 #   podman, ssh, ssh-keygen; bare launch also requires VSCodium/VSCode with
@@ -198,8 +202,12 @@ main() {
         require_sandbox_absent
     fi
 
-    prepare_config_selection "${1:-}"
-    load_project_config
+    # Only configuration-consuming commands load and validate configuration;
+    # doctor and --clean keep their lighter preflight and stay usable when
+    # configuration is missing or malformed.
+    if command_consumes_config "${1:-}"; then
+        load_effective_config "${1:-}"
+    fi
 
     host_preflight "$@"
     initialize_launch_state

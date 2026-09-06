@@ -54,10 +54,14 @@ cli_api_values() {
 }
 
 # Return all public API names that participate in release bump decisions.
+# FRONTEND_SCALAR_KEYS is absent from refs that declared frontend keys inside
+# CONFIG_SCALAR_KEYS; extraction then contributes nothing, so reclassifying a
+# key between the two arrays leaves the public name set unchanged.
 public_api_names() {
     {
         public_api_values "$1" "CONFIG_SCALAR_KEYS"
         public_api_values "$1" "CONFIG_ARRAY_KEYS"
+        public_api_values "$1" "FRONTEND_SCALAR_KEYS"
         cli_api_values "$1"
     } | sort -u
 }
