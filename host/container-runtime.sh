@@ -311,9 +311,9 @@ start_jailbox_container() {
         -v "$PROJECT_DIR:$REMOTE_PATH:Z" \
         -v "$KEY_FILE.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
         "${READONLY_MOUNTS[@]}" \
-        --memory=4g \
-        --cpus=2 \
-        --pids-limit=256 \
+        --memory="$MEMORY_LIMIT" \
+        --cpus="$CPU_LIMIT" \
+        --pids-limit="$PIDS_LIMIT" \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
         "$JAILBOX_IMAGE"

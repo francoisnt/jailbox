@@ -119,6 +119,56 @@ test_container_launch_preconditions() {
     assert_launch_state_rejects "invalid SSH port rejected" "valid SSH port"
 }
 
+assert_argv_line() {
+    local name="$1" file="$2" expected="$3"
+
+    if grep -Fxq -e "$expected" "$file"; then
+        pass "$name"
+    else
+        fail "$name (no argument exactly '$expected')"
+    fi
+}
+
+# Launch the container against a stub podman that records its argv, so the
+# resource flags can be asserted byte-for-byte.
+run_launch_with_stub_podman() {
+    local stub_dir="$1" argv_file="$2"
+
+    printf '#!/bin/bash\nprintf "%%s\\n" "$@" > %q\n' "$argv_file" > "$stub_dir/podman"
+    chmod +x "$stub_dir/podman"
+    (
+        PATH="$stub_dir:$PATH"
+        start_jailbox_container >/dev/null
+    )
+}
+
+test_resource_limit_flags() {
+    local stub_dir argv_file
+
+    with_valid_launch_state
+    MANAGED_USER="jailbox"
+    GITCONFIG_MOUNT=()
+    READONLY_MOUNTS=()
+    stub_dir=$(mktemp -d)
+    LAUNCH_STATE_DIRS+=("$stub_dir")
+    argv_file="$stub_dir/argv"
+
+    apply_config_defaults
+    run_launch_with_stub_podman "$stub_dir" "$argv_file"
+    assert_argv_line "default memory flag byte-identical" "$argv_file" "--memory=4g"
+    assert_argv_line "default cpu flag byte-identical" "$argv_file" "--cpus=2"
+    assert_argv_line "default pids flag byte-identical" "$argv_file" "--pids-limit=256"
+
+    MEMORY_LIMIT="1.5g"
+    CPU_LIMIT="0.5"
+    PIDS_LIMIT="1024"
+    run_launch_with_stub_podman "$stub_dir" "$argv_file"
+    assert_argv_line "configured memory value passed verbatim" "$argv_file" "--memory=1.5g"
+    assert_argv_line "configured cpu value passed verbatim" "$argv_file" "--cpus=0.5"
+    assert_argv_line "configured pids value passed verbatim" "$argv_file" "--pids-limit=1024"
+    apply_config_defaults
+}
+
 test_initialize_container_runtime_state_clears_outputs() {
     READONLY_PATHS=(stale)
     EFFECTIVE_READONLY_PATHS=(stale)
@@ -212,6 +262,7 @@ main() {
     echo ""
 
     test_container_launch_preconditions
+    test_resource_limit_flags
     test_initialize_container_runtime_state_clears_outputs
 
     if ! command -v git >/dev/null 2>&1; then

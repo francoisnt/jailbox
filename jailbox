@@ -21,7 +21,8 @@ fi
 #   arrays as contiguous JAILBOX_CONFIG_KEY_0.. members. When none is present,
 #   a temporary adapter parses jailbox.conf in the project root instead:
 #     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
-#     EGRESS_ALLOW, READONLY_PATHS, and the frontend-only EDITOR.
+#     MEMORY_LIMIT, CPU_LIMIT, PIDS_LIMIT, EGRESS_ALLOW, READONLY_PATHS,
+#     and the frontend-only EDITOR.
 #   The two sources are exclusive; they never merge.
 #
 # REQUIREMENTS

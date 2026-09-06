@@ -121,6 +121,72 @@ test_scalars_and_arrays() {
         "JAILBOX_CONFIG_DEV_TARGET_STAGE=dev"
 }
 
+test_resource_limits() {
+    assert_env_config "resource limit values applied verbatim" \
+        '[ "$MEMORY_LIMIT" = "1.5g" ] && [ "$CPU_LIMIT" = "0.5" ] && [ "$PIDS_LIMIT" = "1024" ]' \
+        "JAILBOX_CONFIG_MEMORY_LIMIT=1.5g" \
+        "JAILBOX_CONFIG_CPU_LIMIT=0.5" \
+        "JAILBOX_CONFIG_PIDS_LIMIT=1024"
+    assert_env_config "absent resource limits receive literal defaults" \
+        '[ "$MEMORY_LIMIT" = "4g" ] && [ "$CPU_LIMIT" = "2" ] && [ "$PIDS_LIMIT" = "256" ]' \
+        "JAILBOX_CONFIG_DEV_TARGET_STAGE=dev"
+}
+
+# Scalar keys are declaration-driven: a key declared only in the public-API
+# arrays flows through defaults, the environment model, and the file adapter
+# with no key-specific code anywhere.
+test_declaration_driven_scalars() {
+    local dir
+
+    dir=$(fixture_dir)
+    if (
+        PROJECT_DIR="$dir"
+        CONFIG_SCALAR_KEYS+=(SYNTHETIC_LIMIT)
+        CONFIG_DEFAULTS+=("SYNTHETIC_LIMIT=fallback")
+        initialize_public_api_lookups
+        apply_config_defaults
+        CONFIG_PATH_ARG=""
+        export JAILBOX_CONFIG_DEV_TARGET_STAGE=dev
+        load_effective_config >/dev/null 2>&1
+        [ "$SYNTHETIC_LIMIT" = fallback ]
+    ); then
+        pass "declared key receives its default without key-specific code"
+    else
+        fail "declared key receives its default without key-specific code"
+    fi
+    if (
+        PROJECT_DIR="$dir"
+        CONFIG_SCALAR_KEYS+=(SYNTHETIC_LIMIT)
+        CONFIG_DEFAULTS+=("SYNTHETIC_LIMIT=fallback")
+        initialize_public_api_lookups
+        apply_config_defaults
+        CONFIG_PATH_ARG=""
+        export JAILBOX_CONFIG_SYNTHETIC_LIMIT=custom
+        load_effective_config >/dev/null 2>&1
+        [ "$SYNTHETIC_LIMIT" = custom ]
+    ); then
+        pass "environment value reaches a declared key without key-specific code"
+    else
+        fail "environment value reaches a declared key without key-specific code"
+    fi
+    printf 'SYNTHETIC_LIMIT=fromfile\n' > "$dir/jailbox.conf"
+    if (
+        PROJECT_DIR="$dir"
+        CONFIG_SCALAR_KEYS+=(SYNTHETIC_LIMIT)
+        CONFIG_DEFAULTS+=("SYNTHETIC_LIMIT=fallback")
+        initialize_public_api_lookups
+        apply_config_defaults
+        CONFIG_PATH_ARG=""
+        load_effective_config >/dev/null 2>&1
+        [ "$SYNTHETIC_LIMIT" = fromfile ]
+    ); then
+        pass "file adapter value reaches a declared key without key-specific code"
+    else
+        fail "file adapter value reaches a declared key without key-specific code"
+    fi
+    rm -rf "$dir"
+}
+
 test_many_member_array() {
     local dir i
     local -a assignments=()
@@ -446,6 +512,8 @@ test_declaration_integrity() {
 
 main() {
     test_scalars_and_arrays
+    test_resource_limits
+    test_declaration_driven_scalars
     test_many_member_array
     test_rejections
     test_exclusivity_and_notice

@@ -339,17 +339,15 @@ validate_environment_value() {
     fi
 }
 
+# Indirect assignment on the declared key name: callers only pass keys from
+# the public-API declaration arrays, whose grammar is validated before any
+# configuration is interpreted, so the name is never user-controlled.
 assign_config_scalar() {
     local key value
 
     key="$1"
     value="$2"
-    case "$key" in
-        DEV_IMAGE) DEV_IMAGE="$value" ;;
-        DEV_CONTAINERFILE) DEV_CONTAINERFILE="$value" ;;
-        DEV_BUILD_CONTEXT) DEV_BUILD_CONTEXT="$value" ;;
-        DEV_TARGET_STAGE) DEV_TARGET_STAGE="$value" ;;
-    esac
+    printf -v "$key" '%s' "$value"
 }
 
 load_environment_config() {
@@ -598,13 +596,9 @@ parse_config_scalar() {
         config_die "$line_no" "scalar setting '$key' cannot contain a comma"
     fi
 
-    case "$key" in
-        DEV_IMAGE) DEV_IMAGE="$value" ;;
-        DEV_CONTAINERFILE) DEV_CONTAINERFILE="$value" ;;
-        DEV_BUILD_CONTEXT) DEV_BUILD_CONTEXT="$value" ;;
-        DEV_TARGET_STAGE) DEV_TARGET_STAGE="$value" ;;
-        EDITOR) EDITOR="$value" ;;
-    esac
+    # The parser has already established that $key is a declared scalar or
+    # frontend key, so the indirect assignment target is declaration-driven.
+    assign_config_scalar "$key" "$value"
 }
 
 parse_config_array() {
@@ -633,18 +627,6 @@ parse_config_array() {
     done
 
     set_config_array "$key" "${items[@]}"
-}
-
-set_config_array() {
-    local key
-
-    key="$1"
-    shift
-
-    case "$key" in
-        EGRESS_ALLOW) EGRESS_ALLOW=("$@") ;;
-        READONLY_PATHS) READONLY_PATHS=("$@") ;;
-    esac
 }
 
 # The effective machine validator: runs on the final configuration values

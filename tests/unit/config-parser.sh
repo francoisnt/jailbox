@@ -115,6 +115,9 @@ DEV_CONTAINERFILE='\''./Dockerfile'\''
 DEV_BUILD_CONTEXT=.
 DEV_TARGET_STAGE=dev
 EDITOR=code
+MEMORY_LIMIT=1.5g
+CPU_LIMIT=0.5
+PIDS_LIMIT=1024
 
 # Arrays
 EGRESS_ALLOW="github.com,api.github.com"
@@ -124,10 +127,24 @@ READONLY_PATHS="Makefile,.husky,scripts/deploy.sh"
     assert_eq "scalar value parsed" "docker.io/library/debian:slim" "$DEV_IMAGE"
     assert_eq "single-quoted scalar value parsed" "./Dockerfile" "$DEV_CONTAINERFILE"
     assert_eq "editor value parsed" "code" "$EDITOR"
+    assert_eq "memory limit parsed verbatim" "1.5g" "$MEMORY_LIMIT"
+    assert_eq "cpu limit parsed verbatim" "0.5" "$CPU_LIMIT"
+    assert_eq "pids limit parsed verbatim" "1024" "$PIDS_LIMIT"
     assert_eq "array length parsed" "2" "${#EGRESS_ALLOW[@]}"
     assert_eq "array item parsed" "api.github.com" "${EGRESS_ALLOW[1]}"
     assert_eq "readonly paths length parsed" "3" "${#READONLY_PATHS[@]}"
     assert_eq "readonly paths item parsed" "scripts/deploy.sh" "${READONLY_PATHS[2]}"
+    rm -rf "$dir"
+}
+
+test_resource_limit_defaults() {
+    local dir
+
+    dir=$(with_config 'DEV_TARGET_STAGE=dev')
+    load_config_from_dir "$dir"
+    assert_eq "absent memory limit keeps literal default" "4g" "$MEMORY_LIMIT"
+    assert_eq "absent cpu limit keeps literal default" "2" "$CPU_LIMIT"
+    assert_eq "absent pids limit keeps literal default" "256" "$PIDS_LIMIT"
     rm -rf "$dir"
 }
 
@@ -472,6 +489,7 @@ main() {
     assert_loads "empty config loads" ""
     assert_loads "comments load" $'# comment\n\nDEV_IMAGE=node:22'
     test_values
+    test_resource_limit_defaults
 
     assert_rejects "spaces around = rejected" "DEV_IMAGE = node:22"
     assert_loads "quoted value loads" 'DEV_IMAGE="node:22"'

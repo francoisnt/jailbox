@@ -276,9 +276,17 @@ external config directly rather than a symlinked spelling.
 | `DEV_CONTAINERFILE` | auto-discovered | Containerfile to build the dev image from |
 | `DEV_BUILD_CONTEXT` | project root | Build context for `DEV_CONTAINERFILE` |
 | `DEV_TARGET_STAGE` | final stage | Multi-stage build target to use as dev image |
+| `MEMORY_LIMIT` | `4g` | Development container memory limit (Podman `--memory` value) |
+| `CPU_LIMIT` | `2` | Development container CPU limit (Podman `--cpus` value) |
+| `PIDS_LIMIT` | `256` | Development container process-count limit (Podman `--pids-limit` value) |
 | `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`); frontend-only, file-exclusive key |
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
 | `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |
+
+Resource-limit values are passed to Podman verbatim; Podman validates them
+when the development container starts, so an unsupported value fails at
+launch with Podman's own diagnostic. The proxy sidecar's resources are core
+policy, not configuration.
 
 Annotated example:
 

@@ -16,6 +16,9 @@ CONFIG_SCALAR_KEYS=(
     DEV_CONTAINERFILE
     DEV_BUILD_CONTEXT
     DEV_TARGET_STAGE
+    MEMORY_LIMIT
+    CPU_LIMIT
+    PIDS_LIMIT
 )
 
 CONFIG_ARRAY_KEYS=(
@@ -29,11 +32,17 @@ FRONTEND_SCALAR_KEYS=(
     EDITOR
 )
 
+# Resource-limit defaults are literal effective values, not launch-time
+# fallbacks: an absent key and an explicitly spelled default are the same
+# configuration (and the same digest once the digest lands).
 CONFIG_DEFAULTS=(
     "DEV_IMAGE="
     "DEV_CONTAINERFILE="
     "DEV_BUILD_CONTEXT="
     "DEV_TARGET_STAGE="
+    "MEMORY_LIMIT=4g"
+    "CPU_LIMIT=2"
+    "PIDS_LIMIT=256"
     "EGRESS_ALLOW="
     "READONLY_PATHS="
 )
@@ -121,25 +130,33 @@ is_frontend_scalar_key() {
     [[ -v FRONTEND_SCALAR_KEY_SET[$key] ]]
 }
 
+set_config_array() {
+    local key
+
+    key="$1"
+    shift
+
+    case "$key" in
+        EGRESS_ALLOW) EGRESS_ALLOW=("$@") ;;
+        READONLY_PATHS) READONLY_PATHS=("$@") ;;
+    esac
+}
+
+# Scalar assignment is indirect on the declared key name. This is safe
+# because keys come only from the declaration arrays above, which
+# validate_public_api_declaration restricts to the uppercase identifier
+# grammar — never from user input.
 apply_config_defaults() {
     local entry key value
 
     for entry in "${CONFIG_DEFAULTS[@]}" "${FRONTEND_DEFAULTS[@]}"; do
         key="${entry%%=*}"
         value="${entry#*=}"
-        case "$key" in
-            DEV_IMAGE) DEV_IMAGE="$value" ;;
-            DEV_CONTAINERFILE) DEV_CONTAINERFILE="$value" ;;
-            DEV_BUILD_CONTEXT) DEV_BUILD_CONTEXT="$value" ;;
-            DEV_TARGET_STAGE) DEV_TARGET_STAGE="$value" ;;
-            EDITOR) EDITOR="$value" ;;
-            EGRESS_ALLOW)
-                EGRESS_ALLOW=()
-                ;;
-            READONLY_PATHS)
-                READONLY_PATHS=()
-                ;;
-        esac
+        if is_config_array_key "$key"; then
+            set_config_array "$key"
+        else
+            printf -v "$key" '%s' "$value"
+        fi
     done
 }
 

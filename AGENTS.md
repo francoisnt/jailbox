@@ -163,6 +163,9 @@ host-side edit.
   replaced by the plan, include explicit migration or removal steps and name
   the affected symbols and files. A final plan must describe all work required
   to move the repository from its current state to the planned state.
+- When you finish implementing a plan, move it into `plans/archive/` (with
+  `git mv`) as part of the same work, without waiting to be asked. Archiving
+  does not authorize a commit.
 - Whenever the user gives a new standing instruction about how agents should
   work in this repository, update this `AGENTS.md` in the same change so later
   sessions inherit it.
