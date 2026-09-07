@@ -12,6 +12,11 @@ Requires `01-protected-path-policy-plan.md`,
 `03.2.02-configuration-digest-plan.md`, and
 `03.2.06-constrained-up-plan.md`.
 
+External surfaces here — configuration keys and their validation outcomes,
+path policy semantics, and security invariants — are normative. Internal
+prescriptions are guidance the implementer is expected to improve on; see
+`AGENTS.md`.
+
 ## Policy
 
 Declare `WRITABLE_PATHS` as a canonical indexed array through the automatic

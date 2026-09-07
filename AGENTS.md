@@ -153,15 +153,40 @@ host-side edit.
 - Write plans as final, settled implementation documents. If the user's intent
   is unclear, ask before writing the plan; do not put unresolved approval
   questions, speculative alternatives, or requests for decisions into it.
-- Center plans on observable behavior, security invariants, public interfaces,
-  migration, ordering constraints, acceptance criteria, and non-goals. Leave
-  helper names, internal state choreography, exact shell techniques, and test
-  fixture construction to the implementer unless one of those details is
-  necessary to preserve correctness, portability, or a security boundary.
-- Treat any implementation notes retained in a plan as non-binding guidance.
-  An implementer may choose a simpler internal design when it satisfies the
-  complete contract and acceptance criteria and respects this file's module
-  ownership rules.
+- Give every plan an `## Intent` section stating precisely what must become
+  true and why, then keep the rest to broad implementation guidelines. Intent,
+  observable behavior, external contracts, security invariants, ordering
+  constraints, acceptance criteria, and non-goals are the plan's job; how to
+  build the thing is the implementer's. Precision belongs in what the plan
+  requires, not in how the requirement is met.
+- Specify an internal detail only where it is load-bearing: an exact byte
+  format or record schema another implementation must reproduce, a value
+  grammar or validation rule carrying a security boundary, or an ordering
+  constraint that prevents a broken intermediate state. Everything else —
+  helper and variable names, module structure, state choreography, shell
+  technique, test fixture construction — belongs to the implementer. When in
+  doubt, state the property the implementer must achieve and let them choose
+  the mechanism.
+- Name existing symbols and files only where the plan removes or migrates
+  them, since that is knowledge about the current repository an implementer
+  cannot derive from intent; verify each such name against the tree as you
+  write it. Naming symbols the plan creates is not required and tends to go
+  stale; where a plan carries such detail anyway, it is guidance under the
+  rule below.
+- Treat implementation detail in a plan as guidance, never as a specification
+  to transcribe. Where a plan names functions, modules, techniques, or an
+  ordered procedure, that records one design someone thought through, not the
+  only acceptable one. The implementer carries an affirmative duty to build
+  the best design they can see: adopt the plan's suggestion where it really is
+  the best available option, and improve on it where it is not, provided the
+  result satisfies the complete contract, the acceptance criteria, and this
+  file's module ownership rules. Improving on the plan needs no amendment;
+  changing an external surface does.
+- Check a plan's detail against the tree before following it. Plans are
+  written ahead of the code and their internal prescriptions go stale as the
+  repository moves. Where detail has gone stale, or is simply worse than what
+  you can see from inside the work, follow the intent and report the
+  divergence in your handoff rather than reproducing the plan literally.
 - When revising a plan removes or replaces earlier behavior, rewrite the
   affected passages as though the superseded material had never been present.
   Do not retain history about the discarded direction or statements that the
@@ -170,7 +195,9 @@ host-side edit.
   the current code, public API, tests, or documentation still contains behavior
   replaced by the plan, include explicit migration or removal steps and name
   the affected symbols and files. A final plan must describe all work required
-  to move the repository from its current state to the planned state.
+  to move the repository from its current state to the planned state. That
+  completeness is about outcomes and removals, not about enumerating the
+  construction steps the implementer will choose.
 - When you finish implementing a plan, move it into `plans/archive/` (with
   `git mv`) as part of the same work, without waiting to be asked. Archiving
   does not authorize a commit.

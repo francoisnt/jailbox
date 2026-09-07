@@ -13,6 +13,11 @@ Requires `07-writable-paths-plan.md`,
 `03.2.06-constrained-up-plan.md`, and
 `01-protected-path-policy-plan.md` for path classification.
 
+External surfaces here — configuration keys and their validation outcomes,
+path policy semantics, and security invariants — are normative. Internal
+prescriptions are guidance the implementer is expected to improve on; see
+`AGENTS.md`.
+
 ## Policy
 
 Declare `HIDDEN_PATHS` as a canonical indexed array with automatic schema,
