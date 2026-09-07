@@ -153,12 +153,16 @@ host-side edit.
 - Write plans as final, settled implementation documents. If the user's intent
   is unclear, ask before writing the plan; do not put unresolved approval
   questions, speculative alternatives, or requests for decisions into it.
-- Give every plan an `## Intent` section stating precisely what must become
-  true and why, then keep the rest to broad implementation guidelines. Intent,
+- Organize every plan in two parts, a broad intent part and an implementation
+  detail part, and place every other section under whichever of the two it
+  belongs to, so an implementer can tell at a glance what binds them. The
+  intent part states precisely what must become true and why, and carries
   observable behavior, external contracts, security invariants, ordering
-  constraints, acceptance criteria, and non-goals are the plan's job; how to
-  build the thing is the implementer's. Precision belongs in what the plan
-  requires, not in how the requirement is met.
+  constraints, acceptance criteria, and non-goals; that is the plan's job and
+  the implementer must respect it. The detail part carries how to build the
+  thing, which is the implementer's, and is guidance under the rule below, so
+  the implementer keeps room to choose mechanisms. Precision belongs in what
+  the plan requires, not in how the requirement is met.
 - Specify an internal detail only where it is load-bearing: an exact byte
   format or record schema another implementation must reproduce, a value
   grammar or validation rule carrying a security boundary, or an ordering
