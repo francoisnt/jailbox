@@ -162,7 +162,9 @@ host-side edit.
   the implementer must respect it. The detail part carries how to build the
   thing, which is the implementer's, and is guidance under the rule below, so
   the implementer keeps room to choose mechanisms. Precision belongs in what
-  the plan requires, not in how the requirement is met.
+  the plan requires, not in how the requirement is met. This shapes plans you
+  write or substantially revise; do not restructure an existing flat plan for
+  its own sake.
 - Specify an internal detail only where it is load-bearing: an exact byte
   format or record schema another implementation must reproduce, a value
   grammar or validation rule carrying a security boundary, or an ordering
