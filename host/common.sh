@@ -207,6 +207,29 @@ check_readonly_path() {
     esac
 }
 
+# ASCII control characters are never valid in a configuration value or in a
+# path jailbox encodes into a TAB- or newline-delimited record. NUL cannot
+# appear in a Bash string, so this predicate covers every byte the framing
+# cannot represent unambiguously.
+contains_control_character() {
+    local value LC_ALL=C
+
+    value="$1"
+    [[ "$value" =~ [$'\x01'-$'\x1f'$'\x7f'] ]]
+}
+
+# Refuse a path before it reaches delimiter-based classification or digest
+# serialization. The offending value is deliberately not echoed back: it is
+# exactly the string whose control characters would corrupt that output.
+reject_control_characters() {
+    local description
+
+    description="$1"
+    if contains_control_character "$2"; then
+        die "$description path contains an ASCII control character"
+    fi
+}
+
 check_path_no_symlinks() {
     local path current component
     local -a components
@@ -234,11 +257,13 @@ classify_trusted_file() {
 
     path="$1"
     description="$2"
+    reject_control_characters "$description" "$path"
     check_path_no_symlinks "$path" || die "$description path contains a symlink: $path"
     [ -e "$path" ] || die "$description path does not exist: $path"
     [ -f "$path" ] || die "$description path is not a regular file: $path"
     [ -r "$path" ] || die "$description path is not readable: $path"
     canonical=$(realpath -- "$path") || die "cannot canonicalize $description path: $path"
+    reject_control_characters "canonical $description" "$canonical"
     relative=""
     relative=$(canonical_project_relative_path "$canonical" 2>/dev/null || true)
     printf '%s\t%s\n' "$canonical" "$relative"
@@ -249,11 +274,13 @@ classify_trusted_directory() {
 
     path="$1"
     description="$2"
+    reject_control_characters "$description" "$path"
     check_path_no_symlinks "$path" || die "$description path contains a symlink: $path"
     [ -e "$path" ] || die "$description path does not exist: $path"
     [ -d "$path" ] || die "$description path is not a directory: $path"
     [ -r "$path" ] && [ -x "$path" ] || die "$description path is not accessible: $path"
     canonical=$(realpath -- "$path") || die "cannot canonicalize $description path: $path"
+    reject_control_characters "canonical $description" "$canonical"
     printf '%s\n' "$canonical"
 }
 
@@ -336,7 +363,7 @@ validate_environment_value() {
     value="$2"
     # Legal values are ordinary bytes including commas and spaces;
     # newline-bearing values are deliberately not representable.
-    if [[ "$value" =~ [$'\x01'-$'\x1f'$'\x7f'] ]]; then
+    if contains_control_character "$value"; then
         die "configuration value in '$name' contains an ASCII control character"
     fi
 }

@@ -148,10 +148,16 @@ new test scripts cannot silently escape ShellCheck.
   generated public API diff and documentation when changing config keys or CLI
   flags.
 
-When `.github/workflows` or another protected path is mounted read-only, do not
-bypass that protection. Prepare replacement files in a writable location and
-tell the user exactly where they must be moved, or ask the user to make the
-host-side edit.
+When `.github/workflows`, the `jailbox` entrypoint, or another protected path
+is mounted read-only, do not bypass that protection. Write the replacement
+beside the original in the repository as `<original-name>.new`, matching the
+original's mode, and tell the user to rename it over the original; the user
+performs that rename, never an agent. Do not leave the replacement in a
+temporary directory outside the tree, and never stage or commit a `.new` file.
+Verify the replacement before handing it over — at minimum a syntax check, and
+the affected gates against a copied tree that already carries the change — and
+state in the handoff that the rename is still outstanding and what breaks until
+it happens.
 
 ## Plan authoring
 

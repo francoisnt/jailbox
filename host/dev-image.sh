@@ -42,17 +42,7 @@ build_or_select_dev_image() {
         return 0
     fi
 
-    local discovery_status
-    if discover_dev_containerfile; then
-        :
-    else
-        discovery_status=$?
-        if [ "$discovery_status" -eq 2 ]; then
-            die "configured Containerfile does not exist: $DEV_CONTAINERFILE"
-        fi
-        [ "$discovery_status" -eq 1 ] || return "$discovery_status"
-        die "no Containerfile found. Set DEV_IMAGE or DEV_CONTAINERFILE in jailbox.conf, or add a Containerfile to the project root."
-    fi
+    select_dev_containerfile_for_launch || return $?
 
     local build_context_input display_path context_status
     if [ -n "$DEV_BUILD_CONTEXT" ]; then
@@ -73,6 +63,22 @@ build_or_select_dev_image() {
     display_path=$(realpath --relative-to="$PROJECT_DIR" "$SELECTED_DEV_CONTAINERFILE" 2>/dev/null || printf '%s' "$SELECTED_DEV_CONTAINERFILE")
     echo "🏗️  Building dev image from $display_path..."
     "${BUILD_CMD[@]}"
+}
+
+# Run the trusted selector for a launch, turning a vanished or unusable
+# selection into launch's specific missing-input diagnostic. The digest shares
+# this entry point so both reach the same Containerfile by the same order.
+select_dev_containerfile_for_launch() {
+    local status
+
+    status=0
+    discover_dev_containerfile || status=$?
+    case "$status" in
+        0) return 0 ;;
+        1) die "no Containerfile found. Set DEV_IMAGE or DEV_CONTAINERFILE in jailbox.conf, or add a Containerfile to the project root." ;;
+        2) die "configured Containerfile does not exist: $DEV_CONTAINERFILE" ;;
+        *) return "$status" ;;
+    esac
 }
 
 discover_dev_containerfile() {

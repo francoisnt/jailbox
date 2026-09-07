@@ -44,6 +44,7 @@ REQUIRED_PATHS=(
     "host/preflight.sh"
     "host/project-id.sh"
     "host/public-api.sh"
+    "host/config-digest.sh"
     "host/container-runtime.sh"
     "host/ssh.sh"
     "host/validation.sh"

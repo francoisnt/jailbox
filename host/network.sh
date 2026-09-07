@@ -30,12 +30,16 @@ initialize_network_state() {
 
 configure_network() {
     initialize_network_state
+    # Networks survive stop and carry the digest, so no network is created
+    # before the current configuration has one.
+    assert_config_digest_ready
 
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         configure_proxy_network
     else
         podman network exists "$NETWORK_NAME" 2>/dev/null || \
-            podman network create --label "jailbox.project=$PROJECT_DIR" "$NETWORK_NAME"
+            podman network create --label "jailbox.project=$PROJECT_DIR" \
+                "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$NETWORK_NAME"
         NETWORK_STATE[selected_network]="$NETWORK_NAME"
         NETWORK_SSH_SESSION_ENV=()
         NETWORK_STATE[proxy_url]=""
@@ -70,7 +74,8 @@ configure_proxy_network() {
 
     ensure_internal_network "$internal_net"
     podman network exists "$external_net" 2>/dev/null || \
-        podman network create --label "jailbox.project=$PROJECT_DIR" "$external_net"
+        podman network create --label "jailbox.project=$PROJECT_DIR" \
+            "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$external_net"
 
     # Derive the proxy address from the network's actual subnet rather than
     # recomputing the hash candidate: an existing network may have been
@@ -93,6 +98,7 @@ configure_proxy_network() {
     podman run -d \
         --name "$PROXY_NAME" \
         --label "jailbox.project=$PROJECT_DIR" \
+        "${CONFIG_DIGEST_LABEL_ARGS[@]}" \
         --network "$external_net" \
         --network "$internal_net:ip=$proxy_internal_ip" \
         --user tinyproxy \
@@ -237,7 +243,8 @@ ensure_internal_network() {
     for ((attempt = 0; attempt < 20; attempt++)); do
         candidate=$(proxy_internal_subnet "$attempt")
         if podman network create --internal --disable-dns --subnet "$candidate" \
-            --label "jailbox.project=$PROJECT_DIR" "$internal_net" >/dev/null 2>&1; then
+            --label "jailbox.project=$PROJECT_DIR" \
+            "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$internal_net" >/dev/null 2>&1; then
             return 0
         fi
     done

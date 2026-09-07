@@ -24,22 +24,35 @@ jailbox_resource_exists() {
     esac
 }
 
-jailbox_resource_owner() {
-    case "$1" in
+# Read one label from a resource. An unreadable resource, a resource carrying
+# no labels, and an absent label all report the empty value, so every caller
+# decides in the fail-closed direction. Label names come from jailbox's own
+# declarations, never from user input.
+jailbox_resource_label() {
+    local kind name label
+
+    kind="$1"
+    name="$2"
+    label="$3"
+    case "$kind" in
         container)
-            podman container inspect "$2" \
-                --format '{{ index .Config.Labels "jailbox.project" }}' 2>/dev/null || true
+            podman container inspect "$name" \
+                --format '{{ index .Config.Labels "'"$label"'" }}' 2>/dev/null || true
             ;;
         volume)
-            podman volume inspect "$2" \
-                --format '{{ index .Labels "jailbox.project" }}' 2>/dev/null || true
+            podman volume inspect "$name" \
+                --format '{{ index .Labels "'"$label"'" }}' 2>/dev/null || true
             ;;
         network)
-            podman network inspect "$2" \
-                --format '{{ index .Labels "jailbox.project" }}' 2>/dev/null || true
+            podman network inspect "$name" \
+                --format '{{ index .Labels "'"$label"'" }}' 2>/dev/null || true
             ;;
-        *) die "internal error: unknown jailbox resource type '$1'" ;;
+        *) die "internal error: unknown jailbox resource type '$kind'" ;;
     esac
+}
+
+jailbox_resource_owner() {
+    jailbox_resource_label "$1" "$2" jailbox.project
 }
 
 # absent | owned | foreign for one "TYPE:NAME" resource target.
@@ -231,6 +244,7 @@ generate_minimal_gitconfig() {
 }
 
 assert_container_launch_state() {
+    assert_config_digest_ready
     [ -n "$JAILBOX_IMAGE" ] || die "internal error: container launch requires initialized image state"
     [ -n "${NETWORK_STATE[selected_network]}" ] || die "internal error: container launch requires initialized network state"
     [ "${ROOTFS_FLAG[*]-}" = "--read-only" ] || \
@@ -299,6 +313,7 @@ start_jailbox_container() {
     podman run -d \
         --name "$CONTAINER_NAME" \
         --label "jailbox.project=$PROJECT_DIR" \
+        "${CONFIG_DIGEST_LABEL_ARGS[@]}" \
         --userns=keep-id \
         --network "${NETWORK_STATE[selected_network]}" \
         "${ROOTFS_FLAG[@]}" \

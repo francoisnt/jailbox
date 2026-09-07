@@ -12,6 +12,8 @@ source "$JAILBOX_DIR/host/common.sh"
 source "$JAILBOX_DIR/host/ssh.sh"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/container-runtime.sh"
+# shellcheck disable=SC1091
+source "$JAILBOX_DIR/host/config-digest.sh"
 
 PASSED=0
 FAILED=0
@@ -54,6 +56,9 @@ assert_no_gitconfig_mount() {
     esac
 }
 
+# A well-formed digest value; the digest's own suite covers how it is computed.
+TEST_CONFIG_DIGEST=$(printf 'runtime-mounts' | sha256sum | cut -d' ' -f1)
+
 assert_launch_state_rejects() {
     local name="$1" expected="$2" output
 
@@ -81,6 +86,8 @@ with_valid_launch_state() {
     VOLUME_NAME="jailbox-test-home"
     PROJECT_DIR="$state_dir/project"
     REMOTE_PATH="/home/jailbox/project"
+    CONFIG_DIGEST="$TEST_CONFIG_DIGEST"
+    CONFIG_DIGEST_LABEL_ARGS=(--label "$CONFIG_DIGEST_LABEL=$TEST_CONFIG_DIGEST")
     mkdir -p "$SSHD_RUNTIME_DIR" "$PROJECT_DIR"
     : > "$KEY_FILE.pub"
 }
@@ -117,6 +124,14 @@ test_container_launch_preconditions() {
     with_valid_launch_state
     LOCAL_PORT="invalid"
     assert_launch_state_rejects "invalid SSH port rejected" "valid SSH port"
+    with_valid_launch_state
+    initialize_config_digest_state
+    assert_launch_state_rejects "missing configuration digest rejected" \
+        "computed configuration digest"
+    with_valid_launch_state
+    CONFIG_DIGEST="not-a-digest"
+    assert_launch_state_rejects "malformed configuration digest rejected" \
+        "computed configuration digest"
 }
 
 assert_argv_line() {
@@ -158,6 +173,8 @@ test_resource_limit_flags() {
     assert_argv_line "default memory flag byte-identical" "$argv_file" "--memory=4g"
     assert_argv_line "default cpu flag byte-identical" "$argv_file" "--cpus=2"
     assert_argv_line "default pids flag byte-identical" "$argv_file" "--pids-limit=256"
+    assert_argv_line "container carries the configuration digest label" "$argv_file" \
+        "$CONFIG_DIGEST_LABEL=$TEST_CONFIG_DIGEST"
 
     MEMORY_LIMIT="1.5g"
     CPU_LIMIT="0.5"

@@ -189,6 +189,44 @@ installed version).
 This command requires Bash 4.4 or newer; without it, run the installed
 `install.sh --uninstall` directly.
 
+### Configuration and version compatibility
+
+Every project resource that outlives a single launch — both containers and all
+three project networks — carries a `jailbox.config-digest` label: a SHA-256
+digest of the exact jailbox version, the effective machine configuration
+values, and the identity of the selected Containerfile. A launch recomputes
+that digest and refuses before creating or reusing anything when a surviving
+resource carries a missing, malformed, or different one. Networks survive
+`jailbox stop`, so an incompatible one is cleared by `jailbox --clean`, which
+also removes this project's persistent home volume. Containers never reach
+this comparison at launch: both must already be absent before a launch mutates
+anything, and `jailbox stop` removes them. Resources created by a jailbox
+release from before the digest carry no label at all, so they are incompatible
+too; the refusal names each one and the command that clears it.
+
+The persistent home volume is deliberately exempt. It has no immutable
+security-relevant creation settings — its containment comes from the mount and
+runtime policy applied at every launch — so home content survives
+configuration and version changes.
+
+**The digest covers references, not content.** A mutable or re-pulled
+`DEV_IMAGE` tag, edited Containerfile bytes, and changed build-context
+contents never change it; the configured values and the Containerfile's path
+do. `jailbox.conf` formatting — quoting, spacing, comments, an explicitly
+spelled default — does not change it either, because the digest is taken over
+effective values. A path is not formatting: it reaches the digest when it is
+listed in `READONLY_PATHS`, so the same content mounted from a different
+project path is a different sandbox. Reordering `EGRESS_ALLOW` is stable,
+because that allowlist is a set; reordering `READONLY_PATHS` is not, because
+mount order can matter.
+
+**Version binding is deliberately conservative.** It stops a new release from
+resuming containers whose immutable Podman settings were created under older
+hardening rules, so a stamped release and a development build never share a
+digest, and neither do two different stamped releases. Every unstamped build
+reports the same `dev` token — including an install made from a source
+checkout — so distinct source revisions are not distinguished by the digest.
+
 ---
 
 ## Configuration

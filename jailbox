@@ -72,6 +72,8 @@ source "$SCRIPT_DIR/host/editor.sh"
 source "$SCRIPT_DIR/host/container-runtime.sh"
 # shellcheck source=host/validation.sh
 source "$SCRIPT_DIR/host/validation.sh"
+# shellcheck source=host/config-digest.sh
+source "$SCRIPT_DIR/host/config-digest.sh"
 
 bring_up_sandbox() {
     local pre_build_hook="${1:-}"
@@ -79,6 +81,11 @@ bring_up_sandbox() {
     initialize_runtime_ids
     validate_configured_readonly_paths
     check_local_port_available
+    # The digest is the compatibility gate for every policy-bearing resource
+    # that outlives a single launch, so it is computed — and every surviving
+    # resource checked against it — before anything is built or created.
+    compute_config_digest launch
+    require_compatible_project_resources
     build_or_select_dev_image
     validate_dev_image
     if [ -n "$pre_build_hook" ]; then
@@ -148,6 +155,7 @@ run_uninstall() {
 }
 
 initialize_launch_state() {
+    initialize_config_digest_state
     initialize_dev_image_state
     initialize_ssh_state
     initialize_editor_state
