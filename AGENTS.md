@@ -193,6 +193,10 @@ host-side edit.
   repository moves. Where detail has gone stale, or is simply worse than what
   you can see from inside the work, follow the intent and report the
   divergence in your handoff rather than reproducing the plan literally.
+- Before implementing a plan that belongs to a numbered series, read that
+  series' umbrella plan first — the one whose number the members extend. It
+  carries the ordering, layer ownership, and external-surface decisions that
+  bind every member, and the members do not repeat them.
 - When revising a plan removes or replaces earlier behavior, rewrite the
   affected passages as though the superseded material had never been present.
   Do not retain history about the discarded direction or statements that the
