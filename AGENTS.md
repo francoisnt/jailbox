@@ -112,6 +112,11 @@ tests/run runtime
 tests/run editor
 ```
 
+`tests/run` with no argument runs those same three gates in order and stops at
+the first failing suite. It validates every selected gate's prerequisites
+before the first suite, so an environment missing Podman, an editor, or a
+display fails immediately instead of after the portable gate.
+
 - `portable`: ShellCheck, generated-file checks, every `tests/unit/*.sh` suite,
   syntax checks, release packaging, and the install/update/uninstall lifecycle.
 - `runtime`: wrapper-image/container security assertions and the headless CLI

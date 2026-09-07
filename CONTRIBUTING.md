@@ -33,14 +33,18 @@ Bash 3.2-parseable through its version guard, and `install.sh` remains Bash
 3.2-compatible.
 
 ```bash
+tests/run            # Every gate in order
 tests/run portable   # ShellCheck, unit tests, packaging, and installer lifecycle
 tests/run runtime    # Container security and headless CLI behavior (Podman)
 tests/run editor     # Real Remote SSH editor behavior (Podman + GUI/xvfb)
 ```
 
-The three commands are independent, self-contained quality gates. Pull requests
-must pass the portable and runtime gates; releases also require the editor gate.
-Run `tests/run portable` before sending a change, plus `tests/run runtime` when
+The three gates are independent, self-contained quality gates. Naming no gate
+runs all three in order and stops at the first failing suite; it checks every
+gate's prerequisites before the first suite, so a missing Podman or editor
+fails immediately rather than after the portable gate. Pull requests must pass
+the portable and runtime gates; releases also require the editor gate. Run
+`tests/run portable` before sending a change, plus `tests/run runtime` when
 Podman is available.
 
 ## Releases

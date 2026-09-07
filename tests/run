@@ -1,28 +1,31 @@
 #!/bin/bash
-# Run one of jailbox's three test gates.
+# Run jailbox's test gates.
 #
-# Usage: tests/run <portable|runtime|editor>
+# Usage: tests/run [portable|runtime|editor]
 #
 #   portable  ShellCheck, unit tests, and distribution/install lifecycle
 #   runtime   Container security contract and headless CLI system tests
 #   editor    Real VS Code/VSCodium Remote SSH and task execution
+#
+# Naming no gate runs all three in order. Prerequisites for every selected gate
+# are checked before any suite runs, so a missing dependency fails immediately
+# instead of after a long gate.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 
+ALL_GATES=(portable runtime editor)
+
 SUITES_PASSED=0
 SUITES_FAILED=0
+SELECTED_EDITOR=""
 
 die() { echo "Error: $*" >&2; exit 1; }
 
 have_display() {
     [[ "$(uname -s)" == "Darwin" ]] && return 0
     [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
-}
-
-have_editor() {
-    command -v codium >/dev/null 2>&1 || command -v code >/dev/null 2>&1
 }
 
 selected_editor() {
@@ -88,9 +91,80 @@ print_summary() {
     printf '\n'
 }
 
+gate_selected() {
+    local gate
+
+    for gate in "${GATES[@]}"; do
+        if [[ "$gate" == "$1" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Refuse a run that cannot finish before spending time on its first gate. The
+# editor gate's display requirement is met by re-executing the whole run under
+# xvfb-run, so an all-gates run stays one process with one report.
+require_gate_prerequisites() {
+    if gate_selected portable; then
+        command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the portable gate"
+    fi
+    if gate_selected runtime; then
+        command -v podman >/dev/null 2>&1 || die "podman is required for the runtime gate"
+    fi
+    if gate_selected editor; then
+        command -v podman >/dev/null 2>&1 || die "podman is required for the editor gate"
+        # Resolve the editor here rather than in the gate: an override naming an
+        # uninstalled editor must fail before the earlier gates run, and
+        # selected_editor also rejects an override that names neither editor.
+        SELECTED_EDITOR="$(selected_editor)"
+        if ! command -v "$SELECTED_EDITOR" >/dev/null 2>&1; then
+            [[ -z "${JAILBOX_EDITOR:-}" ]] || \
+                die "JAILBOX_EDITOR=$SELECTED_EDITOR selects an editor that is not installed"
+            die "VSCodium or VS Code CLI is required for the editor gate"
+        fi
+        # rerun_with_xvfb_if_needed either execs or reports that it cannot.
+        if ! have_display; then
+            rerun_with_xvfb_if_needed "$@" || \
+                die "a graphical display session or xvfb-run is required for the editor gate"
+        fi
+    fi
+}
+
+run_gate() {
+    local -a editor_stages
+
+    case "$1" in
+        portable)
+            run_suite "shellcheck" bash "$JAILBOX_DIR/scripts/lint.sh"
+            run_suite "generated-files" bash "$JAILBOX_DIR/scripts/gen-tested-matrix.sh" --check
+            run_unit_suites
+            run_suite "distribution" bash "$SCRIPT_DIR/portable/smoke.sh"
+            ;;
+        runtime)
+            run_suite "container-contract" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
+            run_suite "system/headless" bash "$SCRIPT_DIR/e2e/headless.sh"
+            ;;
+        editor)
+            # Runtime owns the editor-independent security contract. Prepare only
+            # the positive images this editor consumes on its isolated test host.
+            if [[ "$SELECTED_EDITOR" == codium ]]; then
+                editor_stages=(debian alpine fedora)
+            else
+                editor_stages=(debian fedora)
+            fi
+            run_suite "wrapper-image-preparation" \
+                bash "$SCRIPT_DIR/integration/wrapper-images.sh" --prepare-only "${editor_stages[@]}"
+            run_suite "system/editor" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
+            ;;
+    esac
+}
+
 usage() {
     cat <<EOF
-Usage: $(basename "$0") <portable|runtime|editor>
+Usage: $(basename "$0") [portable|runtime|editor]
+
+Runs every gate in order when no gate is named.
 
 Test gates:
   portable  ShellCheck, all unit tests, release tarball, and install lifecycle
@@ -99,49 +173,37 @@ Test gates:
 EOF
 }
 
-[[ "$#" -eq 1 ]] || { usage >&2; exit 2; }
-
-case "$1" in
-    portable|runtime|editor) GATE="$1" ;;
-    --help|-h) usage; exit 0 ;;
-    *) die "unknown test gate: $1 (expected portable, runtime, or editor)" ;;
+case "$#" in
+    0) GATES=("${ALL_GATES[@]}") ;;
+    1)
+        case "$1" in
+            portable|runtime|editor) GATES=("$1") ;;
+            --help|-h) usage; exit 0 ;;
+            *) die "unknown test gate: $1 (expected portable, runtime, or editor)" ;;
+        esac
+        ;;
+    *) usage >&2; exit 2 ;;
 esac
 
-echo "jailbox test gate: $GATE"
-echo "Working directory: $JAILBOX_DIR"
+require_gate_prerequisites "$@"
 
-case "$GATE" in
-    portable)
-        command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the portable gate"
-        run_suite "shellcheck" bash "$JAILBOX_DIR/scripts/lint.sh"
-        run_suite "generated-files" bash "$JAILBOX_DIR/scripts/gen-tested-matrix.sh" --check
-        run_unit_suites
-        run_suite "distribution" bash "$SCRIPT_DIR/portable/smoke.sh"
-        ;;
-    runtime)
-        command -v podman >/dev/null 2>&1 || die "podman is required for the runtime gate"
-        run_suite "container-contract" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
-        run_suite "system/headless" bash "$SCRIPT_DIR/e2e/headless.sh"
-        ;;
-    editor)
-        command -v podman >/dev/null 2>&1 || die "podman is required for the editor gate"
-        have_editor || die "VSCodium or VS Code CLI is required for the editor gate"
-        if ! have_display; then
-            rerun_with_xvfb_if_needed "$@"
-            die "a graphical display session or xvfb-run is required for the editor gate"
-        fi
-        # Runtime owns the editor-independent security contract. Prepare only
-        # the positive images this editor consumes on its isolated test host.
-        if [[ "$(selected_editor)" == codium ]]; then
-            editor_stages=(debian alpine fedora)
-        else
-            editor_stages=(debian fedora)
-        fi
-        run_suite "wrapper-image-preparation" \
-            bash "$SCRIPT_DIR/integration/wrapper-images.sh" --prepare-only "${editor_stages[@]}"
-        run_suite "system/editor" bash "$SCRIPT_DIR/e2e/editor-smoke.sh"
-        ;;
-esac
+FIRST_GATE=true
+for GATE in "${GATES[@]}"; do
+    if [[ "$FIRST_GATE" == true ]]; then
+        FIRST_GATE=false
+    else
+        echo ""
+    fi
+    SUITES_PASSED=0
+    SUITES_FAILED=0
+    echo "jailbox test gate: $GATE"
+    echo "Working directory: $JAILBOX_DIR"
+    run_gate "$GATE"
+    print_summary
+done
 
-print_summary
+if [[ "${#GATES[@]}" -gt 1 ]]; then
+    printf '\nAll gates passed: %s\n' "${GATES[*]}"
+fi
+
 [[ "$SUITES_FAILED" -eq 0 ]]
