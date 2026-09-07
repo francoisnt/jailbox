@@ -9,6 +9,12 @@ with OpenSSH and runs it as a hardened Podman container. Security behavior and
 the claims in the README are part of the product contract. Prefer small,
 auditable changes and preserve secure defaults.
 
+A first-party orchestrator consuming jailbox's machine interface is planned,
+not hypothetical. The machine-interface features in the 03.2 plan series
+(`config-schema`, `status`, `connection-info` with forward-compatible trailing
+fields, the version/bump policy and range pinning) exist for it; do not flag
+them as speculative productization or complexity without a consumer.
+
 ## Repository map
 
 - `jailbox`: host CLI entrypoint and command dispatch.
@@ -28,6 +34,8 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   particular, when reviewing staged changes and then applying requested fixes,
   leave those fixes unstaged so the user can inspect the new diff separately.
 - Do not create or amend a commit unless the user explicitly asks for a commit.
+- When the user asks for a commit, make it on `master` directly. Do not create
+  a branch first or offer branching as the default; the user works on `master`.
 - Do not infer permission to commit from a request to fix, implement, test, or
   finish a change.
 - Treat a request to commit as an instruction to commit the current state, not
@@ -174,6 +182,27 @@ host-side edit.
 - When one plan references another, use the bare filename (or plan number)
   without a `plans/` or `archive/` prefix: the number identifies the plan,
   and prefix-free references do not need rewriting when a plan is archived.
+- Plan filenames must sort in implementation order. When a plan's place in the
+  order changes, rename it so its number reflects the new order — dotted
+  insertion numbers (the 03.1.1 style) are the precedent — and update its
+  title heading and every cross-reference. Never leave the old number and
+  describe the ordering exception in prose instead.
+- Do not reintroduce terminology from retired directions into active
+  documents (for example "JailIDE" from the deferred repository split). Refer
+  to archived plans neutrally, by number and `plans/archive/` location; the
+  old names may remain inside the archive and the rationale documents that
+  describe that era.
+
+## User interaction
+
+- When proposing options or changes for approval, print a plain numbered list
+  in the reply and let the user answer by number. Do not use interactive
+  question menus or selection widgets. Keep each proposal self-contained
+  enough to approve or reject independently, and wait for the user's picks
+  before editing anything.
+- Standing instructions from the user belong in this file, not in any
+  tool-private memory or settings, so that every AI tool used on this
+  repository inherits them. Read this file at the start of each session.
 
 ## Handoff expectations
 

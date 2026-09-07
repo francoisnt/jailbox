@@ -4,22 +4,26 @@ Potential future improvements that are deliberately outside current
 implementation plans. These are ideas to reassess, not approved designs or
 commitments.
 
-> Note (September 2026): the JailIDE repository split is deferred; the editor
-> workflow is an in-repo frontend layer over the machine interface (plan
-> 03.2.11) and the generic `WRAPPER_SETUP` mechanism is archived with the
-> split. Entries below that name JailIDE, `jailide.toml`, or `WRAPPER_SETUP`
-> read against that frontend layer today and apply as written only if the
-> split is revived; see the addendum in `repository-split-rationale.md`.
+> Note (September 2026): the repository split is deferred; the editor workflow
+> is an in-repo frontend layer over the machine interface (plan 03.2.11) and
+> the generic `WRAPPER_SETUP` mechanism is archived with the split. Entries
+> elsewhere in this file are written against that frontend layer. Three
+> entries are exceptions that describe the split-era two-product design and
+> apply as written only if the split is revived — "Orchestrator-managed editor
+> launch", "Richer wrapper setup inputs", and "Shared runtime source"; they
+> keep the split-era names JailIDE and `WRAPPER_SETUP` deliberately. See the
+> addendum in `repository-split-rationale.md`.
 
 ## Lifecycle safety
 
 ### Named project instances
 
 Consider an explicit jailbox instance selector so one physical project can have
-multiple independently managed sandboxes, with JailIDE exposing instances as
-named profiles. Derive resource identity from the physical project identity and
-the validated instance name. Keep one project hash for the physical checkout;
-deterministic names, not removable ownership labels, establish identity.
+multiple independently managed sandboxes, with the editor frontend exposing
+instances as named profiles. Derive resource identity from the physical
+project identity and the validated instance name. Keep one project hash for
+the physical checkout; deterministic names, not removable ownership labels,
+establish identity.
 Include a normalized instance-name component in every Podman container,
 network, and volume name, as well as its SSH alias and runtime-state path. This
 lets multiple configurations share the same project hash while Podman's name
@@ -34,13 +38,13 @@ aliases, `connection-info`, status and cleanup behavior, validation and
 normalization of instance names, concurrent access to the same project
 checkout, and migration from existing unqualified resources. Use a neutral core
 concept such as an instance; the human-facing profile name remains owned by
-JailIDE.
+the frontend.
 
 ### Lifecycle locking
 
 Serialize lifecycle operations per project. Validation before mutation is a
-check-then-act sequence, and JailIDE runs `up` then `connection-info` as two
-processes, so concurrent work can invalidate either decision.
+check-then-act sequence, and the frontend runs `up` then `connection-info` as
+two processes, so concurrent work can invalidate either decision.
 
 ### Digest diagnostics in `doctor`
 
@@ -70,7 +74,7 @@ to the ordinary aggregate mismatch message.
 
 Publishing an input hash must be explicitly opted into after reviewing whether
 the value may be secret or easily guessed; future configuration keys must not be
-enrolled automatically. Any resulting diagnostic replaces plan 5's current
+enrolled automatically. Any resulting diagnostic replaces 03.2.09.1's current
 aggregate-only mismatch explanation and the `doctor` diagnostic above rather
 than adding another overlapping message. A later design should settle coverage,
 compatibility, metadata exposure, and honest reporting for inputs it cannot
@@ -80,8 +84,8 @@ compare.
 
 ### New-home bootstrap
 
-Consider a trusted setup artifact that an orchestrator or JailIDE can request
-through jailbox only when jailbox
+Consider a trusted setup artifact that an orchestrator or the editor frontend
+can request through jailbox only when jailbox
 creates a new empty sandbox home. This would make the opt-in
 `EPHEMERAL_HOME=true` mode convenient by reinstalling shell configuration,
 development tools, and other reproducible user state without preserving files
@@ -98,7 +102,7 @@ evaluation of configuration as shell syntax.
 
 ### Policy-aware project initialization
 
-Consider extending `jailide init` to seed `READONLY_PATHS` from existing
+Consider extending `jailbox init` to seed `READONLY_PATHS` from existing
 security-sensitive project paths, such as `.env`, Git policy files and hooks,
 Gitea or GitHub workflow directories, and an in-project jailbox source
 directory.
@@ -127,7 +131,7 @@ The current initialization plan deliberately creates the minimal
 
 Under the caller contract, extend core's Containerfile validation to
 `DEV_BUILD_CONTEXT`, and require callers to validate and protect policy inputs
-such as selected `jailide.toml`.
+such as a selected `jailbox.conf`.
 
 Project-reachable spellings with leaf or intermediate symlinks could be
 rejected so a writable sandbox cannot redirect a later host invocation outside
@@ -145,7 +149,7 @@ races if they cannot be eliminated.
 
 ## Runtime isolation
 
-### Orchestrator-managed JailIDE launch
+### Orchestrator-managed editor launch
 
 Support a host orchestrator that owns a jailbox lifecycle but wants JailIDE to
 launch a host editor against the resulting sandbox. The orchestrator must be
@@ -276,8 +280,8 @@ The investigation must cover:
 Do not make `krun`, Kata Containers, `crun-vm`, or another alternate runtime a
 prerequisite for the numbered implementation sequence. If an experimental
 runtime setting is later added, include it in the configuration digest and run
-jailbox's complete portable/runtime gates and JailIDE's complete
-unit/editor gates for each supported mode.
+jailbox's complete portable, runtime, and editor gates for each supported
+mode.
 
 ## Developer experience
 
