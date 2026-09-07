@@ -155,6 +155,16 @@ host-side edit.
 
 ## Plan authoring
 
+- The current machine-boundary series is one release unit: no release occurs
+  until all its plans are implemented and all three test gates pass. Work may
+  depend on later plans when dependencies and remaining integration are
+  explicitly tracked and accounted for, and all test gates continue to pass.
+  Do not require temporary compatibility behavior solely for unreleased
+  intermediate states; assess the completed series and its tracked dependencies.
+- Record every load-bearing dependency on a future plan at both ends. The
+  originating plan identifies the dependency; the receiving plan explicitly
+  assigns its implementer the required integration and verification, including
+  acceptance criteria. A forward reference alone does not transfer ownership.
 - Write plans as final, settled implementation documents. If the user's intent
   is unclear, ask before writing the plan; do not put unresolved approval
   questions, speculative alternatives, or requests for decisions into it.
