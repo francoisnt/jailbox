@@ -13,10 +13,22 @@ on:
         description: "Release v1.0.0 (only valid before any v1+ tag exists)"
         type: boolean
         default: false
+      bump:
+        description: "Minimum version bump (cannot lower automatic policy; do not combine with first_major)"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - patch
+          - minor
+          - major
   push:
     tags:
       - "release-request"
       - "release-request-first-major"
+      - "release-request-bump-patch"
+      - "release-request-bump-minor"
+      - "release-request-bump-major"
 
 permissions:
   contents: write
@@ -54,13 +66,12 @@ jobs:
       - name: Select release version
         id: select
         env:
-          FIRST_MAJOR: ${{ inputs.first_major == true || github.ref_name == 'release-request-first-major' }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          REQUEST_TAG: ${{ github.ref_name }}
+          FIRST_MAJOR: ${{ inputs.first_major }}
+          BUMP: ${{ inputs.bump }}
         run: |
-          args=(--print-version)
-          if [[ "$FIRST_MAJOR" == "true" ]]; then
-            args+=(--first-major)
-          fi
-          version="$(bash scripts/release.sh "${args[@]}")"
+          version="$(bash scripts/select-release-request.sh)"
           echo "Selected version: $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -74,6 +85,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Build and validate release tarball
+        env:
+          VERSION: ${{ needs.select-version.outputs.version }}
+        run: bash scripts/build-tarball.sh "$VERSION"
+
       - name: Create and push release tag
         env:
           VERSION: ${{ needs.select-version.outputs.version }}
@@ -82,9 +98,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$VERSION" -m "Release $VERSION" "$GITHUB_SHA"
           git push origin "$VERSION"
-
-      - name: Build release tarball
-        run: bash scripts/build-tarball.sh "${{ needs.select-version.outputs.version }}"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3

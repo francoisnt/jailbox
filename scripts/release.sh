@@ -7,6 +7,8 @@ YES=false
 DRY_RUN=false
 FIRST_MAJOR=false
 PRINT_VERSION=false
+REQUESTED_BUMP=""
+AUTOMATIC_BUMP=""
 
 usage() {
     cat <<EOF_USAGE
@@ -20,6 +22,7 @@ validation succeeds — a failed gate leaves no stale tag.
 Options:
   --yes              Accept defaults without prompting
   --first-major      Release v1.0.0
+  --bump LEVEL       Minimum bump: patch, minor, or major (never lowers policy)
   --dry-run          Print the selected version without dispatching
   --print-version    Print only the selected version (used by the workflow)
   --help             Show this help
@@ -46,6 +49,12 @@ parse_args() {
             --yes) YES=true ;;
             --dry-run) DRY_RUN=true ;;
             --first-major) FIRST_MAJOR=true ;;
+            --bump)
+                [ -z "$REQUESTED_BUMP" ] || die '--bump may only be supplied once'
+                validate_bump "${2:-}"
+                REQUESTED_BUMP=$2
+                shift
+                ;;
             --print-version) PRINT_VERSION=true ;;
             --help|-h)
                 usage
@@ -58,11 +67,19 @@ parse_args() {
         esac
         shift
     done
+    [[ "$FIRST_MAJOR" != true || -z "$REQUESTED_BUMP" ]] || die '--first-major and --bump cannot be combined'
+}
+
+validate_bump() {
+    case "$1" in
+        patch|minor|major) ;;
+        *) die 'bump must be patch, minor, or major' ;;
+    esac
 }
 
 # Ensure tags we create and consume use vMAJOR.MINOR.PATCH.
 validate_version() {
-    [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid version '$1' (expected vMAJOR.MINOR.PATCH)"
+    [[ "$1" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || die "invalid version '$1' (expected vMAJOR.MINOR.PATCH without leading zeros)"
 }
 
 # Strip the leading "v" from a SemVer tag.
@@ -190,32 +207,33 @@ select_release_version() {
 
     latest="$(latest_tag)"
     [ -n "$latest" ] || latest="v0.0.0"
+    validate_version "$latest"
 
-    if [ "$latest" = "v0.0.0" ] && [ "$FIRST_MAJOR" != true ]; then
-        SELECTED_VERSION="v0.1.0"
-        BUMP_REASON="Initial public release"
+    if [ "$latest" = "v0.0.0" ]; then
+        api_change=initial
     else
         api_change="$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$latest")"
-        select_version "$latest" "$api_change"
     fi
+    select_version "$latest" "$api_change"
 }
 
 # Map public API diff status to the release bump policy.
 suggest_bump() {
     local latest="$1" api_change="$2"
 
-    if [ "$FIRST_MAJOR" = true ]; then
-        SUGGESTED_BUMP="major"
-        BUMP_REASON="First stable major release requested"
+    if [ "$api_change" = initial ]; then
+        SUGGESTED_BUMP="minor"
+        BUMP_REASON="Initial public release"
     elif [ "$(version_major "$latest")" -ge 1 ] && [ "$api_change" = removed ]; then
         SUGGESTED_BUMP="major"
         BUMP_REASON="Public API items were removed"
-    elif [ "$api_change" = added ] || [ "$api_change" = removed ]; then
+    elif [ "$api_change" = removed ] || \
+        { [ "$(version_major "$latest")" -ge 1 ] && [ "$api_change" = added ]; }; then
         SUGGESTED_BUMP="minor"
         BUMP_REASON="Public API items changed"
     else
         SUGGESTED_BUMP="patch"
-        BUMP_REASON="No public API items changed"
+        BUMP_REASON="No breaking public API changes"
     fi
 }
 
@@ -225,11 +243,19 @@ select_version() {
 
     latest_major="$(version_major "$latest")"
     suggest_bump "$latest" "$api_change"
+    AUTOMATIC_BUMP=$SUGGESTED_BUMP
+    case "$REQUESTED_BUMP:$SUGGESTED_BUMP" in
+        major:patch|major:minor|minor:patch)
+            SUGGESTED_BUMP=$REQUESTED_BUMP
+            BUMP_REASON="Manual minimum bump: $REQUESTED_BUMP"
+            ;;
+    esac
 
     if [ "$FIRST_MAJOR" = true ]; then
         [ "$latest_major" -lt 1 ] || die "--first-major is only valid before v1.0.0"
         ! has_v1_or_later_tag || die "--first-major has already been used; a v1+ tag exists"
         SELECTED_VERSION="v1.0.0"
+        BUMP_REASON="First stable major release requested"
     else
         SELECTED_VERSION="$(bump_version "$latest" "$SUGGESTED_BUMP")"
     fi
@@ -237,6 +263,28 @@ select_version() {
     validate_version "$SELECTED_VERSION"
     ! git -C "$ROOT_DIR" rev-parse "$SELECTED_VERSION" >/dev/null 2>&1 || \
         die "tag already exists: $SELECTED_VERSION"
+}
+
+# Human review can raise the policy result before the final yes/no prompt.
+choose_bump() {
+    local answer
+    [[ "$YES" == false && "$FIRST_MAJOR" == false ]] || return 0
+    printf 'Automatic bump: %s.\n' "$AUTOMATIC_BUMP"
+    if [[ -n "$REQUESTED_BUMP" ]]; then
+        printf 'Requested minimum bump: %s.\n' "$REQUESTED_BUMP"
+    fi
+    printf 'Selected version after applying the minimum: %s.\n' "$SELECTED_VERSION"
+    printf 'Press Enter to keep it, or request a higher bump (patch/minor/major): '
+    read -r answer || die 'could not read bump selection'
+    [[ -n "$answer" ]] || return 0
+    validate_bump "$answer"
+    # An interactive answer may raise, but cannot undo an explicit minimum.
+    case "$REQUESTED_BUMP:$answer" in
+        major:*|minor:patch) ;;
+        *) REQUESTED_BUMP=$answer ;;
+    esac
+    select_release_version
+    printf 'Selected version: %s\n' "$SELECTED_VERSION"
 }
 
 # Ask before dispatching the release workflow unless --yes was supplied.
@@ -264,6 +312,7 @@ dispatch_release() {
 
     request_tag="release-request"
     [ "$FIRST_MAJOR" = true ] && request_tag="release-request-first-major"
+    [ -z "$REQUESTED_BUMP" ] || request_tag="release-request-bump-$REQUESTED_BUMP"
     git -C "$ROOT_DIR" push --force origin "HEAD:refs/tags/$request_tag"
     echo "Pushed $request_tag; the release workflow will tag and publish after the gate passes."
     echo "Follow it in GitHub Actions (Release workflow)."
@@ -304,8 +353,11 @@ main() {
         return 0
     fi
 
+    choose_bump
     confirm_release
     dispatch_release
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

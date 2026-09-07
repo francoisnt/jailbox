@@ -511,6 +511,41 @@ Last verified: 2026-09-04
 
 ## Contributing
 
+### Versions and releases
+
+`jailbox --version` prints one line, such as `jailbox 0.8.0`, without reading
+project configuration, requiring Podman, or changing runtime state. Unstamped
+source checkouts and installations made from them print `jailbox dev`. Release
+packages carry a `VERSION` build artifact; install and update preserve it.
+A malformed stamp fails with a diagnostic on stderr and no stdout output.
+Do not add a `VERSION` file to source: packaging refuses an existing stamp.
+
+The release version is also the API/schema version. Before 1.0, interface
+additions receive patch bumps and removals or breaking changes require minor
+bumps. Consumers can pin a minor line, for example `>=0.8.0,<0.9.0`. After
+1.0, additions require minor bumps and breaking changes require major bumps;
+consumers can pin a major line. Automatic comparison detects configuration-key
+and CLI declaration names. Maintainers must review behavior, environment keys,
+machine schemas, and accepted configuration grammar too: tightening validation
+can break existing inputs without changing a declaration name.
+
+Run `bash scripts/release.sh` to see the automatic selection, optionally raise
+the bump, and confirm dispatch. Use `--bump minor` or `--bump major` to specify
+a minimum explicitly; `--bump patch` is also accepted. The higher of the
+automatic and requested bumps wins locally and in CI. `--yes` skips prompts;
+`--dry-run` and `--print-version` are non-interactive and honor `--bump`.
+The Actions Release workflow offers the same minimum-bump choice, defaulting
+to `auto`. A major bump before 1.0 produces `v1.0.0`; `--first-major` remains
+available only before 1.0 and cannot be combined with an explicit bump in
+either entry path. Overrides apply only to their release request.
+
+Release requests use ephemeral `release-request`, `release-request-first-major`,
+or `release-request-bump-{patch,minor,major}` tags. They never participate in
+version-tag discovery. CI runs all three release gates, then builds and
+validates the final archive's stamp and `--version` output against the selected
+version before creating the release tag. It publishes those same validated
+archive bytes, the identical `latest` alias, and their checksums.
+
 Development setup, repository layout, and test suites are documented in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -1,7 +1,7 @@
 # Public interface declarations.
 #
 # Changes here drive release version suggestions:
-# - Before v1.0.0, adding or removing a config key or CLI flag suggests a minor bump.
+# - Before v1.0.0, additions suggest patch and removals suggest minor.
 # - After v1.0.0, removing a config key or CLI flag suggests a major bump.
 # - After v1.0.0, adding a config key or CLI flag suggests a minor bump.
 # - Other changes suggest a patch bump.
@@ -56,6 +56,7 @@ CLI_FLAGS_WITH_VALUES=(
 )
 
 CLI_FLAGS_WITHOUT_VALUES=(
+    --version
     init
     up
     stop
@@ -67,6 +68,7 @@ CLI_FLAGS_WITHOUT_VALUES=(
 )
 
 CLI_HELP=(
+    "--version=Show the build version without reading configuration"
     "--config=Load configuration from PATH instead of project jailbox.conf"
     "init=Create the default project jailbox.conf"
     "up=Launch the sandbox without opening an editor"

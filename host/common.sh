@@ -2,6 +2,8 @@
 
 # shellcheck source=host/project-id.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
+# shellcheck source=host/version.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/version.sh"
 
 declare -A CONFIG_SEEN_KEYS=()
 
@@ -28,7 +30,7 @@ usage() {
     local flag
 
     cat <<EOF_USAGE
-Usage: $(basename "$0") [--config PATH] [init|up|stop|doctor|ssh-config|--clean|--uninstall|--help]
+Usage: $(basename "$0") [--config PATH] [init|up|stop|doctor|ssh-config|--clean|--uninstall|--version|--help]
 
 Launch this project inside a hardened jailbox container.
 

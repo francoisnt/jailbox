@@ -47,6 +47,7 @@ REQUIRED_PATHS=(
     "host/container-runtime.sh"
     "host/ssh.sh"
     "host/validation.sh"
+    "host/version.sh"
     "container/setup.sh"
     "container/downloader-proxy-manager.sh"
     "container/entrypoint.sh"
@@ -56,6 +57,7 @@ REQUIRED_PATHS=(
 )
 
 INSTALL_PATHS=(
+    "VERSION"
     "jailbox"
     "host"
     "container"

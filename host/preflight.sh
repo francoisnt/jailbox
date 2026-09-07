@@ -3,6 +3,7 @@
 EDITOR_BIN=""
 
 parse_args() {
+    local version
     if [ "${1:-}" = "--config" ] || [ "${2:-}" = "--config" ]; then
         echo "Error: --config must appear before the command" >&2
         usage >&2
@@ -20,6 +21,11 @@ parse_args() {
 
     if [[ "${1:-}" == "--help" ]]; then
         usage
+        exit 0
+    fi
+    if [[ "${1:-}" == --version ]]; then
+        version=$(jailbox_version) || exit 1
+        printf 'jailbox %s\n' "$version"
         exit 0
     fi
 }

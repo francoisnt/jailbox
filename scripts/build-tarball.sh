@@ -40,7 +40,9 @@ sha256() {
 
 version="${1:-}"
 [ -n "$version" ] || { usage >&2; exit 2; }
-[[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid version '$version'"
+[[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || die "invalid version '$version'"
+[[ ! -e "$ROOT_DIR/VERSION" && ! -L "$ROOT_DIR/VERSION" ]] || \
+    die "refusing to package an existing VERSION stamp"
 
 release_name="$APP_NAME-$version"
 stage_dir="$DIST_DIR/$release_name"
@@ -59,6 +61,8 @@ for path in "${RELEASE_PATHS[@]}"; do
     cp -R "$ROOT_DIR/$path" "$stage_dir/"
 done
 
+printf '%s\n' "${version#v}" > "$stage_dir/VERSION"
+
 # Ensure entry-point scripts remain executable after copying into the stage dir.
 chmod 755 "$stage_dir/jailbox" "$stage_dir/install.sh"
 chmod 755 "$stage_dir"/container/*.sh
@@ -71,5 +75,7 @@ rm -rf "$stage_dir"
 # Checksums use bare filenames so `sha256sum --check` works from the
 # download directory.
 (cd "$DIST_DIR" && sha256 "$release_name.tar.gz" "$APP_NAME-latest.tar.gz" > SHA256SUMS)
+
+bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$DIST_DIR"
 
 echo "$tarball"

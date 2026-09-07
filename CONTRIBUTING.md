@@ -46,6 +46,9 @@ Podman is available.
 ## Releases
 
 Releases are initiated manually and gated in CI: `scripts/release.sh`
-previews the auto-selected version and pushes an ephemeral `release-request`
-tag; the Release workflow re-selects the version, runs the full release gate,
-and creates the version tag and GitHub Release only after everything passes.
+previews the automatic version and allows a higher bump interactively or with
+`--bump patch|minor|major`. It pushes an ephemeral request tag carrying that
+minimum; the Release workflow applies it when re-selecting the version, runs
+the full release gate, and creates the version tag and GitHub Release only
+after everything passes. See [Versions and releases](README.md#versions-and-releases)
+for the compatibility policy and manual workflow inputs.

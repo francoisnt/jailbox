@@ -76,10 +76,23 @@ smoke_install_update_uninstall() {
 
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh
     "$tmp/bin/jailbox" --help >/dev/null
+    [[ $("$tmp/bin/jailbox" --version) == 'jailbox dev' ]]
+
+    tar -xzf "$JAILBOX_DIR/dist/jailbox-v9.9.9.tar.gz" -C "$tmp"
+    JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" >/dev/null
+    [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.9' ]]
+    cmp "$tmp/share/jailbox/VERSION" "$tmp/jailbox-v9.9.9/VERSION"
+
+    # Updating from another stamped tree replaces the installed identity.
+    printf '9.9.10\n' > "$tmp/jailbox-v9.9.9/VERSION"
+    JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" >/dev/null
+    [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.10' ]]
 
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh >/dev/null
     test -L "$tmp/bin/jailbox"
     test -f "$tmp/share/jailbox/.jailbox-install"
+    [[ $("$tmp/bin/jailbox" --version) == 'jailbox dev' ]]
+    [[ ! -e "$tmp/share/jailbox/VERSION" ]]
 
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" "$tmp/share/jailbox/install.sh" --uninstall
     test ! -e "$tmp/share/jailbox"
