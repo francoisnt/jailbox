@@ -45,6 +45,11 @@ the frontend.
 Serialize lifecycle operations per project. Validation before mutation is a
 check-then-act sequence, and the frontend runs `up` then `connection-info` as
 two processes, so concurrent work can invalidate either decision.
+Until locking lands, callers must coordinate per project and exclude lifecycle
+mutation from dependent sequences such as `up` then `connection-info`. This
+is a caller obligation, not an existing CLI lock; independent terminals can
+still race. The future design must address the multi-command interval as well
+as individual lifecycle commands.
 
 ### Digest diagnostics in `doctor`
 

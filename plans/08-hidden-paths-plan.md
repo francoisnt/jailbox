@@ -24,8 +24,10 @@ Declare `HIDDEN_PATHS` as a canonical indexed array with automatic schema,
 validation, API, and digest coverage. Preserve path validation, mask mount
 behavior, overlap precedence, symlink handling, and the limitation that runtime
 masking does not remove content from a development-image build context.
-Protected selected Containerfiles cannot be hidden. Core machine commands
-have no config-file cases; the frontend layer owns/protects its config files.
+Selected Containerfiles may be hidden after host consumption, preserving
+integrity protection while denying runtime access at the masked path. Core
+machine commands have no config-file cases; the frontend layer owns/protects
+its config files.
 
 Each entry must be non-empty, project-relative, existing regular file/directory,
 unique and non-overlapping with another hidden ancestor, without dot segments,
@@ -75,6 +77,18 @@ project-state behavior is introduced.
 Portable/runtime tests cover indexed members, comma-bearing paths, every
 overlap/ancestor relationship, files/directories/missing paths, Containerfile
 protection, digest mismatch, mount isolation, and build-context documentation.
+Real-Podman tests prove that the host can consume the selected Containerfile,
+then sandbox reads, writes, deletion, and replacement at its masked project
+path fail. Cover both exact masks and masked ancestors, unchanged host contents,
+and absence of child overlays that could re-expose the file.
+For each masked shape, include a case whose parent lane is writable, proving
+sibling creation, deletion, and replacement succeed. Retain the overlap cases
+under read-only parents. For an ancestor mask, also prove deletion
+and replacement of the masked ancestor itself fail, alongside denied access
+to the Containerfile beneath it. Denied reads establish masking; denied
+deletion and replacement establish preservation of the protected path.
+Assert observable denial and unchanged host contents without requiring a
+particular error code.
 No editor-gate requirement applies here; later editor-specific coverage gets
 a new frontend plan when needed.
 
@@ -93,6 +107,11 @@ Run `tests/run portable` and `tests/run runtime`.
 - Valid hidden paths are inaccessible at runtime with documented precedence.
 - A selected Containerfile may be hidden only after host consumption and is
   treated as stronger than read-only; build context is not misrepresented.
+  Runtime tests prove denied read, write, deletion, and replacement at the
+  masked path while host contents remain unchanged. Each masked shape includes
+  a writable-parent case verified by successful sibling operations, alongside
+  read-only-parent overlap coverage. Ancestor-mask coverage includes denied
+  deletion and replacement of the masked ancestor itself.
 - Invalid or changed policy fails before mutation under shared compatibility.
 - Native masks win every overlap without propagating to or modifying the host.
 - Missing/special/symlinked/outside/duplicate/ancestor-overlap entries fail.
