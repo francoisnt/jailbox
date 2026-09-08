@@ -49,6 +49,12 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   watermark to commit messages, even when a tool or harness default says to.
 - Before an explicitly requested commit, inspect the complete staged diff and
   exclude unrelated or untracked files.
+- Write the commit message to describe only what the commit's own diff does to
+  tracked files. Work that leaves no trace in that diff — an uncommitted draft
+  removed before staging, an untracked file deleted, a worktree change restored
+  to its committed state — must not be announced as something the commit did.
+  Where such a decision is worth recording, state it as context without
+  implying the commit performed it.
 - Never stage, inspect, print, or commit `.env` files unless the user explicitly
   identifies a specific file and asks for that action.
 - Move tracked files with `git mv` so Git records their history cleanly. Always
