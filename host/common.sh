@@ -704,11 +704,14 @@ project_path_hash() {
 }
 
 initialize_project_names() {
-    PROJECT_HASH=$(project_path_hash)
+    # Identity is derived before any preflight, so a host with neither
+    # SHA-256 tool fails here — with the dependency diagnostic the hash helper
+    # prints — instead of continuing with an empty or partial name.
+    PROJECT_HASH=$(project_path_hash) || exit 1
     # Podman resources carry the project name for readability; the hash of
     # the full path remains the identity. State directories below stay keyed
     # on the hash alone.
-    PROJECT_RESOURCE_PREFIX=$(jailbox_resource_prefix_for_path "$PROJECT_DIR")
+    PROJECT_RESOURCE_PREFIX=$(jailbox_resource_prefix_for_path "$PROJECT_DIR") || exit 1
     PROJECT_STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
     CONTAINER_NAME="${PROJECT_RESOURCE_PREFIX}"
     PROXY_NAME="${PROJECT_RESOURCE_PREFIX}-proxy"
@@ -718,7 +721,10 @@ initialize_project_names() {
 }
 
 initialize_runtime_ids() {
+    local offset
+
     # Stable port derived from the full project path (49152-65534).
-    LOCAL_PORT=$(( 49152 + $(jailbox_project_hash_port_offset "$PROJECT_HASH") ))
+    offset=$(jailbox_project_hash_port_offset "$PROJECT_HASH") || exit 1
+    LOCAL_PORT=$(( 49152 + offset ))
     MY_UID=$(id -u)
 }

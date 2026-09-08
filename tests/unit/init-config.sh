@@ -18,7 +18,7 @@ cat > "$FIXTURE/bin/podman" <<'EOF_PODMAN'
 if [ "$1 $2" = "container exists" ]; then
     [ "${FAKE_CONTAINER_NAME:-}" = "$3" ]
 elif [ "$1 $2" = "container inspect" ]; then
-    printf '%s\n' "${FAKE_CONTAINER_OWNER:-}"
+    printf '%s\n' "${FAKE_CONTAINER_LABELS:-}"
 else
     exit 1
 fi
@@ -78,24 +78,39 @@ test_config_rejected_before_creation() {
     fi
 }
 
+# init requires both derived container names to be free. Presence is the whole
+# test: an occupant carrying no label, or a label naming a different project,
+# blocks init exactly like a container jailbox created, and gets the same stop
+# guidance because stop is what clears that name.
 test_container_collisions() {
-    local project name output
+    local project name output labels description occupant
 
     project=$(mktemp -d "$FIXTURE/project.XXXXXX")
     name=$(cd "$project" && source "$JAILBOX_DIR/host/project-id.sh" && jailbox_resource_prefix_for_path "$project")
-    output=$( (cd "$project" && FAKE_CONTAINER_NAME="$name" FAKE_CONTAINER_OWNER="$project" run_jailbox init) 2>&1 || true)
-    case "$output" in
-        *"project sandbox"*"jailbox stop"*) pass "owned container blocks init and names jailbox stop" ;;
-        *) fail "owned container blocks init and names jailbox stop (got: $output)" ;;
-    esac
-    [ ! -e "$project/jailbox.conf" ] || fail "owned collision created no config"
 
-    output=$( (cd "$project" && FAKE_CONTAINER_NAME="${name}-proxy" FAKE_CONTAINER_OWNER=/different run_jailbox init) 2>&1 || true)
-    case "$output" in
-        *"does not own"*"Podman"*) pass "foreign proxy collision blocks init" ;;
-        *) fail "foreign proxy collision blocks init (got: $output)" ;;
-    esac
-    [ ! -e "$project/jailbox.conf" ] || fail "foreign collision created no config"
+    for description in "development, labelled for this project" \
+        "proxy, labelled for a different project" "development, unlabelled"; do
+        case "$description" in
+            development,\ labelled*) occupant="$name"; labels="jailbox.project=$project" ;;
+            proxy,*) occupant="$name-proxy"; labels="jailbox.project=/different" ;;
+            *) occupant="$name"; labels="" ;;
+        esac
+        output=$( (cd "$project" && FAKE_CONTAINER_NAME="$occupant" \
+            FAKE_CONTAINER_LABELS="$labels" run_jailbox init) 2>&1 || true)
+        case "$output" in
+            *"project sandbox"*"jailbox stop"*)
+                pass "a $description container collision blocks init and names jailbox stop"
+                ;;
+            *)
+                fail "a $description container collision blocks init and names jailbox stop (got: $output)"
+                ;;
+        esac
+        case "$output" in
+            *"does not own"*) fail "init no longer distinguishes owned from foreign collisions" ;;
+            *) pass "a $description container collision gives one diagnostic" ;;
+        esac
+        [ ! -e "$project/jailbox.conf" ] || fail "a $description collision created no config"
+    done
 }
 
 test_concurrent_publication() {

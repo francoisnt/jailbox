@@ -16,6 +16,12 @@
 # Prerequisites: run tests/integration/wrapper-images.sh first to build the
 # jailbox-test-* and jailbox-wrapper-* images.
 #
+# Cleanup: this run records the exact kind and name of every resource it may
+# create in a ledger outside its fixture directories (see
+# tests/lib/resource-ledger.sh) and removes only those objects, including after
+# an interrupted earlier run. Debris from runs that predate the ledger is never
+# discovered; remove it by hand, by exact name.
+#
 # Usage: tests/e2e/editor-smoke.sh [stage...]
 # Env:   JAILBOX_EDITOR_TIMEOUT seconds to wait for a cached editor attach (default: 45)
 #        JAILBOX_EDITOR_CACHE_FILL_TIMEOUT seconds for a cold cache fill (default: 300)
@@ -30,6 +36,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$JAILBOX_DIR/host/project-id.sh"
 # shellcheck source=tests/lib/run-meta.sh
 source "$JAILBOX_DIR/tests/lib/run-meta.sh"
+# shellcheck source=tests/lib/resource-ledger.sh
+source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
 VSCODE_STAGES=(debian fedora egress)
@@ -278,7 +286,7 @@ editor_cache_archive_valid() {
 
 seed_editor_server_cache() {
     local project_dir="$1" stage="$2"
-    local archive volume volume_path image relative cli
+    local archive volume volume_path image relative cli helper
 
     EDITOR_CACHE_SEEDED=0
     [[ "${JAILBOX_EDITOR_COLD_BOOTSTRAP:-}" != "1" ]] || {
@@ -296,11 +304,21 @@ seed_editor_server_cache() {
     image=$(stage_wrapper_image "$stage")
     relative=$(editor_server_relative_path)
     cli=$(editor_server_cli_name)
-    podman volume create --label "jailbox.project=$project_dir" "$volume" >/dev/null || return 1
+    # Both objects this helper creates are recorded before it creates them, and
+    # the extraction container is named so it is one of those exact names: an
+    # interrupt anywhere in here leaves nothing the ledger cannot recover, even
+    # once the fixture directory is gone. --rm removes the helper on the normal
+    # path; the ledger entry covers the interrupted one.
+    helper="${volume%-home}-seed"
+    ledger_record volume "$volume" || return 1
+    ledger_record container "$helper" || return 1
+
+    podman volume create "$volume" >/dev/null || return 1
     volume_path=$(podman volume inspect "$volume" --format '{{.Mountpoint}}') || return 1
     podman unshare chown "$(id -u):$(id -g)" "$volume_path" || return 1
 
     if ! podman run --rm \
+        --name "$helper" \
         --network=none \
         --userns=keep-id \
         --user "$(id -u):$(id -g)" \
@@ -310,7 +328,7 @@ seed_editor_server_cache() {
         "$image" -c \
         "mkdir -p '/home/jailbox/${relative%/*}' && tar -xzf /seed/server.tar.gz -C '/home/jailbox/${relative%/*}' && test -x '/home/jailbox/$relative/bin/$cli'"; then
         echo "  Warning: could not seed editor server cache; falling back to cold bootstrap" >&2
-        podman volume rm "$volume" >/dev/null 2>&1 || true
+        podman volume rm -f "$volume" >/dev/null 2>&1 || true
         return 0
     fi
 
@@ -530,49 +548,6 @@ cleanup_editor_workspace() {
     done
 
     terminate_editor_profile "$project_dir"
-}
-
-# Crashed runs leave containers/networks/volumes behind whose mktemp project
-# dirs are unrecoverable, so name-based cleanup cannot find them. Instead,
-# every jailbox resource carries a jailbox.project label; prune only resources
-# whose label points at a test fixture path. Real projects — including a
-# jailbox container this test itself may be running inside — are never
-# touched.
-is_test_fixture_project() {
-    case "$1" in
-        /tmp/jailbox-editor-*|/tmp/jailbox-e2e-*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-prune_stale_jailbox_resources() {
-    local name project
-
-    while read -r name project; do
-        [[ -n "$name" ]] || continue
-        is_test_fixture_project "$project" || continue
-        echo "Pruning stale test container $name ($project)"
-        podman rm -f "$name" >/dev/null 2>&1 || true
-    done < <(podman ps -a --filter 'label=jailbox.project' \
-        --format '{{.Names}} {{index .Labels "jailbox.project"}}' 2>/dev/null || true)
-
-    while read -r name; do
-        [[ -n "$name" ]] || continue
-        project=$(podman network inspect "$name" \
-            --format '{{index .Labels "jailbox.project"}}' 2>/dev/null || true)
-        is_test_fixture_project "$project" || continue
-        echo "Pruning stale test network $name ($project)"
-        podman network rm "$name" >/dev/null 2>&1 || true
-    done < <(podman network ls -q --filter 'label=jailbox.project' 2>/dev/null || true)
-
-    while read -r name; do
-        [[ -n "$name" ]] || continue
-        project=$(podman volume inspect "$name" \
-            --format '{{index .Labels "jailbox.project"}}' 2>/dev/null || true)
-        is_test_fixture_project "$project" || continue
-        echo "Pruning stale test volume $name ($project)"
-        podman volume rm "$name" >/dev/null 2>&1 || true
-    done < <(podman volume ls -q --filter 'label=jailbox.project' 2>/dev/null || true)
 }
 
 wait_for_remote_editor_ready() {
@@ -947,6 +922,11 @@ cleanup_stage() {
     fi
 }
 
+cleanup_successful_stage() {
+    cleanup_editor_workspace "$1" "$2"
+    cleanup_stage "$1"
+}
+
 run_stage() {
     local stage="$1"
     local idx="$2"
@@ -975,6 +955,8 @@ run_stage() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     project_dir=$(mktemp -d "/tmp/jailbox-editor-${stage}.XXXXXX")
+    # Before anything can create them, and outside the fixture directory.
+    ledger_record_project_resources "$project_dir" || die "could not record this stage's resources"
     ctr=$(jailbox_container_name "$project_dir")
     proof_path="$project_dir/$PROOF_FILE"
     run_id="$(date +%s)-$$-$stage"
@@ -1093,11 +1075,9 @@ run_stage() {
     # so diagnostics and JAILBOX_KEEP_FAILED are unaffected.
     if [[ "$rc" -eq 0 ]]; then
         if [[ "$editor_opened" -eq 1 ]]; then
-            (
-                cleanup_editor_workspace "$project_dir" "$ctr"
-                cleanup_stage "$project_dir"
-            ) &
-            TEARDOWN_PIDS+=("$!")
+            ledger_start_worker cleanup_successful_stage "$project_dir" "$ctr" ||
+                return 1
+            TEARDOWN_PIDS+=("$LEDGER_WORKER_PID")
         else
             cleanup_stage "$project_dir"
         fi
@@ -1172,7 +1152,8 @@ main() {
         prune_editor_server_cache || die "could not initialize the editor server cache"
     fi
 
-    prune_stale_jailbox_resources
+    ledger_begin_run editor || die "could not initialize the test resource ledger"
+    ledger_prune_stale_runs
     setup_logging
 
     PROOF_VSIX="$LOG_DIR/jailbox-editor-proof.vsix"
@@ -1213,6 +1194,19 @@ main() {
         echo ""
         echo "Waiting for background stage teardowns to finish..."
         wait "${TEARDOWN_PIDS[@]}" 2>/dev/null || true
+    fi
+
+    # Every teardown has finished, so anything still standing under a recorded
+    # name is this run's leftover. Whatever survives here stays in the ledger
+    # for the next run to retry. JAILBOX_KEEP_FAILED asks for exactly those
+    # leftovers, so the sweep is skipped and the ledger is left for the next
+    # run — which will announce each object before removing it.
+    if [[ "${JAILBOX_KEEP_FAILED:-}" == "1" ]]; then
+        echo ""
+        echo "Leaving this run's resources in place because JAILBOX_KEEP_FAILED=1"
+        echo "The next editor-smoke run removes them; the ledger is $LEDGER_FILE"
+    else
+        ledger_sweep_own_run
     fi
 
     log_run ""

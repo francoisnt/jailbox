@@ -7,6 +7,12 @@
 #
 # Prerequisites: run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
 #
+# Cleanup: this run records the exact kind and name of every resource it may
+# create in a ledger outside its fixture directories (see
+# tests/lib/resource-ledger.sh) and removes only those objects, including after
+# an interrupted earlier run. Debris from runs that predate the ledger is never
+# discovered; remove it by hand, by exact name.
+#
 # Usage: tests/e2e/headless.sh [stage...]
 # Env:   JAILBOX_E2E_REH_RELEASE / JAILBOX_E2E_REH_COMMIT
 #                              VSCodium REH build to smoke-test on Alpine
@@ -22,6 +28,8 @@ source "$JAILBOX_DIR/host/project-id.sh"
 source "$JAILBOX_DIR/versions.env"
 # shellcheck source=tests/lib/run-meta.sh
 source "$JAILBOX_DIR/tests/lib/run-meta.sh"
+# shellcheck source=tests/lib/resource-ledger.sh
+source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
 
@@ -378,6 +386,8 @@ run_e2e_case() {
     echo "── e2e: $stage (user: jailbox) ─────────────────────────────────────"
 
     project_dir=$(mktemp -d "/tmp/jailbox-e2e-${stage}.XXXXXX")
+    # Before anything can create them, and outside the fixture directory.
+    ledger_record_project_resources "$project_dir" || return 1
     git -C "$project_dir" init -q
     printf 'initial\n' > "$project_dir/README.txt"
     git -C "$project_dir" add README.txt
@@ -651,6 +661,9 @@ main() {
             die "$required_image not found - run tests/integration/wrapper-images.sh first"
     done
 
+    ledger_begin_run e2e || die "could not initialize the test resource ledger"
+    ledger_prune_stale_runs
+
     local log_dir
     log_dir="$JAILBOX_DIR/testlog/e2e-$(date +%Y%m%d-%H%M%S)-$$"
     mkdir -p "$log_dir"
@@ -668,8 +681,14 @@ main() {
     local -A stage_pids=()
     for stage in "${stages[@]}"; do
         printf "  ⏳ %s\n" "$stage"
-        ( run_e2e_case "$stage" "$log_dir" ) > "$log_dir/${stage}.log" 2>&1 &
-        stage_pids[$stage]=$!
+        # The redirect belongs to the worker's own output. A registration
+        # failure lands in that log too, so report it on the terminal rather
+        # than aborting the run with nothing visible.
+        if ! ledger_start_worker run_e2e_case "$stage" "$log_dir" \
+            > "$log_dir/${stage}.log" 2>&1; then
+            die "could not register the $stage stage with the resource ledger (see $log_dir/${stage}.log)"
+        fi
+        stage_pids[$stage]=$LEDGER_WORKER_PID
     done
     echo ""
 
@@ -710,6 +729,11 @@ main() {
     for pid in "${stage_pids[@]}"; do
         wait "$pid" 2>/dev/null || true
     done
+
+    # Every stage has finished, so anything still standing under a recorded
+    # name is this run's leftover — including the per-project images `--clean`
+    # never removes. Whatever survives stays in the ledger for the next run.
+    ledger_sweep_own_run
 
     local total_passed=0 total_failed=0 p f
     for stage in "${stages[@]}"; do

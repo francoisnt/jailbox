@@ -38,8 +38,7 @@ configure_network() {
         configure_proxy_network
     else
         podman network exists "$NETWORK_NAME" 2>/dev/null || \
-            podman network create --label "jailbox.project=$PROJECT_DIR" \
-                "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$NETWORK_NAME"
+            podman network create "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$NETWORK_NAME"
         NETWORK_STATE[selected_network]="$NETWORK_NAME"
         NETWORK_SSH_SESSION_ENV=()
         NETWORK_STATE[proxy_url]=""
@@ -74,8 +73,7 @@ configure_proxy_network() {
 
     ensure_internal_network "$internal_net"
     podman network exists "$external_net" 2>/dev/null || \
-        podman network create --label "jailbox.project=$PROJECT_DIR" \
-            "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$external_net"
+        podman network create "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$external_net"
 
     # Derive the proxy address from the network's actual subnet rather than
     # recomputing the hash candidate: an existing network may have been
@@ -97,7 +95,6 @@ configure_proxy_network() {
     # would fail; the account comes from the Alpine tinyproxy package.
     podman run -d \
         --name "$PROXY_NAME" \
-        --label "jailbox.project=$PROJECT_DIR" \
         "${CONFIG_DIGEST_LABEL_ARGS[@]}" \
         --network "$external_net" \
         --network "$internal_net:ip=$proxy_internal_ip" \
@@ -243,7 +240,6 @@ ensure_internal_network() {
     for ((attempt = 0; attempt < 20; attempt++)); do
         candidate=$(proxy_internal_subnet "$attempt")
         if podman network create --internal --disable-dns --subnet "$candidate" \
-            --label "jailbox.project=$PROJECT_DIR" \
             "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$internal_net" >/dev/null 2>&1; then
             return 0
         fi
@@ -266,8 +262,8 @@ proxy_internal_subnet() {
     local attempt hash offset octet
 
     attempt="${1:-0}"
-    hash="${PROJECT_HASH:-0}"
-    offset=$(jailbox_project_hash_port_offset "$hash")
+    hash="${PROJECT_HASH-}"
+    offset=$(jailbox_project_hash_port_offset "$hash") || return 1
     # Stride 7 is coprime with 200, so successive attempts visit distinct
     # octets across the 10.240.{1..200}.0/24 candidate space.
     octet=$((1 + (offset + attempt * 7) % 200))

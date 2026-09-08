@@ -1,5 +1,6 @@
 #!/bin/bash
-# Ownership-safe lifecycle: `stop`, `--clean`, and the launch absence check.
+# Exact-name lifecycle: `stop`, `--clean`, the launch absence check, and the
+# SHA-256 identity every one of them derives before touching a resource.
 set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,8 +15,9 @@ pass() { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail() { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 # Fake Podman backed by a directory of resource files. Each file is named
-# <kind>.<name> and holds the jailbox.project label, empty for an unlabeled
-# resource. Removals delete the file, so surviving files are the assertion.
+# <kind>.<name> and holds that resource's LABEL=VALUE lines, empty for an
+# unlabeled resource. Removals delete the file, so surviving files are the
+# assertion.
 mkdir -p "$FIXTURE/bin"
 cat > "$FIXTURE/bin/podman" <<'EOF_PODMAN'
 #!/bin/sh
@@ -72,9 +74,11 @@ new_project() {
     STATE_DIR="$FIXTURE/xdg-state/jailbox/projects/$(source "$JAILBOX_DIR/host/project-id.sh" && jailbox_project_hash_for_path "$PROJECT")"
 }
 
-# Declare a resource in the fake Podman state: kind, name suffix, owner label.
+# Declare a resource in the fake Podman state: kind, name, optional label
+# lines. Resources are declared unlabeled by default: nothing in the lifecycle
+# path may consult a label to decide what it owns.
 declare_resource() {
-    printf '%s\n' "$3" > "$FAKE_PODMAN_STATE/$1.$2"
+    printf '%s' "${3:-}" > "$FAKE_PODMAN_STATE/$1.$2"
 }
 
 resource_present() {
@@ -95,27 +99,27 @@ run_jailbox() {
     ) 2>&1
 }
 
-test_stop_removes_owned_containers_only() {
+test_stop_removes_both_project_containers() {
     local project output
 
     new_project
     project="$PROJECT"
-    declare_resource container "$PREFIX" "$project"
-    declare_resource container "$PREFIX-proxy" "$project"
-    declare_resource volume "$PREFIX-home" "$project"
-    declare_resource network "$PREFIX-net" "$project"
+    declare_resource container "$PREFIX"
+    declare_resource container "$PREFIX-proxy"
+    declare_resource volume "$PREFIX-home"
+    declare_resource network "$PREFIX-net"
     mkdir -p "$STATE_DIR"
     printf 'key\n' > "$STATE_DIR/key"
 
     if output=$(run_jailbox "$project" stop); then
-        pass "stop succeeds against an owned sandbox"
+        pass "stop succeeds against a present sandbox"
     else
-        fail "stop succeeds against an owned sandbox (got: $output)"
+        fail "stop succeeds against a present sandbox (got: $output)"
     fi
     if ! resource_present container "$PREFIX" && ! resource_present container "$PREFIX-proxy"; then
-        pass "stop removes both owned containers"
+        pass "stop removes both project containers"
     else
-        fail "stop removes both owned containers"
+        fail "stop removes both project containers"
     fi
     if resource_present volume "$PREFIX-home" && resource_present network "$PREFIX-net"; then
         pass "stop preserves the home volume and project network"
@@ -140,7 +144,7 @@ test_stop_is_idempotent_and_partial_safe() {
         fail "stop succeeds when both containers are absent (got: $output)"
     fi
 
-    declare_resource container "$PREFIX-proxy" "$project"
+    declare_resource container "$PREFIX-proxy"
     if output=$(run_jailbox "$project" stop); then
         pass "stop succeeds when only the proxy exists"
     else
@@ -155,30 +159,33 @@ test_stop_is_idempotent_and_partial_safe() {
     fi
 }
 
-test_stop_refuses_unowned_containers() {
-    local project output label
+# Deletion depends on the exact derived name alone. Provenance is not
+# consulted, so a container carrying a foreign label, another project's label,
+# or no label at all is removed exactly like one jailbox created.
+test_stop_removes_any_occupant_of_the_derived_names() {
+    local project output labels description
 
-    for label in /somewhere/else ""; do
+    while IFS='|' read -r description labels; do
         new_project
         project="$PROJECT"
-        declare_resource container "$PREFIX" "$project"
-        declare_resource container "$PREFIX-proxy" "$label"
+        declare_resource container "$PREFIX"
+        declare_resource container "$PREFIX-proxy" "$labels"
 
-        output=$(run_jailbox "$project" stop || true)
-        case "$output" in
-            *"does not own"*"$PREFIX-proxy"*"Podman"*)
-                pass "stop refuses a container labelled '$label' and names it"
-                ;;
-            *)
-                fail "stop refuses a container labelled '$label' and names it (got: $output)"
-                ;;
-        esac
-        if resource_present container "$PREFIX" && [ -z "$(actions)" ]; then
-            pass "refused stop removed nothing, including the owned container"
+        if output=$(run_jailbox "$project" stop); then
+            pass "stop succeeds against a proxy-name occupant with $description"
         else
-            fail "refused stop removed nothing, including the owned container (actions: $(actions))"
+            fail "stop succeeds against a proxy-name occupant with $description (got: $output)"
         fi
-    done
+        if ! resource_present container "$PREFIX" && ! resource_present container "$PREFIX-proxy"; then
+            pass "stop removes a proxy-name occupant with $description"
+        else
+            fail "stop removes a proxy-name occupant with $description"
+        fi
+    done <<'EOF_CASES'
+a foreign project label|jailbox.project=/somewhere/else
+no labels at all|
+an unrelated label|com.example.owner=someone
+EOF_CASES
 }
 
 test_lifecycle_fails_closed_on_exists_errors() {
@@ -267,7 +274,7 @@ test_stop_requires_podman_only() {
 
     new_project
     project="$PROJECT"
-    declare_resource container "$PREFIX" "$project"
+    declare_resource container "$PREFIX"
     output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
         "$JAILBOX_DIR/jailbox" stop) 2>&1 || true)
     if ! resource_present container "$PREFIX"; then
@@ -286,24 +293,24 @@ test_stop_requires_podman_only() {
     cp "$FIXTURE/bin/podman" "$restricted/podman"
 }
 
-test_clean_removes_every_owned_target() {
+test_clean_removes_every_derived_target() {
     local project output name
 
     new_project
     project="$PROJECT"
-    declare_resource container "$PREFIX" "$project"
-    declare_resource container "$PREFIX-proxy" "$project"
-    declare_resource volume "$PREFIX-home" "$project"
+    declare_resource container "$PREFIX"
+    declare_resource container "$PREFIX-proxy"
+    declare_resource volume "$PREFIX-home"
     for name in net net-internal net-external; do
-        declare_resource network "$PREFIX-$name" "$project"
+        declare_resource network "$PREFIX-$name"
     done
     mkdir -p "$STATE_DIR"
     printf 'key\n' > "$STATE_DIR/key"
 
     if output=$(run_jailbox "$project" --clean); then
-        pass "--clean succeeds against a fully owned project"
+        pass "--clean succeeds against a fully populated project"
     else
-        fail "--clean succeeds against a fully owned project (got: $output)"
+        fail "--clean succeeds against a fully populated project (got: $output)"
     fi
     if [ -z "$(find "$FAKE_PODMAN_STATE" -maxdepth 1 -name 'container.*' -o -maxdepth 1 -name 'volume.*' -o -maxdepth 1 -name 'network.*')" ]; then
         pass "--clean removes containers, the home volume, and all project networks"
@@ -323,7 +330,8 @@ test_clean_removes_every_owned_target() {
     fi
 }
 
-test_clean_refuses_unowned_targets_of_any_type() {
+# The same exact-name contract across every resource type --clean deletes.
+test_clean_removes_foreign_targets_of_any_type() {
     local project output kind name
 
     for kind in volume network; do
@@ -334,77 +342,98 @@ test_clean_refuses_unowned_targets_of_any_type() {
             network) name="$PREFIX-net-external" ;;
         esac
 
-        declare_resource container "$PREFIX" "$project"
-        declare_resource volume "$PREFIX-home" "$project"
-        declare_resource network "$PREFIX-net-external" "$project"
-        declare_resource "$kind" "$name" /somewhere/else
+        declare_resource container "$PREFIX"
+        declare_resource volume "$PREFIX-home"
+        declare_resource network "$PREFIX-net-external"
+        declare_resource "$kind" "$name" "jailbox.project=/somewhere/else"
         mkdir -p "$STATE_DIR"
         printf 'key\n' > "$STATE_DIR/key"
 
-        output=$(run_jailbox "$project" --clean || true)
-        case "$output" in
-            *"does not own"*"$kind"*"$name"*"Podman"*)
-                pass "--clean refuses a foreign $kind and names it"
-                ;;
-            *)
-                fail "--clean refuses a foreign $kind and names it (got: $output)"
-                ;;
-        esac
-        if [ -z "$(actions)" ] && resource_present container "$PREFIX" && [ -f "$STATE_DIR/key" ]; then
-            pass "a foreign $kind prevents all resource and SSH-state removal"
+        if output=$(run_jailbox "$project" --clean); then
+            pass "--clean succeeds with a foreign-labelled $kind on a derived name"
         else
-            fail "a foreign $kind prevents all resource and SSH-state removal (actions: $(actions))"
+            fail "--clean succeeds with a foreign-labelled $kind on a derived name (got: $output)"
+        fi
+        if ! resource_present "$kind" "$name" && ! resource_present container "$PREFIX"; then
+            pass "--clean removes the foreign-labelled $kind and every other derived name"
+        else
+            fail "--clean removes the foreign-labelled $kind and every other derived name"
+        fi
+        if [ ! -d "$STATE_DIR" ]; then
+            pass "--clean still removes the project SSH state alongside a foreign $kind"
+        else
+            fail "--clean still removes the project SSH state alongside a foreign $kind"
         fi
     done
 }
 
+# Nothing outside the derived names is a removal target, whatever it is
+# labelled — including the sandbox of an unrelated project.
+test_clean_leaves_undeclared_names_alone() {
+    local project output
+
+    new_project
+    project="$PROJECT"
+    declare_resource container "$PREFIX"
+    declare_resource container "jailbox-other-0123456789ab" "jailbox.project=$project"
+    declare_resource volume "jailbox-other-0123456789ab-home" "jailbox.project=$project"
+    declare_resource network "jailbox-other-0123456789ab-net" "jailbox.project=$project"
+
+    if output=$(run_jailbox "$project" --clean); then
+        pass "--clean succeeds beside resources on unrelated names"
+    else
+        fail "--clean succeeds beside resources on unrelated names (got: $output)"
+    fi
+    if resource_present container "jailbox-other-0123456789ab" &&
+        resource_present volume "jailbox-other-0123456789ab-home" &&
+        resource_present network "jailbox-other-0123456789ab-net"; then
+        pass "--clean leaves every name outside this project's derived set untouched"
+    else
+        fail "--clean leaves every name outside this project's derived set untouched (actions: $(actions))"
+    fi
+}
+
+# The absence guard makes no ownership distinction: any container holding a
+# derived name blocks launch with the same stop guidance, because stop is what
+# clears that name. Compatibility of a resource jailbox may reuse is the
+# digest gate's separate concern, and it never runs on a present container.
 test_launch_requires_absent_sandbox() {
-    local project output name command
+    local project output name command labels description
 
     for command in "" up; do
         for name in "" -proxy; do
-            new_project
-            project="$PROJECT"
-            declare_resource container "$PREFIX$name" "$project"
-            output=$(run_jailbox "$project" $command || true)
-            case "$output" in
-                *"jailbox stop"*)
-                    pass "launch names jailbox stop for an owned ${name:-development} container"
-                    ;;
-                *)
-                    fail "launch names jailbox stop for an owned ${name:-development} container (got: $output)"
-                    ;;
-            esac
-            if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
-                pass "the owned ${name:-development} container is left untouched"
-            else
-                fail "the owned ${name:-development} container is left untouched"
-            fi
-
-            new_project
-            project="$PROJECT"
-            declare_resource container "$PREFIX$name" /somewhere/else
-            output=$(run_jailbox "$project" $command || true)
-            case "$output" in
-                *"does not own"*"Podman"*)
-                    case "$output" in
-                        *"jailbox stop"*)
-                            fail "a foreign ${name:-development} collision must not name jailbox stop"
-                            ;;
-                        *)
-                            pass "a foreign ${name:-development} collision names manual Podman removal"
-                            ;;
-                    esac
-                    ;;
-                *)
-                    fail "a foreign ${name:-development} collision names manual Podman removal (got: $output)"
-                    ;;
-            esac
-            if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
-                pass "the foreign ${name:-development} container is left untouched"
-            else
-                fail "the foreign ${name:-development} container is left untouched"
-            fi
+            for description in "this project's label" "a foreign project label" "no labels at all"; do
+                new_project
+                project="$PROJECT"
+                case "$description" in
+                    "this project's label") labels="jailbox.project=$project" ;;
+                    "a foreign project label") labels="jailbox.project=/somewhere/else" ;;
+                    *) labels="" ;;
+                esac
+                declare_resource container "$PREFIX$name" "$labels"
+                output=$(run_jailbox "$project" $command || true)
+                case "$output" in
+                    *"jailbox stop"*)
+                        pass "launch names jailbox stop for a ${name:-development} container with $description"
+                        ;;
+                    *)
+                        fail "launch names jailbox stop for a ${name:-development} container with $description (got: $output)"
+                        ;;
+                esac
+                case "$output" in
+                    *"does not own"*)
+                        fail "launch no longer distinguishes owned from foreign ${name:-development} containers"
+                        ;;
+                    *)
+                        pass "launch gives one diagnostic for a ${name:-development} container with $description"
+                        ;;
+                esac
+                if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
+                    pass "the ${name:-development} container with $description is left untouched"
+                else
+                    fail "the ${name:-development} container with $description is left untouched"
+                fi
+            done
         done
     done
 }
@@ -419,7 +448,7 @@ test_stop_precondition_precedes_initialization() {
         new_project
         project="$PROJECT"
         rm "$project/jailbox.conf"
-        declare_resource container "$PREFIX" "$project"
+        declare_resource container "$PREFIX"
 
         output=$(run_jailbox "$project" $command || true)
         case "$output" in
@@ -604,6 +633,122 @@ test_up_ignores_editor_environment_override() {
     esac
 }
 
+# Populate a PATH directory with podman and the named tools only, so a run
+# through it proves exactly which dependencies the command still has.
+make_restricted_bin() {
+    local dir tool resolved
+
+    dir="$FIXTURE/$1"
+    shift
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    cp "$FIXTURE/bin/podman" "$dir/podman"
+    for tool in "$@"; do
+        resolved=$(command -v "$tool" 2>/dev/null) || continue
+        ln -sf "$resolved" "$dir/$tool"
+    done
+    printf '%s\n' "$dir"
+}
+
+# Identity is derived before general preflight, so every command that needs a
+# derived name must report the missing hash tool by itself — naming both
+# supported alternatives — and must mutate nothing on the way there.
+test_identity_requires_a_sha256_tool() {
+    local project restricted output command
+
+    restricted=$(make_restricted_bin no-hash-bin \
+        bash sh dirname basename tr cut sed awk grep cat id mktemp rm find \
+        realpath ssh ssh-keygen cksum)
+    if [ ! -e "$restricted/sha256sum" ] && [ ! -e "$restricted/shasum" ]; then
+        pass "restricted PATH has neither sha256sum nor shasum"
+    else
+        fail "restricted PATH has neither sha256sum nor shasum"
+    fi
+
+    for command in stop --clean doctor ssh-config up ""; do
+        new_project
+        project="$PROJECT"
+        declare_resource container "$PREFIX"
+        mkdir -p "$STATE_DIR"
+        printf 'key\n' > "$STATE_DIR/key"
+
+        output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
+            "$JAILBOX_DIR/jailbox" $command) 2>&1 || true)
+        case "$output" in
+            *"sha256sum or shasum"*)
+                pass "${command:-launch} names both SHA-256 alternatives when neither is installed"
+                ;;
+            *)
+                fail "${command:-launch} names both SHA-256 alternatives when neither is installed (got: $output)"
+                ;;
+        esac
+        if resource_present container "$PREFIX" && [ -z "$(actions)" ] && [ -f "$STATE_DIR/key" ]; then
+            pass "${command:-launch} touches no resource without a SHA-256 tool"
+        else
+            fail "${command:-launch} touches no resource without a SHA-256 tool (actions: $(actions))"
+        fi
+    done
+}
+
+# The CLI canonicalizes the project directory with `pwd -P`, so equivalent
+# spellings of one directory must derive one identity. Existing SHA-256-derived
+# names therefore need no migration.
+test_identity_is_stable_across_path_spellings() {
+    local project relative link output spelling
+
+    new_project
+    project="$PROJECT"
+    relative=$(basename "$project")
+    link="$FIXTURE/link-to-project"
+    ln -sfn "$project" "$link"
+
+    for spelling in absolute relative dotted symlinked; do
+        declare_resource container "$PREFIX"
+        output=$( (
+            case "$spelling" in
+                absolute) cd "$project" ;;
+                relative) cd "$FIXTURE" && cd "$relative" ;;
+                dotted) cd "$FIXTURE" && cd "./$relative/." ;;
+                symlinked) cd "$link" ;;
+            esac || exit 1
+            XDG_STATE_HOME="$FIXTURE/xdg-state" PATH="$FIXTURE/bin:$PATH" \
+                "$JAILBOX_DIR/jailbox" stop
+        ) 2>&1 ) || true
+        if ! resource_present container "$PREFIX"; then
+            pass "the $spelling spelling derives the same container name"
+        else
+            fail "the $spelling spelling derives the same container name (got: $output)"
+        fi
+    done
+    rm -f "$link"
+}
+
+# Both supported tools compute the same SHA-256, so a host with either one
+# reaches the same project resources.
+test_both_sha256_tools_produce_the_same_identity() {
+    local project restricted output tool
+    local -a common=(bash sh dirname basename tr cut sed awk grep cat id mktemp rm find)
+
+    for tool in sha256sum shasum; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            echo "  ⏭️  $tool is not installed; skipping its identity vector"
+            continue
+        fi
+        restricted=$(make_restricted_bin "only-$tool" "${common[@]}" "$tool")
+        new_project
+        project="$PROJECT"
+        declare_resource container "$PREFIX"
+
+        output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
+            "$JAILBOX_DIR/jailbox" stop) 2>&1 || true)
+        if ! resource_present container "$PREFIX"; then
+            pass "$tool alone derives the shared project identity"
+        else
+            fail "$tool alone derives the shared project identity (got: $output)"
+        fi
+    done
+}
+
 test_launch_runs_without_replace() {
     if grep -Fq -- '--replace' "$JAILBOX_DIR/host/container-runtime.sh" ||
         grep -Fq -- '--replace' "$JAILBOX_DIR/host/network.sh"; then
@@ -622,14 +767,18 @@ test_launch_runs_without_replace() {
 echo "lifecycle tests"
 echo ""
 
-test_stop_removes_owned_containers_only
+test_stop_removes_both_project_containers
 test_stop_is_idempotent_and_partial_safe
-test_stop_refuses_unowned_containers
+test_stop_removes_any_occupant_of_the_derived_names
 test_lifecycle_fails_closed_on_exists_errors
 test_stop_ignores_configuration
 test_stop_requires_podman_only
-test_clean_removes_every_owned_target
-test_clean_refuses_unowned_targets_of_any_type
+test_clean_removes_every_derived_target
+test_clean_removes_foreign_targets_of_any_type
+test_clean_leaves_undeclared_names_alone
+test_identity_requires_a_sha256_tool
+test_identity_is_stable_across_path_spellings
+test_both_sha256_tools_produce_the_same_identity
 test_launch_requires_absent_sandbox
 test_stop_precondition_precedes_initialization
 test_launch_reports_missing_podman_first

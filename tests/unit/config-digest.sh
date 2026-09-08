@@ -509,7 +509,6 @@ run_compatibility_gate() {
     (
         PATH="$FIXTURE/bin:$PATH"
         export FAKE_PODMAN_STATE="$1"
-        PROJECT_DIR="$FIXTURE"
         CONTAINER_NAME="jailbox-gate"
         PROXY_NAME="jailbox-gate-proxy"
         NETWORK_NAME="jailbox-gate-net"
@@ -560,11 +559,11 @@ for resource in container.jailbox-gate container.jailbox-gate-proxy \
 done
 assert_gate_accepts "a complete matching inventory is compatible" "$state"
 
-put_resource "$state" volume.jailbox-gate-home "jailbox.project=$FIXTURE"
+put_resource "$state" volume.jailbox-gate-home "jailbox.config-digest=$OTHER_DIGEST"
 assert_gate_accepts "the home volume is outside the digest inventory" "$state"
 
 state=$(gate_state)
-put_resource "$state" network.jailbox-gate-net "jailbox.project=$FIXTURE"
+put_resource "$state" network.jailbox-gate-net
 assert_gate_refuses "an unlabeled network is incompatible" "$state" \
     "no configuration digest label" "jailbox --clean"
 

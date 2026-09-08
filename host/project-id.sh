@@ -1,4 +1,12 @@
 # Shared project identity helpers.
+#
+# Identity is the first 12 lowercase hexadecimal characters of the SHA-256
+# digest of the canonical physical project path, which the CLI establishes with
+# `pwd -P`. There is no fallback hash: a host with neither sha256sum nor shasum
+# cannot derive a name at all, so every command that needs project identity
+# fails with that dependency error before touching a resource. Hashing failures
+# propagate for the same reason — a partial or empty digest must never reach a
+# derived name.
 
 # Human-readable slug from the project directory name. The prefix is used in
 # image tags too, so the slug must satisfy the strictest naming rules (OCI
@@ -15,38 +23,49 @@ jailbox_project_slug_for_path() {
 # Shared prefix for all per-project Podman resources (container, proxy,
 # volume, networks, images). The slug is cosmetic; the hash is the identity.
 jailbox_resource_prefix_for_path() {
-    local slug
+    local slug hash
 
+    hash=$(jailbox_project_hash_for_path "$1") || return 1
     slug=$(jailbox_project_slug_for_path "$1")
     if [ -n "$slug" ]; then
-        printf 'jailbox-%s-%s\n' "$slug" "$(jailbox_project_hash_for_path "$1")"
+        printf 'jailbox-%s-%s\n' "$slug" "$hash"
     else
-        printf 'jailbox-%s\n' "$(jailbox_project_hash_for_path "$1")"
+        printf 'jailbox-%s\n' "$hash"
     fi
 }
 
 jailbox_project_hash_for_path() {
+    local digest
+
     if command -v sha256sum >/dev/null 2>&1; then
-        printf '%s' "$1" | sha256sum | cut -c1-12
+        digest=$(printf '%s' "$1" | sha256sum) || return 1
     elif command -v shasum >/dev/null 2>&1; then
-        printf '%s' "$1" | shasum -a 256 | cut -c1-12
+        digest=$(printf '%s' "$1" | shasum -a 256) || return 1
     else
-        printf '%s' "$1" | cksum | cut -d' ' -f1
+        echo "Error: required command not found: sha256sum or shasum" >&2
+        return 1
     fi
+
+    digest="${digest%% *}"
+    digest="${digest:0:12}"
+    if [[ ! "$digest" =~ ^[0-9a-f]{12}$ ]]; then
+        echo "Error: SHA-256 tool produced an unusable project hash" >&2
+        return 1
+    fi
+    printf '%s\n' "$digest"
 }
 
 jailbox_project_hash_port_offset() {
     local hash
 
     hash="$1"
-    [ -n "$hash" ] || hash=0
-    # Branches are mutually exclusive: cksum returns pure decimal digits, while
-    # sha256sum/shasum return hexadecimal. The hex branch uses the first 8
-    # characters of the 12-character project hash because 32 bits is enough for
-    # the 0-16382 port-offset range and stays inside shell arithmetic limits.
-    if [[ "$hash" =~ ^[0-9]+$ && "${#hash}" -le 10 ]]; then
-        printf '%s\n' "$((hash % 16383))"
-    else
-        printf '%s\n' "$((16#${hash:0:8} % 16383))"
+    # Reject anything but a complete project hash: an empty or truncated value
+    # would silently collapse distinct projects onto one offset.
+    if [[ ! "$hash" =~ ^[0-9a-f]{12}$ ]]; then
+        echo "Error: internal error: port offset requires a 12-character project hash" >&2
+        return 1
     fi
+    # The first 8 characters are enough: 32 bits covers the 0-16382 offset
+    # range and stays inside shell arithmetic limits.
+    printf '%s\n' "$((16#${hash:0:8} % 16383))"
 }

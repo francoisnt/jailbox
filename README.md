@@ -26,7 +26,8 @@ its reach into your machine.
 
 - **Linux or macOS** with **Podman** (rootless preferred)
 - **Bash 4.4 or newer** (`brew install bash` on macOS)
-- `podman`, `ssh`, `ssh-keygen`
+- `podman`, `ssh`, `ssh-keygen`, and either `sha256sum` or `shasum` (project
+  identity is a SHA-256 hash of the project path)
 - VS Code or VSCodium with the **Remote - SSH** extension (for the editor
   workflow)
 - A project with a `Containerfile`/`Dockerfile` — or any public image name
@@ -163,13 +164,24 @@ running. Run `jailbox` again once the build is fixed.
 `--clean` is the full teardown: containers, the home volume, all three
 project networks, and the project's runtime state. Images are not removed.
 
-Both commands prove ownership from the `jailbox.project` label rather than
-from the derived resource name. `--clean` inspects every container, the home
-volume, and every project network before deleting anything; a single
-unlabelled or foreign resource aborts the whole operation with nothing
-removed. Neither command will touch a resource jailbox does not own — resolve
-those name collisions with Podman directly (`podman rm`, `podman volume rm`,
-`podman network rm`).
+Both commands act on the project's exact derived names and on nothing else —
+the two containers for `stop`, those plus the home volume and the three
+networks for `--clean`. They never read configuration and never compute the
+configuration digest, so they stay usable when `jailbox.conf` is missing or
+malformed; whatever occupies one of those names is removed, regardless of what
+created it. Every target is probed before anything is deleted, so a Podman
+failure aborts the whole operation with nothing removed.
+
+The names are derived from the SHA-256 hash of the project's physical path, so
+an unrelated occupant is improbable — but if one exists, `stop` or `--clean`
+will delete it. That is a deliberate trade: a name-collision check could not be
+a security boundary anyway. Names and labels cannot authenticate a resource
+against any process running with your Podman authority, which is exactly the
+authority these commands use. jailbox's containment comes from mounting no
+container-engine socket into the sandbox, so the sandbox never holds that
+authority in the first place; guarding host-side deletions against other
+host-side processes is a different threat boundary, and not one jailbox
+claims.
 
 Concurrent lifecycle commands for one project are unsupported. They no longer
 silently replace each other's containers, but they still race over shared SSH,
@@ -286,9 +298,7 @@ READONLY_PATHS=
 `init` refuses to overwrite any existing file or other filesystem object. It
 also requires both deterministic project container names to be absent: an
 existing writable sandbox could otherwise alter the policy anchor while it is
-being published. Clear an existing project sandbox with `jailbox stop`; a name
-collision with a container jailbox does not own must be resolved with Podman
-directly.
+being published. Clear those names with `jailbox stop`.
 
 Configuration uses strict `KEY=value` lines (no shell syntax, values cannot
 contain whitespace):
@@ -414,6 +424,12 @@ unrestricted outbound internet access.
 - The AI (or any code running in the container) can still exfiltrate or
   destroy project contents
 - You still share the kernel and container runtime trust boundary
+- `stop` and `--clean` delete the project's exact derived Podman names using
+  your own Podman authority. Neither a name nor a label can authenticate a
+  resource against a host process that already holds that authority, so these
+  commands are not a guard against other host-side processes. What jailbox
+  does guarantee is that the sandbox never holds that authority: no
+  container-engine socket is mounted into it
 - Without `EGRESS_ALLOW`, the container has unrestricted outbound internet
   access
 - Host services listening on `0.0.0.0` (local dev servers, LLM runtimes,
@@ -486,8 +502,6 @@ editor integration for the current project.
 | `managed user 'jailbox' already exists in the dev image` | Remove/rename that user in the dev image; jailbox manages its own user |
 | `host UID N already belongs to existing image user` | Use a dev image where your UID is free; jailbox will not mutate existing users |
 | `project sandbox container ... is still present` | A previous sandbox is still running; run `jailbox stop`, then launch again |
-| `container name ... is already used by a container jailbox does not own` | Something outside jailbox holds the derived name; inspect it with `podman inspect <name>` and remove it yourself |
-| `refusing to remove resources jailbox does not own` | `stop`/`--clean` found an unlabelled or foreign container, volume, or network; remove the named resources with Podman |
 | `local port N is already in use` | Another process holds the project's derived SSH port; stop it and relaunch |
 | A request from inside the container fails in egress mode | Check the proxy log: `podman logs <project>-proxy` (find the name with `podman ps`). Blocked hosts appear as `Proxying refused on filtered domain` — add the domain to `EGRESS_ALLOW` and relaunch |
 | VS Code cannot connect to an Alpine-based container | VS Code Remote SSH does not support Alpine hosts; set `EDITOR=codium` |

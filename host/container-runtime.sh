@@ -12,9 +12,9 @@ initialize_container_runtime_state() {
     ROOTFS_FLAG=()
 }
 
-# Ownership is proven by the jailbox.project label, never by a derived resource
-# name. Podman exposes labels differently per resource type, so inspection is
-# type-specific while the ownership decision is not.
+# Exact deterministic names are this project's identity. Podman exposes
+# existence and labels differently per resource type, so probing is
+# type-specific while the decision made from it is not.
 jailbox_resource_exists() {
     case "$1" in
         container) podman container exists "$2" 2>/dev/null ;;
@@ -51,54 +51,34 @@ jailbox_resource_label() {
     esac
 }
 
-jailbox_resource_owner() {
-    jailbox_resource_label "$1" "$2" jailbox.project
-}
-
-# absent | owned | foreign for one "TYPE:NAME" resource target.
-jailbox_resource_ownership() {
-    local kind name owner status
-
-    kind="${1%%:*}"
-    name="${1#*:}"
-    status=0
-    jailbox_resource_exists "$kind" "$name" || status=$?
-    case "$status" in
-        0) ;;
-        1) printf 'absent\n'; return 0 ;;
-        *) die "could not determine whether $kind '$name' exists with Podman" ;;
-    esac
-    owner=$(jailbox_resource_owner "$kind" "$name")
-    if [ "$owner" = "$PROJECT_DIR" ]; then
-        printf 'owned\n'
-    else
-        printf 'foreign\n'
-    fi
-}
-
-# Resolve "TYPE:NAME" targets into the owned removal set named by the first
-# argument. Every present target is inspected before anything is removed, so a
-# single foreign collision aborts the whole operation with nothing mutated.
-resolve_owned_resources() {
-    local -n owned_ref="$1"
+# Resolve "TYPE:NAME" targets into the present removal set named by the first
+# argument. Every target is probed before anything is removed, so a Podman
+# probe failure aborts the whole operation with nothing mutated.
+#
+# Presence under the derived name is the only test. Deletion deliberately does
+# not consult the configuration digest: stop and --clean stay usable when
+# configuration is missing or malformed, so an occupant of a derived name is
+# removed whatever created it.
+resolve_present_resources() {
+    local -n present_ref="$1"
     shift
-    local target collisions
+    local target kind name status
 
-    owned_ref=()
-    collisions=""
+    present_ref=()
     for target in "$@"; do
-        case "$(jailbox_resource_ownership "$target")" in
-            owned) owned_ref+=("$target") ;;
-            foreign) collisions="${collisions:+$collisions, }${target%%:*} '${target#*:}'" ;;
-            absent) ;;
-            *) die "internal error: could not classify resource '$target'" ;;
+        kind="${target%%:*}"
+        name="${target#*:}"
+        status=0
+        jailbox_resource_exists "$kind" "$name" || status=$?
+        case "$status" in
+            0) present_ref+=("$target") ;;
+            1) ;;
+            *) die "could not determine whether $kind '$name' exists with Podman" ;;
         esac
     done
-    [ -z "$collisions" ] || \
-        die "refusing to remove resources jailbox does not own: $collisions; inspect and remove them directly with Podman"
 }
 
-remove_owned_resource() {
+remove_project_resource() {
     local kind name
 
     kind="${1%%:*}"
@@ -114,18 +94,17 @@ remove_owned_resource() {
 }
 
 require_sandbox_absent() {
-    local name
+    local name status
 
     for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
-        case "$(jailbox_resource_ownership "container:$name")" in
-            owned)
+        status=0
+        jailbox_resource_exists container "$name" || status=$?
+        case "$status" in
+            0)
                 die "project sandbox container '$name' is still present; run 'jailbox stop' to remove it"
                 ;;
-            foreign)
-                die "container name '$name' is already used by a container jailbox does not own; inspect and remove it directly with Podman"
-                ;;
-            absent) ;;
-            *) die "internal error: could not classify container '$name'" ;;
+            1) ;;
+            *) die "could not determine whether container '$name' exists with Podman" ;;
         esac
     done
 }
@@ -136,20 +115,20 @@ require_sandbox_absent() {
 # bring-up.
 stop_jailbox() {
     local target
-    local -a owned=()
+    local -a present=()
 
-    resolve_owned_resources owned \
+    resolve_present_resources present \
         "container:$CONTAINER_NAME" \
         "container:$PROXY_NAME"
 
-    if [ -z "${owned[*]-}" ]; then
+    if [ -z "${present[*]-}" ]; then
         echo "No jailbox containers to stop."
         return 0
     fi
 
     echo "🛑 Stopping jailbox..."
-    for target in "${owned[@]}"; do
-        remove_owned_resource "$target"
+    for target in "${present[@]}"; do
+        remove_project_resource "$target"
     done
     echo "✅ Stopped"
 }
@@ -264,11 +243,11 @@ assert_container_launch_state() {
 
 clean_jailbox() {
     local target
-    local -a owned=()
+    local -a present=()
 
-    # Ownership is validated for every present target before anything is
-    # removed; containers first so networks and the volume are free.
-    resolve_owned_resources owned \
+    # Every target is probed before anything is removed; containers first so
+    # the networks and the volume are free.
+    resolve_present_resources present \
         "container:$CONTAINER_NAME" \
         "container:$PROXY_NAME" \
         "volume:$VOLUME_NAME" \
@@ -277,8 +256,8 @@ clean_jailbox() {
         "network:${NETWORK_NAME}-external"
 
     echo "🧹 Cleaning up..."
-    for target in "${owned[@]}"; do
-        remove_owned_resource "$target"
+    for target in "${present[@]}"; do
+        remove_project_resource "$target"
     done
     rm -rf -- "$SSH_DIR"
     echo "✅ Done"
@@ -288,7 +267,7 @@ ensure_home_volume() {
     local volume_path
 
     if ! podman volume exists "$VOLUME_NAME" 2>/dev/null; then
-        podman volume create --label "jailbox.project=$PROJECT_DIR" "$VOLUME_NAME"
+        podman volume create "$VOLUME_NAME"
         volume_path=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}')
         # Rootless volumes are created from the host side. Chown only the new
         # jailbox-managed home volume so the keep-id user can write to it; do
@@ -312,7 +291,6 @@ start_jailbox_container() {
     # copies it into /run/jailbox-sshd with strict ownership before sshd starts.
     podman run -d \
         --name "$CONTAINER_NAME" \
-        --label "jailbox.project=$PROJECT_DIR" \
         "${CONFIG_DIGEST_LABEL_ARGS[@]}" \
         --userns=keep-id \
         --network "${NETWORK_STATE[selected_network]}" \
