@@ -240,7 +240,7 @@ config_digest_incompatibility() {
 # labels all refuse here, before anything is created, removed, or reused.
 require_compatible_project_resources() {
     local target kind name recorded status reason guidance summary
-    local -a incompatible=() stale_networks=()
+    local -a incompatible=()
 
     assert_config_digest_ready
     while IFS= read -r target; do
@@ -258,7 +258,6 @@ require_compatible_project_resources() {
         [ "$recorded" = "$CONFIG_DIGEST" ] && continue
         reason=$(config_digest_incompatibility "$recorded")
         incompatible+=("$kind '$name' carries $reason")
-        [ "$kind" = network ] && stale_networks+=("$name")
     done < <(config_digest_inventory)
 
     [ -z "${incompatible[*]-}" ] && return 0
@@ -267,12 +266,6 @@ require_compatible_project_resources() {
     for reason in "${incompatible[@]}"; do
         summary="${summary:+$summary; }$reason"
     done
-    # Networks survive stop, so only the full teardown can replace an
-    # incompatible one; containers alone need no more than the stop boundary.
-    if [ -n "${stale_networks[*]-}" ]; then
-        guidance="Run 'jailbox --clean' and then 'jailbox up' to recreate every project resource; --clean also removes this project's persistent home volume."
-    else
-        guidance="Run 'jailbox stop' and then 'jailbox up' to recreate the containers."
-    fi
+    guidance="Run 'jailbox stop' and then 'jailbox up' to recreate the containers and networks."
     die "refusing to reuse project resources that do not match this configuration and jailbox version: $summary. $guidance"
 }

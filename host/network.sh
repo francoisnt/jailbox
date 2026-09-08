@@ -30,8 +30,8 @@ initialize_network_state() {
 
 configure_network() {
     initialize_network_state
-    # Networks survive stop and carry the digest, so no network is created
-    # before the current configuration has one.
+    # Every network carries the digest, so no network is created before the
+    # current configuration has one.
     assert_config_digest_ready
 
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then

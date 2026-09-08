@@ -511,6 +511,17 @@ test_declaration_integrity() {
 }
 
 main() {
+    local value
+    assert_env_config "home is persistent by default" '[ "$EPHEMERAL_HOME" = false ]' \
+        JAILBOX_CONFIG_READONLY_PATHS=
+    for value in true false; do
+        assert_env_config "home accepts $value" "[ \"\$EPHEMERAL_HOME\" = $value ]" \
+            "JAILBOX_CONFIG_EPHEMERAL_HOME=$value"
+    done
+    for value in '' TRUE False 0 1 yes no ' true' 'false '; do
+        assert_env_rejects "invalid home boolean '$value'" 'invalid EPHEMERAL_HOME' \
+            "JAILBOX_CONFIG_EPHEMERAL_HOME=$value"
+    done
     test_scalars_and_arrays
     test_resource_limits
     test_declaration_driven_scalars

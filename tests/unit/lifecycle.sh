@@ -28,16 +28,47 @@ resource_file() {
 }
 
 case "$1 $2" in
-    "container exists"|"volume exists"|"network exists")
+    "container exists"|"volume exists"|"network exists"|"image exists")
         [ "${FAKE_PODMAN_EXISTS_ERROR_KIND:-}" != "$1" ] || exit 125
+        if [ "${FAKE_PODMAN_RECHECK_ERROR:-}" = 1 ] && [ -f "$state/vanished" ]; then
+            exit 125
+        fi
         [ -f "$(resource_file "$1" "$3")" ]
         ;;
     "container inspect"|"volume inspect"|"network inspect")
+        [ "${FAKE_PODMAN_INSPECT_ERROR_KIND:-}" != "$1" ] || exit 125
         file=$(resource_file "$1" "$3")
         [ -f "$file" ] || exit 1
-        cat "$file"
+        if [ "$1" = volume ]; then
+            if [ "$5" = '{{.Mountpoint}}' ]; then
+                printf '%s/home-contents\n' "$state"
+                exit 0
+            fi
+            awk -F= '$1 == "jailbox.ephemeral-home" {
+                if ($0 == "jailbox.ephemeral-home=true") print "true";
+                else if ($0 == "jailbox.ephemeral-home=false") print "false";
+                else print "corrupt";
+            }' "$file"
+        else
+            cat "$file"
+        fi
         ;;
-    "volume rm"|"network rm")
+    "volume create")
+        [ "$3" = --label ] || exit 1
+        printf '%s' "$4" > "$(resource_file volume "$5")"
+        printf 'volume create %s\n' "$5" >> "$state/actions"
+        ;;
+    "volume rm"|"network rm"|"image rm")
+        if [ "${FAKE_PODMAN_VANISH_NAME:-}" = "$3" ]; then
+            rm -f "$(resource_file "$1" "$3")"
+            touch "$state/vanished"
+            exit 125
+        fi
+        [ "${FAKE_PODMAN_REMOVE_ERROR_NAME:-}" != "$3" ] || exit 125
+        if [ "$1" = image ] && [ -f "$(resource_file image "${3%-dev}-image")" ]; then
+            # A wrapper child prevents removing its sole-tagged dev parent.
+            [ "${3%-dev}" = "$3" ] || exit 125
+        fi
         file=$(resource_file "$1" "$3")
         [ -f "$file" ] || exit 1
         printf '%s rm %s\n' "$1" "$3" >> "$state/actions"
@@ -45,12 +76,18 @@ case "$1 $2" in
         ;;
     *)
         case "$1" in
+            unshare) exit 0 ;;
             stop)
                 [ -f "$(resource_file container "$2")" ] || exit 1
                 printf 'container stop %s\n' "$2" >> "$state/actions"
                 ;;
             rm)
                 file=$(resource_file container "$2")
+                if [ "${FAKE_PODMAN_VANISH_NAME:-}" = "$2" ]; then
+                    rm -f "$file"
+                    touch "$state/vanished"
+                    exit 125
+                fi
                 [ -f "$file" ] || exit 1
                 printf 'container rm %s\n' "$2" >> "$state/actions"
                 rm -f "$file"
@@ -121,10 +158,10 @@ test_stop_removes_both_project_containers() {
     else
         fail "stop removes both project containers"
     fi
-    if resource_present volume "$PREFIX-home" && resource_present network "$PREFIX-net"; then
-        pass "stop preserves the home volume and project network"
+    if resource_present volume "$PREFIX-home" && ! resource_present network "$PREFIX-net"; then
+        pass "stop preserves the legacy home and removes the project network"
     else
-        fail "stop preserves the home volume and project network"
+        fail "stop preserves the legacy home and removes the project network"
     fi
     if [ -f "$STATE_DIR/key" ]; then
         pass "stop preserves the project state directory"
@@ -191,7 +228,7 @@ EOF_CASES
 test_lifecycle_fails_closed_on_exists_errors() {
     local project output kind command
 
-    for kind in container volume network; do
+    for kind in container volume network image; do
         new_project
         project="$PROJECT"
         mkdir -p "$STATE_DIR"
@@ -764,6 +801,281 @@ test_launch_runs_without_replace() {
     fi
 }
 
+test_home_retention_and_inspection() {
+    local policy output status
+
+    for policy in legacy false true corrupt empty; do
+        new_project
+        declare_resource container "$PREFIX"
+        declare_resource container "$PREFIX-proxy"
+        declare_resource network "$PREFIX-net"
+        declare_resource network "$PREFIX-net-internal"
+        declare_resource network "$PREFIX-net-external"
+        declare_resource image "$PREFIX-dev"
+        case "$policy" in
+            legacy) declare_resource volume "$PREFIX-home" ;;
+            empty) declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=' ;;
+            *) declare_resource volume "$PREFIX-home" "jailbox.ephemeral-home=$policy" ;;
+        esac
+        output=$(JAILBOX_CONFIG_EPHEMERAL_HOME=invalid run_jailbox "$PROJECT" stop)
+        if ! resource_present container "$PREFIX" && ! resource_present container "$PREFIX-proxy" &&
+            ! resource_present network "$PREFIX-net" && ! resource_present network "$PREFIX-net-internal" &&
+            ! resource_present network "$PREFIX-net-external" && resource_present image "$PREFIX-dev"; then
+            pass "stop clears containers/networks and preserves images for $policy"
+        else
+            fail "stop inventory for $policy"
+        fi
+        if { [ "$policy" = true ] && ! resource_present volume "$PREFIX-home"; } ||
+            { [ "$policy" != true ] && resource_present volume "$PREFIX-home"; }; then
+            pass "stop follows stored $policy policy despite invalid requested configuration"
+        else
+            fail "stored retention for $policy"
+        fi
+        if [[ "$policy" != corrupt && "$policy" != empty ]] || [[ "$output" == *"corrupt"*"preserving"* ]]; then
+            pass "corrupt metadata warning for $policy"
+        else
+            fail "corrupt metadata warning for $policy"
+        fi
+    done
+
+    new_project
+    declare_resource container "$PREFIX"
+    declare_resource network "$PREFIX-net"
+    declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=true'
+    status=0
+    output=$(FAKE_PODMAN_INSPECT_ERROR_KIND=volume run_jailbox "$PROJECT" stop) || status=$?
+    if [ "$status" -ne 0 ] && [ -z "$(actions)" ] && [[ "$output" == *"could not inspect retention metadata"* ]]; then
+        pass "home inspection failure aborts stop before any deletion"
+    else
+        fail "home inspection failure aborts stop (got: $output)"
+    fi
+    if FAKE_PODMAN_INSPECT_ERROR_KIND=volume run_jailbox "$PROJECT" --clean >/dev/null; then
+        pass "clean does not require retention inspection"
+    else
+        fail "clean does not require retention inspection"
+    fi
+}
+
+test_home_recovery() {
+    local policy requested output status recovery
+
+    for policy in legacy false true corrupt empty; do
+        for requested in false true; do
+            new_project
+            printf 'DEV_IMAGE=example.invalid/dev\nEPHEMERAL_HOME=%s\n' "$requested" > "$PROJECT/jailbox.conf"
+            case "$policy" in
+                legacy) declare_resource volume "$PREFIX-home" ;;
+                empty) declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=' ;;
+                *) declare_resource volume "$PREFIX-home" "jailbox.ephemeral-home=$policy" ;;
+            esac
+            # A second, digest-bearing refusal must not hide home recovery.
+            declare_resource network "$PREFIX-net" 'jailbox.config-digest=stale'
+            if [[ "$policy" == legacy || "$policy" == false ]] && [ "$requested" = false ]; then
+                rm "$FAKE_PODMAN_STATE/network.$PREFIX-net"
+            fi
+            output=$(run_jailbox "$PROJECT" up || true)
+            recovery=--clean
+            if [[ "$policy" == legacy || "$policy" == false ]] && [ "$requested" = false ]; then
+                if [[ "$output" == *"Using dev image"* ]] && [ -z "$(actions)" ]; then
+                    pass "$policy home is reusable under false without relabeling"
+                else
+                    fail "$policy home reuse (got: $output)"
+                fi
+                continue
+            elif [ "$policy" = true ]; then
+                recovery=stop
+            fi
+            if [[ "$output" == *"jailbox $recovery"* ]] && [ -z "$(actions)" ]; then
+                pass "$policy under $requested refuses without mutation and names $recovery"
+            else
+                fail "$policy under $requested refusal (got: $output)"
+            fi
+            if [ "$recovery" != --clean ] || [[ "$output" == *"permanently deletes"*"home and runtime state"* ]]; then
+                pass "$policy recovery includes required data-loss warning"
+            else
+                fail "$policy recovery warning"
+            fi
+            run_jailbox "$PROJECT" "$recovery" >/dev/null
+            output=$(run_jailbox "$PROJECT" up || true)
+            if [[ "$output" == *"Using dev image"* ]] && ! resource_present volume "$PREFIX-home"; then
+                pass "$recovery resolves $policy refusal under $requested"
+            else
+                fail "recovery leaves $policy blocked (got: $output)"
+            fi
+        done
+    done
+
+    new_project
+    printf 'DEV_IMAGE=example.invalid/dev\nEPHEMERAL_HOME=invalid\n' > "$PROJECT/jailbox.conf"
+    status=0
+    output=$(run_jailbox "$PROJECT" up) || status=$?
+    if [ "$status" -eq 1 ] && [ -z "$(actions)" ] && [[ "$output" == *"invalid EPHEMERAL_HOME"* ]]; then
+        pass "invalid home mode exits 1 before lifecycle mutation"
+    else
+        fail "invalid home mode refusal (got: $output)"
+    fi
+}
+
+run_home_function() (
+    # Exercise creation/reuse at the owning layer, without a complete fake
+    # image build/SSH stack. The CLI refusal cases above test dispatch wiring.
+    # shellcheck disable=SC1091
+    source "$JAILBOX_DIR/host/public-api.sh"
+    # shellcheck disable=SC1091
+    source "$JAILBOX_DIR/host/common.sh"
+    # shellcheck disable=SC1091
+    source "$JAILBOX_DIR/host/container-runtime.sh"
+    apply_config_defaults
+    PROJECT_DIR="$PROJECT"
+    initialize_project_names
+    EPHEMERAL_HOME="$1"
+    PATH="$FIXTURE/bin:$PATH"
+    "$2"
+)
+
+test_home_creation_and_generation() {
+    local mode before output status
+
+    for mode in true false; do
+        new_project
+        run_home_function "$mode" ensure_home_volume >/dev/null
+        if [ "$(cat "$FAKE_PODMAN_STATE/volume.$PREFIX-home")" = "jailbox.ephemeral-home=$mode" ]; then
+            pass "new home labels effective $mode mode"
+        else
+            fail "new home labels effective $mode mode"
+        fi
+        before=$(actions)
+        run_home_function "$mode" ensure_home_volume >/dev/null
+        if [ "$before" = "$(actions)" ]; then
+            pass "existing home is not recreated or relabeled"
+        else
+            fail "existing home is not recreated or relabeled"
+        fi
+    done
+    new_project
+    # These owning-layer cases become reachable through CLI convergence in
+    # 03.2.06. The current CLI's absence guard still refuses any container.
+    declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=true'
+    declare_resource container "$PREFIX"
+    if run_home_function true require_compatible_home; then
+        pass "ephemeral home is eligible only with its surviving generation"
+    else
+        fail "ephemeral home is eligible with surviving generation"
+    fi
+    status=0
+    output=$(run_home_function false require_compatible_home 2>&1) || status=$?
+    if [ "$status" -ne 0 ] && [[ "$output" == *"jailbox stop"* ]] && [ -z "$(actions)" ]; then
+        pass "ephemeral-to-persistent refuses before mutation with stop recovery"
+    else
+        fail "ephemeral-to-persistent recovery (got: $output)"
+    fi
+    status=0
+    output=$(FAKE_PODMAN_INSPECT_ERROR_KIND=volume run_home_function true require_compatible_home 2>&1) || status=$?
+    if [ "$status" -ne 0 ] && [ -z "$(actions)" ] && [[ "$output" == *"could not inspect"* ]]; then
+        pass "up inspection failure preserves the existing generation"
+    else
+        fail "up inspection failure (got: $output)"
+    fi
+}
+
+test_vanished_cleanup_targets() {
+    local kind name command output status
+
+    for kind in container network volume image; do
+        new_project
+        declare_resource container "$PREFIX"
+        declare_resource network "$PREFIX-net"
+        declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=true'
+        declare_resource image "$PREFIX-image"
+        case "$kind" in
+            container) name="$PREFIX" ;;
+            network) name="$PREFIX-net" ;;
+            volume) name="$PREFIX-home" ;;
+            image) name="$PREFIX-image" ;;
+        esac
+        command=stop
+        [ "$kind" != image ] || command=--clean
+        status=0
+        output=$(FAKE_PODMAN_VANISH_NAME="$name" run_jailbox "$PROJECT" "$command") || status=$?
+        if [ "$status" -eq 0 ] && ! resource_present container "$PREFIX" &&
+            ! resource_present network "$PREFIX-net" && ! resource_present volume "$PREFIX-home"; then
+            pass "$command completes when $kind disappears before removal"
+        else
+            fail "vanished $kind cleanup (got: $output)"
+        fi
+    done
+    new_project
+    declare_resource container "$PREFIX"
+    declare_resource network "$PREFIX-net"
+    status=0
+    output=$(FAKE_PODMAN_VANISH_NAME="$PREFIX" FAKE_PODMAN_RECHECK_ERROR=1 \
+        run_jailbox "$PROJECT" stop) || status=$?
+    if [ "$status" -ne 0 ] && resource_present network "$PREFIX-net"; then
+        pass "failed absence recheck aborts remaining cleanup"
+    else
+        fail "failed absence recheck (got: $output)"
+    fi
+    new_project
+    output=$(run_jailbox "$PROJECT" stop)
+    if [[ "$output" == 'No jailbox resources to stop.' ]] && [ -z "$(actions)" ]; then
+        pass "empty stop reports nothing to do"
+    else
+        fail "empty stop message (got: $output)"
+    fi
+}
+
+test_interrupted_stop_and_exact_images() {
+    local output status name
+
+    new_project
+    printf 'DEV_IMAGE=example.invalid/dev\n' > "$PROJECT/jailbox.conf"
+    declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=false'
+    declare_resource network "$PREFIX-net" 'jailbox.config-digest=stale'
+    output=$(run_jailbox "$PROJECT" up || true)
+    if [[ "$output" == *"jailbox stop"* && "$output" != *"jailbox --clean"* ]] && [ -z "$(actions)" ]; then
+        pass "network-only mismatch refuses without mutation and names stop"
+    else
+        fail "network-only recovery advice (got: $output)"
+    fi
+    run_jailbox "$PROJECT" stop >/dev/null
+    output=$(run_jailbox "$PROJECT" up || true)
+    if [[ "$output" == *"Using dev image"* ]] && resource_present volume "$PREFIX-home"; then
+        pass "stop resolves network mismatch without deleting persistent home"
+    else
+        fail "network recovery preserves home (got: $output)"
+    fi
+
+    new_project
+    declare_resource container "$PREFIX"
+    declare_resource network "$PREFIX-net"
+    declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=true'
+    status=0
+    output=$(FAKE_PODMAN_REMOVE_ERROR_NAME="$PREFIX-net" run_jailbox "$PROJECT" stop) || status=$?
+    if [ "$status" -ne 0 ] && ! resource_present container "$PREFIX" && resource_present volume "$PREFIX-home"; then
+        pass "failed network removal reports failure and leaves home until retry"
+    else
+        fail "failed network removal (got: $output)"
+    fi
+    run_jailbox "$PROJECT" stop >/dev/null
+    if ! resource_present network "$PREFIX-net" && ! resource_present volume "$PREFIX-home"; then
+        pass "stop without containers completes interrupted cleanup"
+    else
+        fail "stop without containers completes interrupted cleanup"
+    fi
+
+    for name in "$PREFIX-dev" "$PREFIX-image" "$PREFIX-proxy" external-dev other-project-dev; do
+        declare_resource image "$name"
+    done
+    output=$(JAILBOX_CONFIG_DEV_IMAGE=external-dev run_jailbox "$PROJECT" --clean)
+    if ! resource_present image "$PREFIX-dev" && ! resource_present image "$PREFIX-image" &&
+        ! resource_present image "$PREFIX-proxy" && resource_present image external-dev &&
+        resource_present image other-project-dev && [[ "$output" == *"permanently deletes"* ]]; then
+        pass "clean removes only exact derived image names and warns"
+    else
+        fail "clean image scope (got: $output)"
+    fi
+}
+
 echo "lifecycle tests"
 echo ""
 
@@ -788,6 +1100,11 @@ test_stop_documented_in_help
 test_up_documented_in_help
 test_up_ignores_editor_environment_override
 test_launch_runs_without_replace
+test_home_retention_and_inspection
+test_home_recovery
+test_home_creation_and_generation
+test_interrupted_stop_and_exact_images
+test_vanished_cleanup_targets
 
 echo ""
 if [ "$FAILED" -eq 0 ]; then

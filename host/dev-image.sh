@@ -18,6 +18,14 @@ initialize_dev_image_state() {
     SELECTED_DEV_BUILD_CONTEXT=""
 }
 
+# Cleanup uses immutable project identity, never the image selected at launch.
+# Remove the wrapper before its dev-image parent so child images cannot block
+# deletion of a project-built dev image.
+project_cleanup_images() {
+    printf '%s\n' "${PROJECT_RESOURCE_PREFIX}-image" \
+        "${PROJECT_RESOURCE_PREFIX}-proxy" "${PROJECT_RESOURCE_PREFIX}-dev"
+}
+
 assert_dev_image_state_initialized() {
     [ -n "$PROJECT_DEV_IMAGE" ] && [ -n "$JAILBOX_IMAGE" ] || \
         die "internal error: development image state is not initialized"

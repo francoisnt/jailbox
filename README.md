@@ -124,10 +124,10 @@ READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
 jailbox init         # Create the default project configuration
 jailbox              # Launch the environment (default; requires jailbox.conf)
 jailbox up           # Launch without requiring or opening an editor
-jailbox stop         # Stop and remove this project's containers
+jailbox stop         # Remove containers, networks, and an opted-in ephemeral home
 jailbox doctor       # Check SSH and editor integration status
 jailbox ssh-config   # Show SSH configuration instructions
-jailbox --clean      # Remove container, volume, networks and jailbox runtime state
+jailbox --clean      # Permanently delete home/runtime state and remove derived resources/images
 jailbox --uninstall  # Remove the jailbox installation from this machine
 ```
 
@@ -149,28 +149,49 @@ these two commands start containers, and both require configuration —
 set (see Configuration) — and the same explicit `stop` boundary before
 relaunch.
 
-`stop` removes only the ephemeral development and proxy containers. The home
-volume, networks, images, and the project state directory are preserved —
-the next launch creates fresh containers and rotates the SSH key pair. It is
-idempotent, succeeds when either or both containers are already gone, and
-never reads or creates configuration, so it stays usable when `jailbox.conf`
-is missing or malformed. There is deliberately no flag that relaunches over a
-running sandbox.
+`stop` removes the development and proxy containers and all three project
+networks. The home is persistent by default; a home created with
+`EPHEMERAL_HOME=true` is removed last. Images and the project state directory
+are preserved. The next launch creates fresh containers and rotates the SSH
+key pair. Stop is idempotent, succeeds when either or both containers are
+already gone, and never reads or creates configuration, so it stays usable
+when `jailbox.conf` is missing or malformed. There is deliberately no flag
+that relaunches over a running sandbox.
 
 Because nothing is kept alive as a fallback, a launch that fails after
 `jailbox stop` — a broken dev image build, for example — leaves no sandbox
 running. Run `jailbox` again once the build is fixed.
 
 `--clean` is the full teardown: containers, the home volume, all three
-project networks, and the project's runtime state. Images are not removed.
+project networks, the project's runtime state, and the exact derived dev,
+wrapper, and proxy image names. It warns that the home and runtime state are
+permanently deleted. An external `DEV_IMAGE` is untouched unless deliberately
+named as one of those three derived images.
 
 Both commands act on the project's exact derived names and on nothing else —
-the two containers for `stop`, those plus the home volume and the three
-networks for `--clean`. They never read configuration and never compute the
-configuration digest, so they stay usable when `jailbox.conf` is missing or
-malformed; whatever occupies one of those names is removed, regardless of what
-created it. Every target is probed before anything is deleted, so a Podman
-failure aborts the whole operation with nothing removed.
+the two containers, three networks, and home (subject to stored retention for
+`stop`), plus the three derived images for `--clean`. They never read
+configuration and never compute the configuration digest, so they stay usable
+when `jailbox.conf` is missing or malformed; whatever occupies one of those
+names is removed, regardless of what created it. Every target is probed before
+anything is deleted; stop also reads home metadata first. A probe or required
+metadata inspection failure aborts without deletion. A later removal failure
+reports an error and leaves a partially completed cleanup that can be retried.
+
+New homes record `jailbox.ephemeral-home=true|false` at creation. Stop follows
+that stored value, independently of current configuration. Unlabeled legacy
+homes remain unlabeled and persistent. A present invalid label (including an
+empty value) makes stop warn and preserve the home; launch refuses it with
+warned `--clean` then `up` guidance. A metadata inspection error never counts
+as a legacy or corrupt label.
+
+Changing persistent or legacy homes to ephemeral requires explicit `--clean`
+then `up`, permanently deleting the existing home and runtime state. Changing
+ephemeral homes to persistent uses `stop` then `up`. An ephemeral home left
+without its development-container object is never reused: run `stop` to remove
+it before `up`, even when requesting the same mode. These home refusals take
+precedence over a configuration digest mismatch; cleanup never runs
+automatically.
 
 The names are derived from the SHA-256 hash of the project's physical path, so
 an unrelated occupant is improbable — but if one exists, `stop` or `--clean`
@@ -208,17 +229,16 @@ three project networks — carries a `jailbox.config-digest` label: a SHA-256
 digest of the exact jailbox version, the effective machine configuration
 values, and the identity of the selected Containerfile. A launch recomputes
 that digest and refuses before creating or reusing anything when a surviving
-resource carries a missing, malformed, or different one. Networks survive
-`jailbox stop`, so an incompatible one is cleared by `jailbox --clean`, which
-also removes this project's persistent home volume. Containers never reach
-this comparison at launch: both must already be absent before a launch mutates
-anything, and `jailbox stop` removes them. Resources created by a jailbox
-release from before the digest carry no label at all, so they are incompatible
-too; the refusal names each one and the command that clears it.
+resource carries a missing, malformed, or different one. `jailbox stop`
+clears incompatible networks while preserving persistent homes. Containers
+never reach this comparison at launch: both must already be absent before a
+launch mutates anything, and `jailbox stop` removes them. Resources created by
+a jailbox release from before the digest carry no label at all, so they are
+incompatible too; the refusal names each one and the command that clears it.
 
-The persistent home volume is deliberately exempt. It has no immutable
-security-relevant creation settings — its containment comes from the mount and
-runtime policy applied at every launch — so home content survives
+The home volume is deliberately exempt from the digest. Its retention metadata
+is checked separately, and its containment comes from the mount and runtime
+policy applied at every launch. Persistent home content therefore survives
 configuration and version changes.
 
 **The digest covers references, not content.** A mutable or re-pulled
@@ -327,6 +347,7 @@ external config directly rather than a symlinked spelling.
 | `MEMORY_LIMIT` | `4g` | Development container memory limit (Podman `--memory` value) |
 | `CPU_LIMIT` | `2` | Development container CPU limit (Podman `--cpus` value) |
 | `PIDS_LIMIT` | `256` | Development container process-count limit (Podman `--pids-limit` value) |
+| `EPHEMERAL_HOME` | `false` | Exact lowercase `true` or `false`; `true` makes the home belong to one container generation and deletes it on stop. Empty or other values are invalid. |
 | `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`); frontend-only, file-exclusive key |
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
 | `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |
@@ -424,6 +445,9 @@ unrestricted outbound internet access.
 - The AI (or any code running in the container) can still exfiltrate or
   destroy project contents
 - You still share the kernel and container runtime trust boundary
+- Persistent home contents are sandbox-controlled state retained across policy
+  and version changes. They are not integrity-checked; use an ephemeral home
+  when each new container generation should start with fresh home contents
 - `stop` and `--clean` delete the project's exact derived Podman names using
   your own Podman authority. Neither a name nor a label can authenticate a
   resource against a host process that already holds that authority, so these
@@ -461,7 +485,7 @@ jailbox follows a clean layered approach:
 
 1. **Dev Image** — Uses or builds from your existing `Containerfile`/`Dockerfile`
 2. **Wrapper Image** — Adds OpenSSH server, creates the managed `jailbox` user, and installs hardened sshd config
-3. **Runtime** — Project mounted at `/home/jailbox/project` (writable) with selected paths overlaid read-only, plus a persistent home volume for the jailbox user
+3. **Runtime** — Project mounted at `/home/jailbox/project` (writable) with selected paths overlaid read-only, plus a home volume that is persistent by default
 4. **SSH & Editor** — Generates project-specific SSH state under `~/.local/state/jailbox/projects/` and VS Code/VSCodium user profiles under `~/.local/state/jailbox/editor-profiles/`
 
 **What remains unavoidable** (due to Remote SSH limitations):

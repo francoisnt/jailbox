@@ -142,6 +142,7 @@ expected_stream=$(printf '%s\n' \
     $'scalar\tMEMORY_LIMIT\t4g' \
     $'scalar\tCPU_LIMIT\t2' \
     $'scalar\tPIDS_LIMIT\t256' \
+    $'scalar\tEPHEMERAL_HOME\tfalse' \
     $'array\tEGRESS_ALLOW\t2' \
     $'value\ta.example.com' \
     $'value\tb.example.com' \
@@ -156,7 +157,7 @@ assert_eq "canonical stream is byte-exact" \
 # Golden digest for the stream above. Regenerate it deliberately whenever the
 # digest inputs or encoding change; a change here is an ordinary within-release
 # digest change, not a compatibility break, because the exact version is hashed.
-GOLDEN_DIGEST="98aca97593e898b450413920d8670e4eed47137e4a274ed52a8babf5da714073"
+GOLDEN_DIGEST="e45c7c1fe29638e6ed185d4bdb0ecb07247e2ac3b1b1dcbb4a5865d73957e9b5"
 assert_eq "golden digest vector" \
     "$GOLDEN_DIGEST" "$(digest_of "$VECTOR_DIR" launch "${VECTOR_ENV[@]}")"
 
@@ -188,13 +189,18 @@ assert_eq "an explicitly spelled default equals an absent key" \
     "$(digest_of "$VECTOR_DIR" launch JAILBOX_CONFIG_DEV_IMAGE=img)" \
     "$(digest_of "$VECTOR_DIR" launch JAILBOX_CONFIG_DEV_IMAGE=img \
         JAILBOX_CONFIG_MEMORY_LIMIT=4g JAILBOX_CONFIG_CPU_LIMIT=2 \
-        JAILBOX_CONFIG_PIDS_LIMIT=256 JAILBOX_CONFIG_EGRESS_ALLOW= \
+        JAILBOX_CONFIG_PIDS_LIMIT=256 JAILBOX_CONFIG_EPHEMERAL_HOME=false JAILBOX_CONFIG_EGRESS_ALLOW= \
         JAILBOX_CONFIG_READONLY_PATHS=)"
 
 assert_ne "a changed scalar changes the digest" \
     "$(digest_of "$VECTOR_DIR" launch JAILBOX_CONFIG_DEV_IMAGE=img)" \
     "$(digest_of "$VECTOR_DIR" launch JAILBOX_CONFIG_DEV_IMAGE=img \
         JAILBOX_CONFIG_MEMORY_LIMIT=8g)"
+
+assert_ne "home retention mode changes the digest" \
+    "$(digest_of "$VECTOR_DIR" launch JAILBOX_CONFIG_DEV_IMAGE=img)" \
+    "$(digest_of "$VECTOR_DIR" launch JAILBOX_CONFIG_DEV_IMAGE=img \
+        JAILBOX_CONFIG_EPHEMERAL_HOME=true)"
 
 assert_eq "empty arrays report count zero and emit no items" \
     $'array\tEGRESS_ALLOW\t0' \
@@ -565,12 +571,12 @@ assert_gate_accepts "the home volume is outside the digest inventory" "$state"
 state=$(gate_state)
 put_resource "$state" network.jailbox-gate-net
 assert_gate_refuses "an unlabeled network is incompatible" "$state" \
-    "no configuration digest label" "jailbox --clean"
+    "no configuration digest label" "jailbox stop"
 
 state=$(gate_state)
 put_resource "$state" network.jailbox-gate-net "jailbox.config-digest=not-a-digest"
 assert_gate_refuses "a malformed digest label is incompatible" "$state" \
-    "malformed configuration digest label" "jailbox --clean"
+    "malformed configuration digest label" "jailbox stop"
 
 state=$(gate_state)
 put_resource "$state" container.jailbox-gate "jailbox.config-digest=$OTHER_DIGEST"
@@ -589,13 +595,13 @@ state=$(gate_state)
 put_resource "$state" network.jailbox-gate-net "jailbox.config-digest=$GATE_DIGEST"
 put_resource "$state" network.jailbox-gate-net-internal "jailbox.config-digest=$OTHER_DIGEST"
 assert_gate_refuses "a stale network outside the requested mode refuses" "$state" \
-    "network 'jailbox-gate-net-internal'" "jailbox --clean"
+    "network 'jailbox-gate-net-internal'" "jailbox stop"
 
 state=$(gate_state)
 put_resource "$state" container.jailbox-gate "jailbox.config-digest=$OTHER_DIGEST"
 put_resource "$state" network.jailbox-gate-net-external "jailbox.config-digest=$OTHER_DIGEST"
 assert_gate_refuses "every incompatible member is named" "$state" \
-    "container 'jailbox-gate'" "network 'jailbox-gate-net-external'" "jailbox --clean"
+    "container 'jailbox-gate'" "network 'jailbox-gate-net-external'" "jailbox stop"
 
 echo ""
 echo "Configuration digest: $PASSED passed, $FAILED failed"

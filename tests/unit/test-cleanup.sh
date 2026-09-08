@@ -132,7 +132,7 @@ recorded=$(ledger_entries "$LEDGER_FILE")
 missing=""
 # The ledger must cover everything a launch of this project can leave behind:
 # every digest-inventory member, the home volume outside it, and the images
-# `jailbox --clean` never removes.
+# that can remain after stop or an interrupted clean.
 PROJECT_DIR="$project"
 initialize_project_names
 while IFS= read -r target; do

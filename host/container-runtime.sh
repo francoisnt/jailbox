@@ -20,6 +20,7 @@ jailbox_resource_exists() {
         container) podman container exists "$2" 2>/dev/null ;;
         volume) podman volume exists "$2" 2>/dev/null ;;
         network) podman network exists "$2" 2>/dev/null ;;
+        image) podman image exists "$2" 2>/dev/null ;;
         *) die "internal error: unknown jailbox resource type '$1'" ;;
     esac
 }
@@ -79,17 +80,71 @@ resolve_present_resources() {
 }
 
 remove_project_resource() {
-    local kind name
+    local kind name removal_status=0 probe_status=0
 
     kind="${1%%:*}"
     name="${1#*:}"
     case "$kind" in
         container)
             podman stop "$name" 2>/dev/null || true
-            podman rm "$name" 2>/dev/null || true
+            podman rm "$name" || removal_status=$?
             ;;
-        volume) podman volume rm "$name" 2>/dev/null || true ;;
-        network) podman network rm "$name" 2>/dev/null || true ;;
+        volume|network|image)
+            podman "$kind" rm "$name" || removal_status=$?
+            ;;
+    esac
+    [ "$removal_status" -ne 0 ] || return 0
+    # A target may disappear after preflight. Accept confirmed absence, but
+    # never treat a failed recheck as absence or parse engine error wording.
+    jailbox_resource_exists "$kind" "$name" || probe_status=$?
+    [ "$probe_status" -eq 1 ] || \
+        die "could not remove $kind '$name' or confirm its absence; retry the cleanup after resolving the error"
+}
+
+# Classify inside the template: arbitrary label bytes (including trailing
+# newlines) must never become valid through shell command substitution. An
+# absent key, a present empty value, and failed inspection stay distinct.
+home_retention_policy() {
+    local policy
+
+    policy=$(podman volume inspect "$VOLUME_NAME" --format \
+        '{{range $key, $value := .Labels}}{{if eq $key "jailbox.ephemeral-home"}}{{if eq $value "true"}}true{{else if eq $value "false"}}false{{else}}corrupt{{end}}{{end}}{{end}}') || \
+        die "could not inspect retention metadata for home '$VOLUME_NAME'; no resources were changed"
+    case "$policy" in
+        "") printf 'false\n' ;;
+        true|false|corrupt) printf '%s\n' "$policy" ;;
+        *) die "unexpected home retention inspection result for '$VOLUME_NAME'" ;;
+    esac
+}
+
+home_clean_guidance() {
+    printf "Run 'jailbox --clean' and then 'jailbox up'; --clean permanently deletes this project's home and runtime state."
+}
+
+require_compatible_home() {
+    local policy
+    local -a present=()
+
+    # Current dispatch requires absent containers. Keep the generation-aware
+    # check here for constrained up (03.2.06), which removes that blanket guard
+    # and owns CLI convergence verification for surviving containers.
+    resolve_present_resources present "volume:$VOLUME_NAME" "container:$CONTAINER_NAME"
+    [[ " ${present[*]} " == *" volume:$VOLUME_NAME "* ]] || return 0
+    policy=$(home_retention_policy) || return $?
+    case "$policy" in
+        corrupt)
+            die "home '$VOLUME_NAME' has corrupt retention metadata; refusing reuse. $(home_clean_guidance)"
+            ;;
+        false)
+            [ "$EPHEMERAL_HOME" = false ] || \
+                die "home '$VOLUME_NAME' is persistent; refusing a change to ephemeral. $(home_clean_guidance)"
+            ;;
+        true)
+            [[ " ${present[*]} " == *" container:$CONTAINER_NAME "* ]] || \
+                die "home '$VOLUME_NAME' is an orphaned ephemeral home; run 'jailbox stop' and then 'jailbox up'"
+            [ "$EPHEMERAL_HOME" = true ] || \
+                die "home '$VOLUME_NAME' is ephemeral; run 'jailbox stop' and then 'jailbox up' to change to persistent"
+            ;;
     esac
 }
 
@@ -109,25 +164,38 @@ require_sandbox_absent() {
     done
 }
 
-# Remove the ephemeral container objects only. The home volume, networks,
-# images, and the project state directory survive: the next launch creates
-# fresh containers, and setup_ssh_keys rotates SSH credentials on every
-# bring-up.
+# Determine retention before mutation, then remove containers, networks, and
+# finally an ephemeral home. A failed or interrupted removal remains retryable.
 stop_jailbox() {
-    local target
-    local -a present=()
+    local target policy=false
+    local -a present=() removable=()
 
     resolve_present_resources present \
         "container:$CONTAINER_NAME" \
-        "container:$PROXY_NAME"
+        "container:$PROXY_NAME" \
+        "network:$NETWORK_NAME" \
+        "network:${NETWORK_NAME}-internal" \
+        "network:${NETWORK_NAME}-external" \
+        "volume:$VOLUME_NAME"
 
-    if [ -z "${present[*]-}" ]; then
-        echo "No jailbox containers to stop."
-        return 0
+    if [[ " ${present[*]} " == *" volume:$VOLUME_NAME "* ]]; then
+        policy=$(home_retention_policy) || return $?
+        [ "$policy" != corrupt ] || \
+            printf "Warning: home '%s' has corrupt retention metadata; preserving it.\n" "$VOLUME_NAME" >&2
     fi
 
-    echo "🛑 Stopping jailbox..."
     for target in "${present[@]}"; do
+        if [ "$target" = "volume:$VOLUME_NAME" ] && [ "$policy" != true ]; then
+            continue
+        fi
+        removable+=("$target")
+    done
+    if [ -z "${removable[*]-}" ]; then
+        echo "No jailbox resources to stop."
+        return 0
+    fi
+    echo "🛑 Stopping jailbox..."
+    for target in "${removable[@]}"; do
         remove_project_resource "$target"
     done
     echo "✅ Stopped"
@@ -242,19 +310,25 @@ assert_container_launch_state() {
 }
 
 clean_jailbox() {
-    local target
-    local -a present=()
+    local target name
+    local -a present=() images=()
+
+    while IFS= read -r name; do
+        images+=("image:$name")
+    done < <(project_cleanup_images)
 
     # Every target is probed before anything is removed; containers first so
     # the networks and the volume are free.
     resolve_present_resources present \
         "container:$CONTAINER_NAME" \
         "container:$PROXY_NAME" \
-        "volume:$VOLUME_NAME" \
         "network:$NETWORK_NAME" \
         "network:${NETWORK_NAME}-internal" \
-        "network:${NETWORK_NAME}-external"
+        "network:${NETWORK_NAME}-external" \
+        "volume:$VOLUME_NAME" \
+        "${images[@]}"
 
+    printf "Warning: --clean permanently deletes this project's home and runtime state, and removes its three derived image names.\n" >&2
     echo "🧹 Cleaning up..."
     for target in "${present[@]}"; do
         remove_project_resource "$target"
@@ -265,9 +339,11 @@ clean_jailbox() {
 
 ensure_home_volume() {
     local volume_path
+    local -a present=()
 
-    if ! podman volume exists "$VOLUME_NAME" 2>/dev/null; then
-        podman volume create "$VOLUME_NAME"
+    resolve_present_resources present "volume:$VOLUME_NAME"
+    if [ -z "${present[*]-}" ]; then
+        podman volume create --label "jailbox.ephemeral-home=$EPHEMERAL_HOME" "$VOLUME_NAME"
         volume_path=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}')
         # Rootless volumes are created from the host side. Chown only the new
         # jailbox-managed home volume so the keep-id user can write to it; do

@@ -19,6 +19,7 @@ CONFIG_SCALAR_KEYS=(
     MEMORY_LIMIT
     CPU_LIMIT
     PIDS_LIMIT
+    EPHEMERAL_HOME
 )
 
 CONFIG_ARRAY_KEYS=(
@@ -43,6 +44,7 @@ CONFIG_DEFAULTS=(
     "MEMORY_LIMIT=4g"
     "CPU_LIMIT=2"
     "PIDS_LIMIT=256"
+    "EPHEMERAL_HOME=false"
     "EGRESS_ALLOW="
     "READONLY_PATHS="
 )
@@ -72,10 +74,10 @@ CLI_HELP=(
     "--config=Load configuration from PATH instead of project jailbox.conf"
     "init=Create the default project jailbox.conf"
     "up=Launch the sandbox without opening an editor"
-    "stop=Stop and remove this project's jailbox containers"
+    "stop=Stop and remove this project's jailbox containers, networks, and ephemeral home"
     "doctor=Report editor and SSH config integration for this project"
     "ssh-config=Print manual SSH config instructions for this project"
-    "--clean=Stop/remove jailbox containers, networks, and home volume"
+    "--clean=Permanently delete this project's containers, networks, home, runtime state, and derived images"
     "--uninstall=Remove this jailbox installation from the host"
     "--help=Show this help"
 )

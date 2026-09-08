@@ -662,6 +662,10 @@ parse_config_array() {
 # whether they came from the environment model or the temporary file adapter.
 # Editor validation is frontend-only and belongs to the file path.
 validate_machine_config() {
+    case "$EPHEMERAL_HOME" in
+        true|false) ;;
+        *) die "invalid EPHEMERAL_HOME (expected exactly true or false)" ;;
+    esac
     validate_egress_allow
     validate_readonly_paths_lexical
 }

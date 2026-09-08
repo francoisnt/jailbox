@@ -545,9 +545,16 @@ EOF
 
     # ── Phase 3: explicit stop boundary ───────────────────────────────────────
     # Relaunch is a two-command operation: jailbox never replaces a running
-    # sandbox, and stop removes only the ephemeral containers.
+    # sandbox, and stop removes containers/networks while retaining this home.
     local relaunch_output volume_name
     volume_name="${ctr}-home"
+    if [ "$(podman volume inspect "$volume_name" --format '{{index .Labels "jailbox.ephemeral-home"}}')" = false ]; then
+        pass "new home records default persistent retention"
+    else
+        fail "new home records default persistent retention"
+    fi
+    # shellcheck disable=SC2016  # Expanded by the remote shell.
+    assert_ssh "$ssh_cfg" "$ctr" "write home content before stop" 'printf retained > "$HOME/retention-marker"'
 
     relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf) 2>&1 || true)
     case "$relaunch_output" in
@@ -582,16 +589,16 @@ EOF
         fail "stop preserves the project state directory"
     fi
     if [[ "$stage" == "egress" ]]; then
-        if podman network exists "${ctr}-net-internal" 2>/dev/null && \
-            podman network exists "${ctr}-net-external" 2>/dev/null; then
-            pass "stop preserves the egress networks"
+        if ! podman network exists "${ctr}-net-internal" 2>/dev/null && \
+            ! podman network exists "${ctr}-net-external" 2>/dev/null; then
+            pass "stop removes the egress networks"
         else
-            fail "stop preserves the egress networks"
+            fail "stop removes the egress networks"
         fi
-    elif podman network exists "${ctr}-net" 2>/dev/null; then
-        pass "stop preserves the project network"
+    elif ! podman network exists "${ctr}-net" 2>/dev/null; then
+        pass "stop removes the project network"
     else
-        fail "stop preserves the project network"
+        fail "stop removes the project network"
     fi
     if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
         pass "repeated stop succeeds"
@@ -610,6 +617,8 @@ EOF
         fail "bare launch through the editor stub failed"
         return 1
     fi
+    # shellcheck disable=SC2016  # Expanded by the remote shell.
+    assert_ssh "$ssh_cfg" "$ctr" "home content survives stop and relaunch" 'test "$(cat "$HOME/retention-marker")" = retained'
     if [[ -f "$settings_path" ]] && grep -Fq '"remote.SSH.configFile"' "$settings_path"; then
         pass "bare launch writes editor SSH settings"
     else
@@ -629,6 +638,103 @@ EOF
         pass "stop removes the bare-launch sandbox"
     else
         fail "stop removes the bare-launch sandbox"
+    fi
+    assert_home_lifecycle "$project_dir" "$ctr" "$dev_image"
+}
+
+# Construct homes independently of launch to exercise the real Podman label
+# template, including values whose trailing newline shell capture would strip.
+# All names are the stage's already-ledgered exact project names.
+assert_home_lifecycle() {
+    local project="$1" prefix="$2" dev_image="$3" policy requested output status home
+    local -a labels=()
+    home="$prefix-home"
+
+    for policy in legacy false true empty garbage $'true\n'; do
+        (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
+            fail "clean before constructed home"; return 1;
+        }
+        labels=()
+        case "$policy" in
+            legacy) ;;
+            empty) labels=(--label jailbox.ephemeral-home=) ;;
+            *) labels=(--label "jailbox.ephemeral-home=$policy") ;;
+        esac
+        podman volume create "${labels[@]}" "$home" >/dev/null || {
+            fail "construct home volume"; return 1;
+        }
+        for requested in true false; do
+            if [[ "$policy" == legacy || "$policy" == false ]] && [ "$requested" = false ]; then
+                continue
+            fi
+            status=0
+            output=$(cd "$project" && JAILBOX_CONFIG_EPHEMERAL_HOME="$requested" \
+                "$JAILBOX_DIR/jailbox" up 2>&1) || status=$?
+            if [ "$status" -ne 0 ] && podman volume exists "$home" &&
+                ! podman container exists "$prefix"; then
+                pass "constructed home refuses reuse without deletion ($policy, requested $requested)"
+            else
+                fail "constructed home refusal ($policy, requested $requested): $output"
+            fi
+            if { [ "$policy" = true ] && [[ "$output" == *"orphaned ephemeral"*"jailbox stop"* ]]; } ||
+                { [ "$policy" != true ] && [[ "$output" == *"jailbox --clean"*"permanently deletes"* ]]; }; then
+                pass "constructed home names complete recovery"
+            else
+                fail "constructed home recovery: $output"
+            fi
+        done
+        (cd "$project" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1 || {
+            fail "stop constructed home"; return 1;
+        }
+        if { [ "$policy" = true ] && ! podman volume exists "$home"; } ||
+            { [ "$policy" != true ] && podman volume exists "$home"; }; then
+            pass "stop without containers follows stored home policy ($policy)"
+        else
+            fail "stop home retention ($policy)"
+        fi
+        if [ "$policy" = legacy ] &&
+            [ "$(podman volume inspect "$home" --format '{{len .Labels}}')" != 0 ]; then
+            fail "legacy home remains unlabeled"
+        fi
+    done
+    (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
+        fail "clean before ephemeral launch"; return 1;
+    }
+
+    # Build a derived dev image so clean must remove its wrapper child first.
+    printf 'FROM %s\nRUN touch /home-retention-image\n' "$dev_image" > "$project/Containerfile.home"
+    if (cd "$project" && JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile.home \
+        JAILBOX_CONFIG_EPHEMERAL_HOME=true "$JAILBOX_DIR/jailbox" up); then
+        if [ "$(podman volume inspect "$home" --format '{{index .Labels "jailbox.ephemeral-home"}}')" = true ]; then
+            pass "launch records effective ephemeral retention"
+        else
+            fail "launch records effective ephemeral retention"
+        fi
+        (cd "$project" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1 || {
+            fail "stop ephemeral generation"; return 1;
+        }
+        if ! podman volume exists "$home"; then
+            pass "stop deletes the ephemeral generation's home"
+        else
+            fail "stop deletes the ephemeral generation's home"
+        fi
+    else
+        fail "ephemeral generation launch"
+    fi
+    (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
+        fail "clean derived dev image and wrapper"; return 1;
+    }
+    for home in "$prefix-dev" "$prefix-image" "$prefix-proxy"; do
+        if podman image exists "$home"; then
+            fail "clean removes derived image $home"
+        else
+            pass "clean removes derived image $home"
+        fi
+    done
+    if podman image exists "$dev_image"; then
+        pass "clean preserves external dev image"
+    else
+        fail "clean preserves external dev image"
     fi
 }
 
@@ -731,8 +837,8 @@ main() {
     done
 
     # Every stage has finished, so anything still standing under a recorded
-    # name is this run's leftover — including the per-project images `--clean`
-    # never removes. Whatever survives stays in the ledger for the next run.
+    # name is this run's leftover. Whatever survives stays in the ledger for
+    # the next run.
     ledger_sweep_own_run
 
     local total_passed=0 total_failed=0 p f

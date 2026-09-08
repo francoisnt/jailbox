@@ -21,7 +21,7 @@ fi
 #   arrays as contiguous JAILBOX_CONFIG_KEY_0.. members. When none is present,
 #   a temporary adapter parses jailbox.conf in the project root instead:
 #     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
-#     MEMORY_LIMIT, CPU_LIMIT, PIDS_LIMIT, EGRESS_ALLOW, READONLY_PATHS,
+#     MEMORY_LIMIT, CPU_LIMIT, PIDS_LIMIT, EPHEMERAL_HOME, EGRESS_ALLOW, READONLY_PATHS,
 #     and the frontend-only EDITOR.
 #   The two sources are exclusive; they never merge.
 #
@@ -81,6 +81,9 @@ bring_up_sandbox() {
     initialize_runtime_ids
     validate_configured_readonly_paths
     check_local_port_available
+    # Stored home policy outranks digest incompatibility: stop cannot repair
+    # a persistent-to-ephemeral change or corrupt retention metadata.
+    require_compatible_home
     # The digest is the compatibility gate for every policy-bearing resource
     # that outlives a single launch, so it is computed — and every surviving
     # resource checked against it — before anything is built or created.

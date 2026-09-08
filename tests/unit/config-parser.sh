@@ -496,6 +496,11 @@ main() {
     assert_rejects "mismatched quoted value rejected" 'DEV_IMAGE="node:22'
     assert_rejects "embedded quoted value rejected" 'DEV_IMAGE=node"22'
     assert_rejects "unknown key rejected" "UNKNOWN=value"
+    assert_loads "ephemeral home loads" "EPHEMERAL_HOME=true"
+    assert_loads "persistent home loads" "EPHEMERAL_HOME=false"
+    assert_rejects "empty home boolean rejected" "EPHEMERAL_HOME="
+    assert_rejects "uppercase home boolean rejected" "EPHEMERAL_HOME=TRUE"
+    assert_rejects "numeric home boolean rejected" "EPHEMERAL_HOME=1"
     assert_rejects "duplicate key rejected" $'DEV_IMAGE=a\nDEV_IMAGE=b'
     assert_rejects "remote path config rejected" "REMOTE_PATH=/workspace/project"
     assert_rejects "bad editor rejected" "EDITOR=vim"
