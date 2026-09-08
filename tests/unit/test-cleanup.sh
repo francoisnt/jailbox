@@ -704,7 +704,7 @@ for backend in flock perl; do
     (
         # Force the portable backend even on a host with the flock command.
         # Invoked indirectly by the sourced lock helper.
-        # shellcheck disable=SC2317
+        # shellcheck disable=SC2317,SC2329
         command() {
             if [[ "$backend" == perl && "$*" == '-v flock' ]]; then
                 return 1
@@ -743,7 +743,7 @@ for backend in flock perl; do
     # lock in the removal stub lets us detect overlap, not just successful exits.
     (
         # Invoked indirectly by the sourced sweep helper.
-        # shellcheck disable=SC2317
+        # shellcheck disable=SC2317,SC2329
         ledger_remove_resource() {
             touch "$JAILBOX_TEST_LEDGER_DIR/sweep-attempted"
             if ! mkdir "$JAILBOX_TEST_LEDGER_DIR/in-sweep" 2>/dev/null; then

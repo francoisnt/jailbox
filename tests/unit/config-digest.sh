@@ -88,7 +88,7 @@ run_digest() {
         DEV_IMAGE="" DEV_CONTAINERFILE=""
         SELECTED_DEV_CONTAINERFILE=""
         SELECTED_DEV_CONTAINERFILE_INPUT=""
-        # shellcheck disable=SC2317 # Called indirectly by the digest stream.
+        # shellcheck disable=SC2317,SC2329 # Called indirectly by the digest stream.
         jailbox_version() { printf '%s' "$TEST_VERSION"; }
         for assignment in "$@"; do
             export "${assignment?}"
