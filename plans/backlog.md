@@ -252,6 +252,54 @@ Non-enforcing CI can report a skip but cannot verify the SELinux contract.
 The numbered plans preserve the existing `:Z` convention in the meantime and
 do not depend on resolving this investigation.
 
+### Optional managed VM enclosure for Podman-dependent tests
+
+Consider optionally running jailbox's existing development container and egress
+proxy inside a standard managed Linux VM. Keep direct container execution as
+the default. The VM adds a guest-kernel boundary while retaining the existing
+container image workflow and hardening. Use an existing VM manager and run
+container orchestration inside the guest, where Podman storage paths and mounts
+remain local to the machine executing them.
+
+The immediate need is autonomous execution of tests requiring Podman: the
+runtime and editor gates. Portable tests, linting, builds, and ordinary
+development that do not require a container engine continue in the existing
+sandbox without requiring a VM. A VM is an optional isolation and test-host
+facility, not a new prerequisite for every command or another test gate.
+
+Explore direct access from the development container to the dedicated guest's
+Podman engine as the simpler way to enable those tests. Treat that access as
+guest-account code-execution authority: it can bypass container-level mount
+and network restrictions and affect other resources owned by that guest
+account. The host's engine and personal credentials must remain inaccessible.
+This would be an explicit opt-in exception to the no-engine-access policy for
+this VM mode only; direct host-container execution retains that policy.
+Enforce host protection through the VM boundary and tightly scoped file shares,
+and enforce any promised egress restrictions outside agent-controlled guest
+resources. A writable host share remains writable with guest engine access;
+container read-only overlays alone cannot protect paths within that share.
+
+Account for guest-side bind paths and commands that require local Podman
+storage access; an engine connection alone may not make every existing test
+work from inside the development container. Provide guest-side execution where
+needed, along with the editor gate's editors and virtual display, and return
+logs and exit status without manual host commands.
+
+A later design should cover VM provisioning and updates, project sharing or
+snapshot transfer (including uncommitted changes), protected-path enforcement,
+guest ownership and persistent storage, SSH forwarding and host editor access,
+resource limits, and effective egress policy for both development and tests.
+Define VM ownership and lifetime, stop/clean semantics, interrupted-operation
+recovery, machine-interface reporting, configuration identity, and explicit
+failure when the requested VM support is unavailable. Preserve project-scoped
+state and validate the existing three gates for both supported execution modes,
+while keeping routine portable test execution independent of the VM.
+
+This enclosure is distinct from the VM-backed OCI runtime investigation below:
+it places the container engine and a test execution environment inside the VM,
+providing a place to run container tests without granting the sandbox host
+authority. It remains outside the current numbered implementation sequence.
+
 ### KVM-backed development runtime
 
 Investigate an optional VM-backed OCI runtime that gives the development
