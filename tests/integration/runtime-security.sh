@@ -241,12 +241,38 @@ assert_readonly_mount_validation() {
 
 }
 
+start_runtime_fixture() {
+    local ctr="$1" config="$2" port output attempt
+    port=$(awk '/^[[:space:]]*Port / {print $2}' "$config")
+    for ((attempt = 1; attempt <= 10; attempt++)); do
+        if output=$(podman start "$ctr" 2>&1); then
+            return 0
+        fi
+        # Rootless networking may outlive podman stop briefly. Retry only the
+        # observed pasta bind race, using the actual bind result as evidence.
+        # Other startup errors must remain visible immediately.
+        if [[ "$output" != *'pasta failed'* ||
+            "$output" != *"Failed to bind port $port (Address already in use)"* ]]; then
+            break
+        fi
+        [[ "$attempt" -lt 10 ]] || break
+        if [[ "$attempt" = 1 ]]; then
+            printf '  Waiting for rootless networking to release port %s...\n' "$port"
+        fi
+        sleep 1
+    done
+    fail "could not restart fixture '$ctr' on port $port"
+    printf '%s\n' "$output" >&2
+    echo 'Check for an overlapping test run or a lingering listener; no unrelated process was stopped.' >&2
+    return 1
+}
+
 assert_generation_restart() {
     local ctr="$1" config="$2" ssh_dir="$3" runtime_dir="$4"
     local before after exit_code
     before=$(for file in "$runtime_dir"/* "$ssh_dir/key" "$ssh_dir/known_hosts" "$config"; do runtime_file_digest "$file"; done)
-    podman stop "$ctr" >/dev/null
-    podman start "$ctr" >/dev/null
+    podman stop "$ctr" >/dev/null || { fail 'stop before generation restart'; return 1; }
+    start_runtime_fixture "$ctr" "$config" || return 1
     if wait_for_ssh "$config"; then
         after=$(for file in "$runtime_dir"/* "$ssh_dir/key" "$ssh_dir/known_hosts" "$config"; do runtime_file_digest "$file"; done)
         assert_eq 'restart preserves every authentication/config byte' "$before" "$after"
@@ -265,9 +291,9 @@ assert_generation_restart() {
     fi
     cp "$ssh_dir/saved-pin" "$ssh_dir/known_hosts"
 
-    podman stop "$ctr" >/dev/null
+    podman stop "$ctr" >/dev/null || { fail 'stop before exposed-key test'; return 1; }
     chmod 644 "$runtime_dir/ssh_host_ed25519_key"
-    podman start "$ctr" >/dev/null
+    start_runtime_fixture "$ctr" "$config" || return 1
     podman wait "$ctr" >/dev/null
     exit_code=$(podman inspect "$ctr" --format '{{.State.ExitCode}}')
     if [ "$exit_code" -ne 0 ] && [ "$(runtime_file_metadata "$runtime_dir/ssh_host_ed25519_key" | cut -d: -f1)" = 644 ]; then
@@ -276,6 +302,6 @@ assert_generation_restart() {
         fail 'startup refuses exposed server key without repairing permissions'
     fi
     chmod 600 "$runtime_dir/ssh_host_ed25519_key"
-    podman start "$ctr" >/dev/null
+    start_runtime_fixture "$ctr" "$config" || return 1
     wait_for_ssh "$config" || { fail 'restored fixture restarts'; return 1; }
 }
