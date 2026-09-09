@@ -27,8 +27,30 @@ assert_runtime_dir_valid() {
     if ssh_run "$config" '
         set -e
 
+        # A negated command is exempt from set -e, so every refusal exits
+        # explicitly. Writability is proved by writing: test -w answers from
+        # mode bits in some shells and calls a read-only mount writable.
+        refute() { if "$@"; then exit 1; fi; }
+        # true, not :, so a refused redirection fails the command instead of
+        # aborting the shell the way a failed special-builtin redirect does.
+        refute_write() { if true 2>/dev/null > "$1"; then exit 1; fi; }
+        refute_append() { if true 2>/dev/null >> "$1"; then exit 1; fi; }
+
         test -d /run/jailbox-sshd
-        test -w /run/jailbox-sshd
+        refute_write /run/jailbox-sshd/probe
+        refute_append /run/jailbox-sshd/authorized_keys
+        refute_append /run/jailbox-sshd/ssh_host_ed25519_key
+        refute test -e /run/jailbox-sshd/key
+        refute test -e /run/jailbox-sshd/known_hosts
+        refute test -e /run/jailbox-sshd/ssh_config
+        true > /run/daemon-state-probe && rm -f /run/daemon-state-probe
+        daemon_metadata=$(
+            stat -c "%u:%g:%a" /run 2>/dev/null ||
+            stat -f "%u:%g:%Lp" /run
+        )
+        test "$daemon_metadata" = "$(id -u):$(id -g):700"
+        test -f /run/sshd.pid
+        refute test -e /etc/ssh/jailbox_authorized_keys.source
 
         runtime_uid=$(
             stat -c "%u" /run/jailbox-sshd 2>/dev/null ||
@@ -59,6 +81,9 @@ assert_bad_runtime_dir_fails() {
     bad_home=$(mktemp -d)
     bad_runtime=$(mktemp -d)
     bad_uid=$(( $(id -u) + 10000 ))
+    ssh-keygen -t ed25519 -f "$bad_runtime/ssh_host_ed25519_key" -N "" -q
+    cp "$ssh_dir/key.pub" "$bad_runtime/authorized_keys"
+    chmod 600 "$bad_runtime/authorized_keys"
     logs=""
     rc=0
 
@@ -73,8 +98,7 @@ assert_bad_runtime_dir_fails() {
         --tmpfs /tmp:rw,size=64m \
         --tmpfs /run:rw,size=64m \
         -v "${bad_home}:/home/jailbox:Z" \
-        -v "${bad_runtime}:/run/jailbox-sshd:Z" \
-        -v "${ssh_dir}/key.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
+        -v "${bad_runtime}:/run/jailbox-sshd:ro,Z" \
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
         "$wrapper_image" >/dev/null; then
@@ -218,4 +242,43 @@ assert_readonly_mount_validation() {
     else
         pass "read-only validation stays quiet for read-only paths"
     fi
+}
+
+assert_generation_restart() {
+    local ctr="$1" config="$2" ssh_dir="$3" runtime_dir="$4"
+    local before after exit_code
+    before=$(for file in "$runtime_dir"/* "$ssh_dir/key" "$ssh_dir/known_hosts" "$config"; do runtime_file_digest "$file"; done)
+    podman stop "$ctr" >/dev/null
+    podman start "$ctr" >/dev/null
+    if wait_for_ssh "$config"; then
+        after=$(for file in "$runtime_dir"/* "$ssh_dir/key" "$ssh_dir/known_hosts" "$config"; do runtime_file_digest "$file"; done)
+        assert_eq 'restart preserves every authentication/config byte' "$before" "$after"
+    else
+        fail 'same generation restarts with strict pinned authentication'
+    fi
+
+    cp "$ssh_dir/known_hosts" "$ssh_dir/saved-pin"
+    ssh-keygen -t ed25519 -f "$ssh_dir/wrong-server" -N '' -q
+    printf '[localhost]:%s %s\n' "$(awk '/^[[:space:]]*Port / {print $2}' "$config")" \
+        "$(cat "$ssh_dir/wrong-server.pub")" > "$ssh_dir/known_hosts"
+    if ssh_run "$config" true >/dev/null 2>&1; then
+        fail 'wrong pinned server key refuses connection'
+    else
+        pass 'wrong pinned server key refuses connection'
+    fi
+    cp "$ssh_dir/saved-pin" "$ssh_dir/known_hosts"
+
+    podman stop "$ctr" >/dev/null
+    chmod 644 "$runtime_dir/ssh_host_ed25519_key"
+    podman start "$ctr" >/dev/null
+    podman wait "$ctr" >/dev/null
+    exit_code=$(podman inspect "$ctr" --format '{{.State.ExitCode}}')
+    if [ "$exit_code" -ne 0 ] && [ "$(runtime_file_metadata "$runtime_dir/ssh_host_ed25519_key" | cut -d: -f1)" = 644 ]; then
+        pass 'startup refuses exposed server key without repairing permissions'
+    else
+        fail 'startup refuses exposed server key without repairing permissions'
+    fi
+    chmod 600 "$runtime_dir/ssh_host_ed25519_key"
+    podman start "$ctr" >/dev/null
+    wait_for_ssh "$config" || { fail 'restored fixture restarts'; return 1; }
 }

@@ -140,7 +140,7 @@ fi
 
 # ── sshd hardening ────────────────────────────────────────────────────────────
 # Distro package post-install scripts may expect host keys to exist. jailbox's
-# actual sshd HostKey below is regenerated per launch under /run/jailbox-sshd,
+# actual sshd HostKey below is supplied by the host per container generation,
 # so these image-level keys are only baseline compatibility state.
 ssh-keygen -A
 
@@ -150,14 +150,14 @@ ssh-keygen -A
 # Both ChallengeResponseAuthentication (pre-8.7) and
 # KbdInteractiveAuthentication (8.7+) are set to cover all OpenSSH versions.
 #
-# Runtime auth and host-key files are generated under /run/jailbox-sshd. That
-# path is backed by a strict, user-owned bind mount so sshd can satisfy
-# StrictModes under rootless Podman/userns without permission-bypass
-# capabilities.
+# Authentication material is prepared on the host once per container and mounted
+# read-only under /run/jailbox-sshd. keep-id preserves StrictModes ownership.
+# Mutable daemon state lives separately on the managed-user-owned /run tmpfs.
 cat > /etc/ssh/jailbox_sshd_config << EOF
 Port 2222
-PidFile /run/jailbox-sshd/sshd.pid
+PidFile /run/sshd.pid
 HostKey /run/jailbox-sshd/ssh_host_ed25519_key
+StrictModes yes
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes

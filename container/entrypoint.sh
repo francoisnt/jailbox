@@ -1,109 +1,84 @@
 #!/bin/sh
-# Container entrypoint — starts sshd with jailbox's static server config.
-set -e
-SSHD=$(command -v sshd)
-[ -n "$SSHD" ] || { echo 'sshd not found'; exit 1; }
+# Validate immutable generation material, then start the unprivileged daemon.
+set -eu
+SSHD=$(command -v sshd) || { echo 'sshd not found' >&2; exit 1; }
 SSHD_RUNTIME_DIR=/run/jailbox-sshd
+runtime_uid=$(id -u)
 
-stat_uid() {
-    if stat -c '%u' "$1" >/dev/null 2>&1; then
-        stat -c '%u' "$1"
-    elif stat -f '%u' "$1" >/dev/null 2>&1; then
-        stat -f '%u' "$1"
-    else
-        return 1
-    fi
+fail() {
+    echo "sshd runtime directory/authentication validation failed: $*" >&2
+    exit 1
 }
 
-stat_mode() {
-    if stat -c '%a' "$1" >/dev/null 2>&1; then
-        stat -c '%a' "$1"
-    elif stat -f '%Lp' "$1" >/dev/null 2>&1; then
-        stat -f '%Lp' "$1"
-    else
-        return 1
-    fi
+metadata() {
+    stat -c '%u:%a' "$1" 2>/dev/null || stat -f '%u:%Lp' "$1"
 }
 
-validate_sshd_runtime_dir() {
-    runtime_dir="$1"
-
-    if [ ! -d "$runtime_dir" ]; then
-        echo "sshd runtime directory missing: $runtime_dir" >&2
-        exit 1
-    fi
-
-    if [ ! -w "$runtime_dir" ]; then
-        echo "sshd runtime directory is not writable by uid $(id -u): $runtime_dir" >&2
-        exit 1
-    fi
-
-    runtime_uid=$(stat_uid "$runtime_dir") || runtime_uid=""
-    if [ -n "$runtime_uid" ]; then
-        current_uid=$(id -u)
-        if [ "$runtime_uid" != "$current_uid" ]; then
-            echo "sshd runtime directory owner uid $runtime_uid does not match runtime uid $current_uid: $runtime_dir" >&2
-            exit 1
+check_path() {
+    path=$1
+    kind=$2
+    [ ! -L "$path" ] || fail "symlink: $path"
+    if [ "$kind" = directory ]; then
+        [ -d "$path" ] || fail "missing directory: $path"
+    else
+        if [ ! -f "$path" ] || [ ! -s "$path" ]; then
+            fail "missing regular file: $path"
         fi
-    else
-        # stat format support varies across small base images. If neither the
-        # GNU nor BSD/BusyBox forms work, keep the startup portable by relying
-        # on the write test plus the chmod below to catch unsafe directories.
-        echo "warning: cannot verify sshd runtime directory owner uid with stat: $runtime_dir" >&2
     fi
-
-    runtime_mode=$(stat_mode "$runtime_dir") || runtime_mode=""
-    if [ -n "$runtime_mode" ]; then
-        case "$runtime_mode" in
-            700|1700) ;;
-            *)
-                echo "sshd runtime directory mode $runtime_mode is not private enough: $runtime_dir" >&2
-                exit 1
-                ;;
-        esac
-    else
-        # chmod 0700 above is the portable enforcement step; mode verification
-        # is best-effort because stat format flags are not fully standardized.
-        echo "warning: cannot verify sshd runtime directory mode with stat: $runtime_dir" >&2
+    info=$(metadata "$path") || fail "cannot inspect: $path"
+    owner=${info%%:*}
+    mode=${info#*:}
+    case "$mode" in ''|*[!0-7]*) fail "invalid mode: $path" ;; esac
+    [ "$owner" = 0 ] || [ "$owner" = "$runtime_uid" ] || fail "incompatible owner: $path"
+    [ "$((0$mode & 0022))" -eq 0 ] || fail "writable by group or others: $path"
+    if [ "$kind" = private ]; then
+        [ "$((0$mode & 0077))" -eq 0 ] || fail "exposed private key: $path"
+        [ -r "$path" ] || fail "unreadable private key: $path"
     fi
 }
 
-if [ ! -s /etc/ssh/jailbox_authorized_keys.source ]; then
-    echo 'authorized_keys source missing or empty' >&2
-    exit 1
-fi
-# container/entrypoint.sh runs as the keep-id managed user, not root. That is why it
-# prepares only user-owned runtime files and then execs sshd directly; the image
-# build already wrote the static sshd policy under /etc/ssh.
-# The source key is a read-only bind mount from the host. Copy it before handing
-# control to sshd so the file sshd validates has ordinary ownership/mode bits
-# inside a StrictModes-safe directory, rather than bind-mount metadata.
-# Runtime SSH files live under /run inside the container, backed by a fresh
-# user-owned host directory. This keeps regenerated host/auth state out of the
-# persistent home volume while satisfying OpenSSH StrictModes.
-mkdir -p "$SSHD_RUNTIME_DIR" || {
-    echo "failed to create sshd runtime directory: $SSHD_RUNTIME_DIR" >&2
-    exit 1
+# A writable bind would let sandbox processes change the next startup's auth.
+# Ask the kernel for the mount flags instead of the mode bits: BusyBox `test -w`
+# answers from st_mode and the effective uid alone, so on Alpine it calls a
+# read-only bind mount writable, while access(2)-based shells report it
+# correctly. Reject a writable overmount inside the tree for the same reason.
+assert_immutable_mount() {
+    mount_dir=$1
+    [ -r /proc/self/mountinfo ] || fail "cannot read the mount table for $mount_dir"
+    mount_state=$(awk -v target="$mount_dir" -v prefix="$mount_dir/" '
+        $5 == target { self = $6 }
+        index($5, prefix) == 1 && $6 !~ /(^|,)ro(,|$)/ { nested = nested " " $5 }
+        END {
+            if (self == "") print "absent"
+            else if (self !~ /(^|,)ro(,|$)/) print "writable:" self
+            else if (nested != "") print "nested:" nested
+            else print "ok"
+        }
+    ' /proc/self/mountinfo) || fail "cannot inspect the mount table for $mount_dir"
+    case "$mount_state" in
+        ok) ;;
+        absent) fail "authentication material is not a mount point: $mount_dir" ;;
+        writable:*) fail "authentication mount is writable (${mount_state#writable:}): $mount_dir" ;;
+        nested:*) fail "writable mount inside authentication material:${mount_state#nested:}" ;;
+        *) fail "cannot determine authentication mount flags: $mount_dir" ;;
+    esac
 }
-chmod 0700 "$SSHD_RUNTIME_DIR" || {
-    runtime_uid=$(stat_uid "$SSHD_RUNTIME_DIR") || runtime_uid=""
-    current_uid=$(id -u)
-    if [ -n "$runtime_uid" ] && [ "$runtime_uid" != "$current_uid" ]; then
-        echo "sshd runtime directory owner uid $runtime_uid does not match runtime uid $current_uid: $SSHD_RUNTIME_DIR" >&2
-    else
-        echo "failed to make sshd runtime directory private for uid $current_uid: $SSHD_RUNTIME_DIR" >&2
-    fi
-    exit 1
-}
-validate_sshd_runtime_dir "$SSHD_RUNTIME_DIR"
-rm -f \
-    "$SSHD_RUNTIME_DIR/authorized_keys" \
-    "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" \
-    "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub" \
-    "$SSHD_RUNTIME_DIR/sshd.pid"
-cp /etc/ssh/jailbox_authorized_keys.source "$SSHD_RUNTIME_DIR/authorized_keys"
-chmod 0600 "$SSHD_RUNTIME_DIR/authorized_keys"
-ssh-keygen -t ed25519 -f "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" -N "" -q
-chmod 0600 "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key"
+
+for dir in / /run "$SSHD_RUNTIME_DIR"; do check_path "$dir" directory; done
+check_path "$SSHD_RUNTIME_DIR/authorized_keys" file
+check_path "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" private
+check_path "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub" file
+derived=$(ssh-keygen -y -P '' -f "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" 2>/dev/null) || fail 'invalid server key'
+published=$(awk 'NR == 1 { print $1 " " $2 }' "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub")
+derived=$(printf '%s\n' "$derived" | awk '{ print $1 " " $2 }')
+[ "$derived" = "$published" ] || fail 'mismatched server pair'
+ssh-keygen -l -f "$SSHD_RUNTIME_DIR/authorized_keys" >/dev/null 2>&1 || fail 'invalid authorized keys'
+assert_immutable_mount "$SSHD_RUNTIME_DIR"
+# Prove the daemon can write its own state rather than trusting mode bits.
+# true, not :, so a refused redirection fails the command instead of aborting
+# the shell before it can report the reason.
+probe=/run/.jailbox-entrypoint-probe
+true 2>/dev/null > "$probe" || fail 'daemon state directory is not writable'
+rm -f "$probe"
 "$SSHD" -t -f /etc/ssh/jailbox_sshd_config
 exec "$SSHD" -D -e -f /etc/ssh/jailbox_sshd_config

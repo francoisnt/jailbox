@@ -81,7 +81,7 @@ jailbox_ssh_config() {
     local hash
 
     hash=$(jailbox_project_hash_for_path "$1")
-    printf '%s/jailbox/projects/%s/ssh_config\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "$hash"
+    printf '%s/jailbox/projects/%s/ssh-generation/ssh_config\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "$hash"
 }
 
 jailbox_editor_user_data() {
@@ -1215,7 +1215,7 @@ main() {
     if [[ -n "${failed_stages[*]-}" ]]; then
         log_run "Failed stages: ${failed_stages[*]}"
     fi
-    log_run "Full logs: $LOG_DIR"
+    log_run "Full logs: $(run_log_path "$LOG_DIR")"
 
     [[ "$FAILED" -eq 0 ]]
 }

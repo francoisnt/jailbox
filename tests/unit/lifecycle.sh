@@ -83,6 +83,7 @@ case "$1 $2" in
                 ;;
             rm)
                 file=$(resource_file container "$2")
+                [ "${FAKE_PODMAN_REMOVE_ERROR_NAME:-}" != "$2" ] || exit 125
                 if [ "${FAKE_PODMAN_VANISH_NAME:-}" = "$2" ]; then
                     rm -f "$file"
                     touch "$state/vanished"
@@ -147,6 +148,7 @@ test_stop_removes_both_project_containers() {
     declare_resource network "$PREFIX-net"
     mkdir -p "$STATE_DIR"
     printf 'key\n' > "$STATE_DIR/key"
+    printf 'identity\n' > "$STATE_DIR/gitconfig"
 
     if output=$(run_jailbox "$project" stop); then
         pass "stop succeeds against a present sandbox"
@@ -163,10 +165,10 @@ test_stop_removes_both_project_containers() {
     else
         fail "stop preserves the legacy home and removes the project network"
     fi
-    if [ -f "$STATE_DIR/key" ]; then
-        pass "stop preserves the project state directory"
+    if [ ! -e "$STATE_DIR/key" ] && [ -f "$STATE_DIR/gitconfig" ]; then
+        pass "stop removes legacy credentials and preserves unrelated state"
     else
-        fail "stop preserves the project state directory"
+        fail "stop removes legacy credentials and preserves unrelated state"
     fi
 }
 
@@ -1079,6 +1081,44 @@ test_interrupted_stop_and_exact_images() {
 echo "lifecycle tests"
 echo ""
 
+test_stop_cleans_orphaned_ssh() {
+    local config status output
+    for config in missing malformed; do
+        new_project
+        if [ "$config" = missing ]; then
+            rm "$PROJECT/jailbox.conf"
+        else
+            printf 'invalid configuration\n' > "$PROJECT/jailbox.conf"
+        fi
+        mkdir -p "$STATE_DIR/ssh-generation/server" "$STATE_DIR/.ssh-generation.interrupted"
+        printf 'private\n' > "$STATE_DIR/ssh-generation/key"
+        printf 'keep\n' > "$STATE_DIR/gitconfig"
+        declare_resource container "$PREFIX"
+        status=0
+        output=$(FAKE_PODMAN_REMOVE_ERROR_NAME="$PREFIX" run_jailbox "$PROJECT" stop) || status=$?
+        if [ "$status" -ne 0 ] && [ -f "$STATE_DIR/ssh-generation/key" ]; then
+            pass "failed container removal preserves SSH with $config config"
+        else
+            fail "failed container removal preserves SSH (got: $output)"
+        fi
+        rm "$FAKE_PODMAN_STATE/container.$PREFIX"
+        output=$(run_jailbox "$PROJECT" stop)
+        if [[ "$output" == *'Removed orphaned SSH credentials'* ]]; then
+            pass "orphan cleanup with $config config is reported"
+        else
+            fail "orphan cleanup report (got: $output)"
+        fi
+        run_jailbox "$PROJECT" stop >/dev/null
+        if [ ! -e "$STATE_DIR/ssh-generation" ] && [ ! -e "$STATE_DIR/.ssh-generation.interrupted" ] &&
+            [ "$(cat "$STATE_DIR/gitconfig")" = keep ]; then
+            pass "repeated stop cleans orphaned SSH with $config config and no containers"
+        else
+            fail "orphan cleanup with $config config"
+        fi
+    done
+}
+
+test_stop_cleans_orphaned_ssh
 test_stop_removes_both_project_containers
 test_stop_is_idempotent_and_partial_safe
 test_stop_removes_any_occupant_of_the_derived_names

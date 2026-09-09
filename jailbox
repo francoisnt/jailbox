@@ -84,6 +84,7 @@ bring_up_sandbox() {
     # Stored home policy outranks digest incompatibility: stop cannot repair
     # a persistent-to-ephemeral change or corrupt retention metadata.
     require_compatible_home
+    require_ssh_generation_absent
     # The digest is the compatibility gate for every policy-bearing resource
     # that outlives a single launch, so it is computed — and every surviving
     # resource checked against it — before anything is built or created.
@@ -101,14 +102,16 @@ bring_up_sandbox() {
     build_jailbox_image
     configure_runtime_mounts
     configure_network
-    setup_ssh_keys
+    create_ssh_generation
+    trap 'rollback_ssh_launch "$?"' EXIT
+    trap 'exit 1' HUP INT TERM
     build_readonly_mounts
     ensure_home_volume
     start_jailbox_container
-    pin_ssh_host_key
     wait_for_ssh
     configure_downloader_proxy
     post_start_validation
+    trap - EXIT HUP INT TERM
 }
 
 run_launch() {
@@ -201,6 +204,7 @@ main() {
     # and a supplied --config is deliberately ignored.
     if [[ "${1:-}" == "stop" ]]; then
         host_preflight stop
+        initialize_ssh_state
         run_stop
         return 0
     fi

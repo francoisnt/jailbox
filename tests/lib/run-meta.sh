@@ -7,10 +7,18 @@
 # against. Missing data becomes "unknown" — metadata must never fail a run.
 #
 # Helpers:
+#   run_log_path    <dir>                     repository-relative form for output
 #   write_run_meta  <dir>                     date, jailbox git SHA, host, podman
 #   run_meta_editor <dir> <editor-bin>        editor version/commit + remote extension
 #   run_meta_reh    <dir> <release> <commit>  VSCodium REH build under test
 #   run_meta_image  <dir> <name> <ref>        image ref, resolved digest, os-release
+
+# Run directories live under JAILBOX_DIR. Printing them relative to it keeps
+# result summaries readable and identical to the workflow's artifact paths;
+# a directory outside the repository is printed unchanged.
+run_log_path() {
+    printf '%s\n' "${1#"$JAILBOX_DIR"/}"
+}
 
 meta_kv() {
     local dir="$1" key="$2" value="$3"

@@ -56,7 +56,7 @@ jailbox_ssh_config() {
     local hash
 
     hash=$(jailbox_project_hash_for_path "$1")
-    printf '%s/jailbox/projects/%s/ssh_config\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "$hash"
+    printf '%s/jailbox/projects/%s/ssh-generation/ssh_config\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "$hash"
 }
 
 usage() {
@@ -546,7 +546,7 @@ EOF
     # ── Phase 3: explicit stop boundary ───────────────────────────────────────
     # Relaunch is a two-command operation: jailbox never replaces a running
     # sandbox, and stop removes containers/networks while retaining this home.
-    local relaunch_output volume_name
+    local relaunch_output volume_name generation_dir
     volume_name="${ctr}-home"
     if [ "$(podman volume inspect "$volume_name" --format '{{index .Labels "jailbox.ephemeral-home"}}')" = false ]; then
         pass "new home records default persistent retention"
@@ -583,10 +583,13 @@ EOF
     else
         fail "stop preserves the home volume"
     fi
-    if [[ -f "$ssh_cfg" ]]; then
-        pass "stop preserves the project state directory"
+    # Stop ends the generation with its container; unrelated project runtime
+    # state, such as the generated gitconfig, stays in the state directory.
+    generation_dir=$(dirname "$ssh_cfg")
+    if [[ ! -e "$generation_dir" ]] && [[ -d "$(dirname "$generation_dir")" ]]; then
+        pass "stop removes the SSH generation and preserves the project state directory"
     else
-        fail "stop preserves the project state directory"
+        fail "stop removes the SSH generation and preserves the project state directory"
     fi
     if [[ "$stage" == "egress" ]]; then
         if ! podman network exists "${ctr}-net-internal" 2>/dev/null && \
@@ -770,7 +773,7 @@ main() {
     ledger_begin_run e2e || die "could not initialize the test resource ledger"
     ledger_prune_stale_runs
 
-    local log_dir
+    local log_dir rel_log_dir
     log_dir="$JAILBOX_DIR/testlog/e2e-$(date +%Y%m%d-%H%M%S)-$$"
     mkdir -p "$log_dir"
     write_run_meta "$log_dir"
@@ -855,16 +858,17 @@ main() {
     echo ""
     echo "──────────────────────────────────────────────────────────────────────"
     echo "Results: $total_passed passed, $total_failed failed"
-    echo "Full logs: $log_dir"
+    rel_log_dir=$(run_log_path "$log_dir")
+    echo "Full logs: $rel_log_dir"
     if [[ "$total_failed" -gt 0 ]]; then
         echo "Failed stage logs:"
         for stage in "${stages[@]}"; do
             if [[ ! -f "$log_dir/${stage}.counts" ]]; then
-                echo "  $log_dir/${stage}.log"
+                echo "  $rel_log_dir/${stage}.log"
                 continue
             fi
             read -r p f < "$log_dir/${stage}.counts"
-            [[ "$f" -gt 0 ]] && echo "  $log_dir/${stage}.log"
+            [[ "$f" -gt 0 ]] && echo "  $rel_log_dir/${stage}.log"
         done
     fi
     [ $total_failed -eq 0 ] || exit 1

@@ -1,0 +1,246 @@
+#!/bin/bash
+# Generation identity, damaged-state refusal, and invocation-only cleanup.
+# shellcheck disable=SC2317 # Stubs are called indirectly by sourced validators.
+set -euo pipefail
+TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+JAILBOX_DIR=$(cd "$TEST_DIR/../.." && pwd)
+# shellcheck source=host/ssh.sh
+source "$JAILBOX_DIR/host/ssh.sh"
+# shellcheck source=host/container-runtime.sh
+source "$JAILBOX_DIR/host/container-runtime.sh"
+FIXTURE=$(mktemp -d)
+FIXTURE=$(cd "$FIXTURE" && pwd -P)
+trap 'rm -rf "$FIXTURE"' EXIT
+die() { echo "Error: $*" >&2; exit 1; }
+PROJECT_STATE_ROOT="$FIXTURE/state"
+PROJECT_HASH="test"
+CONTAINER_NAME=jailbox-test
+LOCAL_PORT=50222
+MANAGED_USER=jailbox
+NETWORK_SSH_SESSION_ENV=()
+initialize_ssh_state
+
+reject() {
+    if "$@" > "$FIXTURE/error" 2>&1; then
+        echo "FAIL: expected refusal: $*" >&2; exit 1
+    fi
+    grep -q 'SSH generation' "$FIXTURE/error"
+}
+
+reject_state_path() {
+    if "$@" > "$FIXTURE/error" 2>&1; then
+        echo "FAIL: expected refusal: $*" >&2; exit 1
+    fi
+    # Recovery must name the offending path instead of repeating stop/up advice
+    # that neither command can carry out through a substituted state path.
+    grep -q "SSH state path '$SSH_DIR'" "$FIXTURE/error" &&
+        ! grep -q 'jailbox stop' "$FIXTURE/error"
+}
+
+# Retained material must announce itself: the message is the only thing telling
+# a caller which state survived a failed rollback and how to recover it.
+reject_rollback() {
+    local expected="$1"
+    shift
+    if "$@" > "$FIXTURE/error" 2>&1; then
+        echo "FAIL: expected refusal: $*" >&2; exit 1
+    fi
+    grep -q "$expected" "$FIXTURE/error"
+}
+
+snapshot() {
+    find "$SSH_GENERATION_DIR" -type f -exec cksum {} + | sort
+}
+
+create_ssh_generation
+validate_ssh_generation
+before=$(snapshot)
+validate_ssh_generation
+[ "$before" = "$(snapshot)" ]
+reject create_ssh_generation
+[ "$before" = "$(snapshot)" ]
+cp -R "$SSH_GENERATION_DIR" "$FIXTURE/pristine"
+
+for damage in missing symlink directory fifo owner mode server_pair client_pair authorized pin config parent_mode parent_link; do
+    rm -rf "$SSH_GENERATION_DIR"
+    cp -R "$FIXTURE/pristine" "$SSH_GENERATION_DIR"
+    case "$damage" in
+        missing) rm "$KEY_FILE" ;;
+        symlink) rm "$KEY_FILE"; ln -s "$FIXTURE/pristine/key" "$KEY_FILE" ;;
+        directory) rm "$KEY_FILE"; mkdir "$KEY_FILE" ;;
+        fifo) rm "$KEY_FILE"; mkfifo "$KEY_FILE" ;;
+        owner)
+            # Exercise the ownership result without requiring host chown rights.
+            ssh_file_metadata() { printf '999999:600\n'; }
+            ;;
+        mode) chmod 644 "$KEY_FILE" ;;
+        server_pair) cp "$KEY_FILE.pub" "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub" ;;
+        client_pair) cp "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub" "$KEY_FILE.pub" ;;
+        authorized) printf 'altered\n' >> "$SSHD_RUNTIME_DIR/authorized_keys" ;;
+        pin) printf '\n' >> "$KNOWN_HOSTS" ;;
+        config) printf '    StrictHostKeyChecking no\n' >> "$SSH_CONFIG" ;;
+        parent_mode) chmod 777 "$SSHD_RUNTIME_DIR" ;;
+        parent_link) rm -rf "$SSHD_RUNTIME_DIR"; ln -s "$FIXTURE/pristine/server" "$SSHD_RUNTIME_DIR" ;;
+    esac
+    damaged=$(snapshot)
+    reject validate_ssh_generation
+    [ "$damaged" = "$(snapshot)" ]
+    if [ "$damage" = owner ]; then
+        ssh_file_metadata() { stat -c '%u:%a' "$1" 2>/dev/null || stat -f '%u:%Lp' "$1"; }
+    fi
+    echo "PASS: rejects $damage"
+done
+remove_ssh_generation
+printf 'keep\n' > "$SSH_DIR/gitconfig"
+create_ssh_generation
+[ "$before" != "$(snapshot)" ]
+[ "$(cat "$SSH_DIR/gitconfig")" = keep ]
+remove_ssh_generation
+mkdir "$SSH_DIR/.ssh-generation.interrupted"
+reject require_ssh_generation_absent
+remove_ssh_generation
+remove_ssh_generation
+[ -f "$SSH_DIR/gitconfig" ]
+
+# Refusing a symlinked state root must not follow it during explicit cleanup.
+mv "$SSH_DIR" "$SSH_DIR.saved"
+ln -s "$SSH_DIR.saved" "$SSH_DIR"
+reject_state_path remove_ssh_generation
+[ -f "$SSH_DIR.saved/gitconfig" ]
+rm "$SSH_DIR"
+mv "$SSH_DIR.saved" "$SSH_DIR"
+
+# A failing second key generation must remove the first pair and staging dir.
+real_keygen=$(command -v ssh-keygen)
+mkdir "$FIXTURE/bin"
+cat > "$FIXTURE/bin/ssh-keygen" <<'STUB'
+#!/bin/bash
+case "$*" in *server/ssh_host*) exit 1 ;; esac
+exec "$REAL_KEYGEN" "$@"
+STUB
+chmod +x "$FIXTURE/bin/ssh-keygen"
+if (export REAL_KEYGEN="$real_keygen"; PATH="$FIXTURE/bin:$PATH"; create_ssh_generation); then
+    echo 'FAIL: generation failure was ignored' >&2; exit 1
+fi
+if ssh_generation_present; then echo 'FAIL: preparation leaked state'; exit 1; fi
+
+create_ssh_generation
+container_id=$(printf '%064d' 1)
+printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
+# Podman writes this receipt under the caller's umask; fix a representative
+# mode here so the suite exercises the engine's range rather than one default.
+chmod 640 "$SSH_GENERATION_DIR/container-id"
+podman() {
+    [ "$*" = "rm -f $container_id" ] || return 1
+    [ -f "$KEY_FILE" ]
+}
+rollback_ssh_launch 1
+if ssh_generation_present; then echo 'FAIL: rollback leaked state'; exit 1; fi
+create_ssh_generation
+printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
+chmod 600 "$SSH_GENERATION_DIR/container-id"
+podman() { return 125; }
+reject_rollback 'creation cleanup failed' rollback_ssh_launch 1
+[ -f "$KEY_FILE" ]
+
+# Before container creation, confirmed absence permits cleanup. An engine
+# inspection error must retain the generation for explicit stop recovery.
+rm "$SSH_GENERATION_DIR/container-id"
+reject_rollback 'cannot confirm failed container creation' rollback_ssh_launch 1
+[ -f "$KEY_FILE" ]
+podman() { [ "$1 $2" != 'container exists' ]; }
+rollback_ssh_launch 1
+if ssh_generation_present; then echo 'FAIL: pre-container rollback leaked state'; exit 1; fi
+create_ssh_generation
+printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
+chmod 640 "$SSH_GENERATION_DIR/container-id"
+
+# Inspection failure and mismatched mounts fail closed; no SSH process runs.
+podman() {
+    if [ "$5" = '{{.Id}}' ]; then printf '%s\n' "$container_id"; else printf 'invalid\n'; fi
+}
+reject validate_ssh_resume
+podman() { return 125; }
+reject validate_ssh_resume
+podman() {
+    if [ "$5" = '{{.Id}}' ]; then printf '%s\n' "$container_id"; else printf 'ok\n'; fi
+}
+validate_ssh_resume
+# Any private receipt mode resumes; shared write access refuses, because that
+# is what would let another account forge the recorded identity.
+chmod 600 "$SSH_GENERATION_DIR/container-id"
+validate_ssh_resume
+chmod 664 "$SSH_GENERATION_DIR/container-id"
+reject validate_ssh_resume
+chmod 640 "$SSH_GENERATION_DIR/container-id"
+podman() { printf '%064d\n' 2; }
+reject validate_ssh_resume
+
+
+# Exercise the production launch ordering and EXIT trap with actual key creation.
+# Only image/network work is stubbed; each failure runs in a fresh Bash process
+# so errexit has its normal CLI semantics.
+sed -n '/^bring_up_sandbox() {$/,/^}$/p' "$JAILBOX_DIR/jailbox" > "$FIXTURE/launch-function"
+cat > "$FIXTURE/launch-test" <<'LAUNCH'
+#!/bin/bash
+set -euo pipefail
+# shellcheck disable=SC1091
+source "$GENERATION_REPO/host/ssh.sh"
+# shellcheck disable=SC1091
+source "$GENERATION_REPO/host/container-runtime.sh"
+# shellcheck disable=SC1091
+source "$GENERATION_FIXTURE/launch-function"
+die() { echo "$*" >&2; exit 1; }
+PROJECT_STATE_ROOT="$GENERATION_FIXTURE/launch-state"
+PROJECT_HASH="$GENERATION_FAILURE"
+CONTAINER_NAME=jailbox-test
+LOCAL_PORT=50222
+MANAGED_USER=jailbox
+NETWORK_SSH_SESSION_ENV=()
+initialize_ssh_state
+initialize_runtime_ids() { :; }
+validate_configured_readonly_paths() { :; }
+check_local_port_available() { :; }
+require_compatible_home() { :; }
+compute_config_digest() { :; }
+require_compatible_project_resources() { :; }
+build_or_select_dev_image() { :; }
+validate_dev_image() { :; }
+finalize_effective_readonly_paths() { :; }
+build_jailbox_image() { :; }
+configure_runtime_mounts() { :; }
+configure_network() { :; }
+build_readonly_mounts() { [ "$GENERATION_FAILURE" != before ]; }
+ensure_home_volume() { :; }
+start_jailbox_container() {
+    # The new pin must already exist when the engine is first invoked.
+    validate_ssh_generation
+    printf '%064d' 1 > "$SSH_GENERATION_DIR/container-id"
+    chmod 640 "$SSH_GENERATION_DIR/container-id"
+    touch "$GENERATION_FIXTURE/container-$GENERATION_FAILURE"
+    [ "$GENERATION_FAILURE" != during ]
+}
+wait_for_ssh() { return 1; }
+podman() {
+    case "$1 $2" in
+        'container exists') [ -f "$GENERATION_FIXTURE/container-$GENERATION_FAILURE" ] ;;
+        'rm -f')
+            [ -f "$KEY_FILE" ] || exit 1
+            rm "$GENERATION_FIXTURE/container-$GENERATION_FAILURE"
+            ;;
+        *) return 125 ;;
+    esac
+}
+bring_up_sandbox
+LAUNCH
+for phase in before during readiness; do
+    if GENERATION_REPO="$JAILBOX_DIR" GENERATION_FIXTURE="$FIXTURE" GENERATION_FAILURE="$phase" \
+        bash "$FIXTURE/launch-test"; then
+        echo "FAIL: launch ignored $phase failure"; exit 1
+    fi
+    [ ! -e "$FIXTURE/container-$phase" ]
+    [ ! -e "$FIXTURE/launch-state/projects/$phase/ssh-generation" ]
+    echo "PASS: launch trap rolls back $phase failure"
+done
+
+echo 'SSH generation tests passed'

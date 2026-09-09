@@ -89,27 +89,19 @@ Host jailbox-test
     PasswordAuthentication no
     StrictHostKeyChecking yes
     UserKnownHostsFile $ssh_dir/known_hosts
+    GlobalKnownHostsFile /dev/null
+    UpdateHostKeys no
     BatchMode yes
 EOF
     chmod 600 "$ssh_dir/config"
 }
 
-pin_ssh_host_key() {
+prepare_server_keys() {
     local ssh_dir="$1" port="$2" runtime_dir="$3"
-    local host_key_file host_key
-
-    host_key_file="$runtime_dir/ssh_host_ed25519_key.pub"
-    for _ in $(seq 1 30); do
-        if [ -s "$host_key_file" ]; then
-            host_key=$(cat "$host_key_file")
-            ssh-keygen -f "$ssh_dir/known_hosts" -R "[localhost]:$port" >/dev/null 2>&1 || true
-            printf '[localhost]:%s %s\n' "$port" "$host_key" >> "$ssh_dir/known_hosts"
-            chmod 600 "$ssh_dir/known_hosts"
-            return 0
-        fi
-        sleep 1
-    done
-    return 1
+    ssh-keygen -t ed25519 -f "$runtime_dir/ssh_host_ed25519_key" -N "" -q
+    cp "$ssh_dir/key.pub" "$runtime_dir/authorized_keys"
+    chmod 600 "$runtime_dir/authorized_keys" "$runtime_dir/ssh_host_ed25519_key"
+    printf "[localhost]:%s %s\n" "$port" "$(cat "$runtime_dir/ssh_host_ed25519_key.pub")" > "$ssh_dir/known_hosts"
 }
 
 ssh_run() {
@@ -289,6 +281,7 @@ run_case() {
     assert_probe_hardening "$test_image"
 
     setup_ssh_keys "$ssh_dir" "$port"
+    prepare_server_keys "$ssh_dir" "$port" "$sshd_runtime_dir"
     assert_bad_runtime_dir_fails "$wrapper_image" "$ssh_dir" "$ctr" "bad sshd runtime directory fails clearly before sshd"
 
     # Project fixture for assert_readonly_mount_validation: Containerfile and
@@ -299,22 +292,17 @@ run_case() {
     printf 'FROM scratch\n' > "$project_dir/Containerfile"
     printf 'FROM scratch\n' > "$project_dir/Dockerfile"
 
-    # Mirror production's /run/jailbox-sshd bind mount. A plain tmpfs at that
-    # path is root-owned under Podman, while a world-writable /run breaks
-    # OpenSSH StrictModes for AuthorizedKeysFile.
-    # The public key is mounted as a source file and copied by container/entrypoint.sh,
-    # matching production's generated runtime auth state.
+    # Mirror production: immutable authentication and separate writable daemon state.
     if ! podman run -d \
         --name "$ctr" \
         --replace \
         --userns=keep-id \
         --read-only \
         --tmpfs /tmp:rw,size=64m \
-        --tmpfs /run:rw,size=64m \
+        --mount type=tmpfs,destination=/run,tmpfs-size=64m,tmpfs-mode=0700,U=true \
         -p "127.0.0.1:${port}:2222" \
         -v "${home_dir}:/home/jailbox:Z" \
-        -v "${sshd_runtime_dir}:/run/jailbox-sshd:Z" \
-        -v "${ssh_dir}/key.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
+        -v "${sshd_runtime_dir}:/run/jailbox-sshd:ro,Z" \
         -v "${project_dir}:/home/jailbox/project:Z" \
         -v "${project_dir}/Containerfile:/home/jailbox/project/Containerfile:Z,ro" \
         -v "${project_dir}/.git/hooks:/home/jailbox/project/.git/hooks:Z,ro" \
@@ -325,13 +313,7 @@ run_case() {
         return 1
     fi
 
-    if ! pin_ssh_host_key "$ssh_dir" "$port" "$sshd_runtime_dir"; then
-        fail "SSH host key pinned"
-        podman logs "$ctr" >&2 || true
-        return 1
-    fi
-
-    pass "SSH host key pinned"
+    pass "SSH host key pinned before creation"
 
     if ! wait_for_ssh "$ssh_dir/config"; then
         fail "SSH ready"
@@ -340,10 +322,11 @@ run_case() {
     fi
 
     pass "SSH ready"
+    assert_generation_restart "$ctr" "$ssh_dir/config" "$ssh_dir" "$sshd_runtime_dir"
 
     assert_eq "whoami is jailbox"      "jailbox" "$(ssh_run "$ssh_dir/config" whoami 2>/dev/null || true)"
     assert_eq "UID matches host"       "$(id -u)"  "$(ssh_run "$ssh_dir/config" id -u 2>/dev/null || true)"
-    assert_runtime_dir_valid "$ssh_dir/config" "sshd runtime directory is writable, private, and owned by runtime UID"
+    assert_runtime_dir_valid "$ssh_dir/config" "authentication mount is read-only, private, and owned by runtime UID"
     assert_ssh "$ssh_dir/config" "home dir exists"  "test -d /home/jailbox"
     assert_rootfs_read_only "$ssh_dir/config" "rootfs is read-only"
     assert_host_container_sockets_absent "$ssh_dir/config"
@@ -499,7 +482,7 @@ main() {
     echo ""
     echo "──────────────────────────────────────────────────────────────────────"
     echo "Results: $total_passed passed, $total_failed failed"
-    echo "Full logs: $log_dir"
+    echo "Full logs: $(run_log_path "$log_dir")"
     [ $total_failed -eq 0 ] || exit 1
 }
 

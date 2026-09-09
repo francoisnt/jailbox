@@ -191,13 +191,22 @@ stop_jailbox() {
         removable+=("$target")
     done
     if [ -z "${removable[*]-}" ]; then
-        echo "No jailbox resources to stop."
+        # Orphaned credentials are removable state even when no Podman object is,
+        # so report the cleanup instead of claiming there was nothing to do.
+        assert_ssh_state_initialized
+        if ssh_generation_present; then
+            remove_ssh_generation || return 1
+            echo "🧹 Removed orphaned SSH credentials."
+        else
+            echo "No jailbox resources to stop."
+        fi
         return 0
     fi
     echo "🛑 Stopping jailbox..."
     for target in "${removable[@]}"; do
         remove_project_resource "$target"
     done
+    remove_ssh_generation || return 1
     echo "✅ Stopped"
 }
 
@@ -281,7 +290,7 @@ generate_minimal_gitconfig() {
     email=$(git config --global --get user.email 2>/dev/null || true)
     [ -n "$name$email" ] || return 0
 
-    mkdir -p "$(dirname "$gitconfig_file")"
+    mkdir -p -m 700 "$(dirname "$gitconfig_file")"
     tmp_file=$(mktemp "$(dirname "$gitconfig_file")/gitconfig.tmp.XXXXXX")
     chmod 600 "$tmp_file"
     [ -n "$name" ] && git config --file "$tmp_file" user.name "$name"
@@ -298,7 +307,7 @@ assert_container_launch_state() {
         die "internal error: container launch requires read-only rootfs state"
     [ -n "$SSHD_RUNTIME_DIR" ] && [ -d "$SSHD_RUNTIME_DIR" ] || \
         die "internal error: container launch requires initialized SSH runtime state"
-    [ -n "$KEY_FILE" ] && [ -f "$KEY_FILE.pub" ] || \
+    [ -n "$KEY_FILE" ] && [ -f "$SSHD_RUNTIME_DIR/authorized_keys" ] || \
         die "internal error: container launch requires initialized SSH credentials"
     [[ "$LOCAL_PORT" =~ ^[0-9]+$ ]] && \
         [ "$LOCAL_PORT" -ge 1 ] && [ "$LOCAL_PORT" -le 65535 ] || \
@@ -356,29 +365,28 @@ start_jailbox_container() {
     assert_container_launch_state
 
     echo "🚢 Starting jailbox..."
-    # Keep the runtime non-privileged. SSH auth state is copied into a
-    # user-owned runtime directory mounted at /run/jailbox-sshd. Do not make
-    # /run itself world-writable: OpenSSH StrictModes rejects that parent path.
+    # Authentication files are prepared on the host and mounted read-only.
+    # /run stays private to the managed UID and contains only mutable daemon
+    # state alongside the immutable authentication mount. For tmpfs, U=true
+    # asks Podman to set mount ownership to the container user.
     # /tmp is deliberately exec-capable: the home volume and project mount are
     # writable+exec, so noexec on /tmp adds no containment — it only breaks
     # tools that extract native code to the temp dir at runtime (Bun
     # single-file binaries, PyInstaller, .NET single-file, AppImage).
-    # The public key is mounted only as an inert source file; container/entrypoint.sh
-    # copies it into /run/jailbox-sshd with strict ownership before sshd starts.
     podman run -d \
         --name "$CONTAINER_NAME" \
+        --cidfile "$SSH_GENERATION_DIR/container-id" \
         "${CONFIG_DIGEST_LABEL_ARGS[@]}" \
         --userns=keep-id \
         --network "${NETWORK_STATE[selected_network]}" \
         "${ROOTFS_FLAG[@]}" \
         --tmpfs /tmp:rw,size=512m \
-        --tmpfs /run:rw,size=64m \
-        -v "$SSHD_RUNTIME_DIR:/run/jailbox-sshd:Z" \
+        --mount type=tmpfs,destination=/run,tmpfs-size=64m,tmpfs-mode=0700,U=true \
+        -v "$SSHD_RUNTIME_DIR:/run/jailbox-sshd:ro,Z" \
         -v "$VOLUME_NAME":/home/$MANAGED_USER \
         "${GITCONFIG_MOUNT[@]}" \
         -p 127.0.0.1:"$LOCAL_PORT":2222 \
         -v "$PROJECT_DIR:$REMOTE_PATH:Z" \
-        -v "$KEY_FILE.pub:/etc/ssh/jailbox_authorized_keys.source:ro,Z" \
         "${READONLY_MOUNTS[@]}" \
         --memory="$MEMORY_LIMIT" \
         --cpus="$CPU_LIMIT" \
@@ -386,6 +394,38 @@ start_jailbox_container() {
         --cap-drop=ALL \
         --security-opt=no-new-privileges \
         "$JAILBOX_IMAGE"
+}
+
+# Armed only after this invocation publishes a generation. A cidfile records
+# the exact new container even if `podman run` fails after container creation.
+# Wider convergence rollback is owned by 03.2.06.
+rollback_ssh_launch() {
+    local status="$1" container_id="" probe=0
+    [ "$status" -ne 0 ] || return 0
+    if validate_ssh_receipt; then
+        container_id=$(cat "$SSH_GENERATION_DIR/container-id")
+    fi
+    if [[ "$container_id" =~ ^[a-f0-9]{64}$ ]]; then
+        if ! podman rm -f "$container_id"; then
+            jailbox_resource_exists container "$container_id" || probe=$?
+            if [ "$probe" -ne 1 ]; then
+                printf 'Error: creation cleanup failed; SSH material retained. Run jailbox stop then jailbox up.\n' >&2
+                return 1
+            fi
+        fi
+    else
+        # Podman can leave an empty cidfile when creation fails. Missing or
+        # invalid receipts allow cleanup only after confirmed container absence.
+        jailbox_resource_exists container "$CONTAINER_NAME" || probe=$?
+        if [ "$probe" -ne 1 ]; then
+            printf 'Error: cannot confirm failed container creation left no container; SSH material retained. Run jailbox stop then jailbox up.\n' >&2
+            return 1
+        fi
+    fi
+    remove_ssh_generation || {
+        printf 'Error: SSH cleanup failed; run jailbox stop then jailbox up.\n' >&2
+        return 1
+    }
 }
 
 doctor_jailbox() {

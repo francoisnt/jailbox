@@ -151,10 +151,11 @@ relaunch.
 
 `stop` removes the development and proxy containers and all three project
 networks. The home is persistent by default; a home created with
-`EPHEMERAL_HOME=true` is removed last. Images and the project state directory
-are preserved. The next launch creates fresh containers and rotates the SSH
-key pair. Stop is idempotent, succeeds when either or both containers are
-already gone, and never reads or creates configuration, so it stays usable
+`EPHEMERAL_HOME=true` is removed last. Images and unrelated project runtime
+files are preserved; SSH-generation material is removed after the development
+container. The next launch creates fresh containers and rotates both client
+and server key pairs. Stop is idempotent, succeeds when either or both containers
+are already gone, and never reads or creates configuration, so it stays usable
 when `jailbox.conf` is missing or malformed. There is deliberately no flag
 that relaunches over a running sandbox.
 
@@ -210,8 +211,26 @@ network, and image state; run one at a time.
 
 **State**: per-project runtime state (SSH keys/config, editor profiles) lives
 under `~/.local/state/jailbox/`; `--clean` removes the current project's
-share of it, and `stop` leaves it in place. `init` writes only the new default
-`jailbox.conf`.
+share of it, and `stop` removes SSH credentials while retaining unrelated state.
+`init` writes only the new default `jailbox.conf`.
+
+Each development-container object owns one SSH generation, prepared on the host
+before creation. Its client private key, pinned server identity, and client
+configuration stay host-only under the project's `ssh-generation/` directory.
+Only server keys and authorized keys enter the container, through a read-only
+mount. The keep-id user mapping preserves strict ownership; the authorized-keys
+path and its parents are not group- or other-writable. Mutable daemon state
+lives separately on a private, managed-user-owned `/run` tmpfs. Startup validates
+authentication material and never repairs it or generates replacement keys.
+
+Restarting the same container retains its identities. Public `up` reuse remains
+part of the pending convergence work; currently remove an existing sandbox with
+`stop` before launching again. Orphaned complete or partial SSH material blocks
+new creation: use `stop` then `up`. Handled startup failures remove the newly
+created container before its credentials; cleanup failures report retained
+state and the same explicit recovery. Interrupted processes can leave partial
+state requiring this recovery. Persistent homes keep their existing retention
+rules.
 
 **Upgrade**: re-run the install command (see Quick Start); it replaces the
 previous install cleanly.
@@ -414,7 +433,7 @@ unrestricted outbound internet access.
 - Read-only root filesystem
 - Zero capabilities + no-new-privileges
 - Rootless Podman containers (`--userns=keep-id`)
-- Fresh SSH keypair per launch, pinned host keys
+- Fresh client and server SSH key pairs per container, with strict pinned host-key checking
 - No container runtime sockets mounted
 - Strict sshd configuration (key auth only, local forwarding only)
 - Optional egress control: when `EGRESS_ALLOW` is set, the container is
@@ -527,6 +546,8 @@ editor integration for the current project.
 | `host UID N already belongs to existing image user` | Use a dev image where your UID is free; jailbox will not mutate existing users |
 | `project sandbox container ... is still present` | A previous sandbox is still running; run `jailbox stop`, then launch again |
 | `local port N is already in use` | Another process holds the project's derived SSH port; stop it and relaunch |
+| `SSH generation is orphaned` | Credentials outlived their container; run `jailbox stop` (which removes them) then `jailbox up` |
+| `SSH state path ... is a symlink` / `is not a directory` | jailbox will not read or delete credentials through a substituted path; replace that path with a real directory, or point `XDG_STATE_HOME` at one, then relaunch |
 | A request from inside the container fails in egress mode | Check the proxy log: `podman logs <project>-proxy` (find the name with `podman ps`). Blocked hosts appear as `Proxying refused on filtered domain` — add the domain to `EGRESS_ALLOW` and relaunch |
 | VS Code cannot connect to an Alpine-based container | VS Code Remote SSH does not support Alpine hosts; set `EDITOR=codium` |
 | `neither 'codium' nor 'code' was found in PATH` | Install the VSCodium or VS Code CLI, or set `JAILBOX_EDITOR` |

@@ -80,6 +80,7 @@ with_valid_launch_state() {
     declare -gA NETWORK_STATE=([selected_network]="jailbox-test-network")
     ROOTFS_FLAG=(--read-only)
     SSHD_RUNTIME_DIR="$state_dir/sshd"
+    SSH_GENERATION_DIR="$state_dir/generation"
     KEY_FILE="$state_dir/key"
     LOCAL_PORT="50222"
     CONTAINER_NAME="jailbox-test"
@@ -89,7 +90,7 @@ with_valid_launch_state() {
     CONFIG_DIGEST="$TEST_CONFIG_DIGEST"
     CONFIG_DIGEST_LABEL_ARGS=(--label "$CONFIG_DIGEST_LABEL=$TEST_CONFIG_DIGEST")
     mkdir -p "$SSHD_RUNTIME_DIR" "$PROJECT_DIR"
-    : > "$KEY_FILE.pub"
+    : > "$SSHD_RUNTIME_DIR/authorized_keys"
 }
 
 cleanup_launch_state() {
@@ -119,7 +120,7 @@ test_container_launch_preconditions() {
     ROOTFS_FLAG=()
     assert_launch_state_rejects "missing rootfs state rejected" "read-only rootfs state"
     with_valid_launch_state
-    rm -f "$KEY_FILE.pub"
+    rm -f "$SSHD_RUNTIME_DIR/authorized_keys"
     assert_launch_state_rejects "missing SSH credentials rejected" "initialized SSH credentials"
     with_valid_launch_state
     LOCAL_PORT="invalid"
@@ -173,6 +174,11 @@ test_resource_limit_flags() {
     assert_argv_line "default memory flag byte-identical" "$argv_file" "--memory=4g"
     assert_argv_line "default cpu flag byte-identical" "$argv_file" "--cpus=2"
     assert_argv_line "default pids flag byte-identical" "$argv_file" "--pids-limit=256"
+    assert_argv_line "authentication mount is read-only" "$argv_file" "$SSHD_RUNTIME_DIR:/run/jailbox-sshd:ro,Z"
+    assert_argv_line "daemon state uses managed-user tmpfs" "$argv_file" \
+        "type=tmpfs,destination=/run,tmpfs-size=64m,tmpfs-mode=0700,U=true"
+    assert_argv_line "creation records its container ID" "$argv_file" "$SSH_GENERATION_DIR/container-id"
+    assert_not_contains "client files are not mounted" "$argv_file" "$KEY_FILE"
     assert_argv_line "container carries the configuration digest label" "$argv_file" \
         "$CONFIG_DIGEST_LABEL=$TEST_CONFIG_DIGEST"
 
