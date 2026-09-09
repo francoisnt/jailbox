@@ -4,6 +4,8 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 FIXTURE=$(mktemp -d)
+# macOS temporary paths can traverse /var, a symlink rejected for SSH state.
+FIXTURE=$(cd "$FIXTURE" && pwd -P)
 trap 'rm -rf "$FIXTURE"' EXIT
 mkdir -p "$FIXTURE/bin" "$FIXTURE/project" "$FIXTURE/engine"
 export CONVERGENCE_ENGINE="$FIXTURE/engine" CONVERGENCE_LOG="$FIXTURE/actions"
