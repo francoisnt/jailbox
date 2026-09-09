@@ -80,35 +80,53 @@ bring_up_sandbox() {
 
     initialize_runtime_ids
     validate_configured_readonly_paths
-    check_local_port_available
     # Stored home policy outranks digest incompatibility: stop cannot repair
     # a persistent-to-ephemeral change or corrupt retention metadata.
     require_compatible_home
-    require_ssh_generation_absent
     # The digest is the compatibility gate for every policy-bearing resource
     # that outlives a single launch, so it is computed — and every surviving
     # resource checked against it — before anything is built or created.
     compute_config_digest launch
     require_compatible_project_resources
-    build_or_select_dev_image
-    validate_dev_image
-    if [ -n "$pre_build_hook" ]; then
-        "$pre_build_hook"
+    inspect_sandbox_for_up
+    if [ "$UP_DEV_STATE" = absent ]; then
+        build_or_select_dev_image
+        validate_dev_image
+        if [ -n "$pre_build_hook" ]; then
+            "$pre_build_hook"
+        fi
+        # Classify launch inputs before the wrapper build. Mount construction
+        # repeats this to catch subsequent path replacement.
+        finalize_effective_readonly_paths
+        build_jailbox_image
     fi
-    # Classify launch inputs before the wrapper build or other persistent
-    # launch setup. build_readonly_mounts repeats this immediately before
-    # constructing mount arguments to catch subsequent path replacement.
-    finalize_effective_readonly_paths
-    build_jailbox_image
-    configure_runtime_mounts
-    configure_network
-    create_ssh_generation
+    if [ "$UP_PROXY_STATE" = absent ]; then
+        build_current_proxy_image
+    fi
+    validate_existing_sandbox_health
+    check_local_port_available "$UP_DEV_STATE"
+    # All refusals above are read-only with respect to sandbox resources.
+    # Record attempts before mutation so failures inside an engine operation
+    # also enter dependency-safe rollback.
     trap 'rollback_ssh_launch "$?"' EXIT
     trap 'exit 1' HUP INT TERM
-    build_readonly_mounts
-    ensure_home_volume
-    start_jailbox_container
+    begin_up_convergence
+    configure_network
+    if [ "$UP_DEV_STATE" = absent ]; then
+        configure_runtime_mounts
+        create_ssh_generation
+        build_readonly_mounts
+        track_up_resource "volume:$VOLUME_NAME"
+        ensure_home_volume
+        track_up_resource "container:$CONTAINER_NAME"
+        start_jailbox_container
+    elif [ "$UP_DEV_STATE" != running ]; then
+        resume_jailbox_container
+    fi
     wait_for_ssh
+    validate_sandbox_structure
+    validate_running_development
+    validate_proxy_ready
     configure_downloader_proxy
     post_start_validation
     trap - EXIT HUP INT TERM
@@ -209,13 +227,9 @@ main() {
         return 0
     fi
 
-    # Both project containers must be absent before launch mutates anything.
-    # This precedes config selection so a present sandbox is reported before an
-    # uninitialized project. host_preflight checks podman again later; the
-    # duplicate guard keeps this dispatch order independently correct.
+    # Check the engine prerequisite before loading launch configuration.
     if command_starts_sandbox "${1:-}"; then
         require_command podman
-        require_sandbox_absent
     fi
 
     # Only configuration-consuming commands load and validate configuration;

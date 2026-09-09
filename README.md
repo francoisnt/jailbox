@@ -133,8 +133,13 @@ jailbox --uninstall  # Remove the jailbox installation from this machine
 
 ### Lifecycle
 
-Launch requires both of the project's containers to be absent. jailbox never
-replaces a running sandbox, so relaunching is a two-command operation:
+`up` ensures the declared sandbox is ready. It creates an absent sandbox,
+resumes compatible stopped containers, and reuses healthy running containers
+without restarting them or rotating SSH credentials. Eligible partial states
+are completed in dependency order: for example, a missing proxy can be created
+on valid surviving networks. Missing networks beneath a surviving container,
+damaged SSH material, changed policy, and unhealthy running
+components refuse reuse without repair. Explicit replacement is:
 
 ```bash
 jailbox stop
@@ -143,11 +148,21 @@ jailbox
 
 Bare `jailbox` launches the sandbox and opens the configured editor. `jailbox
 up` performs the same sandbox launch but does no editor discovery, editor
-configuration, or editor launch; it returns once the sandbox is ready. Only
-these two commands start containers, and both require configuration —
+configuration, or editor launch; it returns once the sandbox is ready.
+These two commands start containers and require configuration —
 `JAILBOX_CONFIG_*` environment variables, or a `jailbox.conf` when none is
-set (see Configuration) — and the same explicit `stop` boundary before
-relaunch.
+set (see Configuration). Bare launch opens the editor after successful
+creation, resume, or reuse. Neither automatically replaces an
+incompatible sandbox.
+
+Before changing sandbox state, launch validates the complete resource inventory,
+stored home policy, SSH generation, mounts, hardening, network attachments, and
+independently observable running health. Readiness that depends on an eligible
+missing or stopped component is checked after creation/start. Missing or stale
+jailbox-managed downloader blocks are synchronized; correct blocks and unrelated
+home contents are preserved. Required checks fail closed. External website
+availability is advisory; failed DNS or transport is never proof of isolation
+or proxy denial.
 
 `stop` removes the development and proxy containers and all three project
 networks. The home is persistent by default; a home created with
@@ -156,8 +171,7 @@ files are preserved; SSH-generation material is removed after the development
 container. The next launch creates fresh containers and rotates both client
 and server key pairs. Stop is idempotent, succeeds when either or both containers
 are already gone, and never reads or creates configuration, so it stays usable
-when `jailbox.conf` is missing or malformed. There is deliberately no flag
-that relaunches over a running sandbox.
+when `jailbox.conf` is missing or malformed.
 
 Because nothing is kept alive as a fallback, a launch that fails after
 `jailbox stop` — a broken dev image build, for example — leaves no sandbox
@@ -223,14 +237,21 @@ path and its parents are not group- or other-writable. Mutable daemon state
 lives separately on a private, managed-user-owned `/run` tmpfs. Startup validates
 authentication material and never repairs it or generates replacement keys.
 
-Restarting the same container retains its identities. Public `up` reuse remains
-part of the pending convergence work; currently remove an existing sandbox with
-`stop` before launching again. Orphaned complete or partial SSH material blocks
-new creation: use `stop` then `up`. Handled startup failures remove the newly
-created container before its credentials; cleanup failures report retained
-state and the same explicit recovery. Interrupted processes can leave partial
-state requiring this recovery. Persistent homes keep their existing retention
-rules.
+Restarting the same container retains its identities. Orphaned complete or
+partial SSH material blocks new creation: use `stop` then `up`. Compatibility
+refusal preserves existing sandbox resources and generation files. Failure
+after an allowed start is different: a surviving container is never
+automatically stopped or deleted, even if this invocation started it. It may
+remain running or have exited; process state, tmpfs, and startup home writes
+are not restored. Managed downloader synchronization may have completed.
+
+Handled failures remove only invocation-created resources that survivors no
+longer need, removing containers before their credentials. A new proxy needed
+by a surviving development container is retained, as is authentication material
+when container removal fails. Diagnostics report retained objects, observed
+states, cleanup failures, and explicit recovery. Forced termination may leave
+partial state for the same inspection and recovery rules. Stop retains or
+deletes the home according to its recorded policy.
 
 **Upgrade**: re-run the install command (see Quick Start); it replaces the
 previous install cleanly.
@@ -249,9 +270,9 @@ digest of the exact jailbox version, the effective machine configuration
 values, and the identity of the selected Containerfile. A launch recomputes
 that digest and refuses before creating or reusing anything when a surviving
 resource carries a missing, malformed, or different one. `jailbox stop`
-clears incompatible networks while preserving persistent homes. Containers
-never reach this comparison at launch: both must already be absent before a
-launch mutates anything, and `jailbox stop` removes them. Resources created by
+clears incompatible containers and networks while preserving persistent homes.
+The comparison includes resources outside the requested network mode.
+Resources created by
 a jailbox release from before the digest carry no label at all, so they are
 incompatible too; the refusal names each one and the command that clears it.
 
@@ -277,6 +298,24 @@ hardening rules, so a stamped release and a development build never share a
 digest, and neither do two different stamped releases. Every unstamped build
 reports the same `dev` token — including an install made from a source
 checkout — so distinct source revisions are not distinguished by the digest.
+
+**Ordinary reuse does not build images.** `up` and bare launch validate
+configuration, resource compatibility, SSH, and runtime security, then reuse or
+resume existing containers. They build only the images needed for missing
+containers. Edited Containerfiles, copied build-context files, and manually
+re-pulled image tags alone do not prevent reuse or update existing containers.
+
+**Use `jailbox stop` followed by `jailbox up` to rebuild.** This removes the
+existing containers and SSH credentials, builds from selected inputs, and
+creates a new generation. Stop preserves persistent homes and deletes
+ephemeral homes according to their recorded retention policy.
+
+Builds can fetch missing base images and update the local image store and
+derived tags. Automatic registry refresh is not performed; rebuilding does
+not guarantee registry freshness or reproducibility. Persistent-to-ephemeral
+changes and corrupt home metadata require warned `--clean` then `up`, since
+stop preserves the blocking home. `--clean` permanently deletes the project's
+home and runtime state.
 
 ---
 
@@ -544,7 +583,9 @@ editor integration for the current project.
 | `dev image has no usable shell` / `no supported package manager` | The selected image/stage is production or distroless; set `DEV_TARGET_STAGE` to a dev stage or use `DEV_IMAGE` |
 | `managed user 'jailbox' already exists in the dev image` | Remove/rename that user in the dev image; jailbox manages its own user |
 | `host UID N already belongs to existing image user` | Use a dev image where your UID is free; jailbox will not mutate existing users |
-| `project sandbox container ... is still present` | A previous sandbox is still running; run `jailbox stop`, then launch again |
+| `project sandbox container ... is still present` during `init` | Initialization requires absent containers; run `jailbox stop` before `init` |
+| `refusing sandbox reuse` | Follow the stated recovery; `stop` preserves persistent homes and deletes ephemeral homes, while `--clean` permanently deletes home/runtime state |
+| `sandbox convergence failed` | Startup or synchronization began before failure; read the cleanup and retained-resource report before retrying or performing recovery |
 | `local port N is already in use` | Another process holds the project's derived SSH port; stop it and relaunch |
 | `SSH generation is orphaned` | Credentials outlived their container; run `jailbox stop` (which removes them) then `jailbox up` |
 | `SSH state path ... is a symlink` / `is not a directory` | jailbox will not read or delete credentials through a substituted path; replace that path with a real directory, or point `XDG_STATE_HOME` at one, then relaunch |

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Exact-name lifecycle: `stop`, `--clean`, the launch absence check, and the
+# Exact-name lifecycle: `stop`, `--clean`, launch compatibility, and the
 # SHA-256 identity every one of them derives before touching a resource.
 set -euo pipefail
 
@@ -432,18 +432,19 @@ test_clean_leaves_undeclared_names_alone() {
     fi
 }
 
-# The absence guard makes no ownership distinction: any container holding a
-# derived name blocks launch with the same stop guidance, because stop is what
-# clears that name. Compatibility of a resource jailbox may reuse is the
-# digest gate's separate concern, and it never runs on a present container.
-test_launch_requires_absent_sandbox() {
+# Legacy containers refuse at the digest gate after configuration validation.
+test_launch_rejects_legacy_containers() {
     local project output name command labels description
+
+    printf '#!/bin/bash\nexit 0\n' > "$FIXTURE/bin/codium"
+    chmod +x "$FIXTURE/bin/codium"
 
     for command in "" up; do
         for name in "" -proxy; do
             for description in "this project's label" "a foreign project label" "no labels at all"; do
                 new_project
                 project="$PROJECT"
+                printf "DEV_IMAGE=localhost/fixture\n" >> "$project/jailbox.conf"
                 case "$description" in
                     "this project's label") labels="jailbox.project=$project" ;;
                     "a foreign project label") labels="jailbox.project=/somewhere/else" ;;
@@ -475,12 +476,12 @@ test_launch_requires_absent_sandbox() {
             done
         done
     done
+    rm "$FIXTURE/bin/codium"
 }
 
-# An uninitialized project with a live sandbox has two blockers. The stop
-# precondition is reported first because launch must not mutate anything while
-# a sandbox holds the project mounted writable.
-test_stop_precondition_precedes_initialization() {
+# Configuration must be valid before launch can decide whether a live sandbox
+# is compatible. Its presence no longer implies a stop precondition.
+test_configuration_precedes_convergence() {
     local project output command
 
     for command in "" up; do
@@ -491,12 +492,12 @@ test_stop_precondition_precedes_initialization() {
 
         output=$(run_jailbox "$project" $command || true)
         case "$output" in
-            *"jailbox stop"*) pass "launch reports the stop precondition before initialization" ;;
-            *) fail "launch reports the stop precondition before initialization (got: $output)" ;;
+            *"jailbox init"*) pass "launch validates configuration before convergence" ;;
+            *) fail "launch validates configuration before convergence (got: $output)" ;;
         esac
         case "$output" in
-            *"jailbox init"*) fail "the initialization requirement is not reported yet" ;;
-            *) pass "the initialization requirement is not reported yet" ;;
+            *"jailbox stop"*) fail "no absence-only refusal before configuration" ;;
+            *) pass "no absence-only refusal before configuration" ;;
         esac
 
         run_jailbox "$project" stop >/dev/null
@@ -955,8 +956,8 @@ test_home_creation_and_generation() {
         fi
     done
     new_project
-    # These owning-layer cases become reachable through CLI convergence in
-    # 03.2.06. The current CLI's absence guard still refuses any container.
+    # Isolate home eligibility here; public convergence additionally validates
+    # the surviving generation, networks, image and runtime structure.
     declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=true'
     declare_resource container "$PREFIX"
     if run_home_function true require_compatible_home; then
@@ -1131,8 +1132,8 @@ test_clean_leaves_undeclared_names_alone
 test_identity_requires_a_sha256_tool
 test_identity_is_stable_across_path_spellings
 test_both_sha256_tools_produce_the_same_identity
-test_launch_requires_absent_sandbox
-test_stop_precondition_precedes_initialization
+test_launch_rejects_legacy_containers
+test_configuration_precedes_convergence
 test_launch_reports_missing_podman_first
 test_cksum_is_required_only_by_launch
 test_uninstall_needs_no_podman_or_hash_tool

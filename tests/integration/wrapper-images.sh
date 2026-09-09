@@ -187,7 +187,7 @@ assert_local_forwarding() {
 run_case() {
     local stage="$1"
     local log_dir="$2"
-    local port forward_port test_build_args ctr expect_wrapper_failure
+    local port forward_port test_build_args ctr expect_wrapper_failure test_image_id
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope. Initialize here so the trap can
     # always reference them safely under set -u.
@@ -250,11 +250,18 @@ run_case() {
         return 1
     fi
 
+    # Match the CLI's immutable FROM input so subsequent launches share the
+    # prepared wrapper layers instead of repeating package installation.
+    if ! test_image_id=$(podman image inspect "$test_image" --format '{{.Id}}'); then
+        fail "test image identity inspection"
+        return 1
+    fi
     # Build jailbox wrapper
     if ! podman build \
             -t "$wrapper_image" \
             -f "$JAILBOX_DIR/container/Containerfile.wrapper" \
-            --build-arg "DEV_IMAGE=${test_image}" \
+            --pull=never \
+            --build-arg "DEV_IMAGE=${test_image_id}" \
             --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(jailbox_install_cache_bust)" \
             --build-arg "USER_ID=$(id -u)" \
             "$JAILBOX_DIR/container" > "$build_log" 2>&1; then

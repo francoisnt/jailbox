@@ -202,9 +202,10 @@ compute_config_digest() {
 }
 
 assert_config_digest_ready() {
-    is_config_digest_value "${CONFIG_DIGEST:-}" && \
-        [ "${#CONFIG_DIGEST_LABEL_ARGS[@]}" -eq 2 ] || \
+    if ! is_config_digest_value "${CONFIG_DIGEST:-}" ||
+        [ "${#CONFIG_DIGEST_LABEL_ARGS[@]}" -ne 2 ]; then
         die "internal error: policy-bearing resources require a computed configuration digest"
+    fi
 }
 
 # Every independently surviving policy-bearing resource, including the network
@@ -239,8 +240,8 @@ config_digest_incompatibility() {
 # exactly the current digest; missing, malformed, inconsistent, and mismatched
 # labels all refuse here, before anything is created, removed, or reused.
 require_compatible_project_resources() {
-    local target kind name recorded status reason guidance summary
-    local -a incompatible=()
+    local target kind name recorded status reason guidance summary policy
+    local -a incompatible=() homes=()
 
     assert_config_digest_ready
     while IFS= read -r target; do
@@ -254,7 +255,8 @@ require_compatible_project_resources() {
             *) die "could not determine whether $kind '$name' exists with Podman" ;;
         esac
 
-        recorded=$(jailbox_resource_label "$kind" "$name" "$CONFIG_DIGEST_LABEL")
+        recorded=$(jailbox_resource_label "$kind" "$name" "$CONFIG_DIGEST_LABEL") || \
+            die "could not inspect configuration digest on $kind '$name'; no sandbox resources were changed"
         [ "$recorded" = "$CONFIG_DIGEST" ] && continue
         reason=$(config_digest_incompatibility "$recorded")
         incompatible+=("$kind '$name' carries $reason")
@@ -267,5 +269,13 @@ require_compatible_project_resources() {
         summary="${summary:+$summary; }$reason"
     done
     guidance="Run 'jailbox stop' and then 'jailbox up' to recreate the containers and networks."
+    resolve_present_resources homes "volume:$VOLUME_NAME"
+    if [ -n "${homes[*]-}" ]; then
+        policy=$(home_retention_policy) || return 1
+        case "$policy" in
+            true) guidance+=" Stop deletes the recorded ephemeral home." ;;
+            *) guidance+=" Stop preserves the persistent home." ;;
+        esac
+    fi
     die "refusing to reuse project resources that do not match this configuration and jailbox version: $summary. $guidance"
 }

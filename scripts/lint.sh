@@ -9,9 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$(dirname "$SCRIPT_DIR")"
 
 # jailbox (bash) — checked with --external-sources so shellcheck follows every
-# sourced host/*.sh file in context, resolving cross-file variable references.
+# sourced host/*.sh file in context and reports its findings too.
 echo "shellcheck: jailbox (+ sourced host/*.sh)"
-shellcheck --external-sources --shell=bash "$@" jailbox
+shellcheck --check-sourced --external-sources --shell=bash "$@" jailbox
 
 # Standalone bash scripts. Discover repository tooling and tests so adding a
 # new suite cannot silently leave it outside ShellCheck coverage.

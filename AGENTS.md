@@ -138,6 +138,10 @@ for host, container, SSH, mount, network, or lifecycle changes when Podman is
 available. Run `tests/run editor` for editor integration changes. If a required
 gate cannot run in the current environment, state that clearly in the handoff.
 
+Permission-sensitive test fixtures must explicitly set the permissions required
+by their scenario rather than inherit the caller's umask. Verify relevant
+changes under both `0022` and `0002`.
+
 Do not add another user-facing test mode without explicit agreement. New unit
 scripts are discovered automatically. Keep `scripts/lint.sh` discovery-based so
 new test scripts cannot silently escape ShellCheck.

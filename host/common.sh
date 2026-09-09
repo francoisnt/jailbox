@@ -99,7 +99,7 @@ init_project_config() (
         fi
 
         nested_link="$destination/${tmp_file##*/}"
-        if [ -e "$nested_link" ] && [ "$tmp_file" -ef "$nested_link" ]; then
+        if [[ -e "$nested_link" && "$tmp_file" -ef "$nested_link" ]]; then
             rm -f -- "$nested_link"
         fi
     fi
@@ -278,7 +278,7 @@ classify_trusted_directory() {
     check_path_no_symlinks "$path" || die "$description path contains a symlink: $path"
     [ -e "$path" ] || die "$description path does not exist: $path"
     [ -d "$path" ] || die "$description path is not a directory: $path"
-    [ -r "$path" ] && [ -x "$path" ] || die "$description path is not accessible: $path"
+    [[ -r "$path" && -x "$path" ]] || die "$description path is not accessible: $path"
     canonical=$(realpath -- "$path") || die "cannot canonicalize $description path: $path"
     reject_control_characters "canonical $description" "$canonical"
     printf '%s\n' "$canonical"
@@ -598,7 +598,7 @@ unquote_config_value() {
     first="${value:0:1}"
     last="${value: -1}"
 
-    if [ "${#value}" -ge 2 ] && { { [ "$first" = '"' ] && [ "$last" = '"' ]; } || { [ "$first" = "'" ] && [ "$last" = "'" ]; }; }; then
+    if [ "${#value}" -ge 2 ] && { { [[ "$first" = '"' && "$last" = '"' ]]; } || { [[ "$first" = "'" && "$last" = "'" ]]; }; }; then
         printf '%s\n' "${value:1:${#value}-2}"
         return 0
     fi

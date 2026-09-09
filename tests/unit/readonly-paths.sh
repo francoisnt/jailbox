@@ -107,10 +107,12 @@ test_anchor_and_empty_regression() {
     finalize_effective_readonly_paths
     if [ "${EFFECTIVE_READONLY_PATHS[*]-}" = jailbox.conf ]; then pass "external config launch retains default anchor"; else fail "external config launch retains default anchor"; fi
     EFFECTIVE_READONLY_PATHS=()
-    WARNINGS=0
     output_file=$(mktemp)
-    check_readonly_mounts > "$output_file"
-    if [ -s "$output_file" ] && [ "$WARNINGS" -eq 1 ]; then pass "empty effective set produces regression warning"; else fail "empty effective set produces regression warning"; fi
+    (
+        validation_ssh() { printf "%s\n" "$*"; cat >/dev/null; }
+        check_readonly_mounts
+    ) > "$output_file"
+    if grep -Fq "TARGET=/" "$output_file"; then pass "empty protected set still validates root mount"; else fail "empty protected set still validates root mount"; fi
     rm -f "$output_file"
     if [ ! -e "$PROJECT_DIR/.env" ] && [ ! -e "$PROJECT_DIR/.github/workflows" ]; then pass "no legacy built-ins or stubs"; else fail "no legacy built-ins or stubs"; fi
     rm -rf "$PROJECT_DIR" "$external"

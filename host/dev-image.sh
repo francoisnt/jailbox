@@ -7,6 +7,7 @@ PKG_MANAGER=""
 SELECTED_DEV_CONTAINERFILE=""
 SELECTED_DEV_CONTAINERFILE_INPUT=""
 SELECTED_DEV_BUILD_CONTEXT=""
+SELECTED_DEV_IMAGE_ID=""
 
 initialize_dev_image_state() {
     PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
@@ -16,6 +17,7 @@ initialize_dev_image_state() {
     SELECTED_DEV_CONTAINERFILE=""
     SELECTED_DEV_CONTAINERFILE_INPUT=""
     SELECTED_DEV_BUILD_CONTEXT=""
+    SELECTED_DEV_IMAGE_ID=""
 }
 
 # Cleanup uses immutable project identity, never the image selected at launch.
@@ -27,7 +29,7 @@ project_cleanup_images() {
 }
 
 assert_dev_image_state_initialized() {
-    [ -n "$PROJECT_DEV_IMAGE" ] && [ -n "$JAILBOX_IMAGE" ] || \
+    [[ -n "$PROJECT_DEV_IMAGE" && -n "$JAILBOX_IMAGE" ]] || \
         die "internal error: development image state is not initialized"
 }
 
@@ -140,6 +142,7 @@ validate_dev_image() {
         exit 1
     fi
 
+    # shellcheck disable=SC2016  # Expanded inside the image.
     PKG_MANAGER=$(podman_probe "$PROJECT_DEV_IMAGE" "$USABLE_SHELL" -c \
         'for pm in apt-get apk dnf yum; do command -v "$pm" >/dev/null 2>&1 && echo "$pm" && exit 0; done; exit 1' \
         2>/dev/null || true)
@@ -172,12 +175,28 @@ build_jailbox_image() {
     local install_cache_bust
 
     install_cache_bust=$(jailbox_install_cache_bust)
+    # Resolve once and feed the immutable identity to FROM. A moved local tag
+    # must not reuse a wrapper built from the previous base through cached FROM
+    # resolution. Missing images may be fetched; automatic refresh is separate.
+    local status=0
+    podman image exists "$PROJECT_DEV_IMAGE" || status=$?
+    case "$status" in
+        0) ;;
+        1)
+            [ -n "$DEV_IMAGE" ] || die "just-built development image '$PROJECT_DEV_IMAGE' is missing"
+            podman pull "$PROJECT_DEV_IMAGE" || return 1
+            ;;
+        *) die "could not inspect development image '$PROJECT_DEV_IMAGE'" ;;
+    esac
+    SELECTED_DEV_IMAGE_ID=$(podman image inspect "$PROJECT_DEV_IMAGE" --format '{{.Id}}') || return 1
+    [ -n "$SELECTED_DEV_IMAGE_ID" ] || die 'development image inspection returned no identity'
 
     echo "📦 Building jailbox image..."
     if ! podman build \
         -t "$JAILBOX_IMAGE" \
         -f "$SCRIPT_DIR/container/Containerfile.wrapper" \
-        --build-arg DEV_IMAGE="$PROJECT_DEV_IMAGE" \
+        --pull=never \
+        --build-arg DEV_IMAGE="$SELECTED_DEV_IMAGE_ID" \
         --build-arg JAILBOX_INSTALL_CACHE_BUST="$install_cache_bust" \
         --build-arg USER_ID="$MY_UID" \
         "$SCRIPT_DIR/container"; then
@@ -192,6 +211,12 @@ build_jailbox_image() {
         echo "  - The wrapper prerequisites cannot be installed in this image"
         echo "Fix: verify DEV_TARGET_STAGE in jailbox.conf or use a supported development image."
         exit 1
+    fi
+}
+
+build_current_proxy_image() {
+    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
+        podman build -t "$PROXY_IMAGE" -f "$SCRIPT_DIR/container/tinyproxy/Containerfile" "$SCRIPT_DIR/container/tinyproxy"
     fi
 }
 

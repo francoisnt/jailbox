@@ -17,6 +17,8 @@ PROJECT_HASH="test"
 CONTAINER_NAME=jailbox-test
 LOCAL_PORT=50222
 MANAGED_USER=jailbox
+PROXY_NAME=jailbox-test-proxy
+VOLUME_NAME=jailbox-test-home
 NETWORK_SSH_SESSION_ENV=()
 initialize_ssh_state
 
@@ -130,9 +132,15 @@ printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
 # Podman writes this receipt under the caller's umask; fix a representative
 # mode here so the suite exercises the engine's range rather than one default.
 chmod 640 "$SSH_GENERATION_DIR/container-id"
+UP_CREATED=("container:$CONTAINER_NAME")
+UP_HOST_CREATED=("$SSH_GENERATION_DIR")
+container_present=true
 podman() {
-    [ "$*" = "rm -f $container_id" ] || return 1
-    [ -f "$KEY_FILE" ]
+    case "$1 $2" in
+        'container exists') [ "$3" = "$CONTAINER_NAME" ] && [ "$container_present" = true ] ;;
+        'rm -f') [ "$3" = "$CONTAINER_NAME" ] && [ -f "$KEY_FILE" ]; container_present=false ;;
+        *) return 1 ;;
+    esac
 }
 rollback_ssh_launch 1
 if ssh_generation_present; then echo 'FAIL: rollback leaked state'; exit 1; fi
@@ -140,15 +148,15 @@ create_ssh_generation
 printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
 chmod 600 "$SSH_GENERATION_DIR/container-id"
 podman() { return 125; }
-reject_rollback 'creation cleanup failed' rollback_ssh_launch 1
+reject_rollback 'cleanup could not remove' rollback_ssh_launch 1
 [ -f "$KEY_FILE" ]
 
 # Before container creation, confirmed absence permits cleanup. An engine
 # inspection error must retain the generation for explicit stop recovery.
 rm "$SSH_GENERATION_DIR/container-id"
-reject_rollback 'cannot confirm failed container creation' rollback_ssh_launch 1
+reject_rollback 'cleanup could not remove' rollback_ssh_launch 1
 [ -f "$KEY_FILE" ]
-podman() { [ "$1 $2" != 'container exists' ]; }
+podman() { return 1; }
 rollback_ssh_launch 1
 if ssh_generation_present; then echo 'FAIL: pre-container rollback leaked state'; exit 1; fi
 create_ssh_generation
@@ -199,6 +207,11 @@ MANAGED_USER=jailbox
 NETWORK_SSH_SESSION_ENV=()
 initialize_ssh_state
 initialize_runtime_ids() { :; }
+PROXY_NAME=jailbox-test-proxy
+VOLUME_NAME=jailbox-test-home
+inspect_sandbox_for_up() { UP_DEV_STATE=absent; }
+build_current_proxy_image() { :; }
+validate_existing_sandbox_health() { :; }
 validate_configured_readonly_paths() { :; }
 check_local_port_available() { :; }
 require_compatible_home() { :; }
@@ -208,7 +221,6 @@ build_or_select_dev_image() { :; }
 validate_dev_image() { :; }
 finalize_effective_readonly_paths() { :; }
 build_jailbox_image() { :; }
-configure_runtime_mounts() { :; }
 configure_network() { :; }
 build_readonly_mounts() { [ "$GENERATION_FAILURE" != before ]; }
 ensure_home_volume() { :; }
@@ -223,7 +235,8 @@ start_jailbox_container() {
 wait_for_ssh() { return 1; }
 podman() {
     case "$1 $2" in
-        'container exists') [ -f "$GENERATION_FIXTURE/container-$GENERATION_FAILURE" ] ;;
+        'container exists') [ "$3" = "$CONTAINER_NAME" ] && [ -f "$GENERATION_FIXTURE/container-$GENERATION_FAILURE" ] ;;
+        'volume exists') return 1 ;;
         'rm -f')
             [ -f "$KEY_FILE" ] || exit 1
             rm "$GENERATION_FIXTURE/container-$GENERATION_FAILURE"

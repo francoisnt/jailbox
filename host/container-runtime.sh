@@ -10,6 +10,7 @@ initialize_container_runtime_state() {
     READONLY_MOUNTS=()
     GITCONFIG_MOUNT=()
     ROOTFS_FLAG=()
+    UP_CONVERGING=false
 }
 
 # Exact deterministic names are this project's identity. Podman exposes
@@ -25,10 +26,9 @@ jailbox_resource_exists() {
     esac
 }
 
-# Read one label from a resource. An unreadable resource, a resource carrying
-# no labels, and an absent label all report the empty value, so every caller
-# decides in the fail-closed direction. Label names come from jailbox's own
-# declarations, never from user input.
+# Read the fixed-width digest label, rejecting extra bytes inside the engine
+# before command substitution can strip trailing newlines. An absent label
+# stays empty; inspection failure remains an operational error.
 jailbox_resource_label() {
     local kind name label
 
@@ -38,15 +38,15 @@ jailbox_resource_label() {
     case "$kind" in
         container)
             podman container inspect "$name" \
-                --format '{{ index .Config.Labels "'"$label"'" }}' 2>/dev/null || true
+                --format '{{with index .Config.Labels "'"$label"'"}}{{if eq (len .) 64}}{{.}}{{else}}invalid{{end}}{{end}}'
             ;;
         volume)
             podman volume inspect "$name" \
-                --format '{{ index .Labels "'"$label"'" }}' 2>/dev/null || true
+                --format '{{with index .Labels "'"$label"'"}}{{if eq (len .) 64}}{{.}}{{else}}invalid{{end}}{{end}}'
             ;;
         network)
             podman network inspect "$name" \
-                --format '{{ index .Labels "'"$label"'" }}' 2>/dev/null || true
+                --format '{{with index .Labels "'"$label"'"}}{{if eq (len .) 64}}{{.}}{{else}}invalid{{end}}{{end}}'
             ;;
         *) die "internal error: unknown jailbox resource type '$kind'" ;;
     esac
@@ -125,9 +125,6 @@ require_compatible_home() {
     local policy
     local -a present=()
 
-    # Current dispatch requires absent containers. Keep the generation-aware
-    # check here for constrained up (03.2.06), which removes that blanket guard
-    # and owns CLI convergence verification for surviving containers.
     resolve_present_resources present "volume:$VOLUME_NAME" "container:$CONTAINER_NAME"
     [[ " ${present[*]} " == *" volume:$VOLUME_NAME "* ]] || return 0
     policy=$(home_retention_policy) || return $?
@@ -141,9 +138,9 @@ require_compatible_home() {
             ;;
         true)
             [[ " ${present[*]} " == *" container:$CONTAINER_NAME "* ]] || \
-                die "home '$VOLUME_NAME' is an orphaned ephemeral home; run 'jailbox stop' and then 'jailbox up'"
+                die "home '$VOLUME_NAME' is an orphaned ephemeral home; run 'jailbox stop' (deletes the recorded ephemeral home) and then 'jailbox up'"
             [ "$EPHEMERAL_HOME" = true ] || \
-                die "home '$VOLUME_NAME' is ephemeral; run 'jailbox stop' and then 'jailbox up' to change to persistent"
+                die "home '$VOLUME_NAME' is ephemeral; run 'jailbox stop' (deletes the recorded ephemeral home) and then 'jailbox up' to change to persistent"
             ;;
     esac
 }
@@ -185,7 +182,7 @@ stop_jailbox() {
     fi
 
     for target in "${present[@]}"; do
-        if [ "$target" = "volume:$VOLUME_NAME" ] && [ "$policy" != true ]; then
+        if [[ "$target" = "volume:$VOLUME_NAME" && "$policy" != true ]]; then
             continue
         fi
         removable+=("$target")
@@ -266,19 +263,6 @@ build_readonly_mounts() {
     done
 }
 
-configure_runtime_mounts() {
-    local gitconfig_file
-
-    GITCONFIG_MOUNT=()
-    gitconfig_file="$SSH_DIR/gitconfig"
-    generate_minimal_gitconfig "$gitconfig_file"
-    [ -f "$gitconfig_file" ] && GITCONFIG_MOUNT=(-v "$gitconfig_file:/home/$MANAGED_USER/.gitconfig:ro")
-
-    # The container root filesystem is always read-only. Project and home
-    # writes go through explicit mounts; runtime state uses tmpfs mounts.
-    ROOTFS_FLAG=(--read-only)
-}
-
 generate_minimal_gitconfig() {
     local gitconfig_file name email tmp_file
 
@@ -290,7 +274,8 @@ generate_minimal_gitconfig() {
     email=$(git config --global --get user.email 2>/dev/null || true)
     [ -n "$name$email" ] || return 0
 
-    mkdir -p -m 700 "$(dirname "$gitconfig_file")"
+    # New parent directories are private too; leave existing parents unchanged.
+    (umask 077; mkdir -p -- "$(dirname "$gitconfig_file")")
     tmp_file=$(mktemp "$(dirname "$gitconfig_file")/gitconfig.tmp.XXXXXX")
     chmod 600 "$tmp_file"
     [ -n "$name" ] && git config --file "$tmp_file" user.name "$name"
@@ -305,16 +290,16 @@ assert_container_launch_state() {
     [ -n "${NETWORK_STATE[selected_network]}" ] || die "internal error: container launch requires initialized network state"
     [ "${ROOTFS_FLAG[*]-}" = "--read-only" ] || \
         die "internal error: container launch requires read-only rootfs state"
-    [ -n "$SSHD_RUNTIME_DIR" ] && [ -d "$SSHD_RUNTIME_DIR" ] || \
+    [[ -n "$SSHD_RUNTIME_DIR" && -d "$SSHD_RUNTIME_DIR" ]] || \
         die "internal error: container launch requires initialized SSH runtime state"
-    [ -n "$KEY_FILE" ] && [ -f "$SSHD_RUNTIME_DIR/authorized_keys" ] || \
+    [[ -n "$KEY_FILE" && -f "$SSHD_RUNTIME_DIR/authorized_keys" ]] || \
         die "internal error: container launch requires initialized SSH credentials"
-    [[ "$LOCAL_PORT" =~ ^[0-9]+$ ]] && \
-        [ "$LOCAL_PORT" -ge 1 ] && [ "$LOCAL_PORT" -le 65535 ] || \
+    [[ "$LOCAL_PORT" =~ ^[0-9]+$ &&
+        "$LOCAL_PORT" -ge 1 && "$LOCAL_PORT" -le 65535 ]] || \
         die "internal error: container launch requires a valid SSH port"
-    [ -n "$CONTAINER_NAME" ] && [ -n "$VOLUME_NAME" ] || \
+    [[ -n "$CONTAINER_NAME" && -n "$VOLUME_NAME" ]] || \
         die "internal error: container launch requires initialized resource names"
-    [ -n "$PROJECT_DIR" ] && [ -n "$REMOTE_PATH" ] || \
+    [[ -n "$PROJECT_DIR" && -n "$REMOTE_PATH" ]] || \
         die "internal error: container launch requires initialized project paths"
 }
 
@@ -396,36 +381,9 @@ start_jailbox_container() {
         "$JAILBOX_IMAGE"
 }
 
-# Armed only after this invocation publishes a generation. A cidfile records
-# the exact new container even if `podman run` fails after container creation.
-# Wider convergence rollback is owned by 03.2.06.
+# Armed after compatibility inspection, before the first sandbox mutation.
 rollback_ssh_launch() {
-    local status="$1" container_id="" probe=0
-    [ "$status" -ne 0 ] || return 0
-    if validate_ssh_receipt; then
-        container_id=$(cat "$SSH_GENERATION_DIR/container-id")
-    fi
-    if [[ "$container_id" =~ ^[a-f0-9]{64}$ ]]; then
-        if ! podman rm -f "$container_id"; then
-            jailbox_resource_exists container "$container_id" || probe=$?
-            if [ "$probe" -ne 1 ]; then
-                printf 'Error: creation cleanup failed; SSH material retained. Run jailbox stop then jailbox up.\n' >&2
-                return 1
-            fi
-        fi
-    else
-        # Podman can leave an empty cidfile when creation fails. Missing or
-        # invalid receipts allow cleanup only after confirmed container absence.
-        jailbox_resource_exists container "$CONTAINER_NAME" || probe=$?
-        if [ "$probe" -ne 1 ]; then
-            printf 'Error: cannot confirm failed container creation left no container; SSH material retained. Run jailbox stop then jailbox up.\n' >&2
-            return 1
-        fi
-    fi
-    remove_ssh_generation || {
-        printf 'Error: SSH cleanup failed; run jailbox stop then jailbox up.\n' >&2
-        return 1
-    }
+    [ "$1" -eq 0 ] || rollback_up_launch
 }
 
 doctor_jailbox() {
@@ -487,4 +445,274 @@ doctor_jailbox() {
             echo "Warning: VS Code Remote SSH does not support Alpine SSH hosts; set EDITOR=codium in jailbox.conf."
         fi
     fi
+}
+
+# One invocation's immutable inventory and attempted creations. No labels or
+# names supplied by the sandbox are used as associative-array subscripts.
+UP_PRESENT=()
+UP_CREATED=()
+UP_HOST_CREATED=()
+UP_DEV_STATE=absent
+UP_PROXY_STATE=absent
+UP_CONVERGING=false
+
+begin_up_convergence() {
+    UP_CONVERGING=true
+}
+
+fail_sandbox_readiness() {
+    die "sandbox convergence failed after startup or synchronization began: $*. Sandbox state may have changed; cleanup and retained-resource reporting follow."
+}
+
+resume_jailbox_container() {
+    podman start "$CONTAINER_NAME" || fail_sandbox_readiness "could not start development container '$CONTAINER_NAME'"
+}
+
+up_resource_present() {
+    local target
+    for target in "${UP_PRESENT[@]}"; do
+        [ "$target" != "$1" ] || return 0
+    done
+    return 1
+}
+
+track_up_resource() {
+    up_resource_present "$1" || UP_CREATED+=("$1")
+    return 0
+}
+
+up_stop_guidance() {
+    local policy=false probe=0
+    jailbox_resource_exists volume "$VOLUME_NAME" || probe=$?
+    case "$probe" in
+        0) policy=$(home_retention_policy) || return 1 ;;
+        1) ;;
+        *) printf 'Could not inspect home retention; resolve the engine error before choosing recovery.\n' >&2; return 1 ;;
+    esac
+    printf "Run 'jailbox stop' then 'jailbox up'. Stop removes containers, networks and SSH credentials; "
+    case "$policy" in
+        true) printf 'it deletes the recorded ephemeral home.\n' ;;
+        *) printf 'it preserves the persistent home.\n' ;;
+    esac
+}
+
+refuse_sandbox() {
+    local guidance
+    if [ "$UP_CONVERGING" = true ]; then
+        fail_sandbox_readiness "$@"
+    fi
+    guidance=$(up_stop_guidance) || return 1
+    die "refusing sandbox reuse: $*. $guidance"
+}
+
+inspect_up_container_state() {
+    local state
+    if ! up_resource_present "container:$1"; then printf 'absent\n'; return 0; fi
+    state=$(podman container inspect "$1" --format '{{.State.Status}}') || die "could not inspect state of '$1'"
+    case "$state" in
+        running|exited|stopped|created|configured) printf '%s\n' "$state" ;;
+        *) refuse_sandbox "container '$1' has unsupported state '$state'" ;;
+    esac
+}
+
+inspect_sandbox_for_up() {
+    local path
+    UP_CREATED=()
+    UP_HOST_CREATED=()
+    resolve_present_resources UP_PRESENT \
+        "container:$CONTAINER_NAME" "container:$PROXY_NAME" \
+        "network:$NETWORK_NAME" "network:${NETWORK_NAME}-internal" \
+        "network:${NETWORK_NAME}-external" "volume:$VOLUME_NAME"
+    UP_DEV_STATE=$(inspect_up_container_state "$CONTAINER_NAME")
+    UP_PROXY_STATE=$(inspect_up_container_state "$PROXY_NAME")
+    inspect_network_for_up
+    validate_ssh_state_path || return 1
+    if [ -d "$SSH_DIR" ]; then
+        validate_ssh_file "$SSH_DIR" 700 directory || \
+            die "runtime directory '$SSH_DIR' must be owned by UID $(id -u) with mode 700; correct its metadata before retrying up"
+    fi
+    for path in "$SSH_DIR/gitconfig" "$SSH_DIR/tinyproxy-filter" "$SSH_DIR/tinyproxy.conf"; do
+        if [ -e "$path" ] || [ -L "$path" ]; then
+            [[ -f "$path" && ! -L "$path" ]] || \
+                die "unsafe runtime file '$path'; replace it with a regular file or remove it before retrying up (stop preserves unrelated runtime files)"
+        fi
+    done
+    if [ "$UP_DEV_STATE" = absent ]; then
+        require_ssh_generation_absent || { up_stop_guidance >&2; return 1; }
+    else
+        up_resource_present "volume:$VOLUME_NAME" || refuse_sandbox 'development container has no home volume'
+        validate_ssh_resume || { up_stop_guidance >&2; return 1; }
+    fi
+    # Selection is needed before effective protected mounts can be inspected.
+    if [ -z "$DEV_IMAGE" ]; then select_dev_containerfile_for_launch; fi
+    finalize_effective_readonly_paths
+    validate_sandbox_structure
+}
+
+# Templates compare untrusted paths inside the engine; their bytes never form
+# shell records or executable expressions. Only a literal true is accepted.
+require_container_property() {
+    local result
+    result=$(podman container inspect "$1" --format "$2") || die "could not inspect $3 on '$1'"
+    [ "$result" = true ] || refuse_sandbox "$3 on '$1' is incompatible"
+}
+
+validate_container_hardening() {
+    local name="$1"
+    require_container_property "$name" \
+        '{{and .HostConfig.ReadonlyRootfs (not .HostConfig.Privileged) (eq (len .EffectiveCaps) 0) (eq (len .BoundingCaps) 0) (eq (len .HostConfig.CapAdd) 0) (eq (len .HostConfig.Devices) 0)}}' 'runtime hardening'
+    require_container_property "$name" \
+        '{{range .HostConfig.SecurityOpt}}{{if or (eq . "no-new-privileges") (eq . "no-new-privileges=true")}}true{{end}}{{end}}' 'no-new-privileges'
+    require_container_property "$name" \
+        '{{and (or (eq .HostConfig.PidMode "") (eq .HostConfig.PidMode "private")) (or (eq .HostConfig.IpcMode "") (eq .HostConfig.IpcMode "private") (eq .HostConfig.IpcMode "shareable")) (or (eq .HostConfig.UTSMode "") (eq .HostConfig.UTSMode "private")) (ne .HostConfig.NetworkMode "host") (eq .Pod "")}}' 'namespace isolation'
+    # shellcheck disable=SC2016  # Go template variables, not shell expansions.
+    require_container_property "$name" \
+        '{{if eq (len .HostConfig.Tmpfs) 2}}{{range $path, $options := .HostConfig.Tmpfs}}{{if not (or (eq $path "/tmp") (eq $path "/run"))}}invalid{{end}}{{end}}true{{end}}' 'tmpfs mount inventory'
+}
+
+require_container_mount() {
+    local name="$1" destination="$2" kind="$3" source="$4" rw="$5" predicate
+    predicate="(and (eq .Type $(ssh_inspect_quote "$kind")) (eq .RW $rw)"
+    if [ "$kind" = volume ]; then
+        predicate+=" (eq .Name $(ssh_inspect_quote "$source")))"
+    else
+        predicate+=" (eq .Source $(ssh_inspect_quote "$source")))"
+    fi
+    require_container_property "$name" \
+        "{{range .Mounts}}{{if eq .Destination $(ssh_inspect_quote "$destination")}}{{$predicate}}{{end}}{{end}}" "mount '$destination'"
+}
+
+validate_development_mounts() {
+    local path template allowed
+    require_container_mount "$CONTAINER_NAME" "$REMOTE_PATH" bind "$PROJECT_DIR" true
+    require_container_mount "$CONTAINER_NAME" "/home/$MANAGED_USER" volume "$VOLUME_NAME" true
+    validate_ssh_container_mount || return 1
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
+        require_container_mount "$CONTAINER_NAME" "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" false
+    done
+    # Reject additional mounts, including overlays below protected mounts and
+    # host socket aliases. Only jailbox's explicit mount inventory is eligible.
+    allowed="(or (eq .Destination $(ssh_inspect_quote "$REMOTE_PATH")) (eq .Destination $(ssh_inspect_quote "/home/$MANAGED_USER")) (eq .Destination \"/run/jailbox-sshd\")"
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
+        allowed+=" (eq .Destination $(ssh_inspect_quote "$REMOTE_PATH/$path"))"
+    done
+    allowed+=" (and (eq .Destination $(ssh_inspect_quote "/home/$MANAGED_USER/.gitconfig")) (eq .Type \"bind\") (not .RW) (eq .Source $(ssh_inspect_quote "$SSH_DIR/gitconfig"))))"
+    template="{{range .Mounts}}{{if not $allowed}}invalid{{end}}{{end}}true"
+    require_container_property "$CONTAINER_NAME" "$template" 'mount inventory'
+    require_container_property "$CONTAINER_NAME" \
+        "{{if eq (len .HostConfig.PortBindings) 1}}{{range \$port, \$bindings := .HostConfig.PortBindings}}{{if and (eq \$port \"2222/tcp\") (eq (len \$bindings) 1)}}{{range \$bindings}}{{and (eq .HostIP \"127.0.0.1\") (eq .HostPort $(ssh_inspect_quote "$LOCAL_PORT"))}}{{end}}{{end}}{{end}}{{end}}" 'SSH port publication'
+}
+
+validate_sandbox_structure() {
+    local name present=()
+    resolve_present_resources present "container:$CONTAINER_NAME" "container:$PROXY_NAME"
+    for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
+        [[ " ${present[*]} " == *" container:$name "* ]] || continue
+        validate_container_hardening "$name"
+        validate_container_networks "$name"
+        if [ "$name" = "$CONTAINER_NAME" ]; then
+            validate_development_mounts
+        else
+            validate_proxy_configuration
+        fi
+    done
+}
+
+configure_runtime_mounts() {
+    local path
+    validate_ssh_state_path || return 1
+    if [ ! -d "$SSH_DIR" ]; then
+        UP_HOST_CREATED+=("$SSH_DIR")
+        # New parent directories are private too; leave existing parents unchanged.
+        (umask 077; mkdir -p -- "$SSH_DIR")
+    fi
+    validate_ssh_file "$SSH_DIR" 700 directory || refuse_sandbox 'unsafe runtime directory metadata'
+    # Existing unrelated runtime files are preserved, including gitconfig.
+    GITCONFIG_MOUNT=()
+    path="$SSH_DIR/gitconfig"
+    if [[ ! -e "$path" && ! -L "$path" ]]; then
+        UP_HOST_CREATED+=("$path")
+        generate_minimal_gitconfig "$path"
+    fi
+    if [ -e "$path" ] || [ -L "$path" ]; then
+        [[ -f "$path" && ! -L "$path" ]] || die 'unsafe runtime gitconfig'
+        GITCONFIG_MOUNT=(-v "$path:/home/$MANAGED_USER/.gitconfig:ro")
+    fi
+    ROOTFS_FLAG=(--read-only)
+    UP_HOST_CREATED+=("$SSH_GENERATION_DIR")
+}
+
+rollback_up_launch() {
+    local target kind name probe failed=false dependent=false state path index
+    local dev_retained=false proxy_retained=false needed
+    # Never stop a survivor. If removal fails, preserve all potentially needed
+    # dependencies and authentication, even when the survivor is stopped.
+    for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
+        for target in "${UP_CREATED[@]}"; do
+            [ "$target" = "container:$name" ] || continue
+            if [ "$name" = "$PROXY_NAME" ]; then
+                probe=0
+                jailbox_resource_exists container "$CONTAINER_NAME" || probe=$?
+                if [ "$probe" -ne 1 ]; then
+                    printf "Retained dependency '%s' for surviving development container.\n" "$name" >&2
+                    continue
+                fi
+            fi
+            probe=0
+            jailbox_resource_exists container "$name" || probe=$?
+            [ "$probe" -ne 1 ] || continue
+            if [ "$probe" -ne 0 ] || ! podman rm -f "$name"; then
+                failed=true
+                printf "Error: cleanup could not remove '%s'; dependencies retained.\n" "$name" >&2
+            fi
+        done
+    done
+    for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
+        probe=0
+        jailbox_resource_exists container "$name" || probe=$?
+        [ "$probe" -eq 1 ] || dependent=true
+        if [ "$probe" -ne 1 ]; then
+            if [ "$name" = "$CONTAINER_NAME" ]; then dev_retained=true; else proxy_retained=true; fi
+        fi
+        if [ "$probe" -eq 0 ]; then
+            state=$(podman container inspect "$name" --format '{{.State.Status}}' 2>/dev/null) || state=unknown
+            printf "Retained container '%s': %s.\n" "$name" "$state" >&2
+        fi
+    done
+    for ((index=${#UP_CREATED[@]}-1; index>=0; index--)); do
+        target=${UP_CREATED[index]}
+        kind=${target%%:*}; name=${target#*:}
+        [ "$kind" != container ] || continue
+        needed=$dependent
+        [ "$kind" != volume ] || needed=$dev_retained
+        if [ "$needed" = true ]; then
+            printf "Retained dependency '%s'.\n" "$target" >&2
+            continue
+        fi
+        probe=0
+        jailbox_resource_exists "$kind" "$name" || probe=$?
+        [ "$probe" -ne 1 ] || continue
+        if [ "$probe" -ne 0 ] || ! podman "$kind" rm "$name"; then
+            failed=true
+            printf "Error: cleanup retained '%s'.\n" "$target" >&2
+        fi
+    done
+    for ((index=${#UP_HOST_CREATED[@]}-1; index>=0; index--)); do
+        path=${UP_HOST_CREATED[index]}
+        needed=$dev_retained
+        case "$path" in
+            "$SSH_DIR") needed=$dependent ;;
+            "$SSH_DIR/tinyproxy-filter"|"$SSH_DIR/tinyproxy.conf") needed=$proxy_retained ;;
+        esac
+        if [ "$needed" = true ]; then
+            printf "Retained launch material '%s' needed by a surviving container.\n" "$path" >&2
+        elif [ "$path" = "$SSH_DIR" ]; then
+            rmdir "$path" 2>/dev/null || true
+        elif ! rm -rf -- "$path"; then
+            failed=true
+            printf "Error: cleanup retained host material '%s'.\n" "$path" >&2
+        fi
+    done
+    up_stop_guidance >&2 || true
+    [ "$failed" = false ]
 }

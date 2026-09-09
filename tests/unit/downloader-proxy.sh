@@ -234,6 +234,68 @@ test_enable_without_url_fails() {
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+test_preservation_and_refusal() {
+    local d before
+    d=$(mktemp -d)
+    printf 'user-option = yes\n' > "$d/.curlrc"
+    run_script "$d" enable http://proxy.test:8888
+    before=$(cksum "$d/.curlrc" "$d/.wgetrc")
+    run_script "$d" check-enable http://proxy.test:8888
+    run_script "$d" enable http://proxy.test:8888
+    if [[ "$before" = "$(cksum "$d/.curlrc" "$d/.wgetrc")" ]]; then
+        pass 'correct downloader blocks remain byte-identical'
+    else
+        fail 'correct downloader blocks remain byte-identical'
+    fi
+    printf '\n# >>> jailbox managed proxy >>>\nuser-owned tail\n' >> "$d/.wgetrc"
+    before=$(cksum "$d/.curlrc" "$d/.wgetrc")
+    if run_script "$d" enable http://changed.test:8888 2>/dev/null; then
+        fail 'unbalanced block must refuse'
+    elif [[ "$before" = "$(cksum "$d/.curlrc" "$d/.wgetrc")" ]]; then
+        pass 'unbalanced block refuses before changing either file'
+    else
+        fail 'unbalanced block changed user content'
+    fi
+    rm "$d/.wgetrc"
+    mv "$d/.curlrc" "$d/target"
+    ln -s target "$d/.curlrc"
+    before=$(cksum "$d/target")
+    if run_script "$d" disable 2>/dev/null; then
+        fail 'symlinked downloader file must refuse'
+    elif [[ "$before" = "$(cksum "$d/target")" ]]; then
+        pass 'symlink target is preserved'
+    else
+        fail 'symlink target changed'
+    fi
+    rm "$d/.curlrc"
+    ln "$d/target" "$d/.curlrc"
+    if run_script "$d" disable 2>/dev/null; then
+        fail 'hardlinked downloader file must refuse'
+    else
+        pass 'hardlinked downloader file refuses'
+    fi
+    rm -rf "$d"
+}
+
+test_failed_publication_preserves_user_settings() {
+    local d before
+    d=$(mktemp -d)
+    mkdir "$d/bin"
+    printf '#!/bin/bash\nexit 1\n' > "$d/bin/mv"
+    chmod +x "$d/bin/mv"
+    printf 'user-option = yes\n' > "$d/.curlrc"
+    before=$(cksum "$d/.curlrc")
+    if PATH="$d/bin:$PATH" run_script "$d" enable http://proxy.test:8888; then
+        fail 'publication failure must fail synchronization'
+    elif [[ "$before" = "$(cksum "$d/.curlrc")" ]] &&
+        [[ -z $(find "$d" -name '.jailbox-proxy.*' -print) ]]; then
+        pass 'failed publication preserves original user settings and removes staging'
+    else
+        fail 'failed publication damaged settings or leaked staging'
+    fi
+    rm -rf "$d"
+}
+
 main() {
     [[ -f "$MANAGE_PROXY" ]] || { echo "Script not found: $MANAGE_PROXY" >&2; exit 1; }
 
@@ -254,6 +316,8 @@ main() {
     test_disable_noop_when_no_managed_block
     test_unknown_subcommand_fails
     test_enable_without_url_fails
+    test_preservation_and_refusal
+    test_failed_publication_preserves_user_settings
 
     echo ""
     if [[ "$FAILED" -eq 0 ]]; then

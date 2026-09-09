@@ -403,6 +403,12 @@ run_e2e_case() {
     cat > "$project_dir/config/runtime.conf" << EOF
 DEV_IMAGE=${dev_image}
 EOF
+    if [[ "$stage" = debian ]]; then
+        # Reuse the existing stop/relaunch cycle to test changed build inputs.
+        printf 'FROM %s\nCOPY rebuild-payload /rebuild-payload\n' "$dev_image" > "$project_dir/Containerfile"
+        printf 'initial\n' > "$project_dir/rebuild-payload"
+        printf 'DEV_CONTAINERFILE=Containerfile\n' > "$project_dir/config/runtime.conf"
+    fi
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/config/runtime.conf"
     fi
@@ -543,28 +549,69 @@ EOF
         podman logs "$proxy_ctr" 2>&1 || true
     fi
 
-    # ── Phase 3: explicit stop boundary ───────────────────────────────────────
-    # Relaunch is a two-command operation: jailbox never replaces a running
-    # sandbox, and stop removes containers/networks while retaining this home.
-    local relaunch_output volume_name generation_dir
+    # ── Phase 3: convergence and explicit stop boundary ────────────────────
+    local relaunch_output volume_name generation_dir container_id generation_before
     volume_name="${ctr}-home"
-    if [ "$(podman volume inspect "$volume_name" --format '{{index .Labels "jailbox.ephemeral-home"}}')" = false ]; then
-        pass "new home records default persistent retention"
-    else
-        fail "new home records default persistent retention"
+    generation_dir=$(dirname "$ssh_cfg")
+    container_id=$(podman container inspect "$ctr" --format "{{.Id}}")
+    generation_before=$(find "$generation_dir" -type f -exec cksum {} + | sort)
+    # shellcheck disable=SC2016
+    assert_ssh "$ssh_cfg" "$ctr" "write home content before reuse" 'printf retained > "$HOME/retention-marker"'
+    if [[ "$stage" = debian ]]; then
+        printf 'ENV REBUILD_TEST=changed\n' >> "$project_dir/Containerfile"
+        printf 'changed\n' > "$project_dir/rebuild-payload"
     fi
-    # shellcheck disable=SC2016  # Expanded by the remote shell.
-    assert_ssh "$ssh_cfg" "$ctr" "write home content before stop" 'printf retained > "$HOME/retention-marker"'
-
-    relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf) 2>&1 || true)
-    case "$relaunch_output" in
-        *"jailbox stop"*) pass "relaunch over a running sandbox is refused and names jailbox stop" ;;
-        *) fail "relaunch over a running sandbox is refused and names jailbox stop (got: $relaunch_output)" ;;
-    esac
-    if podman container exists "$ctr" 2>/dev/null; then
-        pass "refused relaunch left the running container in place"
+    if relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up) 2>&1); then
+        pass "running up reuses the sandbox"
     else
-        fail "refused relaunch left the running container in place"
+        fail "running up failed: $relaunch_output"
+    fi
+    assert_eq "reuse preserves container identity" "$container_id" "$(podman container inspect "$ctr" --format "{{.Id}}")"
+    assert_eq "reuse preserves SSH generation" "$generation_before" "$(find "$generation_dir" -type f -exec cksum {} + | sort)"
+    if [[ "$stage" = debian ]]; then
+        # shellcheck disable=SC2016  # Expanded by the remote shell.
+        assert_ssh "$ssh_cfg" "$ctr" 'changed build inputs do not rebuild on reuse' 'test "$(cat /rebuild-payload)" = initial'
+    fi
+    podman stop "$ctr" >/dev/null
+    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up); then
+        pass "up resumes the stopped generation"
+    else
+        fail "up could not resume the stopped generation"
+    fi
+    assert_eq "resume preserves container identity" "$container_id" "$(podman container inspect "$ctr" --format "{{.Id}}")"
+    assert_eq "resume preserves SSH generation" "$generation_before" "$(find "$generation_dir" -type f -exec cksum {} + | sort)"
+    # shellcheck disable=SC2016
+    assert_ssh "$ssh_cfg" "$ctr" "reuse and resume preserve home content" 'test "$(cat "$HOME/retention-marker")" = retained'
+    if [[ "$stage" == egress ]]; then
+        podman stop "${ctr}-proxy" >/dev/null
+        if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up); then
+            pass "up starts a stopped proxy beneath a running development container"
+        else
+            fail "mixed-state proxy resume failed"
+            report_proxy_connectivity "$ssh_cfg" "$ctr"
+        fi
+        podman rm -f "${ctr}-proxy" >/dev/null
+        if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up); then
+            pass "up creates a missing proxy on surviving networks"
+        else
+            fail "partial proxy convergence failed"
+            report_proxy_connectivity "$ssh_cfg" "$ctr"
+        fi
+        assert_eq "partial convergence preserves development identity" "$container_id" "$(podman container inspect "$ctr" --format "{{.Id}}")"
+        local digest malformed
+        digest=$(podman container inspect "$ctr" --format '{{index .Config.Labels "jailbox.config-digest"}}')
+        for malformed in '' invalid "$digest"$'\n'; do
+            podman network create --label "jailbox.config-digest=$malformed" "${ctr}-net" >/dev/null
+            if relaunch_output=$(cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up 2>&1); then
+                fail 'malformed digest on an out-of-mode network must refuse'
+            elif [[ "$relaunch_output" == *'configuration digest'* || "$relaunch_output" == *'digest label'* ]]; then
+                pass 'complete-inventory digest gate rejects malformed metadata'
+            else
+                fail "unexpected digest refusal: $relaunch_output"
+            fi
+            assert_eq 'digest refusal preserves development identity' "$container_id" "$(podman container inspect "$ctr" --format '{{.Id}}')"
+            podman network rm "${ctr}-net" >/dev/null
+        done
     fi
 
     if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
@@ -622,6 +669,11 @@ EOF
     fi
     # shellcheck disable=SC2016  # Expanded by the remote shell.
     assert_ssh "$ssh_cfg" "$ctr" "home content survives stop and relaunch" 'test "$(cat "$HOME/retention-marker")" = retained'
+    if [[ "$stage" = debian ]]; then
+        # shellcheck disable=SC2016  # Expanded by the remote shell.
+        assert_ssh "$ssh_cfg" "$ctr" 'stop then launch incorporates copied build input' 'test "$(cat /rebuild-payload)" = changed'
+        assert_eq 'stop then launch incorporates Containerfile changes' changed "$(podman exec "$ctr" printenv REBUILD_TEST)"
+    fi
     if [[ -f "$settings_path" ]] && grep -Fq '"remote.SSH.configFile"' "$settings_path"; then
         pass "bare launch writes editor SSH settings"
     else
@@ -637,12 +689,33 @@ EOF
         fi
     fi
 
+    container_id=$(podman container inspect "$ctr" --format '{{.Id}}')
+    if (cd "$project_dir" && PATH="$stub_dir:$PATH" "$JAILBOX_DIR/jailbox" --config config/runtime.conf); then
+        pass 'bare running reuse opens the editor after convergence'
+    else
+        fail 'bare running reuse failed'
+    fi
+    assert_eq 'bare reuse preserves container identity' "$container_id" "$(podman container inspect "$ctr" --format '{{.Id}}')"
+
     if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
         pass "stop removes the bare-launch sandbox"
     else
         fail "stop removes the bare-launch sandbox"
     fi
-    assert_home_lifecycle "$project_dir" "$ctr" "$dev_image"
+    assert_home_lifecycle "$project_dir" "$ctr" "$dev_image" "$stage"
+}
+
+report_proxy_connectivity() {
+    local config="$1" container="$2" name
+    for name in "$container" "${container}-proxy"; do
+        printf '  [diag] %s network attachments:\n' "$name"
+        podman container inspect "$name" --format '{{json .NetworkSettings.Networks}}' || true
+        printf '  [diag] %s routes and ARP cache:\n' "$name"
+        podman exec "$name" sh -c 'cat /proc/net/route /proc/net/arp' || true
+    done
+    echo '  [diag] development-to-proxy request after readiness failure:'
+    ssh -F "$config" -o ConnectTimeout=3 "$container" \
+        'curl -q --noproxy "" --proxy "$HTTP_PROXY" -v --connect-timeout 3 --max-time 5 http://jailbox-egress-diagnostic.invalid/' || true
 }
 
 # Construct homes independently of launch to exercise the real Podman label
@@ -650,10 +723,13 @@ EOF
 # All names are the stage's already-ledgered exact project names.
 assert_home_lifecycle() {
     local project="$1" prefix="$2" dev_image="$3" policy requested output status home
-    local -a labels=()
+    local -a labels=() policies=()
     home="$prefix-home"
 
-    for policy in legacy false true empty garbage $'true\n'; do
+    # Label parsing and absent-container recovery are host behavior. Exercise
+    # their real Podman templates once; keep live ephemeral resume on every OS.
+    if [[ "$4" = debian ]]; then policies=(legacy false true empty garbage $'true\n'); fi
+    for policy in "${policies[@]}"; do
         (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
             fail "clean before constructed home"; return 1;
         }
@@ -705,7 +781,9 @@ assert_home_lifecycle() {
     }
 
     # Build a derived dev image so clean must remove its wrapper child first.
-    printf 'FROM %s\nRUN touch /home-retention-image\n' "$dev_image" > "$project/Containerfile.home"
+    # A derived tag suffices to exercise cleanup ordering; avoid a filesystem
+    # change that would force another full wrapper package installation.
+    printf 'FROM %s\n' "$dev_image" > "$project/Containerfile.home"
     if (cd "$project" && JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile.home \
         JAILBOX_CONFIG_EPHEMERAL_HOME=true "$JAILBOX_DIR/jailbox" up); then
         if [ "$(podman volume inspect "$home" --format '{{index .Labels "jailbox.ephemeral-home"}}')" = true ]; then
@@ -713,6 +791,22 @@ assert_home_lifecycle() {
         else
             fail "launch records effective ephemeral retention"
         fi
+        local ssh_config generation_before
+        ssh_config=$(jailbox_ssh_config "$project")
+        generation_before=$(find "$(dirname "$ssh_config")" -type f -exec cksum {} + | sort)
+        # shellcheck disable=SC2016
+        ssh -F "$ssh_config" "$prefix" 'printf retained > "$HOME/ephemeral-marker"'
+        podman stop "$prefix" >/dev/null
+        if (cd "$project" && JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile.home \
+            JAILBOX_CONFIG_EPHEMERAL_HOME=true "$JAILBOX_DIR/jailbox" up); then
+            pass 'up resumes an ephemeral generation'
+        else
+            fail 'ephemeral resume failed'
+        fi
+        assert_eq 'ephemeral resume preserves SSH identity' "$generation_before" \
+            "$(find "$(dirname "$ssh_config")" -type f -exec cksum {} + | sort)"
+        # shellcheck disable=SC2016
+        assert_ssh "$ssh_config" "$prefix" 'ephemeral home survives resume' 'test "$(cat "$HOME/ephemeral-marker")" = retained'
         (cd "$project" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1 || {
             fail "stop ephemeral generation"; return 1;
         }

@@ -1,282 +1,206 @@
-# Post-start checks for basic functionality and containment regressions.
+# Read-only required readiness checks. Up alone synchronizes managed home blocks;
+# attachment can reuse these checks without builds or lifecycle mutation.
 
-post_start_validation() {
-    echo "🔍 Verifying container..."
-    WARNINGS=0
+validation_ssh() {
+    ssh -F "$SSH_CONFIG" -o ConnectTimeout=3 -o ServerAliveInterval=3 \
+        -o ServerAliveCountMax=2 "$CONTAINER_NAME" "$@"
+}
 
+validate_existing_sandbox_health() {
+    if [ "$UP_DEV_STATE" = running ]; then
+        validate_running_development
+    fi
+    if [ "$UP_PROXY_STATE" = running ]; then
+        validate_proxy_ready
+    fi
+    if [ "$UP_DEV_STATE" = running ] && [ "$UP_PROXY_STATE" = running ]; then
+        check_proxy_egress_denied
+    fi
+}
+
+validate_running_development() {
+    validation_ssh true || refuse_sandbox 'pinned SSH authentication failed'
     check_authorized_keys
     check_project_write_access
     check_runtime_sockets_absent
     check_readonly_mounts
-    validate_egress_policy
-
-    if [ "$WARNINGS" -eq 0 ]; then
-        echo "  ✅ All checks passed"
+    # shellcheck disable=SC2016  # Awk fields are interpreted remotely.
+    validation_ssh 'awk '\''
+        /^CapEff:/ { caps = ($2 == "0000000000000000"); seen_caps = 1 }
+        /^CapBnd:/ { bound = ($2 == "0000000000000000"); seen_bound = 1 }
+        /^NoNewPrivs:/ { nnp = ($2 == "1"); seen_nnp = 1 }
+        END { exit !(seen_caps && caps && seen_bound && bound && seen_nnp && nnp) }
+    '\'' /proc/1/status' || refuse_sandbox 'live process hardening could not be established'
+    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
+        check_proxy_env_in_session
+        check_direct_egress_blocked
     fi
+}
+
+post_start_validation() {
+    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
+        check_downloader_proxy_config
+        check_proxy_egress_denied
+        check_proxy_egress_allowed
+    else
+        check_downloader_proxy_config_absent
+    fi
+    echo '✅ Sandbox is ready'
 }
 
 check_authorized_keys() {
-    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -f /run/jailbox-sshd/authorized_keys" 2>/dev/null; then
-        echo "  ⚠️  authorized_keys missing at /run/jailbox-sshd/authorized_keys"
-        WARNINGS=$((WARNINGS + 1))
-    fi
+    validation_ssh 'test -f /run/jailbox-sshd/authorized_keys' || refuse_sandbox 'authorized_keys is unavailable'
 }
 
 check_project_write_access() {
-    local qpath
-    printf -v qpath '%q' "$REMOTE_PATH"
-    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -w $qpath" 2>/dev/null; then
-        echo "  ⚠️  $MANAGED_USER cannot write to $REMOTE_PATH"
-        echo "     Likely cause: UID mismatch. Host UID is $MY_UID."
-        echo "     Fix: ensure the managed jailbox user can use host UID $MY_UID, or run with --clean and rebuild."
-        WARNINGS=$((WARNINGS + 1))
-    fi
+    validation_ssh "test -w $(printf '%q' "$REMOTE_PATH")" || refuse_sandbox 'managed user cannot write the project'
 }
 
 check_runtime_sockets_absent() {
-    local socket
-    for socket in /var/run/docker.sock /run/podman/podman.sock; do
-        if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "test -S '$socket'" 2>/dev/null; then
-            echo "  ⚠️  Container runtime socket found at $socket — this is a security risk"
-            WARNINGS=$((WARNINGS + 1))
-        fi
-    done
+    validation_ssh 'test ! -S /var/run/docker.sock && test ! -S /run/podman/podman.sock' || refuse_sandbox 'runtime socket isolation could not be established'
 }
 
+# Inspect the mount table for both files and directories, including the root.
+# Missing input is a failure, never a skipped check. No writable marker probes.
 check_readonly_mounts() {
-    local ro_path checked failed qpath qro marker
-    checked=0
-    failed=0
-    printf -v qpath '%q' "$REMOTE_PATH"
-    marker=".jailbox-ro-check-$$"
-
-    for ro_path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        if [ -f "$PROJECT_DIR/$ro_path" ]; then
-            checked=$((checked + 1))
-            printf -v qro '%q' "$ro_path"
-            if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-                "REMOTE_PATH=$qpath RO_PATH=$qro sh -s" <<'REMOTE' 2>/dev/null; then
-awk -v target="$REMOTE_PATH/$RO_PATH" '
-    BEGIN { status = 1 }
+    local path
+    local paths=(/)
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
+        paths+=("$REMOTE_PATH/$path")
+    done
+    for path in "${paths[@]}"; do
+        validation_ssh "TARGET=$(printf '%q' "$path") sh -s" <<'REMOTE' || refuse_sandbox "read-only mount '$path' could not be established"
+set -eu
+# The shell passes the path through the environment, not awk -v (which would
+# reinterpret backslashes in a path).
+awk '
+    BEGIN { target = ENVIRON["TARGET"]; found = 0; invalid = 0 }
     {
-        mount_path = $5
-        gsub(/\\040/, " ", mount_path)
-        gsub(/\\011/, "\t", mount_path)
-        gsub(/\\012/, "\n", mount_path)
-        gsub(/\\134/, "\\", mount_path)
-        if (mount_path != target) next
-
-        count = split($6, options, ",")
-        for (i = 1; i <= count; i++) {
-            if (options[i] == "ro") status = 0
-        }
+        path = $5
+        gsub(/\\040/, " ", path)
+        gsub(/\\011/, "\t", path)
+        gsub(/\\012/, "\n", path)
+        gsub(/\\134/, "\\", path)
+        if (path != target) next
+        found++
+        if ($6 !~ /(^|,)ro(,|$)/) invalid = 1
     }
-    END { exit status }
+    END { exit !(found == 1 && !invalid) }
 ' /proc/self/mountinfo
 REMOTE
-                echo "  ⚠️  Read-only mount appears writable: $ro_path"
-                failed=$((failed + 1))
-            fi
-        elif [ -d "$PROJECT_DIR/$ro_path" ]; then
-            checked=$((checked + 1))
-            printf -v qro '%q' "$ro_path"
-            if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-                "REMOTE_PATH=$qpath RO_PATH=$qro MARKER=$(printf '%q' "$marker") bash -s" <<'REMOTE' 2>/dev/null | grep -q "^writable"; then
-set -euo pipefail
-# The marker source must live on a path that is always writable (/tmp is
-# container tmpfs). Sourcing it from the project tree would abort under
-# set -e before the copy probe runs whenever that path is itself read-only,
-# making the check pass vacuously.
-marker_src="/tmp/$MARKER"
-marker_target="$REMOTE_PATH/$RO_PATH/$MARKER"
-cleanup_marker() {
-    rm -f -- "$marker_src" "$marker_target"
-}
-trap cleanup_marker EXIT
-
-touch -- "$marker_src"
-if cp -- "$marker_src" "$marker_target" 2>/dev/null; then
-    echo writable
-fi
-REMOTE
-                echo "  ⚠️  Read-only mount appears writable: $ro_path"
-                failed=$((failed + 1))
-            fi
-        fi
     done
-
-    if [ "$checked" -eq 0 ]; then
-        echo "  ⚠️  No read-only mounts were available to validate"
-        WARNINGS=$((WARNINGS + 1))
-    elif [ "$failed" -eq 0 ]; then
-        echo "  ✅ Read-only mounts validated ($checked entries checked)"
-    else
-        WARNINGS=$((WARNINGS + failed))
-    fi
-}
-
-validate_egress_policy() {
-    if [ -z "${EGRESS_ALLOW[*]-}" ]; then
-        check_downloader_proxy_config_absent
-        return 0
-    fi
-
-    check_internal_network_flag
-    check_proxy_env_in_session
-    check_downloader_proxy_config
-    check_direct_egress_blocked
-    check_proxy_egress_allowed
-    check_proxy_egress_denied
-}
-
-check_proxy_egress_denied() {
-    # The filter must deny hosts missing from EGRESS_ALLOW. A reserved
-    # .invalid name can never be listed, and tinyproxy matches the filter
-    # before resolving, so denial fails fast with 403 rather than a DNS error.
-    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-        "curl -fsS --connect-timeout 5 --max-time 10 'https://jailbox-egress-denied.invalid' >/dev/null" \
-        2>/dev/null; then
-        echo "  ⚠️  Proxy allowed a host outside EGRESS_ALLOW — filter is not enforcing"
-        WARNINGS=$((WARNINGS + 1))
-    else
-        echo "  ✅ Proxy denies hosts outside EGRESS_ALLOW"
-    fi
-}
-
-check_downloader_proxy_config_absent() {
-    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "bash -s" <<'REMOTE' 2>/dev/null
-set -euo pipefail
-for file in "$HOME/.curlrc" "$HOME/.wgetrc"; do
-    if [[ -f "$file" ]] && grep -Fqx "# >>> jailbox managed proxy >>>" "$file"; then
-        exit 1
-    fi
-done
-REMOTE
-    then
-        return 0
-    fi
-
-    echo "  ⚠️  Stale downloader proxy config remains in non-egress mode"
-    WARNINGS=$((WARNINGS + 1))
-}
-
-check_internal_network_flag() {
-    local internal_value
-
-    internal_value=$(podman network inspect "${NETWORK_STATE[internal_network]}" --format '{{.Internal}}' 2>/dev/null || true)
-    if [ "$internal_value" != "true" ]; then
-        echo "  ⚠️  Egress network is not marked internal: ${NETWORK_STATE[internal_network]}"
-        WARNINGS=$((WARNINGS + 1))
-    fi
 }
 
 check_proxy_env_in_session() {
-    local val
-    val=$(ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-        "printf '%s' \"\$HTTPS_PROXY\"" 2>/dev/null || true)
-    if [ -z "$val" ]; then
-        echo "  ⚠️  HTTPS_PROXY is not set in SSH sessions — generated SSH SetEnv may be missing or rejected"
-        WARNINGS=$((WARNINGS + 1))
-    else
-        echo "  ✅ HTTPS_PROXY is set in SSH sessions ($val)"
+    validation_ssh "EXPECTED=$(printf '%q' "${NETWORK_STATE[proxy_url]}") bash -s" <<'REMOTE' || refuse_sandbox 'live SSH proxy settings differ from policy'
+set -euo pipefail
+for name in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
+    [[ ${!name-} == "$EXPECTED" ]] || exit 1
+done
+[[ ${NO_PROXY-} == localhost,127.0.0.1 && ${no_proxy-} == localhost,127.0.0.1 ]]
+REMOTE
+}
+
+check_direct_egress_blocked() {
+    # Topology is the isolation evidence. A failed Internet request would also
+    # fail on an offline host and therefore cannot prove this property.
+    validation_ssh 'sh -s' <<'REMOTE' || refuse_sandbox 'direct-route isolation could not be established'
+set -eu
+awk 'NR > 1 && $2 == "00000000" { bad = 1 } END { exit bad }' /proc/net/route
+if [ -e /proc/net/ipv6_route ]; then
+    awk '$1 == "00000000000000000000000000000000" && $2 == "00" && $10 != "lo" { bad = 1 } END { exit bad }' /proc/net/ipv6_route
+fi
+REMOTE
+}
+
+validate_proxy_ready() {
+    [ -n "${EGRESS_ALLOW[*]-}" ] || return 0
+    local ip response denied gateway
+    denied=$(proxy_denied_test_host)
+    ip=${NETWORK_STATE[proxy_url]#http://}; ip=${ip%:8888}
+    gateway=$(podman container inspect "$PROXY_NAME" --format \
+        "{{with index .NetworkSettings.Networks $(ssh_inspect_quote "${NETWORK_NAME}-external")}}{{.Gateway}}{{end}}") || \
+        die 'could not inspect proxy external gateway'
+    [[ "$gateway" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || refuse_sandbox 'proxy external gateway is missing or invalid'
+    # A broken local default route is a readiness failure, not an upstream
+    # outage. Compare kernel routing evidence with the external attachment.
+    podman exec "$PROXY_NAME" sh -c '
+        export EXPECTED_GATEWAY="$1"
+        awk '\''
+            BEGIN {
+                split(ENVIRON["EXPECTED_GATEWAY"], octets, ".")
+                expected = sprintf("%02X%02X%02X%02X", octets[4], octets[3], octets[2], octets[1])
+            }
+            NR > 1 && $2 == "00000000" { count++; if ($3 != expected) bad = 1 }
+            END { exit !(count == 1 && !bad) }
+        '\'' /proc/net/route
+    ' sh "$gateway" >/dev/null || refuse_sandbox 'proxy external default route is not ready'
+    # Probe from the proxy's internal address, which its ACL permits, even when
+    # the development container is stopped. Positive 403 evidence distinguishes
+    # policy denial from DNS/transport failure. nc writes no persistent files.
+    response=$(podman exec "$PROXY_NAME" sh -c \
+        'printf "GET http://%s/ HTTP/1.0\r\nHost: %s\r\n\r\n" "$2" "$2" | nc -w 5 "$1" 8888' sh "$ip" "$denied") || refuse_sandbox 'proxy readiness probe failed'
+    [[ "$response" == HTTP/1.[01]' 403 '* ]] || refuse_sandbox 'proxy did not demonstrate allowlist denial'
+}
+
+check_proxy_egress_denied() {
+    local result denied status attempt attempts=1 request_timeout=8
+    denied=$(proxy_denied_test_host)
+    # A newly started dependency may accept its own local probe before it is
+    # reachable from an already-running development container. Retry transport
+    # readiness only after starting/creating that dependency, never an observed
+    # policy failure or an independently checkable pre-existing health failure.
+    # Recreating a proxy changes its MAC while retaining its IP. The surviving
+    # development container can temporarily retain the old ARP mapping. Allow
+    # roughly a minute of transport retries without changing its network state.
+    if [ "${UP_PROXY_STATE:-running}" != running ]; then
+        attempts=16
+        request_timeout=3
+    fi
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        status=0
+        result=$(validation_ssh "curl -q --noproxy '' --proxy $(printf '%q' "${NETWORK_STATE[proxy_url]}") --silent --show-error --connect-timeout 3 --max-time $request_timeout --output /dev/null --write-out '%{http_code}' http://$denied/") || status=$?
+        if [ "$status" -eq 0 ]; then
+            [ "$result" = 403 ] || refuse_sandbox 'proxy allowed a host outside the allowlist'
+            return 0
+        fi
+        case "$status" in
+            7|28) ;; # Connection refused/unreachable or transport timeout.
+            *) break ;;
+        esac
+        [ "$attempt" -lt "$attempts" ] || break
+        printf 'Waiting for development-to-proxy connectivity (%s/%s)...\n' "$attempt" "$attempts" >&2
+        sleep 1
+    done
+    refuse_sandbox 'proxy transport failed; policy denial is unverified'
+}
+
+proxy_denied_test_host() {
+    local candidate host matched attempt=0
+    while :; do
+        candidate="jailbox-egress-denied-$attempt.invalid"
+        matched=false
+        for host in "${EGRESS_ALLOW[@]}"; do
+            host=${host,,}
+            if [[ "$candidate" = "$host" || "$candidate" = *."$host" ]]; then matched=true; break; fi
+        done
+        if [ "$matched" = false ]; then printf '%s\n' "$candidate"; return 0; fi
+        attempt=$((attempt + 1))
+    done
+}
+
+check_proxy_egress_allowed() {
+    local domain
+    domain=${EGRESS_ALLOW[0]}
+    if ! validation_ssh "curl -q --noproxy '' --proxy $(printf '%q' "${NETWORK_STATE[proxy_url]}") -fsS --connect-timeout 3 --max-time 8 $(printf '%q' "https://$domain/") >/dev/null"; then
+        printf 'Warning: upstream availability for %s was not verified; local proxy policy/readiness checks passed.\n' "$domain" >&2
     fi
 }
 
 check_downloader_proxy_config() {
-    local proxy_url
-
-    proxy_url="${NETWORK_STATE[proxy_url]}"
-    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "PROXY_URL='$proxy_url' bash -s" <<'REMOTE' 2>/dev/null
-set -euo pipefail
-
-check_block() {
-    local file="$1"
-    local expected="$2"
-    local actual
-
-    actual=$(awk '
-        $0 == "# >>> jailbox managed proxy >>>" { in_block = 1; next }
-        $0 == "# <<< jailbox managed proxy <<<" { in_block = 0; found = 1; next }
-        in_block { block = block $0 "\n" }
-        END {
-            if (!found) exit 1
-            printf "%s", block
-        }
-    ' "$file")
-    [[ "$actual" == "$expected" ]]
+    validation_ssh "jailbox-manage-proxy check-enable $(printf '%q' "${NETWORK_STATE[proxy_url]}")" || refuse_sandbox 'managed downloader settings are not synchronized'
 }
 
-check_block "$HOME/.curlrc" "proxy = \"$PROXY_URL\""
-check_block "$HOME/.wgetrc" "use_proxy = on
-http_proxy = $PROXY_URL
-https_proxy = $PROXY_URL"
-REMOTE
-    then
-        echo "  ✅ Downloader proxy config is managed"
-    else
-        echo "  ⚠️  Downloader proxy config is missing or stale"
-        WARNINGS=$((WARNINGS + 1))
-    fi
-}
-
-check_direct_egress_blocked() {
-    if ! ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" "command -v curl >/dev/null 2>&1" 2>/dev/null; then
-        echo "  ⚠️  Cannot validate direct egress blocking: curl is not available in jailbox"
-        WARNINGS=$((WARNINGS + 1))
-        return 0
-    fi
-
-    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-        "env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy curl -q --noproxy '*' -fsS --connect-timeout 3 --max-time 5 https://example.com >/dev/null" \
-        2>/dev/null; then
-        echo "  ⚠️  Direct egress succeeded without proxy env — egress policy is not enforced"
-        WARNINGS=$((WARNINGS + 1))
-    else
-        echo "  ✅ Direct egress without proxy is blocked"
-    fi
-}
-
-check_proxy_egress_allowed() {
-    local validation_domain
-
-    validation_domain=$(egress_validation_domain)
-    if [ -z "$validation_domain" ]; then
-        echo "  ⚠️  Skipping proxy egress check: no valid host found in EGRESS_ALLOW"
-        WARNINGS=$((WARNINGS + 1))
-        return 0
-    fi
-
-    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-        "curl -fsS --connect-timeout 5 --max-time 10 'https://$validation_domain' >/dev/null" \
-        2>/dev/null; then
-        echo "  ✅ Proxy egress to $validation_domain succeeded"
-    else
-        echo "  ⚠️  Proxy egress to $validation_domain failed"
-        WARNINGS=$((WARNINGS + 1))
-    fi
-
-    if ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" \
-        "if command -v wget >/dev/null 2>&1; then wget -qO- --timeout=10 'https://$validation_domain' >/dev/null; fi" \
-        2>/dev/null; then
-        :
-    else
-        echo "  ⚠️  wget proxy egress to $validation_domain failed"
-        WARNINGS=$((WARNINGS + 1))
-    fi
-}
-
-egress_validation_domain() {
-    local domain
-
-    for domain in "${EGRESS_ALLOW[@]}"; do
-        case "$domain" in
-            ""|*[\(\)\*\+\?\|\[\]\{\}]*|*"'"*|*\"*)
-                continue
-                ;;
-        esac
-        printf '%s\n' "$domain"
-        return 0
-    done
-
-    return 0
+check_downloader_proxy_config_absent() {
+    validation_ssh 'jailbox-manage-proxy check-disable' || refuse_sandbox 'stale managed downloader settings remain'
 }

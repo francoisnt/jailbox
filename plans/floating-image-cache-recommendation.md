@@ -4,8 +4,8 @@
 
 ### Goal
 
-Keep mutable `DEV_IMAGE` references current by default. Users who require
-reproducible inputs can select an immutable digest reference such as
+Keep mutable `DEV_IMAGE` references current during new generation builds.
+Users who require reproducible inputs can select an immutable digest reference such as
 `node:22@sha256:...`.
 
 `--clean` is destructive cleanup, not an image-refresh mechanism. Under
@@ -18,34 +18,25 @@ must not require deleting the home.
 
 Implement after `03.2.06-constrained-up-plan.md`, using the cleanup contract
 in `03.2.04-home-volume-lifecycle-plan.md`. This recommendation owns integration
-and verification of automatic refresh with constrained `up`, including refusal
-triggered by an automatic pull moving a tag. Image-currency enforcement and
-manual re-pull refusal tests remain owned by 03.2.06; the 03.2 series does not
-depend on refresh shipping.
+and verification of registry refresh during new generation builds. The 03.2
+series does not depend on automatic registry refresh shipping.
 
-Resolve the refresh result and build the wrapper before `up` evaluates image
-currency, including when a sandbox already exists. A surviving container made
-from a superseded image refuses reuse even if its configuration digest matches.
-Explain the image change and require explicit `jailbox stop` followed by the
-original launch command (`jailbox up`, bare `jailbox`, or
-`jailbox --no-editor`) under the intended policy. Never automatically stop,
-replace, or repair the sandbox. Explain that stop preserves persistent homes
-and warn that it deletes ephemeral homes, according to recorded home policy.
-When another incompatibility also applies, retain 03.2.06's recovery precedence
-so the guidance resolves every refusal, including its warned clean guidance
-for a persistent-to-ephemeral home-mode change.
+Resolve the registry result before building a new development generation.
+Existing containers are reused or resumed without pulls, builds, or image
+comparison. To incorporate new images, users explicitly run `jailbox stop`
+followed by the original launch command under the intended policy. Never
+automatically stop, replace, or repair the sandbox. Explain that stop preserves
+persistent homes and deletes ephemeral homes according to recorded policy.
+Retain 03.2.06's home-aware recovery precedence for incompatible state.
 
-An unchanged resulting image remains eligible for reuse subject to every other
-convergence check. Offline fallback selects the cached identity; it does not
-waive image-currency or other compatibility checks. Refresh and image building
-may update the image cache, but refusal preserves pre-existing containers,
-networks, home contents, and SSH-generation material. Attachment-only commands
-never pull or build images.
+Image building may update the image cache, but compatibility refusal preserves
+pre-existing containers, networks, home contents, and SSH material.
+Attachment-only commands never pull or build images.
 
 ### Behavior
 
 Resolve refresh before development-image validation and wrapper construction;
-construct the wrapper from that result before evaluating image currency.
+construct the wrapper from that result for the new generation.
 
 An initial pull is normal and does not produce an update warning. An unchanged
 pull should be quiet beyond the normal status message. When a tag moves, report
@@ -91,24 +82,17 @@ preemptively.
 - A failed pull with a cached image warns and continues with that exact image.
 - A failed pull without a cached image fails clearly.
 - A local-only image launches without requiring a registry copy.
-- An automatic pull moving a tag against a surviving sandbox with an unchanged
-  configuration digest triggers refusal without changing containers, networks,
-  home contents, or SSH material; diagnostics explain explicit stop and
-  relaunch.
-- With a stable registry result, explicit stop and relaunch uses the refreshed
-  image and applies recorded persistent/ephemeral home retention correctly.
-- An unchanged resulting image permits healthy compatible reuse without
-  restarting containers or rotating SSH credentials.
-- Offline fallback permits compatible reuse but refuses a sandbox created
-  from an image different from the selected cached identity.
+- Explicit stop and relaunch uses the selected registry or cached image and
+  applies recorded persistent/ephemeral home retention correctly.
+- Ordinary running reuse and stopped resume perform no builds or pulls;
+  partial creation builds only images needed for missing containers.
 - Attachment-only commands perform no refresh or image construction.
-- Documentation explains refresh-triggered refusal and home retention without
+- Documentation explains explicit rebuilds and home retention without
   recommending destructive clean as an image-refresh operation.
 
 ### Non-goals
 
-- Automatic removal of superseded images, including dangling base images
-  left after refresh-triggered refusal, is outside refresh scope.
+- Automatic removal of superseded images, including dangling base images, is outside refresh scope.
 
 ## Implementation detail
 
@@ -133,9 +117,9 @@ Illustrative warning; exact wording and formatting are implementation guidance:
 
 Extend portable and real-Podman lifecycle coverage with controlled mutable
 image references and pull failures. Verify actual wrapper base and container
-image identities, and snapshot pre-existing runtime state around refusals.
-Cover direct machine launch and frontend propagation of the same refusal
-without automatic recovery.
+image identities. Cover new generation builds through machine and frontend
+launch, including explicit stop then up. Verify reuse performs no pulls or
+builds and preserves surviving containers and SSH credentials.
 
 Run the portable gate and, because this changes image selection and wrapper
 construction, the runtime gate wherever Podman is available.

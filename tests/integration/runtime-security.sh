@@ -188,10 +188,11 @@ assert_probe_hardening() {
 # (Dockerfile, .github/workflows), and require it to flag exactly the decoys.
 assert_readonly_mount_validation() {
     local config="$1" project_dir="$2"
-    local output before_hash after_hash before_stat after_stat
+    local output before_hash after_hash before_stat after_stat status
 
     # shellcheck source=host/validation.sh
     source "$JAILBOX_DIR/host/validation.sh"
+    refuse_sandbox() { echo "$*" >&2; exit 1; }
 
     # Globals consumed by check_readonly_mounts. CONTAINER_NAME doubles as
     # the ssh host alias, which this harness names jailbox-test.
@@ -199,11 +200,9 @@ assert_readonly_mount_validation() {
     CONTAINER_NAME="jailbox-test"
     PROJECT_DIR="$project_dir"
     REMOTE_PATH="/home/jailbox/project"
-    WARNINGS=0
 
     EFFECTIVE_READONLY_PATHS=("Containerfile" ".git/hooks")
-    output=$(check_readonly_mounts)
-    if printf '%s\n' "$output" | grep -q "Read-only mounts validated (2 entries checked)"; then
+    if output=$(check_readonly_mounts 2>&1); then
         pass "read-only validation passes for correctly mounted paths"
     else
         fail "read-only validation passes for correctly mounted paths"
@@ -213,11 +212,12 @@ assert_readonly_mount_validation() {
     before_hash=$(runtime_file_digest "$project_dir/Dockerfile")
     before_stat=$(runtime_file_metadata "$project_dir/Dockerfile")
     EFFECTIVE_READONLY_PATHS=("Containerfile" ".git/hooks" "Dockerfile" ".github/workflows")
-    output=$(check_readonly_mounts)
+    status=0
+    output=$(check_readonly_mounts 2>&1) || status=$?
     after_hash=$(runtime_file_digest "$project_dir/Dockerfile")
     after_stat=$(runtime_file_metadata "$project_dir/Dockerfile")
 
-    if printf '%s\n' "$output" | grep -q "appears writable: Dockerfile"; then
+    if [ "$status" -ne 0 ] && printf '%s\n' "$output" | grep -q "read-only mount.*Dockerfile"; then
         pass "read-only validation flags writable file"
     else
         fail "read-only validation flags writable file"
@@ -229,19 +229,16 @@ assert_readonly_mount_validation() {
         fail "regular-file validation leaves bytes, metadata, and link type unchanged"
     fi
 
-    if printf '%s\n' "$output" | grep -q "appears writable: .github/workflows"; then
+    EFFECTIVE_READONLY_PATHS=(".github/workflows")
+    status=0
+    output=$(check_readonly_mounts 2>&1) || status=$?
+    if [ "$status" -ne 0 ] && printf '%s\n' "$output" | grep -q "read-only mount.*.github/workflows"; then
         pass "read-only validation flags writable directory"
     else
         fail "read-only validation flags writable directory"
         printf '%s\n' "$output" | sed 's/^/    /'
     fi
 
-    if printf '%s\n' "$output" | grep -Eq "appears writable: (Containerfile|\.git/hooks)"; then
-        fail "read-only validation stays quiet for read-only paths"
-        printf '%s\n' "$output" | sed 's/^/    /'
-    else
-        pass "read-only validation stays quiet for read-only paths"
-    fi
 }
 
 assert_generation_restart() {

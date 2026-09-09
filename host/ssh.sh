@@ -8,7 +8,7 @@ SSHD_RUNTIME_DIR=""
 SSH_GENERATION_DIR=""
 
 initialize_ssh_state() {
-    [ -n "$PROJECT_STATE_ROOT" ] && [ -n "$PROJECT_HASH" ] || \
+    [[ -n "$PROJECT_STATE_ROOT" && -n "$PROJECT_HASH" ]] || \
         die "internal error: SSH state requires initialized project state"
     SSH_DIR="$PROJECT_STATE_ROOT/projects/$PROJECT_HASH"
     SSH_GENERATION_DIR="$SSH_DIR/ssh-generation"
@@ -19,8 +19,8 @@ initialize_ssh_state() {
 }
 
 assert_ssh_state_initialized() {
-    [ -n "$SSH_DIR" ] && [ -n "$SSH_CONFIG" ] && [ -n "$KNOWN_HOSTS" ] && \
-        [ -n "$KEY_FILE" ] && [ -n "$SSHD_RUNTIME_DIR" ] && [ -n "$SSH_GENERATION_DIR" ] || \
+    [[ -n "$SSH_DIR" && -n "$SSH_CONFIG" && -n "$KNOWN_HOSTS" &&
+        -n "$KEY_FILE" && -n "$SSHD_RUNTIME_DIR" && -n "$SSH_GENERATION_DIR" ]] || \
         die "internal error: SSH state is not initialized"
 }
 
@@ -45,7 +45,7 @@ validate_ssh_state_path() {
     [[ "$path" = /* ]] || { ssh_state_path_error "$SSH_DIR" 'is not absolute'; return 1; }
     while [ "$path" != / ]; do
         [ ! -L "$path" ] || { ssh_state_path_error "$path" 'is a symlink'; return 1; }
-        if [ -e "$path" ] && [ ! -d "$path" ]; then
+        if [[ -e "$path" && ! -d "$path" ]]; then
             ssh_state_path_error "$path" 'is not a directory'; return 1
         fi
         path=$(dirname "$path")
@@ -118,7 +118,7 @@ validate_ssh_file() {
     if [ "$kind" = directory ]; then
         [ -d "$path" ] || return 1
     else
-        [ -f "$path" ] && [ -s "$path" ] || return 1
+        [[ -f "$path" && -s "$path" ]] || return 1
     fi
     metadata=$(ssh_file_metadata "$path") || return 1
     [ "$metadata" = "$(id -u):$mode" ]
@@ -132,7 +132,7 @@ validate_ssh_file() {
 validate_ssh_receipt() {
     local path="$SSH_GENERATION_DIR/container-id" metadata mode
     [ ! -L "$path" ] || return 1
-    [ -f "$path" ] && [ -s "$path" ] || return 1
+    [[ -f "$path" && -s "$path" ]] || return 1
     metadata=$(ssh_file_metadata "$path") || return 1
     [ "${metadata%%:*}" = "$(id -u)" ] || return 1
     mode=${metadata#*:}
@@ -167,12 +167,13 @@ validate_ssh_generation() {
         case "$path" in *.pub) mode=644 ;; esac
         validate_ssh_file "$root/$path" "$mode" file || { ssh_state_error "has invalid $path metadata"; return 1; }
     done
-    validate_ssh_pair "$root/key" && validate_ssh_pair "$root/server/ssh_host_ed25519_key" &&
+    if ! { validate_ssh_pair "$root/key" && validate_ssh_pair "$root/server/ssh_host_ed25519_key" &&
         cmp -s "$root/key.pub" "$root/server/authorized_keys" &&
         cmp -s "$root/known_hosts" <(printf '[localhost]:%s %s\n' "$LOCAL_PORT" "$(cat "$root/server/ssh_host_ed25519_key.pub")") &&
-        cmp -s "$root/ssh_config" <(write_ssh_host_block) || {
-            ssh_state_error 'has inconsistent keys, pin, or client configuration'; return 1;
-        }
+        cmp -s "$root/ssh_config" <(write_ssh_host_block); }; then
+        ssh_state_error 'has inconsistent keys, pin, or client configuration'
+        return 1
+    fi
 }
 
 # Podman's template compares paths in the engine, so tabs/newlines in a host
