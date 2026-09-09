@@ -338,6 +338,21 @@ mode.
 
 ## Developer experience
 
+### Podman support range and CI coverage
+
+Define and document a minimum supported Podman version, backed by runtime-gate
+verification. The README currently requires Podman without a minimum, while
+runtime CI exercises Ubuntu 24.04's packaged version. Run the existing runtime
+gate against both the supported minimum and a current stable release, without
+adding a new user-facing test gate.
+
+Keep focused regression tests for known inspection-output differences, such as
+network names versus hashes in `NetworkID`. Prefer accepting verified output
+representations over branching on version strings, while rejecting unknown or
+incompatible values and preserving the security checks. Support claims should
+follow tested evidence rather than imply compatibility with every historical
+release.
+
 ### Test-log pruning
 
 `testlog/` accumulates one directory per recorded run without bound. Consider

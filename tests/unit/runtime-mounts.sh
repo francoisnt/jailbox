@@ -215,6 +215,8 @@ with_project_state() {
     HOME=$(mktemp -d)
     XDG_CONFIG_HOME=$(mktemp -d)
     XDG_STATE_HOME=$(mktemp -d)
+    # macOS temporary paths can traverse /var, a symlink rejected for SSH state.
+    XDG_STATE_HOME=$(cd "$XDG_STATE_HOME" && pwd -P)
     GIT_CONFIG_NOSYSTEM=1
     export HOME XDG_CONFIG_HOME XDG_STATE_HOME GIT_CONFIG_NOSYSTEM
     MANAGED_USER="jailbox"

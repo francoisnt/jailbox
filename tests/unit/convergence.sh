@@ -38,6 +38,7 @@ case "$kind $action" in
             '{{.Driver}}') echo bridge ;;
             '{{.Internal}}') [[ "$name" == *-internal ]] && echo true || echo false ;;
             '{{.ID}}') printf '%064d\n' 3 ;;
+            *'{{.NetworkID}}'*) printf '%064d\n' 3 ;;
             '{{(index .Subnets 0).Subnet}}'|'{{ (index .Subnets 0).Subnet }}') echo 10.240.57.0/24 ;;
             '{{.Mountpoint}}') echo "$state/home" ;;
             *'.Gateway'*) echo 10.89.0.1 ;;
