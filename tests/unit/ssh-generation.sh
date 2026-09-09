@@ -147,6 +147,7 @@ if ssh_generation_present; then echo 'FAIL: rollback leaked state'; exit 1; fi
 create_ssh_generation
 printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
 chmod 600 "$SSH_GENERATION_DIR/container-id"
+# shellcheck disable=SC2329 # Called indirectly through reject_rollback.
 podman() { return 125; }
 reject_rollback 'cleanup could not remove' rollback_ssh_launch 1
 [ -f "$KEY_FILE" ]
@@ -164,10 +165,12 @@ printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
 chmod 640 "$SSH_GENERATION_DIR/container-id"
 
 # Inspection failure and mismatched mounts fail closed; no SSH process runs.
+# shellcheck disable=SC2329 # Called indirectly through reject.
 podman() {
     if [ "$5" = '{{.Id}}' ]; then printf '%s\n' "$container_id"; else printf 'invalid\n'; fi
 }
 reject validate_ssh_resume
+# shellcheck disable=SC2329 # Called indirectly through reject.
 podman() { return 125; }
 reject validate_ssh_resume
 podman() {

@@ -70,6 +70,20 @@ jobs:
       - name: Set up portable test host
         run: bash tests/ci/setup-portable.sh
 
+      - name: Install ShellCheck 0.11.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          os=$(uname -s | tr '[:upper:]' '[:lower:]')
+          arch=$(uname -m)
+          case "$arch" in arm64) arch=aarch64 ;; esac
+          curl -fsSL --retry 3 \
+            "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.${os}.${arch}.tar.gz" \
+            -o "$RUNNER_TEMP/shellcheck.tar.gz"
+          tar -xzf "$RUNNER_TEMP/shellcheck.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/shellcheck-v0.11.0" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" --version
+
       - name: Run portable gate
         run: |
           command -v bash

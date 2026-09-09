@@ -3,6 +3,8 @@
 # git and ssh client for everyday work.
 FROM debian:trixie
 
+COPY --from=docker.io/koalaman/shellcheck:v0.11.0 /bin/shellcheck /usr/local/bin/shellcheck
+
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         bash \
         ca-certificates \
@@ -10,5 +12,4 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         git \
         jq \
         openssh-client \
-        shellcheck \
     && rm -rf /var/lib/apt/lists/*
