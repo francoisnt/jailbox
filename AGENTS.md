@@ -167,6 +167,11 @@ it happens.
 
 ## Plan authoring
 
+- When editing plans, minimize the diff without sacrificing correctness,
+  clarity, or completeness. Preserve existing wording and structure wherever
+  they still serve the final design; prefer targeted changes over broad
+  rewrites. When restructuring is needed, move existing text with minimal
+  rewording and limit other edits to what the requested change requires.
 - The current machine-boundary series is one release unit: no release occurs
   until all its plans are implemented and all three test gates pass. Work may
   depend on later plans when dependencies and remaining integration are
