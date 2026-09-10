@@ -47,6 +47,21 @@ the portable and runtime gates; releases also require the editor gate. Run
 `tests/run portable` before sending a change, plus `tests/run runtime` when
 Podman is available.
 
+The runtime gate includes `tests/integration/lifecycle-state.sh`, a Linux
+constructed-state matrix using the Debian test image and `setsid` for isolated
+command groups. It covers damaged resources, refusal non-mutation, interrupted
+launch/cleanup, dependency-safe rollback, and actual recovery. Cases live in
+`tests/lib/lifecycle-matrix.sh`; mutation-boundary cases extend the same runner
+through `tests/lib/lifecycle-runtime-faults.sh`. Read-only diagnostic and attach
+interfaces extend the runner's `matrix_observe` hook as they land. Its current
+observation log records expectations, not executed diagnostic assertions.
+
+Failure injection uses test-only PATH wrappers and FIFO barriers. Each lifecycle
+CLI process is registered in the existing exact-resource ledger before it can
+mutate resources; the ledger lives outside the temporary fixture. Logs and
+snapshots are retained under `testlog/lifecycle-*`. Permission-sensitive changes
+should also be checked with `umask 0002`, alongside the usual `0022`.
+
 ## Releases
 
 Releases are initiated manually and gated in CI: `scripts/release.sh`

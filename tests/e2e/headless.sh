@@ -702,7 +702,7 @@ EOF
     else
         fail "stop removes the bare-launch sandbox"
     fi
-    assert_home_lifecycle "$project_dir" "$ctr" "$dev_image" "$stage"
+    assert_home_lifecycle "$project_dir" "$ctr" "$dev_image"
 }
 
 report_proxy_connectivity() {
@@ -718,64 +718,14 @@ report_proxy_connectivity() {
         'curl -q --noproxy "" --proxy "$HTTP_PROXY" -v --connect-timeout 3 --max-time 5 http://jailbox-egress-diagnostic.invalid/' || true
 }
 
-# Construct homes independently of launch to exercise the real Podman label
-# template, including values whose trailing newline shell capture would strip.
+# Exercise ephemeral generations and image cleanup across wrapper distributions.
 # All names are the stage's already-ledgered exact project names.
 assert_home_lifecycle() {
-    local project="$1" prefix="$2" dev_image="$3" policy requested output status home
-    local -a labels=() policies=()
+    local project="$1" prefix="$2" dev_image="$3" home
     home="$prefix-home"
 
-    # Label parsing and absent-container recovery are host behavior. Exercise
-    # their real Podman templates once; keep live ephemeral resume on every OS.
-    if [[ "$4" = debian ]]; then policies=(legacy false true empty garbage $'true\n'); fi
-    for policy in "${policies[@]}"; do
-        (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
-            fail "clean before constructed home"; return 1;
-        }
-        labels=()
-        case "$policy" in
-            legacy) ;;
-            empty) labels=(--label jailbox.ephemeral-home=) ;;
-            *) labels=(--label "jailbox.ephemeral-home=$policy") ;;
-        esac
-        podman volume create "${labels[@]}" "$home" >/dev/null || {
-            fail "construct home volume"; return 1;
-        }
-        for requested in true false; do
-            if [[ "$policy" == legacy || "$policy" == false ]] && [ "$requested" = false ]; then
-                continue
-            fi
-            status=0
-            output=$(cd "$project" && JAILBOX_CONFIG_EPHEMERAL_HOME="$requested" \
-                "$JAILBOX_DIR/jailbox" up 2>&1) || status=$?
-            if [ "$status" -ne 0 ] && podman volume exists "$home" &&
-                ! podman container exists "$prefix"; then
-                pass "constructed home refuses reuse without deletion ($policy, requested $requested)"
-            else
-                fail "constructed home refusal ($policy, requested $requested): $output"
-            fi
-            if { [ "$policy" = true ] && [[ "$output" == *"orphaned ephemeral"*"jailbox stop"* ]]; } ||
-                { [ "$policy" != true ] && [[ "$output" == *"jailbox --clean"*"permanently deletes"* ]]; }; then
-                pass "constructed home names complete recovery"
-            else
-                fail "constructed home recovery: $output"
-            fi
-        done
-        (cd "$project" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1 || {
-            fail "stop constructed home"; return 1;
-        }
-        if { [ "$policy" = true ] && ! podman volume exists "$home"; } ||
-            { [ "$policy" != true ] && podman volume exists "$home"; }; then
-            pass "stop without containers follows stored home policy ($policy)"
-        else
-            fail "stop home retention ($policy)"
-        fi
-        if [ "$policy" = legacy ] &&
-            [ "$(podman volume inspect "$home" --format '{{len .Labels}}')" != 0 ]; then
-            fail "legacy home remains unlabeled"
-        fi
-    done
+    # Constructed home metadata and recovery now run in the shared lifecycle
+    # matrix. Keep generation resume coverage across wrapper distributions.
     (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
         fail "clean before ephemeral launch"; return 1;
     }
