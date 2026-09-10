@@ -61,13 +61,16 @@ assert_partial_cleanup() {
 }
 
 interrupt_at_barrier() {
-    local command="$1" ready token
+    local command="$1" ready token log_fd log_pid
     export LIFECYCLE_READY="$FIXTURE/ready" LIFECYCLE_RELEASE="$FIXTURE/release"
     rm -f "$LIFECYCLE_READY" "$LIFECYCLE_RELEASE"
     mkfifo "$LIFECYCLE_READY" "$LIFECYCLE_RELEASE"
     # Opening read/write prevents FIFO open itself from being an unbounded wait.
     exec {ready}<> "$LIFECYCLE_READY"
-    ledger_start_worker cli_exec "$command" > "$LOG/$CASE_KEY.command" 2>&1 || matrix_die 'could not register interrupted command'
+    exec {log_fd}> >(test_timestamp_stream > "$LOG/$CASE_KEY.command")
+    log_pid=$!
+    ledger_start_worker cli_exec "$command" >&"$log_fd" 2>&1 || matrix_die 'could not register interrupted command'
+    exec {log_fd}>&-
     ACTIVE_PID="$LEDGER_WORKER_PID"
     if ! IFS= read -r -t 60 token <&"$ready"; then
         kill -KILL -- "-$ACTIVE_PID" 2>/dev/null || true
@@ -81,6 +84,7 @@ interrupt_at_barrier() {
     kill -KILL -- "-$ACTIVE_PID"
     wait "$ACTIVE_PID" 2>/dev/null || true
     ACTIVE_PID=""
+    wait "$log_pid" || matrix_die 'could not finish interrupted command log'
     exec {ready}>&-
 }
 
@@ -94,6 +98,7 @@ run_mutation_faults() {
             # New-home and pre-existing-home launches exercise distinct rollback
             # ownership. Cleanup exercises stored persistent and ephemeral policy.
             CASE_KEY="trace.$command.$policy"
+            printf 'CASE %s\n' "$CASE_KEY"
             trace="$LOG/$CASE_KEY.events"
             fault_baseline "$command" "$policy"
             export LIFECYCLE_EVENTS="$LOG/events"
@@ -120,7 +125,7 @@ run_mutation_faults() {
                         interrupt_at_barrier "$command"
                         result=137
                     else
-                        cli "$command" > "$LOG/$CASE_KEY.command" 2>&1 || result=$?
+                        test_log_capture "$LOG/$CASE_KEY.command" cli "$command" || result=$?
                     fi
                     cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY.events"
                     [[ $(wc -l < "$LIFECYCLE_EVENTS") -ge "$point" ]] || matrix_die 'fault point not reached'
@@ -188,7 +193,7 @@ run_failed_resume() {
             filesystem_snapshot "$GENERATION" > "$LOG/generation-before"
             export LIFECYCLE_FAIL_SSH=true LIFECYCLE_EVENTS="$LOG/events"
             : > "$LIFECYCLE_EVENTS"
-            if cli up > "$LOG/$CASE_KEY.command" 2>&1; then matrix_die 'injected readiness failure succeeded'; fi
+            if test_log_capture "$LOG/$CASE_KEY.command" cli up; then matrix_die 'injected readiness failure succeeded'; fi
             cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY.events"
             unset LIFECYCLE_FAIL_SSH LIFECYCLE_EVENTS
             grep -Fxq "podman start $PREFIX" "$LOG/$CASE_KEY.events" || matrix_die 'readiness failure did not follow survivor start'
@@ -220,6 +225,7 @@ run_failed_resume() {
 run_removal_failure() {
     local point
     CASE_KEY=failed-new-container-cleanup
+    printf 'CASE %s\n' "$CASE_KEY"
     fault_baseline up false
     export LIFECYCLE_EVENTS="$LOG/events"
     : > "$LIFECYCLE_EVENTS"
@@ -233,7 +239,7 @@ run_removal_failure() {
     fault_baseline up false
     export LIFECYCLE_EVENTS="$LOG/events" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE=after LIFECYCLE_FAIL_REMOVE=true
     : > "$LIFECYCLE_EVENTS"
-    if cli up > "$LOG/$CASE_KEY.command" 2>&1; then matrix_die 'creation failure succeeded'; fi
+    if test_log_capture "$LOG/$CASE_KEY.command" cli up; then matrix_die 'creation failure succeeded'; fi
     lifecycle_same_fault_event "$LOG/$CASE_KEY.reference" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'creation fault reached a different operation'
     unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE LIFECYCLE_FAIL_REMOVE
     require_present container "$PREFIX"
@@ -264,7 +270,7 @@ run_existing_dependency_failure() {
         done > "$LOG/networks-before"
         find "$STATE" -type f -exec sha256sum {} + | LC_ALL=C sort > "$LOG/material-before"
         export LIFECYCLE_FAIL_SSH=true
-        if cli up > "$LOG/$CASE_KEY.command" 2>&1; then matrix_die 'new-generation readiness failure succeeded'; fi
+        if test_log_capture "$LOG/$CASE_KEY.command" cli up; then matrix_die 'new-generation readiness failure succeeded'; fi
         unset LIFECYCLE_FAIL_SSH
         require_absent container "$PREFIX"
         [[ ! -e "$GENERATION" ]] || matrix_die 'failed new generation retained credentials'
@@ -305,7 +311,7 @@ run_home_inspection_failure() {
                 # Explicit clean does not depend on reading retention metadata.
                 expect_success --clean
             else
-                if cli "$command" > "$LOG/$CASE_KEY.command" 2>&1; then matrix_die 'home inspection failure was ignored'; fi
+                if test_log_capture "$LOG/$CASE_KEY.command" cli "$command"; then matrix_die 'home inspection failure was ignored'; fi
                 [[ ! -s "$LIFECYCLE_EVENTS" ]] || matrix_die 'inspection failure attempted lifecycle mutation'
                 snapshot > "$LOG/inspection-after"
                 cmp -s "$LOG/inspection-before" "$LOG/inspection-after" || matrix_die 'inspection failure changed existing state'

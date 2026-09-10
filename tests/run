@@ -14,6 +14,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=tests/lib/logging.sh
+source "$SCRIPT_DIR/lib/logging.sh"
+test_log_entrypoint "$SCRIPT_DIR/run" "$@"
 
 ALL_GATES=(portable runtime editor)
 
@@ -61,13 +64,15 @@ suite_fail() {
 }
 
 run_suite() {
-    local label="$1"
+    local label="$1" started=$SECONDS
     shift
 
     printf '\n══ %s ══\n' "$label"
     if "$@"; then
+        printf 'Elapsed %s: %ds\n' "$label" "$((SECONDS - started))"
         suite_pass "$label"
     else
+        printf 'Elapsed %s: %ds\n' "$label" "$((SECONDS - started))"
         suite_fail "$label"
         print_summary
         exit 1
@@ -89,6 +94,7 @@ print_summary() {
     printf 'Gate %s: %d suite(s) passed' "$GATE" "$SUITES_PASSED"
     [[ "$SUITES_FAILED" -gt 0 ]] && printf ', %d failed' "$SUITES_FAILED"
     printf '\n'
+    printf 'Elapsed gate %s: %ds\n' "$GATE" "$((SECONDS - GATE_STARTED))"
 }
 
 gate_selected() {
@@ -198,6 +204,7 @@ for GATE in "${GATES[@]}"; do
     fi
     SUITES_PASSED=0
     SUITES_FAILED=0
+    GATE_STARTED=$SECONDS
     echo "jailbox test gate: $GATE"
     echo "Working directory: $JAILBOX_DIR"
     run_gate "$GATE"

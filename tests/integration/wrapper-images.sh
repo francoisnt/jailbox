@@ -16,6 +16,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=tests/lib/logging.sh
+source "$JAILBOX_DIR/tests/lib/logging.sh"
+test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
 
 ALL_STAGES=(debian alpine fedora uid-owned-by-other-user user-conflict)
 PREPARATION_STAGES=(debian alpine fedora)
@@ -236,7 +239,7 @@ run_case() {
     podman rm   "$ctr" 2>/dev/null || true
 
     # Build test dev image
-    if ! podman build \
+    if ! test_log_capture "$build_log" podman build \
             --target "$stage" \
             "${test_build_args[@]}" \
             --build-arg "BASE_IMAGE_DEBIAN=${BASE_IMAGE_DEBIAN}" \
@@ -244,7 +247,7 @@ run_case() {
             --build-arg "BASE_IMAGE_FEDORA=${BASE_IMAGE_FEDORA}" \
             -t "$test_image" \
             -f "$JAILBOX_DIR/tests/integration/dev-images.Containerfile" \
-            "$JAILBOX_DIR" > "$build_log" 2>&1; then
+            "$JAILBOX_DIR"; then
         fail "test image build"
         tail -20 "$build_log" >&2
         return 1
@@ -257,14 +260,14 @@ run_case() {
         return 1
     fi
     # Build jailbox wrapper
-    if ! podman build \
+    if ! test_log_capture "$build_log" podman build \
             -t "$wrapper_image" \
             -f "$JAILBOX_DIR/container/Containerfile.wrapper" \
             --pull=never \
             --build-arg "DEV_IMAGE=${test_image_id}" \
             --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(jailbox_install_cache_bust)" \
             --build-arg "USER_ID=$(id -u)" \
-            "$JAILBOX_DIR/container" > "$build_log" 2>&1; then
+            "$JAILBOX_DIR/container"; then
         if [ "$expect_wrapper_failure" = true ] && grep -Eq "already exists in the dev image|already belongs to existing image user" "$build_log"; then
             pass "wrapper image build rejects unsafe user conflict"
             return 0
@@ -409,7 +412,7 @@ main() {
     local -A stage_pids=()
     for stage in "${stages[@]}"; do
         printf "  ⏳ %s\n" "$stage"
-        ( run_case "$stage" "$log_dir" ) > "$log_dir/${stage}.log" 2>&1 &
+        ( run_case "$stage" "$log_dir" ) 2>&1 | test_timestamp_stream > "$log_dir/${stage}.log" &
         stage_pids[$stage]=$!
     done
     echo ""

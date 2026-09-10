@@ -21,6 +21,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=tests/lib/logging.sh
+source "$JAILBOX_DIR/tests/lib/logging.sh"
+test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
 
 # shellcheck source=host/project-id.sh
 source "$JAILBOX_DIR/host/project-id.sh"
@@ -367,6 +370,10 @@ STUB
 
 # ── run_e2e_case ──────────────────────────────────────────────────────────────
 # Designed to run inside a subshell. PASSED/FAILED are subshell-local.
+
+run_e2e_case_logged() {
+    ( run_e2e_case "$@" ) 2>&1 | test_timestamp_stream
+}
 
 run_e2e_case() {
     local stage="$1"
@@ -837,7 +844,7 @@ main() {
         # The redirect belongs to the worker's own output. A registration
         # failure lands in that log too, so report it on the terminal rather
         # than aborting the run with nothing visible.
-        if ! ledger_start_worker run_e2e_case "$stage" "$log_dir" \
+        if ! ledger_start_worker run_e2e_case_logged "$stage" "$log_dir" \
             > "$log_dir/${stage}.log" 2>&1; then
             die "could not register the $stage stage with the resource ledger (see $log_dir/${stage}.log)"
         fi

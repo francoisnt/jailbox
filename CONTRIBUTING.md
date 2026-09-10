@@ -62,6 +62,14 @@ mutate resources; the ledger lives outside the temporary fixture. Logs and
 snapshots are retained under `testlog/lifecycle-*`. Permission-sensitive changes
 should also be checked with `umask 0002`, alongside the usual `0022`.
 
+All test-gate output and saved diagnostic logs carry UTC timestamps with
+one-second resolution. Buffered stage logs retain their capture timestamps when
+replayed. Gate summaries report elapsed seconds for each suite and the gate;
+timestamped lifecycle `CASE` lines locate time spent constructing and exercising
+each case. Machine-readable snapshots, fault-event records, and assertion inputs
+retain their original formats. Timestamps indicate when output was read; tools
+that buffer their own output can delay individual lines.
+
 ## Releases
 
 Releases are initiated manually and gated in CI: `scripts/release.sh`

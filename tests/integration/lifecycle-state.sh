@@ -3,6 +3,9 @@
 # independently of editors and wrapper distribution permutations.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=tests/lib/logging.sh
+source "$ROOT/tests/lib/logging.sh"
+test_log_entrypoint "$ROOT/tests/integration/lifecycle-state.sh" "$@"
 # shellcheck source=tests/lib/resource-ledger.sh
 source "$ROOT/tests/lib/resource-ledger.sh"
 # shellcheck source=tests/lib/lifecycle-matrix.sh
@@ -62,7 +65,8 @@ trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 ledger_prune_stale_runs
 git -C "$PROJECT" init -q
-(cd "$PROJECT" && "$ROOT/jailbox" init) > "$LOG/init" 2>&1
+# shellcheck disable=SC2016 # Positional arguments belong to the child shell.
+test_log_capture "$LOG/init" bash -c 'cd "$1" && "$2" init' _ "$PROJECT" "$ROOT/jailbox"
 chmod 755 "$PROJECT"
 chmod 644 "$PROJECT/jailbox.conf"
 # Remove inherited launch policy: fixtures specify their entire policy.
@@ -104,7 +108,7 @@ image_snapshot() {
     done
 }
 expect_success() {
-    cli "$@" > "$LOG/$CASE_KEY.command" 2>&1 || {
+    test_log_capture "$LOG/$CASE_KEY.command" cli "$@" || {
         cat "$LOG/$CASE_KEY.command" >&2
         matrix_die "$* failed"
     }
@@ -176,7 +180,7 @@ matrix_observe() {
 reset_fixture() {
     unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE LIFECYCLE_FAIL_SSH LIFECYCLE_FAIL_REMOVE
     unset LIFECYCLE_FAIL_HOME_INSPECT
-    cli --clean > "$LOG/reset" 2>&1 || matrix_die 'reset failed'
+    test_log_capture "$LOG/reset" cli --clean || matrix_die 'reset failed'
     if exists network "$EXTRA"; then podman network rm "$EXTRA" >/dev/null; fi
     # Stop preserves unrelated runtime files. Clean is the fixture boundary.
     export JAILBOX_CONFIG_EPHEMERAL_HOME=false JAILBOX_CONFIG_EGRESS_ALLOW=""
@@ -375,7 +379,7 @@ run_row() {
         fi
         if [[ "$up" = refuse ]]; then
             snapshot > "$LOG/before"
-            if cli up > "$LOG/$CASE_KEY.command" 2>&1; then matrix_die 'damaged state accepted'; fi
+            if test_log_capture "$LOG/$CASE_KEY.command" cli up; then matrix_die 'damaged state accepted'; fi
             snapshot > "$LOG/after"
             cmp -s "$LOG/before" "$LOG/after" || matrix_die 'compatibility refusal mutated pre-existing state'
             if [[ "$recovery" = clean ]]; then

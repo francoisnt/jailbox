@@ -31,6 +31,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=tests/lib/logging.sh
+source "$JAILBOX_DIR/tests/lib/logging.sh"
+test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
 
 # shellcheck source=host/project-id.sh
 source "$JAILBOX_DIR/host/project-id.sh"
@@ -146,7 +149,7 @@ setup_logging() {
 }
 
 log_run() {
-    printf '%s\n' "$*" | tee -a "$RUN_LOG"
+    printf '%s\n' "$*" | test_timestamp_stream | tee -a "$RUN_LOG"
 }
 
 run_stage_logged() {
@@ -155,11 +158,10 @@ run_stage_logged() {
     local total="$3"
     local stage_log="$LOG_DIR/${stage}.log"
 
-    printf 'LOG %s %s\n' "$stage" "$stage_log" >> "$RUN_LOG"
-    if run_stage "$stage" "$idx" "$total" > >(tee "$stage_log") 2>&1; then
+    log_run "LOG $stage $stage_log"
+    if run_stage "$stage" "$idx" "$total" > >(test_timestamp_stream | tee "$stage_log") 2>&1; then
         return 0
     fi
-
     return 1
 }
 
@@ -1180,9 +1182,9 @@ main() {
     for stage in "${stages[@]}"; do
         idx=$((idx + 1))
         if run_stage_logged "$stage" "$idx" "$total"; then
-            printf 'PASS %s\n' "$stage" >> "$RUN_LOG"
+            log_run "PASS $stage"
         else
-            printf 'FAIL %s\n' "$stage" >> "$RUN_LOG"
+            log_run "FAIL $stage"
             failed_stages+=("$stage")
         fi
     done
