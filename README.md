@@ -629,7 +629,7 @@ passes; failures are tracked as `canary`-labeled issues. Alpine/VSCodium is
 a best-effort tier: the pinned combination is release-blocking, while
 latest-version failures only file issues.
 
-| Container OS | VS Code 1.136.2 | VSCodium 1.135.06055 |
+| Container OS | VS Code 1.137.0 | VSCodium 1.135.06055 |
 |---|---|---|
 | Debian 12 | ✅ | ✅ |
 | Alpine 3.21 | — | ✅ |
@@ -642,7 +642,7 @@ Remote extensions: `ms-vscode-remote.remote-ssh` 0.128.0
 (VS Code), `jeanp413.open-remote-ssh` 0.3.1 (VSCodium).
 VSCodium REH server: 1.135.06055 (commit `1a46a584725d5dd330e0bcd7f5510f24990efcf2`).
 
-Last verified: 2026-09-09
+Last verified: 2026-09-10
 <!-- END GENERATED: tested-matrix -->
 
 ---
