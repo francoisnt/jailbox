@@ -33,7 +33,9 @@ test_log_capture() {
     shift
     exec {log_fd}> >(test_timestamp_stream > "$destination")
     log_pid=$!
-    "$@" >&"$log_fd" 2>&1 || result=$?
+    # Only stdout/stderr belong to the command. A detached helper may close
+    # those but retain an extra inherited writer, preventing the reader's EOF.
+    "$@" >&"$log_fd" 2>&1 {log_fd}>&- || result=$?
     exec {log_fd}>&-
     wait "$log_pid" || return 1
     return "$result"

@@ -56,6 +56,24 @@ through `tests/lib/lifecycle-runtime-faults.sh`. Read-only diagnostic and attach
 interfaces extend the runner's `matrix_observe` hook as they land. Its current
 observation log records expectations, not executed diagnostic assertions.
 
+The lifecycle suite uses two independent workers by default. Each worker owns
+its project, derived SSH port, resources, state directory, logs, and ledger.
+It runs each claimed row's three commands on independently reconstructed state;
+each of the seven interruption groups discovers and tests its trace on the same
+worker. Fixture reset removes mutable resources directly and retains derived
+images for the build cache. Actual `--clean` cases still remove and verify image
+names. Final image cleanup waits until all workers and their CLI owners stop.
+
+Set `JAILBOX_LIFECYCLE_JOBS=1` for a serial comparison, or `=4` to measure four
+workers (accepted range: 1–16). The suite retains every case at every worker
+count. Each run writes sorted `completed-cases`, per-case `case-timings`, and
+per-job `timings` files under its `testlog/lifecycle-*` directory. It verifies
+completed jobs and cases against the catalog and discovered fault points before
+passing. Compare `completed-cases` between runs to check coverage as well as
+elapsed time. `JAILBOX_LIFECYCLE_TIMINGS=/absolute/path/to/previous/timings`
+prioritizes previously slow jobs; idle workers claim the next available job.
+Without history, interruption groups start first. History changes only order.
+
 Failure injection uses test-only PATH wrappers and FIFO barriers. Each lifecycle
 CLI process is registered in the existing exact-resource ledger before it can
 mutate resources; the ledger lives outside the temporary fixture. Logs and
