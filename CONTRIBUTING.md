@@ -47,16 +47,34 @@ the portable and runtime gates; releases also require the editor gate. Run
 `tests/run portable` before sending a change, plus `tests/run runtime` when
 Podman is available.
 
-The runtime gate includes `tests/integration/lifecycle-state.sh`, a Linux
-constructed-state matrix using the Debian test image and `setsid` for isolated
-command groups. It covers damaged resources, refusal non-mutation, interrupted
-launch/cleanup, dependency-safe rollback, and actual recovery. Cases live in
+The full lifecycle matrix runs in release and canary CI; PRs run the remaining
+runtime suites. To include it locally, run
+`tests/run runtime-full`. This enables
+`tests/integration/lifecycle-state.sh`, a Linux constructed-state matrix using
+the Debian test image and `setsid` for isolated command groups. It covers
+damaged resources, refusal non-mutation, interrupted launch/cleanup, dependency-safe rollback, and actual recovery. Cases live in
 `tests/lib/lifecycle-matrix.sh`; mutation-boundary cases extend the same runner
 through `tests/lib/lifecycle-runtime-faults.sh`. Read-only diagnostic and attach
 interfaces extend the runner's `matrix_observe` hook as they land. Its current
 observation log records expectations, not executed diagnostic assertions.
 
-The lifecycle suite uses two independent workers by default. Each worker owns
+Case labels separate the 144 matrix command cases, seven discovery traces,
+13 targeted failures, and interruption cases numbered within each trace.
+An interactive terminal shows one updating progress line beneath case output,
+with completed/total counts by type and overall, clipped to the terminal width.
+Redirected output, CI, and saved worker logs keep plain timestamped progress
+records. Terminals with `TERM=dumb` use the same plain format. Totals marked `known` grow as traces discover interruption points;
+they become final when all seven discovery cases complete. Case numbers are
+catalog positions, so parallel workers can start them out of order.
+
+The lifecycle suite automatically sizes its worker pool at startup using
+process-available CPUs and Linux available memory, reduced by visible cgroup-v2
+CPU quotas and memory headroom. It budgets two CPUs and 4 GiB per worker,
+reserves 1 GiB of memory, and selects between one and 16 workers. These are
+conservative scheduling estimates, not measured per-worker consumption or
+memory reservations. Unknown memory or cgroup layouts fall back to one worker.
+The startup log reports the selection and detected resources. The pool stays
+fixed for the run. Each worker owns
 its project, derived SSH port, resources, state directory, logs, and ledger.
 It runs each claimed row's three commands on independently reconstructed state;
 each of the seven interruption groups discovers and tests its trace on the same

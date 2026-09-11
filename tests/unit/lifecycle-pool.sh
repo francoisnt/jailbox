@@ -244,3 +244,47 @@ grep '^owner ' "$LIFECYCLE_POOL_LEDGER" > "$TEST_ROOT/pool-owner"
 grep '^owner ' "$LEDGER_FILE" > "$TEST_ROOT/worker-owner"
 cmp "$TEST_ROOT/pool-owner" "$TEST_ROOT/worker-owner"
 pass
+
+TEST_CASE='automatic worker count obeys CPU, memory, reserve and bounds'
+[[ $(lifecycle_worker_budget 16 $((64 * 1048576))) = 8 ]]
+[[ $(lifecycle_worker_budget 32 $((16 * 1048576))) = 3 ]]
+[[ $(lifecycle_worker_budget 64 $((128 * 1048576))) = 16 ]]
+[[ $(lifecycle_worker_budget 1 0) = 1 ]]
+[[ $(lifecycle_worker_budget 8 $((5 * 1048576 - 1))) = 1 ]]
+[[ $(lifecycle_worker_budget 8 $((9 * 1048576))) = 2 ]]
+pass
+
+TEST_CASE='resource detection respects affinity and nested cgroup headroom'
+proc="$TEST_ROOT/proc"
+cgroup="$TEST_ROOT/cgroup"
+mkdir -p "$proc/self" "$cgroup/parent/child"
+printf 'MemAvailable: 67108864 kB\n' > "$proc/meminfo"
+printf '0::/parent/child\n' > "$proc/self/cgroup"
+printf 'max 100000\n' > "$cgroup/parent/child/cpu.max"
+printf '600000 100000\n' > "$cgroup/parent/cpu.max"
+printf 'max\n' > "$cgroup/parent/child/memory.max"
+printf '%s\n' "$((12 * 1073741824))" > "$cgroup/parent/memory.max"
+printf '%s\n' "$((2 * 1073741824))" > "$cgroup/parent/memory.current"
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = "6|$((10 * 1048576))" ]]
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 2) = "2|$((10 * 1048576))" ]]
+printf '150000 100000\n' > "$cgroup/cpu.max"
+printf '%s\n' "$((8 * 1073741824))" > "$cgroup/memory.max"
+printf '%s\n' "$((4 * 1073741824))" > "$cgroup/memory.current"
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = "1|$((4 * 1048576))" ]]
+printf 'MemAvailable: 1048576 kB\n' > "$proc/meminfo"
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|1048576' ]]
+pass
+
+TEST_CASE='unknown resource data and exhausted cgroups select one worker'
+printf 'unknown\n' > "$proc/meminfo"
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+printf 'MemAvailable: 67108864 kB\n' > "$proc/meminfo"
+printf '%s\n' "$((9 * 1073741824))" > "$cgroup/memory.current"
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+printf 'garbage\n' > "$cgroup/memory.max"
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+printf '0::/../../outside\n' > "$proc/self/cgroup"
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+printf '2:memory:/legacy\n' > "$proc/self/cgroup"
+[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+pass

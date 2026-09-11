@@ -110,13 +110,16 @@ at the lowest useful layer and ensure the README threat model stays accurate.
 
 ## Test gates
 
-There are exactly three user-facing test gates:
+There are three primary test gates:
 
 ```bash
 tests/run portable
 tests/run runtime
 tests/run editor
 ```
+
+`tests/run runtime-full` selects the runtime gate with the full lifecycle
+state and interruption matrix included. `runtime` runs the shorter suite.
 
 `tests/run` with no argument runs those same three gates in order and stops at
 the first failing suite. It validates every selected gate's prerequisites
@@ -149,7 +152,10 @@ new test scripts cannot silently escape ShellCheck.
 ## Workflows and generated content
 
 - Pull requests use the portable and runtime gates.
-- Releases and canary runs use portable, runtime, and editor gates.
+- Releases and canary runs use portable, runtime, and editor gates, using
+  `tests/run runtime-full` to include the full lifecycle matrix. PRs and
+  default local runtime runs omit that matrix; enable it explicitly when
+  validating lifecycle changes.
 - Keep shared gate implementation in `.github/workflows/test-gates.yml`; caller
   workflows should pass inputs instead of duplicating test jobs.
 - Run `scripts/gen-tested-matrix.sh --check` after changing tested versions or

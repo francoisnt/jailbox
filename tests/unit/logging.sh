@@ -90,3 +90,39 @@ grep -q '] caller input$' "$FIXTURE/output"
 grep -q '] cleanup$' "$FIXTURE/output"
 [[ $(wc -l < "$FIXTURE/output") = 2 ]]
 pass
+
+TEST_CASE='terminal progress stays below case output and clears for the summary'
+cat > "$FIXTURE/input" <<'LOG'
+[2000-01-02T03:04:05Z] Progress: 0/2 completed
+[2000-01-02T03:04:06Z] CASE one
+[2000-01-02T03:04:07Z] Progress: 1/2 completed
+[2000-01-02T03:04:08Z] CASE two
+[2000-01-02T03:04:09Z] Progress: 2/2 completed
+[2000-01-02T03:04:10Z] Lifecycle: 2/2 cases completed; timings: run/timings
+LOG
+test_display_stream 80 < "$FIXTURE/input" > "$FIXTURE/output"
+{
+    printf '\r\033[2KProgress: 0/2 completed'
+    printf '\r\033[2K[2000-01-02T03:04:06Z] CASE one\n'
+    printf '\r\033[2KProgress: 0/2 completed'
+    printf '\r\033[2KProgress: 1/2 completed'
+    printf '\r\033[2K[2000-01-02T03:04:08Z] CASE two\n'
+    printf '\r\033[2KProgress: 1/2 completed'
+    printf '\r\033[2KProgress: 2/2 completed'
+    printf '\r\033[2K[2000-01-02T03:04:10Z] Lifecycle: 2/2 cases completed; timings: run/timings\n'
+} > "$FIXTURE/expected"
+cmp "$FIXTURE/expected" "$FIXTURE/output"
+pass
+
+TEST_CASE='redirected logs retain plain progress records'
+test_display_stream < "$FIXTURE/input" > "$FIXTURE/output"
+cmp "$FIXTURE/input" "$FIXTURE/output"
+pass
+
+TEST_CASE='narrow terminal progress does not wrap and early EOF leaves a newline'
+printf 'Progress: 1/200 completed\nCASE running\n' | test_display_stream 20 > "$FIXTURE/output"
+# Every transient draw is restricted to 19 columns; the final retained record
+# at EOF may use a normal full-width line because it ends with a newline.
+[[ $(head -c 24 "$FIXTURE/output") = $'\r\033[2KProgress: 1/200 com' ]]
+[[ $(tail -c 1 "$FIXTURE/output" | od -An -tu1 | tr -d ' ') = 10 ]]
+pass

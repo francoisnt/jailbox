@@ -21,7 +21,7 @@ test_log_entrypoint() {
     shift
     [[ ${JAILBOX_TEST_LOG_SCRIPT:-} != "$script" ]] || return 0
     local result=0
-    JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 | test_timestamp_stream || result=$?
+    JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 | test_timestamp_stream | test_display_stream || result=$?
     exit "$result"
 }
 
@@ -39,4 +39,34 @@ test_log_capture() {
     exec {log_fd}>&-
     wait "$log_pid" || return 1
     return "$result"
+}
+
+# Only the outermost terminal consumer draws progress. Nested formatters and
+# saved logs retain plain timestamped records; workers never move the cursor.
+# The optional width exercises terminal rendering without a PTY in unit tests.
+test_display_stream() {
+    local width=${1:-} line message status=""
+    if [[ -z "$width" ]]; then
+        if [[ ! -t 1 || ${TERM:-dumb} = dumb ]]; then cat; return; fi
+        width=$(tput cols 2>/dev/null) || width=80
+    fi
+    [[ "$width" =~ ^[0-9]+$ && "$width" -gt 1 ]] || width=80
+    # Leave the last column unused to prevent wrapping onto a second line.
+    width=$((width - 1))
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        message=${line#\[*\] }
+        if [[ "$message" = 'Progress: '* ]]; then
+            status="$message"
+        else
+            [[ -z "$status" ]] || printf '\r\033[2K'
+            printf '%s\n' "$line"
+            if [[ "$message" = 'Lifecycle: '*' cases completed;'* || "$message" = 'FAIL [lifecycle-pool]'* ]]; then
+                status=""
+            fi
+        fi
+        [[ -z "$status" ]] || printf '\r\033[2K%s' "${status:0:width}"
+    done
+    # Leave the cursor on a clean line even if the producer failed early.
+    [[ -z "$status" ]] || printf '\r\033[2K%s\n' "$status"
+    return 0
 }

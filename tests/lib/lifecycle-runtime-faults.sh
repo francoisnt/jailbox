@@ -102,8 +102,8 @@ run_mutation_faults() {
     count=$(wc -l < "$LIFECYCLE_EVENTS")
     unset LIFECYCLE_EVENTS
     [[ "$count" -gt 0 ]] || matrix_die 'no persistent mutations recorded'
-    matrix_case_pass
     lifecycle_fault_cases "$trace" "$command" "$policy" >> "$LOG/expected-faults"
+    matrix_case_pass
     for ((point=1; point<=count; point++)); do
         event=$(sed -n "${point}p" "$trace")
         for fault in before after barrier; do
