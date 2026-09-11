@@ -3,12 +3,20 @@ name: Test Gates
 on:
   workflow_dispatch:
     inputs:
+      run_lifecycle:
+        description: Run the full lifecycle state and interruption matrix
+        type: boolean
+        default: false
       run_editor:
         description: Run the VS Code and VSCodium editor smoke tests
         type: boolean
         default: true
   workflow_call:
     inputs:
+      run_lifecycle:
+        description: Run the full lifecycle state and interruption matrix
+        type: boolean
+        default: false
       run_editor:
         description: Run the VS Code and VSCodium editor smoke tests
         type: boolean
@@ -105,7 +113,7 @@ jobs:
         env:
           JAILBOX_E2E_REH_RELEASE: ${{ inputs.reh_release }}
           JAILBOX_E2E_REH_COMMIT: ${{ inputs.reh_commit }}
-        run: bash tests/run runtime
+        run: bash tests/run ${{ inputs.run_lifecycle && 'runtime-full' || 'runtime' }}
 
       - name: Upload runtime logs
         if: always()
@@ -115,6 +123,7 @@ jobs:
           path: |
             testlog/test-*/
             testlog/e2e-*/
+            testlog/lifecycle-*/
           if-no-files-found: ignore
           retention-days: 7
 

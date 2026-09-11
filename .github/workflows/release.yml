@@ -77,6 +77,8 @@ jobs:
 
   test-gates:
     uses: ./.github/workflows/test-gates.yml
+    with:
+      run_lifecycle: true
 
   publish:
     runs-on: ubuntu-24.04

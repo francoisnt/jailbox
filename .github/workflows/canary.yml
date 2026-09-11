@@ -81,6 +81,7 @@ jobs:
     uses: ./.github/workflows/test-gates.yml
     with:
       run_editor: true
+      run_lifecycle: true
       code_version: ${{ needs.resolve.outputs.code_version }}
       codium_version: ${{ needs.resolve.outputs.codium_version }}
       remote_ssh_version: ${{ needs.resolve.outputs.remote_ssh_version }}
