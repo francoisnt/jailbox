@@ -19,7 +19,7 @@ if [[ -n ${JAILBOX_LIFECYCLE_JOBS:-} ]]; then
 else
     IFS="|" read -r AVAILABLE_CPUS AVAILABLE_MEMORY < <(lifecycle_worker_resources)
     WORKERS=$(lifecycle_worker_budget "$AVAILABLE_CPUS" "$AVAILABLE_MEMORY")
-    WORKER_SELECTION="auto: $AVAILABLE_CPUS CPUs, $((AVAILABLE_MEMORY / 1024)) MiB available; budget 2 CPUs + 4096 MiB per worker, reserve 1024 MiB"
+    WORKER_SELECTION="auto: $AVAILABLE_CPUS CPUs, $((AVAILABLE_MEMORY / 1024)) MiB available; budget 2 CPUs + 2048 MiB per worker, reserve 1024 MiB"
 fi
 [[ "$WORKERS" =~ ^([1-9]|1[0-6])$ ]] || die 'JAILBOX_LIFECYCLE_JOBS must be 1 through 16'
 for tool in podman ssh ssh-keygen git setsid; do
@@ -83,13 +83,14 @@ trap 'exit 1' HUP INT TERM
 # within this pool. Podman still owns detection of unrelated host collisions.
 for ((slot=1; slot<=WORKERS; slot++)); do
     for ((attempt=1; ; attempt++)); do
-        [[ "$attempt" -le 100 ]] || die 'could not allocate distinct worker identities'
+        [[ "$attempt" -le 100 ]] || die 'could not allocate distinct worker identities with free SSH ports outside the host ephemeral range'
         fixture=$(mktemp -d /tmp/jailbox-e2e-lifecycle.XXXXXXXX)
         fixture=$(cd "$fixture" && pwd -P)
         offset=$(jailbox_project_hash_port_offset "$(jailbox_project_hash_for_path "$fixture/project")")
         subnet=$((offset % 200))
         fallback=$(((subnet + 7) % 200))
-        if [[ -z ${used_ports[$offset]-} && -z ${used_subnets[$subnet]-} && -z ${used_subnets[$fallback]-} ]]; then break; fi
+        if [[ -z ${used_ports[$offset]-} && -z ${used_subnets[$subnet]-} && -z ${used_subnets[$fallback]-} ]] &&
+            lifecycle_fixture_port_available "$((49152 + offset))"; then break; fi
         rm -rf -- "$fixture"
     done
     used_ports[$offset]=true

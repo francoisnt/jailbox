@@ -247,11 +247,33 @@ pass
 
 TEST_CASE='automatic worker count obeys CPU, memory, reserve and bounds'
 [[ $(lifecycle_worker_budget 16 $((64 * 1048576))) = 8 ]]
-[[ $(lifecycle_worker_budget 32 $((16 * 1048576))) = 3 ]]
+[[ $(lifecycle_worker_budget 32 $((16 * 1048576))) = 7 ]]
 [[ $(lifecycle_worker_budget 64 $((128 * 1048576))) = 16 ]]
 [[ $(lifecycle_worker_budget 1 0) = 1 ]]
 [[ $(lifecycle_worker_budget 8 $((5 * 1048576 - 1))) = 1 ]]
-[[ $(lifecycle_worker_budget 8 $((9 * 1048576))) = 2 ]]
+[[ $(lifecycle_worker_budget 8 $((9 * 1048576))) = 4 ]]
+pass
+
+TEST_CASE='fixture ports avoid outbound ephemeral allocation and existing IPv4/IPv6 sockets'
+port_proc="$TEST_ROOT/port-proc"
+mkdir -p "$port_proc/sys/net/ipv4" "$port_proc/net"
+printf '32768 60999\n' > "$port_proc/sys/net/ipv4/ip_local_port_range"
+: > "$port_proc/net/tcp"
+: > "$port_proc/net/tcp6"
+if lifecycle_fixture_port_available 56216 "$port_proc"; then exit 1; fi
+lifecycle_fixture_port_available 62000 "$port_proc"
+printf '0: 0100007F:F230 00000000:0000 0A\n' > "$port_proc/net/tcp"
+if lifecycle_fixture_port_available 62000 "$port_proc"; then exit 1; fi
+: > "$port_proc/net/tcp"
+printf '0: 00000000000000000000000000000000:F230 0:0000 0A\n' > "$port_proc/net/tcp6"
+if lifecycle_fixture_port_available 62000 "$port_proc"; then exit 1; fi
+rm "$port_proc/net/tcp6"
+lifecycle_fixture_port_available 62000 "$port_proc"
+for port in 65536 00001 bad; do
+    if lifecycle_fixture_port_available "$port" "$port_proc"; then exit 1; fi
+done
+printf 'bad range\n' > "$port_proc/sys/net/ipv4/ip_local_port_range"
+if lifecycle_fixture_port_available 62000 "$port_proc"; then exit 1; fi
 pass
 
 TEST_CASE='resource detection respects affinity and nested cgroup headroom'

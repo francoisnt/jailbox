@@ -274,6 +274,16 @@ it happens.
 
 ## User interaction
 
+- Optimize the cost of reaching a result as well as the result itself. Start
+  performance investigations with existing evidence and short, representative
+  samples. Do not ask the user to run exhaustive suites for initial measurements
+  when a sample can answer the question. Use repeats to assess confidence, state
+  the limits of sample evidence, and respect the user's requested validation scope.
+- For resource-efficiency experiments, identify the variable being tested before
+  asking for a run. Tune CPU/RAM per worker with concurrency held fixed; worker
+  count alone does not measure worker resource needs. Account for the complete
+  worker workload, and distinguish measured usage from enforced limits and
+  scheduling allowances.
 - When proposing options or changes for approval, print a plain numbered list
   in the reply and let the user answer by number. Do not use interactive
   question menus or selection widgets. Keep each proposal self-contained

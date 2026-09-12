@@ -69,7 +69,7 @@ catalog positions, so parallel workers can start them out of order.
 
 The lifecycle suite automatically sizes its worker pool at startup using
 process-available CPUs and Linux available memory, reduced by visible cgroup-v2
-CPU quotas and memory headroom. It budgets two CPUs and 4 GiB per worker,
+CPU quotas and memory headroom. It budgets two CPUs and 2 GiB per worker,
 reserves 1 GiB of memory, and selects between one and 16 workers. These are
 conservative scheduling estimates, not measured per-worker consumption or
 memory reservations. Unknown memory or cgroup layouts fall back to one worker.
