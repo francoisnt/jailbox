@@ -101,7 +101,7 @@ run_mutation_faults() {
     cp "$LIFECYCLE_EVENTS" "$trace"
     count=$(wc -l < "$LIFECYCLE_EVENTS")
     unset LIFECYCLE_EVENTS
-    [[ "$count" -gt 0 ]] || matrix_die 'no persistent mutations recorded'
+    lifecycle_require_fault_coverage "$trace" "$command" "$policy" || matrix_die 'persistent mutation coverage regressed'
     lifecycle_fault_cases "$trace" "$command" "$policy" >> "$LOG/expected-faults"
     matrix_case_pass
     for ((point=1; point<=count; point++)); do

@@ -122,6 +122,101 @@ pass
 
 # shellcheck source=tests/lib/lifecycle-assertions.sh
 source "$ROOT/tests/lib/lifecycle-assertions.sh"
+TEST_CASE='independent fault coverage rejects each missing operation'
+# Deliberately authored fixtures, never generated from the coverage requirements.
+# Paths, hashes and allocation suffixes are irrelevant to operation membership.
+cat > "$FIXTURE/up-trace" <<'TRACE'
+podman network create --internal jailbox-project-abc-net-internal
+podman network create --label digest=abc jailbox-project-abc-net-external
+mkdir -p -- /state/jailbox/projects/abc
+mkdir -p /state/jailbox/projects/abc
+mkdir -p /state/jailbox/projects/abc
+mkdir -p -- /state/jailbox/projects/abc
+chmod 644 /state/jailbox/projects/abc/tinyproxy-filter
+chmod 644 /state/jailbox/projects/abc/tinyproxy.conf
+podman run -d --name jailbox-project-abc-proxy --read-only
+rm -f -- /state/jailbox/projects/abc/gitconfig
+mktemp /state/jailbox/projects/abc/gitconfig.tmp.XXXXXX
+chmod 600 /state/jailbox/projects/abc/gitconfig.tmp.random
+mv /state/jailbox/projects/abc/gitconfig.tmp.random /state/jailbox/projects/abc/gitconfig
+chmod 600 /state/jailbox/projects/abc/gitconfig
+mktemp -d /state/jailbox/projects/abc/.ssh-generation.XXXXXXXX
+mkdir /state/jailbox/projects/abc/.ssh-generation.random/server
+ssh-keygen -t ed25519 -f /state/key -N '' -C jailbox-client -q
+ssh-keygen -t ed25519 -f /state/server/key -N '' -C jailbox-server -q
+cp /state/key.pub /state/server/authorized_keys
+chmod 600 /state/key /state/server/authorized_keys
+chmod 644 /state/key.pub /state/server/ssh_host_ed25519_key.pub
+mv -- /state/.ssh-generation.random /state/ssh-generation
+rm -rf -- /state/.ssh-generation.random
+podman run -d --name jailbox-project-abc --cidfile /state/ssh-generation/container-id
+ssh -F /state/config jailbox-project-abc jailbox-manage-proxy\ enable\ http://proxy
+TRACE
+cat > "$FIXTURE/cleanup-trace" <<'TRACE'
+podman stop jailbox-project-abc
+podman rm jailbox-project-abc
+podman stop jailbox-project-abc-proxy
+podman rm jailbox-project-abc-proxy
+podman network rm jailbox-project-abc-net-internal
+podman network rm jailbox-project-abc-net-external
+TRACE
+for scenario in up:false up:none up:new-ephemeral stop:false stop:true --clean:false --clean:true; do
+    command=${scenario%:*}; policy=${scenario#*:}
+    if [[ "$command" = up ]]; then
+        cp "$FIXTURE/up-trace" "$FIXTURE/coverage"
+        if [[ "$policy" != false ]]; then
+            printf '%s\n' 'podman volume create --label policy home' 'podman unshare chown 1000:1000 /volume' >> "$FIXTURE/coverage"
+        fi
+    else
+        cp "$FIXTURE/cleanup-trace" "$FIXTURE/coverage"
+        if [[ "$command" = --clean || "$policy" = true ]]; then
+            printf '%s\n' 'podman volume rm jailbox-project-abc-home' >> "$FIXTURE/coverage"
+        fi
+        if [[ "$command" = --clean ]]; then
+            printf '%s\n' 'podman image rm jailbox-project-abc-image' 'podman image rm jailbox-project-abc-proxy' \
+                'rm -rf -- /state/jailbox/projects/abc' >> "$FIXTURE/coverage"
+        else
+            printf '%s\n' 'rm -rf -- /state/ssh-generation /state/key' >> "$FIXTURE/coverage"
+        fi
+    fi
+    lifecycle_require_fault_coverage "$FIXTURE/coverage" "$command" "$policy"
+    for ((point=1; point<=$(wc -l < "$FIXTURE/coverage"); point++)); do
+        sed "${point}d" "$FIXTURE/coverage" > "$FIXTURE/reduced"
+        # Preserve the total with an unrelated mutation: counts alone cannot pass.
+        printf '%s\n' 'chmod 700 /unrelated' >> "$FIXTURE/reduced"
+        if lifecycle_require_fault_coverage "$FIXTURE/reduced" "$command" "$policy" > "$FIXTURE/coverage-error" 2>&1; then
+            printf 'FAIL: accepted missing %s operation %s\n' "$scenario" "$point" >&2; exit 1
+        fi
+        grep -q 'Missing fault coverage' "$FIXTURE/coverage-error"
+    done
+done
+# Duplicating the proxy launch must not replace development-container coverage.
+sed '/--cidfile/d' "$FIXTURE/up-trace" > "$FIXTURE/reduced"
+printf '%s\n' 'podman run -d --name jailbox-project-abc-proxy --read-only' >> "$FIXTURE/reduced"
+if lifecycle_require_fault_coverage "$FIXTURE/reduced" up false 2>/dev/null; then exit 1; fi
+if lifecycle_require_fault_coverage "$FIXTURE/up-trace" up true 2>/dev/null; then exit 1; fi
+cp "$FIXTURE/up-trace" "$FIXTURE/extended"
+printf '%s\n' 'chmod 700 /additional-state' >> "$FIXTURE/extended"
+lifecycle_require_fault_coverage "$FIXTURE/extended" up false
+pass
+
+TEST_CASE='runtime rejects reduced traces before publishing expected cases'
+(
+    # shellcheck source=tests/lib/lifecycle-runtime-faults.sh
+    source "$ROOT/tests/lib/lifecycle-runtime-faults.sh"
+    LOG="$FIXTURE/guard-log"
+    mkdir "$LOG"
+    matrix_case_begin() { CASE_KEY="$1"; }
+    fault_baseline() { :; }
+    expect_success() { printf '%s\n' 'mkdir /some-state' > "$LIFECYCLE_EVENTS"; }
+    matrix_die() { exit 42; }
+    matrix_case_pass() { touch "$LOG/passed"; }
+    run_mutation_faults up false
+) > "$FIXTURE/guard-error" 2>&1 && result=0 || result=$?
+[[ "$result" = 42 && ! -e "$FIXTURE/guard-log/passed" && ! -e "$FIXTURE/guard-log/expected-faults" ]]
+grep -q 'Missing fault coverage' "$FIXTURE/guard-error"
+pass
+
 TEST_CASE='fault identities tolerate allocation suffixes but reject operation drift'
 printf '%s\n' 'mkdir /state/.ssh-generation.ABC123/server' > "$FIXTURE/reference"
 printf '%s\n' 'mkdir /state/.ssh-generation.DEF456/server' > "$FIXTURE/actual"

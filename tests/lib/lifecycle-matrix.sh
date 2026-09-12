@@ -39,8 +39,8 @@ disconnected|egress|false|false|refuse|running|network-damaged|refuse|stop|keep|
 unexpected-attachment|egress|false|false|refuse|running|network-damaged|refuse|stop|keep|stopped
 missing-digest|egress|false|false|refuse|running|digest-missing|refuse|stop|keep|stopped
 inconsistent-digest|egress|false|false|refuse|running|digest-inconsistent|refuse|stop|keep|stopped
-mismatched-digest|plain|false|false|refuse|running|recorded-digest-consistent|refuse|stop|keep|stopped
-mode-and-digest|plain|false|true|refuse|running|recorded-persistent-home|refuse|clean|delete|stopped
+mismatched-digest|plain|false|false|refuse|running|config-digest-mismatch|refuse|stop|keep|stopped
+mode-and-digest|plain|false|true|refuse|running|home-policy-mismatch|refuse|clean|delete|stopped
 mode-and-ssh|plain|false|true|refuse|running|ssh-damaged|refuse|clean|delete|stopped
 corrupt-and-digest|plain|corrupt|false|refuse|stopped|home-corrupt|refuse|clean|delete|stopped
 collision-fallback|egress|false|false|success|running|healthy|allow|none|keep|stopped
