@@ -144,13 +144,18 @@ require_gate_prerequisites() {
     fi
 }
 
+check_generated_files() {
+    bash "$JAILBOX_DIR/scripts/gen-tested-matrix.sh" --check || return $?
+    bash "$JAILBOX_DIR/scripts/gen-public-api.sh" --check
+}
+
 run_gate() {
     local -a editor_stages
 
     case "$1" in
         portable)
             run_suite "shellcheck" bash "$JAILBOX_DIR/scripts/lint.sh"
-            run_suite "generated-files" bash "$JAILBOX_DIR/scripts/gen-tested-matrix.sh" --check
+            run_suite "generated-files" check_generated_files
             run_unit_suites
             run_suite "distribution" bash "$SCRIPT_DIR/portable/smoke.sh"
             ;;

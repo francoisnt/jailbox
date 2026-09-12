@@ -2,13 +2,38 @@
 
 EDITOR_BIN=""
 
-parse_args() {
+validate_cli_implementation() {
+    local command handler target
+    public_api_validate_mapping 'command handlers' CLI_FLAGS_WITHOUT_VALUES CLI_COMMAND_HANDLERS
+    public_api_validate_mapping 'option targets' CLI_FLAGS_WITH_VALUES CLI_OPTION_TARGETS
+    for command in "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
+        handler=${CLI_COMMAND_HANDLERS[$command]}
+        [[ "$handler" =~ ^[a-z_][a-z0-9_]*$ ]] || public_api_error "invalid handler for '$command'"
+        declare -F "$handler" >/dev/null || public_api_error "missing command handler '$handler' for '$command'"
+    done
+    for command in "${CLI_FLAGS_WITH_VALUES[@]}"; do
+        target=${CLI_OPTION_TARGETS[$command]}
+        [[ "$target" =~ ^[A-Z][A-Z0-9_]*$ ]] || public_api_error "invalid option target for '$command'"
+    done
+}
+
+run_version() {
     local version
-    if [ "${1:-}" = "--config" ] || [ "${2:-}" = "--config" ]; then
-        echo "Error: --config must appear before the command" >&2
-        usage >&2
-        exit 2
-    fi
+    version=$(jailbox_version) || return 1
+    printf 'jailbox %s\n' "$version"
+}
+
+parse_args() {
+    local option arg
+    for option in "${CLI_FLAGS_WITH_VALUES[@]}"; do
+        for arg in "$@"; do
+            if [[ "$arg" = "$option" ]]; then
+                echo "Error: $option must appear before the command" >&2
+                usage >&2
+                exit 2
+            fi
+        done
+    done
     if [ "$#" -gt 1 ]; then
         echo "Error: unexpected argument: $2" >&2
         usage >&2
@@ -17,16 +42,6 @@ parse_args() {
     if ! is_cli_flag_allowed "${1:-}"; then
         usage >&2
         exit 2
-    fi
-
-    if [[ "${1:-}" == "--help" ]]; then
-        usage
-        exit 0
-    fi
-    if [[ "${1:-}" == --version ]]; then
-        version=$(jailbox_version) || exit 1
-        printf 'jailbox %s\n' "$version"
-        exit 0
     fi
 }
 
@@ -57,20 +72,10 @@ warn_low_inotify_watch_limit() {
 }
 
 host_preflight() {
-    if [[ "${1:-}" == "ssh-config" || "${1:-}" == "doctor" ]]; then
-        warn_low_inotify_watch_limit
-        return 0
-    fi
-
     require_command podman
 
-    if [[ "${1:-}" == "--clean" || "${1:-}" == "stop" ]]; then
-        return 0
-    fi
-
-    # cksum is only a fallback hash tool for jailbox_install_cache_bust, which
-    # runs during the wrapper image build. Guard it after every early return so
-    # the commands that never build an image do not inherit the requirement.
+    # Only launch handlers use this preflight. Other commands check their own
+    # dependencies, so they never inherit image-build or editor requirements.
     require_command cksum
     require_command ssh
     require_command ssh-keygen
@@ -78,7 +83,7 @@ host_preflight() {
 
     # Command mode launches the same sandbox without discovering, validating,
     # configuring, or warning about a host editor.
-    if ! command_launches_editor "${1:-}"; then
+    if [[ "${1:-}" = up ]]; then
         return 0
     fi
 

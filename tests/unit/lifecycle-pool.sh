@@ -155,7 +155,7 @@ tree="$TEST_ROOT/coordinator"
 mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/host" "$tree/bin"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
 cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs}.sh "$tree/tests/lib/"
-cp "$ROOT/host/project-id.sh" "$tree/host/"
+cp "$ROOT/host/"{project-id,public-api}.sh "$tree/host/"
 cat > "$tree/bin/podman" <<'ENGINE'
 #!/bin/bash
 set -euo pipefail
@@ -182,7 +182,7 @@ complete_job() {
     local kind="$1" key
     shift
     case "$kind" in
-        row) for key in up stop --clean; do printf '%s.%s\n' "$1" "$key"; done ;;
+        row) for key in "${LIFECYCLE_COMMANDS[@]}"; do printf '%s.%s\n' "$1" "$key"; done ;;
         fault)
             printf 'trace.%s.%s\n' "$1" "$2"
             printf 'mkdir /fixture/state\n' > "$log/trace"

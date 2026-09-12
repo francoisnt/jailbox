@@ -420,13 +420,13 @@ for key in "${FRONTEND_SCALAR_KEYS[@]}"; do
 done
 
 set_keys_declared=1
-for key in "${DIGEST_SET_ARRAY_KEYS[@]}"; do
+for key in "${!DIGEST_ARRAY_MODES[@]}"; do
     is_config_array_key "$key" || set_keys_declared=0
 done
 if [ "$set_keys_declared" -eq 1 ]; then
-    pass "every DIGEST_SET_ARRAY_KEYS member is a declared array key"
+    pass "every digest array mode belongs to a declared array key"
 else
-    fail "every DIGEST_SET_ARRAY_KEYS member is a declared array key"
+    fail "every digest array mode belongs to a declared array key"
 fi
 
 echo "── hash tool portability ──"

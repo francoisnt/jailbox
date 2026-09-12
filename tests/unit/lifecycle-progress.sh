@@ -64,7 +64,7 @@ pass 'runtime and matrix own separate assertions; matrix prepares its own images
 
 # The default dispatch includes every gate once, with matrix before editor.
 mkdir -p "$tmp/tree/scripts" "$tmp/tree/tests/unit" "$tmp/tree/tests/portable"
-for suite in scripts/lint scripts/gen-tested-matrix tests/portable/smoke tests/e2e/editor-smoke; do
+for suite in scripts/lint scripts/gen-tested-matrix scripts/gen-public-api tests/portable/smoke tests/e2e/editor-smoke; do
     # shellcheck disable=SC2016 # Generated fixture expands its own environment.
     printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/$suite.sh"
 done
@@ -74,6 +74,7 @@ PATH="$tmp/bin:$PATH" DISPLAY=:fixture JAILBOX_EDITOR=code bash "$tmp/tree/tests
 cat > "$tmp/expected" <<'EXPECTED'
 scripts/lint|
 scripts/gen-tested-matrix|--check
+scripts/gen-public-api|--check
 tests/portable/smoke|
 integration/wrapper-images|
 e2e/headless|

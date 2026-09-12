@@ -56,9 +56,9 @@ FRONTEND_DEFAULTS=(
 CLI_FLAGS_WITH_VALUES=(
     --config
 )
+declare -A CLI_VALUE_NAMES=([--config]=PATH)
 
 CLI_FLAGS_WITHOUT_VALUES=(
-    --version
     init
     up
     stop
@@ -66,6 +66,7 @@ CLI_FLAGS_WITHOUT_VALUES=(
     ssh-config
     --clean
     --uninstall
+    --version
     --help
 )
 
@@ -91,6 +92,12 @@ declare -A CLI_HELP_BY_FLAG=()
 initialize_public_api_lookups() {
     local key entry
 
+    validate_public_api_declaration
+    CONFIG_SCALAR_KEY_SET=()
+    CONFIG_ARRAY_KEY_SET=()
+    FRONTEND_SCALAR_KEY_SET=()
+    CLI_FLAG_SET=()
+    CLI_HELP_BY_FLAG=()
     for key in "${CONFIG_SCALAR_KEYS[@]}"; do
         CONFIG_SCALAR_KEY_SET["$key"]=1
     done
@@ -107,8 +114,6 @@ initialize_public_api_lookups() {
         CLI_HELP_BY_FLAG["${entry%%=*}"]="${entry#*=}"
     done
 }
-
-initialize_public_api_lookups
 
 is_config_scalar_key() {
     local key
@@ -135,15 +140,12 @@ is_frontend_scalar_key() {
 }
 
 set_config_array() {
-    local key
-
-    key="$1"
+    is_config_array_key "$1" || public_api_error "unknown array key '$1'"
+    # shellcheck disable=SC2178 # Nameref to the validated array, not a scalar.
+    local -n config_array_target="$1"
     shift
-
-    case "$key" in
-        EGRESS_ALLOW) EGRESS_ALLOW=("$@") ;;
-        READONLY_PATHS) READONLY_PATHS=("$@") ;;
-    esac
+    # shellcheck disable=SC2034 # Assignment through a validated nameref.
+    config_array_target=("$@")
 }
 
 # Scalar assignment is indirect on the declared key name. This is safe
@@ -153,6 +155,7 @@ set_config_array() {
 apply_config_defaults() {
     local entry key value
 
+    validate_public_api_declaration
     for entry in "${CONFIG_DEFAULTS[@]}" "${FRONTEND_DEFAULTS[@]}"; do
         key="${entry%%=*}"
         value="${entry#*=}"
@@ -169,43 +172,85 @@ apply_config_defaults() {
 # declared machine keys, and no declared key spells another array key's
 # indexed member. Runs before configuration is interpreted.
 validate_public_api_declaration() {
-    local key entry other suffix
-    local -A machine_keys=() default_keys=()
+    local key other suffix
+    local -A machine_keys=()
+    # shellcheck disable=SC2034 # Consumed through a nameref.
+    local -a all_machine_keys=("${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}")
 
     for key in "${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}"; do
         [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || \
-            die "public API declares invalid configuration key '$key'"
+            public_api_error "public API declares invalid configuration key '$key'"
         [[ ! -v machine_keys[$key] ]] || \
-            die "public API declares configuration key '$key' more than once"
+            public_api_error "public API declares configuration key '$key' more than once"
         machine_keys["$key"]=1
     done
     for key in "${FRONTEND_SCALAR_KEYS[@]}"; do
         [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || \
-            die "public API declares invalid frontend key '$key'"
+            public_api_error "public API declares invalid frontend key '$key'"
         [[ ! -v machine_keys[$key] ]] || \
-            die "public API declares '$key' as both machine and frontend configuration"
+            public_api_error "public API declares '$key' as both machine and frontend configuration"
     done
-    for entry in "${CONFIG_DEFAULTS[@]}"; do
-        key="${entry%%=*}"
-        [[ -v machine_keys[$key] ]] || \
-            die "public API default '$key' has no declared machine key"
-        [[ ! -v default_keys[$key] ]] || \
-            die "public API declares a default for '$key' more than once"
-        default_keys["$key"]=1
-    done
-    for key in "${!machine_keys[@]}"; do
-        [[ -v default_keys[$key] ]] || \
-            die "public API key '$key' has no declared default"
-    done
+    public_api_validate_mapping 'configuration defaults' all_machine_keys CONFIG_DEFAULTS allow-empty
     for key in "${CONFIG_ARRAY_KEYS[@]}"; do
         for other in "${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}" \
             "${FRONTEND_SCALAR_KEYS[@]}"; do
             [[ "$other" == "${key}_"* ]] || continue
             suffix="${other#"${key}_"}"
             if [[ "$suffix" =~ ^(0|[1-9][0-9]*)$ ]]; then
-                die "public API key '$other' collides with indexed members of array '$key'"
+                public_api_error "public API key '$other' collides with indexed members of array '$key'"
             fi
         done
+    done
+    # shellcheck disable=SC2034 # Consumed through a nameref.
+    local -a all_cli=("${CLI_FLAGS_WITH_VALUES[@]}" "${CLI_FLAGS_WITHOUT_VALUES[@]}")
+    public_api_validate_mapping 'CLI help' all_cli CLI_HELP
+    public_api_validate_mapping 'option value names' CLI_FLAGS_WITH_VALUES CLI_VALUE_NAMES
+    for key in "${all_cli[@]}"; do
+        [[ "$key" =~ ^-{0,2}[A-Za-z][A-Za-z0-9-]*$ ]] || public_api_error "invalid CLI name '$key'"
+    done
+    public_api_validate_mapping 'frontend defaults' FRONTEND_SCALAR_KEYS FRONTEND_DEFAULTS allow-empty
+}
+
+public_api_error() {
+    printf 'Error: public API: %s\n' "$*" >&2
+    exit 1
+}
+
+# Validate an associative map or an indexed array of KEY=value records against
+# a declaration list. Values must be nonempty unless allow-empty is supplied
+# (for defaults). Domain-specific value checks remain with the consumer.
+public_api_validate_mapping() {
+    local label="$1" key entry declaration empty_policy="${4:-nonempty}"
+    local -n api_members="$2" api_mapping="$3"
+    local -a api_records=()
+    local -A declared=() mapped=()
+    [[ "$empty_policy" = nonempty || "$empty_policy" = allow-empty ]] || public_api_error "$label: invalid empty-value policy"
+    declaration=$(declare -p "$3" 2>/dev/null) || public_api_error "$label: missing mapping table '$3'"
+    if [[ "$declaration" =~ ^declare\ -[^[:space:]]*A ]]; then
+        for key in "${!api_mapping[@]}"; do
+            [[ "$key" =~ ^(-{1,2})?[A-Za-z][A-Za-z0-9_-]*$ ]] || public_api_error "$label: invalid mapping name '$key'"
+            api_records+=("$key=${api_mapping[$key]}")
+        done
+    elif [[ "$declaration" =~ ^declare\ -[^[:space:]]*a ]]; then
+        api_records=("${api_mapping[@]}")
+    else
+        public_api_error "$label: mapping table must be an array"
+    fi
+    for key in "${api_members[@]}"; do
+        [[ "$key" =~ ^(-{1,2})?[A-Za-z][A-Za-z0-9_-]*$ ]] || public_api_error "$label: invalid name '$key'"
+        [[ ! -v declared[$key] ]] || public_api_error "$label: duplicate declaration '$key'"
+        declared["$key"]=1
+    done
+    for entry in "${api_records[@]}"; do
+        key=${entry%%=*}
+        [[ "$entry" = *=* && "$key" =~ ^(-{1,2})?[A-Za-z][A-Za-z0-9_-]*$ ]] || public_api_error "$label: invalid entry '$entry'"
+        [[ -v declared[$key] ]] || public_api_error "$label: undeclared mapping '$key'"
+        [[ ! -v mapped[$key] ]] || public_api_error "$label: duplicate mapping '$key'"
+        [[ "$empty_policy" = allow-empty || -n "${entry#*=}" ]] || public_api_error "$label: empty mapping '$key'"
+        mapped["$key"]=1
+    done
+    for key in "${api_members[@]}"; do
+        [[ -v mapped[$key] ]] || public_api_error "$label: missing mapping '$key'"
     done
 }
 
@@ -226,3 +271,5 @@ cli_flag_help() {
     [[ -v CLI_HELP_BY_FLAG[$flag] ]] || return 1
     printf '%s\n' "${CLI_HELP_BY_FLAG[$flag]}"
 }
+
+initialize_public_api_lookups

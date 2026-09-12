@@ -20,13 +20,20 @@ CONFIG_DIGEST_LABEL="jailbox.config-digest"
 
 # Array keys whose members are a set: reordering or repeating them expresses
 # the same policy, so they are serialized deduplicated in bytewise LC_ALL=C
-# order. Every other array key keeps its configured order, because order can be
-# significant — mount precedence, for one — and over-invalidating is the safe
-# default. Add a key here only after proving it is set-valued; portable
-# coverage proves every member is also a CONFIG_ARRAY_KEYS member.
-DIGEST_SET_ARRAY_KEYS=(
-    EGRESS_ALLOW
+# order. Ordered arrays retain mount precedence. Every new array key must
+# explicitly choose its semantics; an omission fails before digest generation.
+declare -A DIGEST_ARRAY_MODES=(
+    [EGRESS_ALLOW]=set
+    [READONLY_PATHS]=ordered
 )
+
+validate_digest_api_mapping() {
+    local key
+    public_api_validate_mapping 'digest array modes' CONFIG_ARRAY_KEYS DIGEST_ARRAY_MODES
+    for key in "${CONFIG_ARRAY_KEYS[@]}"; do
+        [[ "${DIGEST_ARRAY_MODES[$key]}" =~ ^(set|ordered)$ ]] || public_api_error "invalid digest array mode for '$key'"
+    done
+}
 
 CONFIG_DIGEST=""
 CONFIG_DIGEST_LABEL_ARGS=()
@@ -50,13 +57,8 @@ config_digest_assert_field() {
 }
 
 config_digest_is_set_array_key() {
-    local key candidate
-
-    key="$1"
-    for candidate in "${DIGEST_SET_ARRAY_KEYS[@]}"; do
-        [ "$candidate" = "$key" ] && return 0
-    done
-    return 1
+    is_config_array_key "$1" || public_api_error "unknown digest array '$1'"
+    [[ "${DIGEST_ARRAY_MODES[$1]-}" = set ]]
 }
 
 # Print one array key's members in serialization order, one per line. Members
@@ -124,6 +126,7 @@ config_digest_stream() {
     local mode version key value item members_text
     local -a items=()
 
+    validate_digest_api_mapping
     mode="$1"
     version=$(jailbox_version) || return 1
     config_digest_assert_field "the jailbox version" "$version"

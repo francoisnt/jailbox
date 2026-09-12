@@ -26,11 +26,30 @@ MY_UID=""
 MANAGED_USER="jailbox"
 REMOTE_PATH="/home/jailbox/project"
 
+# Each handler owns its setup and behavior. Membership comes from public-api.sh;
+# validate_cli_implementation rejects missing or undeclared handlers.
+declare -A CLI_COMMAND_HANDLERS=(
+    [init]=run_init [up]=run_up [stop]=run_stop
+    [doctor]=run_doctor [ssh-config]=run_ssh_config [--clean]=run_clean
+    [--uninstall]=run_uninstall [--version]=run_version [--help]=usage
+)
+declare -A CLI_OPTION_TARGETS=([--config]=CONFIG_PATH_ARG)
+
 usage() {
-    local flag
+    local flag synopsis="" separator=""
+
+    for flag in "${CLI_FLAGS_WITH_VALUES[@]}"; do
+        synopsis+="[$flag ${CLI_VALUE_NAMES[$flag]}] "
+    done
+    synopsis+='['
+    for flag in "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
+        synopsis+="$separator$flag"
+        separator='|'
+    done
+    synopsis+=']'
 
     cat <<EOF_USAGE
-Usage: $(basename "$0") [--config PATH] [init|up|stop|doctor|ssh-config|--clean|--uninstall|--version|--help]
+Usage: $(basename "$0") $synopsis
 
 Launch this project inside a hardened jailbox container.
 
@@ -38,34 +57,15 @@ Options:
 EOF_USAGE
 
     for flag in "${CLI_FLAGS_WITH_VALUES[@]}"; do
-        printf '  %-14s %s\n' "$flag PATH" "$(cli_flag_help "$flag")"
+        printf '  %-14s %s\n' "$flag ${CLI_VALUE_NAMES[$flag]}" "$(cli_flag_help "$flag")"
     done
     for flag in "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
         printf '  %-14s %s\n' "$flag" "$(cli_flag_help "$flag")"
     done
 }
 
-command_starts_sandbox() {
-    [ -z "${1:-}" ] || [ "${1:-}" = up ]
-}
-
-command_launches_editor() {
-    [ -z "${1:-}" ]
-}
-
 command_requires_config() {
-    command_starts_sandbox "${1:-}"
-}
-
-# Commands that consume effective configuration. Besides the launch commands,
-# ssh-config stays a consumer for now: its proxy SetEnv output depends on
-# EGRESS_ALLOW until connection-info supersedes it. stop, doctor, --clean,
-# init, --help, and --uninstall never read configuration.
-command_consumes_config() {
-    case "${1:-}" in
-        ""|up|ssh-config) return 0 ;;
-        *) return 1 ;;
-    esac
+    [ -z "${1:-}" ] || [ "${1:-}" = up ]
 }
 
 init_project_config() (
@@ -672,11 +672,8 @@ validate_machine_config() {
 
 validate_editor_config() {
     case "$EDITOR" in
-        ""|codium|code)
-            ;;
-        *)
-            die "invalid EDITOR '$EDITOR' (use 'codium' or 'code')"
-            ;;
+        ""|codium|code) ;;
+        *) die "invalid EDITOR '$EDITOR' (use 'codium' or 'code')" ;;
     esac
 }
 

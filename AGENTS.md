@@ -25,6 +25,13 @@ them as speculative productization or complexity without a consumer.
 - `.github/workflows/test-gates.yml`: reusable definition of the four CI gates.
 - `host/public-api.sh`: canonical public configuration keys and CLI flags.
 
+Commands, flags, and configuration-key membership must come from
+`host/public-api.sh`. Derive consuming lists from those declarations. Where a
+consumer needs per-member behavior or metadata, validate that its mapping covers
+every applicable declaration exactly; missing mappings must fail explicitly.
+Keep regression tests proving that new declarations propagate or fail for a
+missing mapping, rather than silently falling through or losing coverage.
+
 Keep host orchestration in `host/`, container behavior in `container/`,
 maintenance tooling in `scripts/`, and test code in `tests/`.
 

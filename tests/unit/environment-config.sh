@@ -442,25 +442,6 @@ test_file_editor_stays_frontend() {
     rm -rf "$dir"
 }
 
-test_command_classes() {
-    local command
-
-    for command in "" up ssh-config; do
-        if command_consumes_config "$command"; then
-            pass "'${command:-<bare launch>}' consumes configuration"
-        else
-            fail "'${command:-<bare launch>}' consumes configuration"
-        fi
-    done
-    for command in stop doctor init --clean --help --uninstall --version; do
-        if command_consumes_config "$command"; then
-            fail "'$command' does not consume configuration"
-        else
-            pass "'$command' does not consume configuration"
-        fi
-    done
-}
-
 test_declaration_integrity() {
     if (
         CONFIG_SCALAR_KEYS+=(EGRESS_ALLOW)
@@ -532,7 +513,6 @@ main() {
     test_adapter_equivalence
     test_unexported_not_interface
     test_file_editor_stays_frontend
-    test_command_classes
     test_declaration_integrity
 
     echo ""

@@ -24,6 +24,18 @@ commands stay under `scripts/`, and test suites stay under `tests/`.
 
 `host/public-api.sh` declares the public config keys and CLI flags; changes
 to it drive release version suggestions (see `scripts/release.sh --help`).
+Help, parsing, configuration assignment, digest membership, and lifecycle command
+selection derive their lists from these declarations. Command handlers, option
+targets, defaults, digest array ordering, and lifecycle scope
+must provide complete mappings; omissions fail explicitly. The portable gate
+checks these contracts and README configuration-key coverage. After changing
+command help or membership, run `bash scripts/gen-public-api.sh --write` to
+refresh the generated command reference.
+
+Use `public_api_validate_mapping LABEL DECLARATIONS MAPPING` for completeness
+checks. It accepts associative maps or arrays of `KEY=value` records, rejects
+missing/unknown/duplicate names and empty values, and accepts `allow-empty` as
+the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 ## Linting and tests
 

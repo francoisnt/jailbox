@@ -314,7 +314,7 @@ assert_cleanup() {
 run_row() {
     local key="$1" mode="$2" policy="$3" requested="$4" up="$5" status="$6" diagnosis="$7" attach="$8" recovery="$9" retained="${10}" stopped="${11}" command
     local dev_id proxy_id generation_present extra_present
-    for command in up stop --clean; do
+    for command in "${LIFECYCLE_COMMANDS[@]}"; do
         matrix_case_begin "$key.$command"
         construct "$key" "$mode" "$policy" "$requested"
         if exists volume "$HOME_VOLUME"; then

@@ -1,4 +1,28 @@
 #!/bin/bash
+# shellcheck source=host/public-api.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/host/public-api.sh"
+
+# Explicitly classify every public token. New commands cannot silently miss the
+# lifecycle matrix; unrelated interfaces carry their reason for exclusion.
+declare -A LIFECYCLE_COMMAND_SCOPE=(
+    [up]=matrix [stop]=matrix [--clean]=matrix
+    [init]=project-initialization [doctor]=editor-diagnostics
+    [ssh-config]=editor-instructions [--uninstall]=installation
+    [--version]=metadata [--help]=metadata [--config]=configuration-selection
+)
+LIFECYCLE_COMMANDS=()
+initialize_lifecycle_commands() {
+    local command
+    # shellcheck disable=SC2034 # Passed by name to the mapping validator.
+    local -a declarations=("${CLI_FLAGS_WITH_VALUES[@]}" "${CLI_FLAGS_WITHOUT_VALUES[@]}")
+    public_api_validate_mapping 'lifecycle command scope' declarations LIFECYCLE_COMMAND_SCOPE
+    LIFECYCLE_COMMANDS=()
+    for command in "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
+        [[ "${LIFECYCLE_COMMAND_SCOPE[$command]}" != matrix ]] || LIFECYCLE_COMMANDS+=("$command")
+    done
+}
+initialize_lifecycle_commands
+
 # A row is one job (three independent command fixtures). Each fault job keeps
 # its healthy trace and every interruption in one worker's project identity.
 lifecycle_jobs() {
@@ -6,7 +30,7 @@ lifecycle_jobs() {
     while IFS= read -r row; do
         printf 'row.%s|row|%s\n' "${row%%|*}" "$row"
     done < <(lifecycle_matrix_rows)
-    for command in up stop --clean; do
+    for command in "${LIFECYCLE_COMMANDS[@]}"; do
         for policy in false true; do
             if [[ "$command:$policy" = up:true ]]; then continue; fi
             printf 'fault.%s.%s|fault|%s|%s\n' "$command" "$policy" "$command" "$policy"
@@ -37,9 +61,9 @@ lifecycle_order_jobs() {
 lifecycle_fixed_cases() {
     local row command policy missing baseline
     while IFS='|' read -r row _; do
-        for command in up stop --clean; do printf '%s.%s\n' "$row" "$command"; done
+        for command in "${LIFECYCLE_COMMANDS[@]}"; do printf '%s.%s\n' "$row" "$command"; done
     done < <(lifecycle_matrix_rows)
-    for command in up stop --clean; do
+    for command in "${LIFECYCLE_COMMANDS[@]}"; do
         for policy in false true; do
             [[ "$command:$policy" != up:true ]] || continue
             printf 'trace.%s.%s\n' "$command" "$policy"
@@ -48,7 +72,7 @@ lifecycle_fixed_cases() {
     printf '%s\n' trace.up.none trace.up.new-ephemeral failed-new-container-cleanup
     for policy in false true; do
         for missing in false true; do printf 'failed-resume.%s.missing-proxy-%s\n' "$policy" "$missing"; done
-        for command in up stop --clean; do printf 'home-inspection.%s.%s\n' "$policy" "$command"; done
+        for command in "${LIFECYCLE_COMMANDS[@]}"; do printf 'home-inspection.%s.%s\n' "$policy" "$command"; done
     done
     for baseline in networks-only missing-dev; do printf 'failed-create.%s\n' "$baseline"; done
 }
