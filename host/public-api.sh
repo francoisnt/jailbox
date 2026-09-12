@@ -89,6 +89,8 @@ CLI_HELP=(
     "--help=Show this help"
 )
 
+# Derived from the command categories during lookup initialization.
+CLI_FLAGS_WITHOUT_VALUES=()
 declare -A CONFIG_SCALAR_KEY_SET=()
 declare -A CONFIG_ARRAY_KEY_SET=()
 declare -A FRONTEND_SCALAR_KEY_SET=()
@@ -98,6 +100,7 @@ declare -A CLI_HELP_BY_FLAG=()
 initialize_public_api_lookups() {
     local key entry
 
+    CLI_FLAGS_WITHOUT_VALUES=("${CLI_LIFECYCLE_COMMANDS[@]}" "${CLI_OTHER_COMMANDS[@]}")
     validate_public_api_declaration
     CONFIG_SCALAR_KEY_SET=()
     CONFIG_ARRAY_KEY_SET=()
@@ -178,7 +181,6 @@ apply_config_defaults() {
 # declared machine keys, and no declared key spells another array key's
 # indexed member. Runs before configuration is interpreted.
 validate_public_api_declaration() {
-    CLI_FLAGS_WITHOUT_VALUES=("${CLI_LIFECYCLE_COMMANDS[@]}" "${CLI_OTHER_COMMANDS[@]}")
     local key other suffix
     local -A machine_keys=()
     # shellcheck disable=SC2034 # Consumed through a nameref.

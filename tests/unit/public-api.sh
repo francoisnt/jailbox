@@ -56,7 +56,7 @@ test_mapping_forms() {
 }
 test_mapping_forms
 
-missing_help() { CLI_OTHER_COMMANDS+=(sample); validate_public_api_declaration; }
+missing_help() { CLI_OTHER_COMMANDS+=(sample); initialize_public_api_lookups; }
 expect_failure "CLI help: missing mapping 'sample'" missing_help
 missing_default() { FRONTEND_SCALAR_KEYS+=(SAMPLE); validate_public_api_declaration; }
 expect_failure "frontend defaults: missing mapping 'SAMPLE'" missing_default
@@ -75,7 +75,7 @@ missing_handler_mapping() {
     public_api_validate_mapping 'command handlers' CLI_FLAGS_WITHOUT_VALUES CLI_COMMAND_HANDLERS
 }
 expect_failure "command handlers: missing mapping 'sample'" missing_handler_mapping
-duplicate_category() { CLI_OTHER_COMMANDS+=(up); validate_public_api_declaration; }
+duplicate_category() { CLI_OTHER_COMMANDS+=(up); initialize_public_api_lookups; }
 expect_failure "duplicate declaration 'up'" duplicate_category
 missing_option() {
     CLI_FLAGS_WITH_VALUES+=(--sample)

@@ -4,9 +4,10 @@
 # For each stage: creates a temporary VS Code/VSCodium workspace fixture,
 # launches the workspace through jailbox, waits for an editor window to attach
 # to the Remote SSH server, runs the validation probe through the generated
-# SSH target, and verifies the proof file from the host. Then installs the
-# proof extension (fixtures/proof-extension/) into the remote editor server
-# and verifies the remote extension host activates it and executes a shell
+# SSH target, and verifies the proof file from the host. Then closes the
+# bootstrap editor, installs the proof extension (fixtures/proof-extension/)
+# into the remote server, and opens a fresh validation window. It verifies
+# the remote extension host activates the extension and executes a shell
 # task in the mounted workspace with exit code 0 — i.e. a user opening their
 # repo through jailbox gets an operational editor. The task is taken from
 # .vscode/tasks.json when the editor discovers it in time, otherwise defined
@@ -541,6 +542,7 @@ cleanup_editor_workspace() {
 
     user_data=$(jailbox_editor_user_data "$project_dir")
 
+    [[ -n "$(editor_profile_pids "$user_data")" ]] || return 0
     close_editor_workspace "$project_dir" "$ctr"
 
     deadline=$((SECONDS + 10))
@@ -552,32 +554,45 @@ cleanup_editor_workspace() {
     terminate_editor_profile "$project_dir"
 }
 
-wait_for_remote_editor_ready() {
-    local project_dir="$1"
-    local ctr="$2"
-    local timeout="${3:-$EDITOR_TIMEOUT}"
-    local ssh_cfg deadline
-
+remote_editor_connections() {
+    local project_dir="$1" ctr="$2" ssh_cfg
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
-    deadline=$((SECONDS + timeout))
-    while (( SECONDS < deadline )); do
-        # "Launched Extension Host Process" is logged only once an editor
-        # window has attached to the remote server; "Extension host agent
-        # started" merely means the server booted, with no window connected.
-        # Current VS Code stores server logs under
-        # .vscode-server/cli/servers/Stable-*/server/..., while older
-        # VS Code/VSCodium builds used .*-server/bin/*/*.log.
-        if ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' <<'REMOTE' 2>/dev/null
+    # Preserve connection IDs and process IDs. The depth covers current
+    # .vscode-server/cli/servers/Stable-*/server/... and data/logs/<session>/...,
+    # plus older .*-server/bin/*/*.log layouts.
+    # A server boot alone is not evidence that a window attached.
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' <<'REMOTE' 2>/dev/null
+set -euo pipefail
 for root in "$HOME/.vscodium-server" "$HOME/.vscode-server"; do
     [ -d "$root" ] || continue
-    if find "$root" -maxdepth 8 -type f \( -name '*.log' -o -name 'log.txt' \) -exec grep -q 'Launched Extension Host Process' {} \; -print -quit |
-        grep -q .; then
-        exit 0
-    fi
+    find "$root" -maxdepth 8 -type f \( -name '*.log' -o -name 'log.txt' \) \
+        -exec awk '/Launched Extension Host Process/' {} +
 done
-exit 1
 REMOTE
-        then
+}
+
+snapshot_remote_editor_connections() {
+    local project_dir="$1" ctr="$2" connections deadline=$((SECONDS + 10))
+    while (( SECONDS < deadline )); do
+        if connections=$(remote_editor_connections "$project_dir" "$ctr") && [[ -n "$connections" ]]; then
+            printf '%s\n' "$connections"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "  Could not snapshot bootstrap editor connections before launch (10s retry window)" >&2
+    return 1
+}
+
+wait_for_remote_editor_ready() {
+    local project_dir="$1" ctr="$2" timeout="${3:-$EDITOR_TIMEOUT}"
+    local baseline="${4:-}" connections deadline
+
+    deadline=$((SECONDS + timeout))
+    while (( SECONDS < deadline )); do
+        if connections=$(remote_editor_connections "$project_dir" "$ctr") &&
+            [[ -n "$connections" ]] &&
+            grep -Fvx -f <(printf '%s\n' "$baseline") <<< "$connections" >/dev/null; then
             return 0
         fi
         sleep 1
@@ -670,36 +685,38 @@ done
 REMOTE
 }
 
-# The running extension host predates the install, so reload the window until
-# the extension's activation marker appears in the workspace. The reload
-# command is fire-and-forget CLI IPC, but unlike the old task trigger it
-# targets an always-registered core command and we retry against a hard
-# acknowledgment (the marker file), so dropped deliveries self-heal.
+# Open a fresh window after installation so its extension host discovers the
+# proof extension at startup, without relying on file watchers or reload IPC.
 activate_proof_extension() {
     local project_dir="$1"
     local ctr="$2"
-    local bin user_data marker deadline last_reload
+    local bin user_data marker deadline baseline
 
     bin=$(editor_bin) || return 1
     user_data=$(jailbox_editor_user_data "$project_dir")
     marker="$project_dir/$EXT_ACTIVATION_MARKER"
+    baseline=$(snapshot_remote_editor_connections "$project_dir" "$ctr") || return 1
+    "$bin" --user-data-dir "$user_data" \
+        --new-window \
+        --remote "ssh-remote+$ctr" \
+        /home/jailbox/project >/dev/null 2>&1 || return 1
+    echo "  Waiting up to ${EDITOR_TIMEOUT}s for the fresh window to attach..."
+    wait_for_remote_editor_ready "$project_dir" "$ctr" "$EDITOR_TIMEOUT" "$baseline" || {
+        echo "  Fresh editor window did not attach before the deadline" >&2
+        return 1
+    }
+    echo "  Fresh window attached; waiting up to ${EDITOR_TIMEOUT}s for proof extension activation..."
     deadline=$((SECONDS + EDITOR_TIMEOUT))
-    last_reload=-10
 
     while (( SECONDS < deadline )); do
         [[ -f "$marker" ]] && return 0
-        if (( SECONDS - last_reload >= 5 )); then
-            "$bin" --user-data-dir "$user_data" \
-                --reuse-window \
-                --remote "ssh-remote+$ctr" \
-                /home/jailbox/project \
-                --command workbench.action.reloadWindow >/dev/null 2>&1 || true
-            last_reload=$SECONDS
-        fi
         sleep 1
     done
 
-    [[ -f "$marker" ]]
+    [[ -f "$marker" ]] || {
+        echo "  Fresh window attached, but the proof extension did not activate before the deadline" >&2
+        return 1
+    }
 }
 
 wait_for_task_result() {
@@ -1022,6 +1039,8 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
+        echo "  Closing bootstrap editor before installing the proof extension..."
+        cleanup_editor_workspace "$project_dir" "$ctr"
         echo "  Installing proof extension into remote editor server..."
         if install_proof_extension "$project_dir" "$ctr"; then
             pass "proof extension installed in remote editor server"
@@ -1032,7 +1051,7 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
-        echo "  Reloading editor window until proof extension activates (up to ${EDITOR_TIMEOUT}s)..."
+        echo "  Opening a fresh validation window..."
         if activate_proof_extension "$project_dir" "$ctr"; then
             pass "proof extension activated in remote extension host"
         else

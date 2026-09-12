@@ -109,9 +109,8 @@ async function activate() {
         `activated_utc=${new Date().toISOString()}`,
     ]);
 
-    // The test reloads the window to activate this extension, and a late
-    // reload can re-activate it; don't re-run the task once a full result
-    // from a previous activation exists.
+    // A later activation can revisit this workspace; don't re-run the task
+    // once a full result from a previous activation exists.
     if (fs.existsSync(path.join(root, TASK_RESULT))) {
         return;
     }

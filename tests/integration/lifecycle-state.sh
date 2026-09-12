@@ -17,7 +17,7 @@ if [[ -n ${JAILBOX_LIFECYCLE_JOBS:-} ]]; then
     WORKERS=$JAILBOX_LIFECYCLE_JOBS
     WORKER_SELECTION="explicit override"
 else
-    IFS="|" read -r AVAILABLE_CPUS AVAILABLE_MEMORY < <(lifecycle_worker_resources)
+    IFS="|" read -r AVAILABLE_CPUS AVAILABLE_MEMORY < <(lifecycle_worker_resources /proc /sys/fs/cgroup)
     WORKERS=$(lifecycle_worker_budget "$AVAILABLE_CPUS" "$AVAILABLE_MEMORY")
     WORKER_SELECTION="auto: $AVAILABLE_CPUS CPUs, $((AVAILABLE_MEMORY / 1024)) MiB available; budget 2 CPUs + 2048 MiB per worker, reserve 1024 MiB"
 fi

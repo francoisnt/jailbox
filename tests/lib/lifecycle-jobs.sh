@@ -180,7 +180,7 @@ lifecycle_progress() {
 # process CPU affinity and visible cgroup-v2 ancestors, including containers
 # whose cgroup namespace exposes their own limits at the mount root.
 lifecycle_worker_resources() {
-    local proc=${1:-/proc} cgroup=${2:-/sys/fs/cgroup} cpus=${3:-}
+    local proc=$1 cgroup=$2 cpus=${3:-}
     local memory relative directory quota period limit used available
     if [[ -z "$cpus" ]]; then cpus=$(nproc 2>/dev/null) || cpus=1; fi
     [[ "$cpus" =~ ^[1-9][0-9]{0,5}$ ]] || cpus=1

@@ -21,7 +21,7 @@ test_log_entrypoint() {
     shift
     [[ ${JAILBOX_TEST_LOG_SCRIPT:-} != "$script" ]] || return 0
     local result=0
-    JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 | test_timestamp_stream | test_display_stream || result=$?
+    JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 | test_timestamp_stream | test_display_stream "" || result=$?
     exit "$result"
 }
 
