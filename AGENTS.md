@@ -31,6 +31,9 @@ consumer needs per-member behavior or metadata, validate that its mapping covers
 every applicable declaration exactly; missing mappings must fail explicitly.
 Keep regression tests proving that new declarations propagate or fail for a
 missing mapping, rather than silently falling through or losing coverage.
+Declare commands that manage sandbox containers, networks, and home state in
+`CLI_LIFECYCLE_COMMANDS`; declare other commands in `CLI_OTHER_COMMANDS`.
+Derive lifecycle test membership directly from that public category.
 
 Keep host orchestration in `host/`, container behavior in `container/`,
 maintenance tooling in `scripts/`, and test code in `tests/`.

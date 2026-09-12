@@ -622,7 +622,7 @@ test_stop_documented_in_help() {
     project="$PROJECT"
     output=$(run_jailbox "$project" --help)
     case "$output" in
-        *"Usage:"*"[init|up|stop|doctor|"*) pass "stop appears in the literal usage synopsis" ;;
+        *"Usage:"*"|stop|"*) pass "stop appears in the literal usage synopsis" ;;
         *) fail "stop appears in the literal usage synopsis (got: $output)" ;;
     esac
     case "$output" in
@@ -642,7 +642,7 @@ test_up_documented_in_help() {
     project="$PROJECT"
     output=$(run_jailbox "$project" --help)
     case "$output" in
-        *"Usage:"*"[init|up|stop|doctor|"*) pass "up appears in the literal usage synopsis" ;;
+        *"Usage:"*"[up|"*) pass "up appears in the literal usage synopsis" ;;
         *) fail "up appears in the literal usage synopsis (got: $output)" ;;
     esac
     case "$output" in

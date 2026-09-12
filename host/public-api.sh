@@ -58,13 +58,19 @@ CLI_FLAGS_WITH_VALUES=(
 )
 declare -A CLI_VALUE_NAMES=([--config]=PATH)
 
-CLI_FLAGS_WITHOUT_VALUES=(
-    init
+# Commands that manage sandbox containers, networks, and home state. The bare
+# editor launch uses up's lifecycle behavior. Project initialization and host
+# installation management belong to the other command category.
+CLI_LIFECYCLE_COMMANDS=(
     up
     stop
+    --clean
+)
+
+CLI_OTHER_COMMANDS=(
+    init
     doctor
     ssh-config
-    --clean
     --uninstall
     --version
     --help
@@ -172,6 +178,7 @@ apply_config_defaults() {
 # declared machine keys, and no declared key spells another array key's
 # indexed member. Runs before configuration is interpreted.
 validate_public_api_declaration() {
+    CLI_FLAGS_WITHOUT_VALUES=("${CLI_LIFECYCLE_COMMANDS[@]}" "${CLI_OTHER_COMMANDS[@]}")
     local key other suffix
     local -A machine_keys=()
     # shellcheck disable=SC2034 # Consumed through a nameref.

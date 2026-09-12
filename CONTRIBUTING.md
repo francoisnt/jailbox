@@ -26,11 +26,14 @@ commands stay under `scripts/`, and test suites stay under `tests/`.
 to it drive release version suggestions (see `scripts/release.sh --help`).
 Help, parsing, configuration assignment, digest membership, and lifecycle command
 selection derive their lists from these declarations. Command handlers, option
-targets, defaults, digest array ordering, and lifecycle scope
+targets, defaults, and digest array ordering
 must provide complete mappings; omissions fail explicitly. The portable gate
 checks these contracts and README configuration-key coverage. After changing
 command help or membership, run `bash scripts/gen-public-api.sh --write` to
 refresh the generated command reference.
+Declare sandbox lifecycle commands in `CLI_LIFECYCLE_COMMANDS` and other
+commands in `CLI_OTHER_COMMANDS`; the lifecycle matrix consumes the former
+directly. These describe command responsibilities, not dispatch sequences.
 
 Use `public_api_validate_mapping LABEL DECLARATIONS MAPPING` for completeness
 checks. It accepts associative maps or arrays of `KEY=value` records, rejects

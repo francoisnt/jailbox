@@ -293,7 +293,7 @@ run_existing_dependency_failure() {
 run_home_inspection_failure() {
     local policy command retained
     for policy in false true; do
-        for command in "${LIFECYCLE_COMMANDS[@]}"; do
+        for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
             matrix_case_begin "home-inspection.$policy.$command"
             construct running egress "$policy" "$policy"
             snapshot > "$LOG/inspection-before"

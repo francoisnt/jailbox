@@ -182,7 +182,7 @@ complete_job() {
     local kind="$1" key
     shift
     case "$kind" in
-        row) for key in "${LIFECYCLE_COMMANDS[@]}"; do printf '%s.%s\n' "$1" "$key"; done ;;
+        row) for key in "${CLI_LIFECYCLE_COMMANDS[@]}"; do printf '%s.%s\n' "$1" "$key"; done ;;
         fault)
             printf 'trace.%s.%s\n' "$1" "$2"
             printf 'mkdir /fixture/state\n' > "$log/trace"

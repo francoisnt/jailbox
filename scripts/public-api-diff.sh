@@ -39,7 +39,16 @@ public_api_values() {
 }
 
 cli_api_values() {
-    local ref="$1" split_values
+    local ref="$1" split_values categorized
+
+    categorized="$({
+        public_api_values "$ref" "CLI_LIFECYCLE_COMMANDS"
+        public_api_values "$ref" "CLI_OTHER_COMMANDS"
+    } | sort -u)"
+    if [ -n "$categorized" ]; then
+        { printf '%s\n' "$categorized"; public_api_values "$ref" "CLI_FLAGS_WITH_VALUES"; } | sort -u
+        return
+    fi
 
     split_values="$({
         public_api_values "$ref" "CLI_FLAGS_WITH_VALUES"

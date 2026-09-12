@@ -56,7 +56,7 @@ test_mapping_forms() {
 }
 test_mapping_forms
 
-missing_help() { CLI_FLAGS_WITHOUT_VALUES+=(sample); validate_public_api_declaration; }
+missing_help() { CLI_OTHER_COMMANDS+=(sample); validate_public_api_declaration; }
 expect_failure "CLI help: missing mapping 'sample'" missing_help
 missing_default() { FRONTEND_SCALAR_KEYS+=(SAMPLE); validate_public_api_declaration; }
 expect_failure "frontend defaults: missing mapping 'SAMPLE'" missing_default
@@ -66,7 +66,7 @@ unknown_help() { CLI_HELP+=("sample=unknown"); validate_public_api_declaration; 
 expect_failure "CLI help: undeclared mapping 'sample'" unknown_help
 
 add_command() {
-    CLI_FLAGS_WITHOUT_VALUES+=(sample)
+    CLI_LIFECYCLE_COMMANDS+=(sample)
     CLI_HELP+=("sample=Sample command")
     initialize_public_api_lookups
 }
@@ -75,8 +75,8 @@ missing_handler_mapping() {
     public_api_validate_mapping 'command handlers' CLI_FLAGS_WITHOUT_VALUES CLI_COMMAND_HANDLERS
 }
 expect_failure "command handlers: missing mapping 'sample'" missing_handler_mapping
-missing_scope() { add_command; initialize_lifecycle_commands; }
-expect_failure "lifecycle command scope: missing mapping 'sample'" missing_scope
+duplicate_category() { CLI_OTHER_COMMANDS+=(up); validate_public_api_declaration; }
+expect_failure "duplicate declaration 'up'" duplicate_category
 missing_option() {
     CLI_FLAGS_WITH_VALUES+=(--sample)
     CLI_HELP+=("--sample=Sample option")
@@ -98,15 +98,21 @@ expect_failure "README configuration keys: missing mapping 'SAMPLE'" missing_doc
 (
     add_command
     CLI_COMMAND_HANDLERS[sample]='usage'
-    LIFECYCLE_COMMAND_SCOPE[sample]=matrix
     public_api_validate_mapping 'command handlers' CLI_FLAGS_WITHOUT_VALUES CLI_COMMAND_HANDLERS
-    initialize_lifecycle_commands
     is_cli_flag_allowed sample
     usage > "$tmp/help"
-    grep -Fq '|sample]' "$tmp/help"
+    grep -Eq '(\[|\|)sample(\||\])' "$tmp/help"
     grep -Fq 'Sample command' "$tmp/help"
     lifecycle_fixed_cases > "$tmp/cases"
     grep -Fxq 'absent.sample' "$tmp/cases"
+)
+(
+    CLI_OTHER_COMMANDS+=(sample)
+    CLI_HELP+=("sample=Sample command")
+    initialize_public_api_lookups
+    is_cli_flag_allowed sample
+    lifecycle_fixed_cases > "$tmp/cases"
+    if grep -Fq '.sample' "$tmp/cases"; then fail 'non-lifecycle command entered matrix'; fi
 )
 (
     CONFIG_ARRAY_KEYS+=(SAMPLE)
@@ -127,7 +133,7 @@ mkdir "$tmp/cli"
 cp "$ROOT/jailbox" "$tmp/cli/jailbox"
 cp -R "$ROOT/host" "$tmp/cli/host"
 cat >> "$tmp/cli/host/public-api.sh" <<'API'
-CLI_FLAGS_WITHOUT_VALUES+=(sample)
+CLI_OTHER_COMMANDS+=(sample)
 CLI_HELP+=("sample=Sample command")
 initialize_public_api_lookups
 API

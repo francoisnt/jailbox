@@ -53,7 +53,7 @@ assert_result "unchanged public API detected" unchanged
 insert_after_line 'CONFIG_SCALAR_KEYS=(' '    TEST_CONFIG'
 assert_result "added configuration detected" added
 git -C "$FIXTURE" checkout -q -- host/public-api.sh
-insert_after_line 'CLI_FLAGS_WITHOUT_VALUES=(' '    test-command'
+insert_after_line 'CLI_OTHER_COMMANDS=(' '    test-command'
 assert_result "added CLI declaration detected" added
 git -C "$FIXTURE" checkout -q -- host/public-api.sh
 delete_line '    DEV_IMAGE'
