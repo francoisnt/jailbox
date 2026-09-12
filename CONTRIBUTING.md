@@ -36,20 +36,21 @@ Bash 3.2-parseable through its version guard, and `install.sh` remains Bash
 tests/run            # Every gate in order
 tests/run portable   # ShellCheck, unit tests, packaging, and installer lifecycle
 tests/run runtime    # Container security and headless CLI behavior (Podman)
+tests/run matrix     # Full lifecycle state and interruption matrix (Linux + Podman)
 tests/run editor     # Real Remote SSH editor behavior (Podman + GUI/xvfb)
 ```
 
-The three gates are independent, self-contained quality gates. Naming no gate
-runs all three in order and stops at the first failing suite; it checks every
+The four gates are independent, self-contained quality gates. Naming no gate
+runs all four in order and stops at the first failing suite; it checks every
 gate's prerequisites before the first suite, so a missing Podman or editor
 fails immediately rather than after the portable gate. Pull requests must pass
-the portable and runtime gates; releases also require the editor gate. Run
+the portable, runtime and matrix gates; releases also require the editor gate. Run
 `tests/run portable` before sending a change, plus `tests/run runtime` when
 Podman is available.
 
-The full lifecycle matrix runs in release and canary CI; PRs run the remaining
-runtime suites. To include it locally, run
-`tests/run runtime-full`. This enables
+The full lifecycle matrix runs independently in PR, release and canary CI.
+Run it locally with `tests/run matrix`; it prepares only the required Debian
+images before running
 `tests/integration/lifecycle-state.sh`, a Linux constructed-state matrix using
 the Debian test image and `setsid` for isolated command groups. It covers
 damaged resources, refusal non-mutation, interrupted launch/cleanup, dependency-safe rollback, and actual recovery. Cases live in

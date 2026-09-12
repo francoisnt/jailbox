@@ -679,7 +679,7 @@ either entry path. Overrides apply only to their release request.
 
 Release requests use ephemeral `release-request`, `release-request-first-major`,
 or `release-request-bump-{patch,minor,major}` tags. They never participate in
-version-tag discovery. CI runs all three release gates, then builds and
+version-tag discovery. CI runs all four release gates, then builds and
 validates the final archive's stamp and `--version` output against the selected
 version before creating the release tag. It publishes those same validated
 archive bytes, the identical `latest` alias, and their checksums.

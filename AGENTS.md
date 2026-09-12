@@ -22,7 +22,7 @@ them as speculative productization or complexity without a consumer.
 - `container/`: wrapper/proxy image files and container-side scripts.
 - `scripts/`: repository, release, and generated-file tooling.
 - `tests/`: unit, distribution, runtime, and editor tests.
-- `.github/workflows/test-gates.yml`: reusable definition of the three CI gates.
+- `.github/workflows/test-gates.yml`: reusable definition of the four CI gates.
 - `host/public-api.sh`: canonical public configuration keys and CLI flags.
 
 Keep host orchestration in `host/`, container behavior in `container/`,
@@ -110,18 +110,20 @@ at the lowest useful layer and ensure the README threat model stays accurate.
 
 ## Test gates
 
-There are three primary test gates:
+There are four primary test gates:
 
 ```bash
 tests/run portable
 tests/run runtime
+tests/run matrix
 tests/run editor
 ```
 
-`tests/run runtime-full` selects the runtime gate with the full lifecycle
-state and interruption matrix included. `runtime` runs the shorter suite.
+`matrix` owns the full lifecycle state and interruption matrix. It prepares
+its required images independently; `runtime` owns container security and the
+headless CLI system test.
 
-`tests/run` with no argument runs those same three gates in order and stops at
+`tests/run` with no argument runs those same four gates in order and stops at
 the first failing suite. It validates every selected gate's prerequisites
 before the first suite, so an environment missing Podman, an editor, or a
 display fails immediately instead of after the portable gate.
@@ -130,6 +132,8 @@ display fails immediately instead of after the portable gate.
   syntax checks, release packaging, and the install/update/uninstall lifecycle.
 - `runtime`: wrapper-image/container security assertions and the headless CLI
   system test. Requires Linux and Podman.
+- `matrix`: required Debian image preparation and the full lifecycle state and
+  interruption matrix. Requires Linux, Podman and setsid.
 - `editor`: preparation of the positive wrapper images required by the selected
   editor, followed by real VS Code or VSCodium Remote SSH behavior. The runtime
   gate exclusively owns the editor-independent wrapper/container security
@@ -138,7 +142,8 @@ display fails immediately instead of after the portable gate.
 
 Run `tests/run portable` for every code change. Also run `tests/run runtime`
 for host, container, SSH, mount, network, or lifecycle changes when Podman is
-available. Run `tests/run editor` for editor integration changes. If a required
+available. Run `tests/run matrix` for lifecycle or matrix changes when its
+prerequisites are available. Run `tests/run editor` for editor integration changes. If a required
 gate cannot run in the current environment, state that clearly in the handoff.
 
 Permission-sensitive test fixtures must explicitly set the permissions required
@@ -151,11 +156,9 @@ new test scripts cannot silently escape ShellCheck.
 
 ## Workflows and generated content
 
-- Pull requests use the portable and runtime gates.
-- Releases and canary runs use portable, runtime, and editor gates, using
-  `tests/run runtime-full` to include the full lifecycle matrix. PRs and
-  default local runtime runs omit that matrix; enable it explicitly when
-  validating lifecycle changes.
+- Pull requests use portable, runtime, and matrix gates.
+- Releases and canary runs use all four gates: portable, runtime, matrix, editor.
+  Runtime and matrix are independent jobs with no duplicated assertions.
 - Keep shared gate implementation in `.github/workflows/test-gates.yml`; caller
   workflows should pass inputs instead of duplicating test jobs.
 - Run `scripts/gen-tested-matrix.sh --check` after changing tested versions or
@@ -168,7 +171,11 @@ When `.github/workflows`, the `jailbox` entrypoint, or another protected path
 is mounted read-only, do not bypass that protection. Write the replacement
 beside the original in the repository as `<original-name>.new`, matching the
 original's mode, and tell the user to rename it over the original; the user
-performs that rename, never an agent. Do not leave the replacement in a
+performs that rename, never an agent. If the destination directory is also
+read-only, put `<original-name>.new` at the repository root and state its intended
+destination; the user will move it into place. Use this fallback instead of
+creating a patch solely because adjacent replacements cannot be written.
+Do not leave the replacement in a
 temporary directory outside the tree, and never stage or commit a `.new` file.
 Verify the replacement before handing it over — at minimum a syntax check, and
 the affected gates against a copied tree that already carries the change — and
@@ -183,7 +190,7 @@ it happens.
   rewrites. When restructuring is needed, move existing text with minimal
   rewording and limit other edits to what the requested change requires.
 - The current machine-boundary series is one release unit: no release occurs
-  until all its plans are implemented and all three test gates pass. Work may
+  until all its plans are implemented and all four test gates pass. Work may
   depend on later plans when dependencies and remaining integration are
   explicitly tracked and accounted for, and all test gates continue to pass.
   Do not require temporary compatibility behavior solely for unreleased

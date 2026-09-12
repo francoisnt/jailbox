@@ -35,19 +35,63 @@ cp "$ROOT/tests/lib/logging.sh" "$tmp/tree/tests/lib/"
 printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/podman"
 chmod +x "$tmp/bin/podman"
 cp "$tmp/bin/podman" "$tmp/bin/setsid"
+# The dispatcher fixture models a Linux host even in the macOS portable gate.
+printf '#!/bin/bash\nprintf "Linux\\n"\n' > "$tmp/bin/uname"
+chmod 755 "$tmp/bin/uname"
 for suite in integration/wrapper-images integration/lifecycle-state e2e/headless; do
     # shellcheck disable=SC2016 # Generated fixture expands its own environment.
-    printf '#!/bin/bash\nprintf "%%s\\n" "%s" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/tests/$suite.sh"
+    printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/tests/$suite.sh"
 done
 export SUITE_TRACE="$tmp/suites"
+for option in --help -h; do
+    bash "$tmp/tree/tests/run" "$option" > "$tmp/help"
+    grep -Fxq 'Usage: run [portable|runtime|matrix|editor]' "$tmp/help" || fail 'help usage missing'
+    if grep -q '^\[' "$tmp/help"; then fail 'help contains timestamps'; fi
+    [[ ! -s "$SUITE_TRACE" ]] || fail 'help executed a suite'
+done
+pass 'help prints without timestamps or test execution'
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime > "$tmp/output"
 [[ $(wc -l < "$SUITE_TRACE") -eq 2 ]] || fail 'default runtime suite count'
-if grep -q lifecycle "$SUITE_TRACE"; then fail 'matrix ran without opt-in'; fi
+if grep -q lifecycle "$SUITE_TRACE"; then fail 'matrix assertions overlap runtime'; fi
 : > "$SUITE_TRACE"
-PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime-full > "$tmp/output"
-[[ $(wc -l < "$SUITE_TRACE") -eq 3 ]] || fail 'full runtime suite count'
-grep -Fxq integration/lifecycle-state "$SUITE_TRACE" || fail 'matrix missing with opt-in'
+PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" matrix > "$tmp/output"
+printf 'integration/wrapper-images|--prepare-only debian\nintegration/lifecycle-state|\n' > "$tmp/expected"
+cmp "$tmp/expected" "$SUITE_TRACE" || fail 'matrix must prepare only its images and run its own assertions'
 : > "$SUITE_TRACE"
-if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime-typo > "$tmp/output" 2>&1; then fail 'invalid runtime variant accepted'; fi
+if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime-full > "$tmp/output" 2>&1; then fail 'removed runtime-full alias accepted'; fi
 [[ ! -s "$SUITE_TRACE" ]] || fail 'suite ran before option validation'
-pass 'runtime-full retains standard suites and rejects invalid variants'
+pass 'runtime and matrix own separate assertions; matrix prepares its own images'
+
+# The default dispatch includes every gate once, with matrix before editor.
+mkdir -p "$tmp/tree/scripts" "$tmp/tree/tests/unit" "$tmp/tree/tests/portable"
+for suite in scripts/lint scripts/gen-tested-matrix tests/portable/smoke tests/e2e/editor-smoke; do
+    # shellcheck disable=SC2016 # Generated fixture expands its own environment.
+    printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/$suite.sh"
+done
+cp "$tmp/bin/podman" "$tmp/bin/shellcheck"
+cp "$tmp/bin/podman" "$tmp/bin/code"
+PATH="$tmp/bin:$PATH" DISPLAY=:fixture JAILBOX_EDITOR=code bash "$tmp/tree/tests/run" > "$tmp/output"
+cat > "$tmp/expected" <<'EXPECTED'
+scripts/lint|
+scripts/gen-tested-matrix|--check
+tests/portable/smoke|
+integration/wrapper-images|
+e2e/headless|
+integration/wrapper-images|--prepare-only debian
+integration/lifecycle-state|
+integration/wrapper-images|--prepare-only debian fedora
+tests/e2e/editor-smoke|
+EXPECTED
+cmp "$tmp/expected" "$SUITE_TRACE" || fail 'default gate order or suite ownership'
+: > "$SUITE_TRACE"
+cat > "$tmp/missing-setsid" <<'ENVIRONMENT'
+command() {
+    if [[ "$*" = '-v setsid' ]]; then return 1; fi
+    builtin command "$@"
+}
+ENVIRONMENT
+if PATH="$tmp/bin:$PATH" DISPLAY=:fixture JAILBOX_EDITOR=code BASH_ENV="$tmp/missing-setsid" \
+    bash "$tmp/tree/tests/run" > "$tmp/output" 2>&1; then fail 'missing matrix prerequisite accepted'; fi
+grep -Fq 'setsid is required for the matrix gate' "$tmp/output" || fail 'missing prerequisite diagnosis'
+[[ ! -s "$SUITE_TRACE" ]] || fail 'gate ran before matrix prerequisite validation'
+pass 'all four gates run once in order and prerequisites fail before any suite'

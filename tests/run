@@ -1,14 +1,14 @@
 #!/bin/bash
 # Run jailbox's test gates.
 #
-# Usage: tests/run [portable|runtime|runtime-full|editor]
+# Usage: tests/run [portable|runtime|matrix|editor]
 #
 #   portable  ShellCheck, unit tests, and distribution/install lifecycle
 #   runtime   Container security contract and headless CLI system tests
-#   runtime-full  Runtime tests plus the full lifecycle matrix
+#   matrix    Full lifecycle state and interruption matrix
 #   editor    Real VS Code/VSCodium Remote SSH and task execution
 #
-# Naming no gate runs all three in order. Prerequisites for every selected gate
+# Naming no gate runs all four in order. Prerequisites for every selected gate
 # are checked before any suite runs, so a missing dependency fails immediately
 # instead of after a long gate.
 set -euo pipefail
@@ -17,9 +17,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 # shellcheck source=tests/lib/logging.sh
 source "$SCRIPT_DIR/lib/logging.sh"
-test_log_entrypoint "$SCRIPT_DIR/run" "$@"
 
-ALL_GATES=(portable runtime editor)
+ALL_GATES=(portable runtime matrix editor)
 
 SUITES_PASSED=0
 SUITES_FAILED=0
@@ -116,11 +115,15 @@ require_gate_prerequisites() {
     if gate_selected portable; then
         command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the portable gate"
     fi
-    if gate_selected runtime || gate_selected runtime-full; then
+    if gate_selected runtime; then
         command -v podman >/dev/null 2>&1 || die "podman is required for the runtime gate"
-        if gate_selected runtime-full; then
-            command -v setsid >/dev/null 2>&1 || die "setsid is required for the runtime gate's interruption tests"
-        fi
+    fi
+    if gate_selected matrix; then
+        [[ $(uname -s) = Linux ]] || die "Linux is required for the matrix gate"
+        local tool
+        for tool in podman setsid ssh ssh-keygen git; do
+            command -v "$tool" >/dev/null 2>&1 || die "$tool is required for the matrix gate"
+        done
     fi
     if gate_selected editor; then
         command -v podman >/dev/null 2>&1 || die "podman is required for the editor gate"
@@ -151,14 +154,13 @@ run_gate() {
             run_unit_suites
             run_suite "distribution" bash "$SCRIPT_DIR/portable/smoke.sh"
             ;;
-        runtime|runtime-full)
+        runtime)
             run_suite "container-contract" bash "$SCRIPT_DIR/integration/wrapper-images.sh"
             run_suite "system/headless" bash "$SCRIPT_DIR/e2e/headless.sh"
-            if [[ "$1" = runtime-full ]]; then
-                run_suite "lifecycle-state" bash "$SCRIPT_DIR/integration/lifecycle-state.sh"
-            else
-                echo 'Lifecycle matrix skipped (run tests/run runtime-full to include it).'
-            fi
+            ;;
+        matrix)
+            run_suite "wrapper-image-preparation" bash "$SCRIPT_DIR/integration/wrapper-images.sh" --prepare-only debian
+            run_suite "lifecycle-state" bash "$SCRIPT_DIR/integration/lifecycle-state.sh"
             ;;
         editor)
             # Runtime owns the editor-independent security contract. Prepare only
@@ -177,15 +179,15 @@ run_gate() {
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [portable|runtime|runtime-full|editor]
+Usage: $(basename "$0") [portable|runtime|matrix|editor]
 
 Runs every gate in order when no gate is named.
-Use runtime-full to include the full lifecycle matrix (release and canary CI).
+Runtime and matrix are independent gates; matrix prepares its own required images.
 
 Test gates:
   portable  ShellCheck, all unit tests, release tarball, and install lifecycle
   runtime   Wrapper/container security contract and headless jailbox CLI system tests
-  runtime-full  Runtime tests plus the full lifecycle state and interruption matrix
+  matrix    Full lifecycle state and interruption matrix with required image preparation
   editor    Build test images and verify a real Remote SSH editor session and task
 EOF
 }
@@ -194,14 +196,16 @@ case "$#" in
     0) GATES=("${ALL_GATES[@]}") ;;
     1)
         case "$1" in
-            portable|runtime|runtime-full|editor) GATES=("$1") ;;
+            portable|runtime|matrix|editor) GATES=("$1") ;;
             --help|-h) usage; exit 0 ;;
-            *) die "unknown test gate: $1 (expected portable, runtime, runtime-full, or editor)" ;;
+            *) die "unknown test gate: $1 (expected portable, runtime, matrix, or editor)" ;;
         esac
         ;;
     *) usage >&2; exit 2 ;;
 esac
 
+# Help and argument validation finish before timestamped execution begins.
+test_log_entrypoint "$SCRIPT_DIR/run" "$@"
 require_gate_prerequisites "$@"
 
 FIRST_GATE=true

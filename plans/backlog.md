@@ -297,7 +297,7 @@ resource limits, and effective egress policy for both development and tests.
 Define VM ownership and lifetime, stop/clean semantics, interrupted-operation
 recovery, machine-interface reporting, configuration identity, and explicit
 failure when the requested VM support is unavailable. Preserve project-scoped
-state and validate the existing three gates for both supported execution modes,
+state and validate the existing four gates for both supported execution modes,
 while keeping routine portable test execution independent of the VM.
 
 This enclosure is distinct from the VM-backed OCI runtime investigation below:
