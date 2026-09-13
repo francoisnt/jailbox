@@ -522,7 +522,7 @@ test_launch_reports_missing_podman_first() {
     # a system directory to PATH is not safe here: Podman commonly lives
     # beside sed and the test would accidentally expose the command it is
     # meant to exclude.
-    for tool in bash dirname basename tr cut sha256sum shasum; do
+    for tool in bash dirname basename tr cut sed sha256sum shasum; do
         resolved=$(command -v "$tool" 2>/dev/null) || continue
         ln -sf "$resolved" "$restricted/$tool"
     done
@@ -919,6 +919,8 @@ test_home_recovery() {
     fi
 }
 
+# These fixtures intentionally isolate configuration and project state.
+# shellcheck disable=SC2030
 run_home_function() (
     # Exercise creation/reuse at the owning layer, without a complete fake
     # image build/SSH stack. The CLI refusal cases above test dispatch wiring.
@@ -938,6 +940,28 @@ run_home_function() (
 
 test_home_creation_and_generation() {
     local mode before output status
+
+    (
+        source "$JAILBOX_DIR/host/container-runtime.sh"
+        VOLUME_NAME=test-home EPHEMERAL_HOME=false
+        resolve_present_resources() { local -n result=$1; result=(); }
+        for fault in create inspect chown; do
+            : > "$FIXTURE/home-calls"
+            podman() {
+                printf '%s %s\n' "$1" "$2" >> "$FIXTURE/home-calls"
+                case "$fault:$1 $2" in
+                    'create:volume create'|'inspect:volume inspect'|'chown:unshare chown') return 42 ;;
+                esac
+                [[ "$1 $2" != 'volume inspect' ]] || printf '/home-volume\n'
+            }
+            if ensure_home_volume; then echo "Accepted home failure: $fault" >&2; exit 1; fi
+            case "$fault" in
+                create) [[ $(cat "$FIXTURE/home-calls") == 'volume create' ]] ;;
+                inspect) if grep -q 'unshare chown' "$FIXTURE/home-calls"; then exit 1; fi ;;
+            esac
+        done
+    )
+    pass 'conditional home setup stops after failed creation or inspection'
 
     for mode in true false; do
         new_project

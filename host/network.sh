@@ -31,14 +31,14 @@ initialize_network_state() {
 configure_network() {
     # Every network carries the digest, so no network is created before the
     # current configuration has one.
-    assert_config_digest_ready
+    assert_config_digest_ready || return 1
 
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
-        configure_proxy_network
+        configure_proxy_network || return 1
     else
         if ! up_resource_present "network:$NETWORK_NAME"; then
             track_up_resource "network:$NETWORK_NAME"
-            podman network create "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$NETWORK_NAME"
+            podman network create "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$NETWORK_NAME" || return 1
         fi
         NETWORK_STATE[selected_network]="$NETWORK_NAME"
         NETWORK_SSH_SESSION_ENV=()
@@ -62,30 +62,33 @@ configure_proxy_network() {
     # HTTPS_PROXY env, curlrc, wgetrc) to reach allowed hosts.
     local internal_net external_net effective_egress_allow proxy_internal_ip proxy_internal_subnet
 
-    effective_egress_allowlist effective_egress_allow
+    effective_egress_allowlist effective_egress_allow || return 1
     NETWORK_STATE[filter_file]="$SSH_DIR/tinyproxy-filter"
 
     internal_net="${NETWORK_NAME}-internal"
     external_net="${NETWORK_NAME}-external"
 
-    ensure_internal_network "$internal_net"
+    ensure_internal_network "$internal_net" || return 1
     if ! up_resource_present "network:$external_net"; then
         track_up_resource "network:$external_net"
-        podman network create "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$external_net"
+        podman network create "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$external_net" || return 1
     fi
 
     # Derive the proxy address from the network's actual subnet rather than
     # recomputing the hash candidate: an existing network may have been
     # created on a fallback subnet after a collision.
-    proxy_internal_subnet=$(internal_network_subnet "$internal_net")
+    proxy_internal_subnet=$(internal_network_subnet "$internal_net") || {
+        echo "Error: could not determine subnet of internal network $internal_net" >&2
+        return 1
+    }
     [ -n "$proxy_internal_subnet" ] || die "could not determine subnet of internal network $internal_net"
-    proxy_internal_ip=$(proxy_ip_for_subnet "$proxy_internal_subnet")
+    proxy_internal_ip=$(proxy_ip_for_subnet "$proxy_internal_subnet") || return 1
 
     NETWORK_STATE[proxy_conf_file]="$SSH_DIR/tinyproxy.conf"
     if [ "$UP_PROXY_STATE" = absent ]; then
-        prepare_proxy_files
-        render_tinyproxy_filter "${NETWORK_STATE[filter_file]}" "${effective_egress_allow[@]}"
-        render_tinyproxy_conf "${NETWORK_STATE[proxy_conf_file]}" "$proxy_internal_subnet"
+        prepare_proxy_files || return 1
+        render_tinyproxy_filter "${NETWORK_STATE[filter_file]}" "${effective_egress_allow[@]}" || return 1
+        render_tinyproxy_conf "${NETWORK_STATE[proxy_conf_file]}" "$proxy_internal_subnet" || return 1
         track_up_resource "container:$PROXY_NAME"
 
         echo "🔒 Starting egress proxy (${#effective_egress_allow[@]} allowed hosts)..."
@@ -104,9 +107,9 @@ configure_proxy_network() {
             --security-opt=no-new-privileges \
             -v "${NETWORK_STATE[filter_file]}:/etc/tinyproxy/filter:ro,Z" \
             -v "${NETWORK_STATE[proxy_conf_file]}:/etc/tinyproxy/tinyproxy.conf:ro,Z" \
-            "$PROXY_IMAGE"
+            "$PROXY_IMAGE" || return 1
     elif [ "$UP_PROXY_STATE" != running ]; then
-        podman start "$PROXY_NAME"
+        podman start "$PROXY_NAME" || return 1
     fi
 
     NETWORK_STATE[selected_network]="$internal_net"
@@ -117,14 +120,15 @@ configure_proxy_network() {
 
 effective_egress_allowlist() {
     local -n result="$1"
-    local host
+    local host editor_name
     local hosts=("${EGRESS_ALLOW[@]}")
     local -A seen=()
 
     result=()
 
     if [[ -n "$EDITOR_BIN" ]]; then
-        case "$(basename "$EDITOR_BIN")" in
+        editor_name=$(basename "$EDITOR_BIN") || return 1
+        case "$editor_name" in
             code)
                 # main.vscode-cdn.net succeeded vo.msecnd.net as the download
                 # CDN; keep both while older VS Code builds remain in use.
@@ -164,7 +168,7 @@ configure_proxy_env() {
         # (it may sit on a collision-fallback candidate), else candidate 0.
         # podman may be absent on this path; internal_network_subnet then
         # returns empty and the hash candidate is used.
-        existing_subnet=$(internal_network_subnet "${NETWORK_NAME}-internal")
+        existing_subnet=$(internal_network_subnet "${NETWORK_NAME}-internal" || true)
         if [ -n "$existing_subnet" ]; then
             NETWORK_STATE[proxy_url]="http://$(proxy_ip_for_subnet "$existing_subnet"):8888"
         else
@@ -191,9 +195,10 @@ tinyproxy_escape_host() {
 }
 
 render_tinyproxy_filter() {
-    local filter_file="$1"
+    local filter_file="$1" parent
     shift
-    mkdir -p "$(dirname "$filter_file")"
+    parent=$(dirname "$filter_file") || return 1
+    mkdir -p "$parent" || return 1
     print_tinyproxy_filter "$@" > "$filter_file" || return 1
     # Public policy must be readable by the unprivileged proxy user.
     chmod 644 "$filter_file"
@@ -202,8 +207,9 @@ render_tinyproxy_filter() {
 # Rendered copy of the packaged tinyproxy.conf plus a launch-time client ACL.
 # Without Allow lines tinyproxy accepts any client that can reach port 8888.
 render_tinyproxy_conf() {
-    local conf_file="$1" subnet="$2"
-    mkdir -p "$(dirname "$conf_file")"
+    local conf_file="$1" subnet="$2" parent
+    parent=$(dirname "$conf_file") || return 1
+    mkdir -p "$parent" || return 1
     print_tinyproxy_conf "$subnet" > "$conf_file" || return 1
     chmod 644 "$conf_file"
 }
@@ -220,7 +226,7 @@ ensure_internal_network() {
 
     track_up_resource "network:$internal_net"
     for ((attempt = 0; attempt < 20; attempt++)); do
-        candidate=$(proxy_internal_subnet "$attempt")
+        candidate=$(proxy_internal_subnet "$attempt") || return 1
         if podman network create --internal --disable-dns --subnet "$candidate" \
             "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$internal_net" >/dev/null 2>&1; then
             return 0
@@ -230,7 +236,7 @@ ensure_internal_network() {
 }
 
 internal_network_subnet() {
-    podman network inspect "$1" --format '{{ (index .Subnets 0).Subnet }}' 2>/dev/null || true
+    podman network inspect "$1" --format '{{ (index .Subnets 0).Subnet }}' 2>/dev/null
 }
 
 proxy_ip_for_subnet() {
@@ -348,7 +354,7 @@ prepare_proxy_files() {
     if [ ! -d "$SSH_DIR" ]; then
         UP_HOST_CREATED+=("$SSH_DIR")
         # New parent directories are private too; leave existing parents unchanged.
-        (umask 077; mkdir -p -- "$SSH_DIR")
+        (umask 077; mkdir -p -- "$SSH_DIR") || return 1
     fi
     validate_ssh_file "$SSH_DIR" 700 directory || die 'unsafe runtime directory metadata'
     for path in "${NETWORK_STATE[filter_file]}" "${NETWORK_STATE[proxy_conf_file]}"; do
@@ -366,7 +372,7 @@ print_tinyproxy_filter() {
     # anchor in (^|\.)domain$ is not honoured by musl's POSIX ERE implementation.
     for host in "$@"; do
         escaped=$(tinyproxy_escape_host "$host") || return 1
-        printf '^%s$\n\\.%s$\n' "$escaped" "$escaped"
+        printf '^%s$\n\\.%s$\n' "$escaped" "$escaped" || return 1
     done
 }
 

@@ -135,4 +135,45 @@ for tag in v09.2.3 v9.02.3 v9.2.03; do
     reject bash "$tmp/scripts/release.sh" --print-version --bump major
     git -C "$tmp" tag -d "$tag" > /dev/null
 done
+# Failed required inspections cannot authorize a release, including with
+# plausible partial output and a conditional first-major decision.
+for partial in '' v0.8.2; do
+    for check in ensure_clean_tree ensure_no_local_only_version_tags; do
+        if (
+            source "$ROOT/scripts/release.sh"
+            # shellcheck disable=SC2329
+            git() { printf '%s' "$partial"; return 42; }
+            "$check"
+        ) > "$tmp/out" 2> "$tmp/err"; then
+            echo "Accepted failed $check" >&2; exit 1
+        fi
+        [[ ! -s "$tmp/out" && -s "$tmp/err" ]]
+    done
+    (
+        source "$ROOT/scripts/release.sh"
+        git() { printf '%s' "$partial"; return 42; }
+        status=0
+        has_v1_or_later_tag || status=$?
+        [[ "$status" == 2 ]]
+    )
+done
+for inspection in latest major selected; do
+    if (
+        source "$ROOT/scripts/release.sh"
+        ROOT_DIR=$tmp
+        git() {
+            if [[ "${3:-}" == tag || "${3:-}" == rev-parse ]]; then return 42; fi
+            command git "$@"
+        }
+        case "$inspection" in
+            latest) main --print-version ;;
+            major) FIRST_MAJOR=true; select_version v0.0.0 initial ;;
+            selected) select_version v0.0.0 initial ;;
+        esac
+        echo 'unexpected success'
+    ) > "$tmp/out" 2> "$tmp/err"; then
+        echo "Accepted failed $inspection tag read" >&2; exit 1
+    fi
+    [[ ! -s "$tmp/out" && -s "$tmp/err" ]]
+done
 echo 'Release selection and request tests passed'

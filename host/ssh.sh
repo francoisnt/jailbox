@@ -295,6 +295,7 @@ EOF_INSTRUCTIONS
 }
 
 wait_for_ssh() {
+    local i SSH_READY
     echo "⏳ Waiting for sshd..."
     SSH_READY=false
     for ((i = 1; i <= 30; i++)); do

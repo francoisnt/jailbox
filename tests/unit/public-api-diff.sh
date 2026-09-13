@@ -68,6 +68,65 @@ git -C "$FIXTURE" checkout -q -- host/public-api.sh
 insert_after_line 'FRONTEND_SCALAR_KEYS=(' '    TEST_FRONTEND'
 assert_result "added frontend declaration detected" added
 
+# Required producer failures may emit plausible output before failing. Fail an
+# early extraction only, so later successful reads cannot mask it.
+mkdir "$FIXTURE/bin"
+for tool in sort awk sed cat comm git; do
+    real_tool=$(command -v "$tool")
+    for partial in '' ORIGINAL; do
+        cat > "$FIXTURE/bin/$tool" <<'STUB'
+#!/bin/bash
+if [ ! -e "$FAULT_MARKER" ]; then
+    : > "$FAULT_MARKER"
+    printf '%s' "$FAULT_OUTPUT"
+    exit 42
+fi
+exec "$REAL_TOOL" "$@"
+STUB
+        chmod 755 "$FIXTURE/bin/$tool"
+        rm -f "$FIXTURE/fired"
+        if output=$(PATH="$FIXTURE/bin:$PATH" REAL_TOOL="$real_tool" FAULT_MARKER="$FIXTURE/fired" FAULT_OUTPUT="$partial" "$FIXTURE/scripts/public-api-diff.sh" HEAD); then
+            fail "$tool failure was accepted"
+        elif [ -n "$output" ]; then
+            fail "$tool failure emitted classification: $output"
+        else
+            pass "$tool failure with '$partial' output refuses classification"
+        fi
+    done
+    rm "$FIXTURE/bin/$tool"
+done
+
+# A readable tree listing does not establish that reading its blob succeeded.
+real_git=$(command -v git)
+cat > "$FIXTURE/bin/git" <<'STUB'
+#!/bin/bash
+if [[ "${3:-}" == show ]]; then printf '%s' "$FAULT_OUTPUT"; exit 42; fi
+exec "$REAL_GIT" "$@"
+STUB
+chmod 755 "$FIXTURE/bin/git"
+for partial in '' 'CONFIG_SCALAR_KEYS=('; do
+    if output=$(PATH="$FIXTURE/bin:$PATH" REAL_GIT="$real_git" FAULT_OUTPUT="$partial" "$FIXTURE/scripts/public-api-diff.sh" HEAD); then exit 1; fi
+    [[ -z "$output" ]]
+done
+rm "$FIXTURE/bin/git"
+pass 'failed historical blob reads refuse classification'
+
+# Historical locations and combined/split declarations remain readable, with
+# genuinely absent arrays contributing no names.
+mkdir "$FIXTURE/lib"
+for declaration in CLI_FLAGS CLI_FLAGS_WITHOUT_VALUES; do
+    printf 'CONFIG_SCALAR_KEYS=(\n    ORIGINAL\n)\n%s=(\n    --help\n)\n' "$declaration" > "$API_FILE"
+    cp "$API_FILE" "$FIXTURE/lib/public-api.sh"
+    git -C "$FIXTURE" rm -fq host/public-api.sh
+    git -C "$FIXTURE" add lib/public-api.sh
+    git -C "$FIXTURE" commit -qm historical
+    mkdir -p "$FIXTURE/host"
+    cp "$FIXTURE/lib/public-api.sh" "$API_FILE"
+    assert_result "historical $declaration in lib" unchanged
+    git -C "$FIXTURE" add host/public-api.sh
+    git -C "$FIXTURE" commit -qm current-location
+done
+
 echo ""
 if [ "$FAILED" -eq 0 ]; then
     echo "public API diff tests: $PASSED passed"

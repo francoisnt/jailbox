@@ -263,26 +263,40 @@ build_readonly_mounts() {
     done
 }
 
-generate_minimal_gitconfig() {
-    local gitconfig_file name email tmp_file
+generate_minimal_gitconfig() (
+    # This scope owns only its staging file; launch rollback owns published files.
+    local gitconfig_file name email tmp_file="" parent
+    trap 'status=$?; if [ -n "$tmp_file" ]; then
+        rm -f -- "$tmp_file" || { echo "Error: could not clean temporary Git identity: $tmp_file" >&2; [ "$status" -ne 0 ] || status=1; }
+    fi; exit "$status"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
 
     gitconfig_file="$1"
-    rm -f -- "$gitconfig_file"
     command -v git >/dev/null 2>&1 || return 0
 
+    # Host identity discovery is intentionally best-effort, including unreadable
+    # or malformed global configuration. Writing an available identity below is
+    # required preparation and must succeed before it can be mounted.
     name=$(git config --global --get user.name 2>/dev/null || true)
     email=$(git config --global --get user.email 2>/dev/null || true)
     [ -n "$name$email" ] || return 0
 
     # New parent directories are private too; leave existing parents unchanged.
-    (umask 077; mkdir -p -- "$(dirname "$gitconfig_file")")
-    tmp_file=$(mktemp "$(dirname "$gitconfig_file")/gitconfig.tmp.XXXXXX")
-    chmod 600 "$tmp_file"
-    [ -n "$name" ] && git config --file "$tmp_file" user.name "$name"
-    [ -n "$email" ] && git config --file "$tmp_file" user.email "$email"
-    mv "$tmp_file" "$gitconfig_file"
-    chmod 600 "$gitconfig_file"
-}
+    parent=$(dirname "$gitconfig_file") || return 1
+    (umask 077; mkdir -p -- "$parent") || return 1
+    tmp_file=$(mktemp "$parent/gitconfig.tmp.XXXXXX") || return 1
+    chmod 600 "$tmp_file" || return 1
+    if [ -n "$name" ]; then
+        git config --file "$tmp_file" user.name "$name" || return 1
+    fi
+    if [ -n "$email" ]; then
+        git config --file "$tmp_file" user.email "$email" || return 1
+    fi
+    mv "$tmp_file" "$gitconfig_file" || return 1
+    tmp_file=""
+)
 
 assert_container_launch_state() {
     assert_config_digest_ready
@@ -332,17 +346,19 @@ clean_jailbox() {
 }
 
 ensure_home_volume() {
-    local volume_path
+    local volume_path uid gid
     local -a present=()
 
-    resolve_present_resources present "volume:$VOLUME_NAME"
+    resolve_present_resources present "volume:$VOLUME_NAME" || return 1
     if [ -z "${present[*]-}" ]; then
-        podman volume create --label "jailbox.ephemeral-home=$EPHEMERAL_HOME" "$VOLUME_NAME"
-        volume_path=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}')
+        podman volume create --label "jailbox.ephemeral-home=$EPHEMERAL_HOME" "$VOLUME_NAME" || return 1
+        volume_path=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}') || return 1
         # Rootless volumes are created from the host side. Chown only the new
         # jailbox-managed home volume so the keep-id user can write to it; do
         # not repair ownership inside the project or dev image.
-        podman unshare chown "$(id -u):$(id -g)" "$volume_path"
+        uid=$(id -u) || return 1
+        gid=$(id -g) || return 1
+        podman unshare chown "$uid:$gid" "$volume_path" || return 1
     fi
 }
 
@@ -624,7 +640,7 @@ configure_runtime_mounts() {
     if [ ! -d "$SSH_DIR" ]; then
         UP_HOST_CREATED+=("$SSH_DIR")
         # New parent directories are private too; leave existing parents unchanged.
-        (umask 077; mkdir -p -- "$SSH_DIR")
+        (umask 077; mkdir -p -- "$SSH_DIR") || return 1
     fi
     validate_ssh_file "$SSH_DIR" 700 directory || refuse_sandbox 'unsafe runtime directory metadata'
     # Existing unrelated runtime files are preserved, including gitconfig.
@@ -632,7 +648,7 @@ configure_runtime_mounts() {
     path="$SSH_DIR/gitconfig"
     if [[ ! -e "$path" && ! -L "$path" ]]; then
         UP_HOST_CREATED+=("$path")
-        generate_minimal_gitconfig "$path"
+        generate_minimal_gitconfig "$path" || return 1
     fi
     if [ -e "$path" ] || [ -L "$path" ]; then
         [[ -f "$path" && ! -L "$path" ]] || die 'unsafe runtime gitconfig'

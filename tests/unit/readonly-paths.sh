@@ -171,9 +171,14 @@ test_containerfile_state() {
     mkdir "$PROJECT_DIR/context"
     DEV_CONTAINERFILE=Containerfile
     DEV_BUILD_CONTEXT=context
-    podman() { :; }
+    BUILD_CMD=(caller value)
+    podman() { printf '%s\n' "$@" > "$PROJECT_DIR/build-args"; }
     build_or_select_dev_image >/dev/null
-    if [ "${BUILD_CMD[5]}" = "$PROJECT_DIR/Containerfile" ] && [ "${BUILD_CMD[6]}" = "$PROJECT_DIR/context" ]; then pass "build uses classified Containerfile and context"; else fail "build uses classified Containerfile and context (${BUILD_CMD[*]})"; fi
+    if grep -Fxq "$PROJECT_DIR/Containerfile" "$PROJECT_DIR/build-args" && grep -Fxq "$PROJECT_DIR/context" "$PROJECT_DIR/build-args" && [[ "${BUILD_CMD[*]}" == 'caller value' ]]; then
+        pass "build uses classified inputs and preserves caller variables"
+    else
+        fail "build arguments or caller variables changed"
+    fi
     ln -s context "$PROJECT_DIR/context-link"
     DEV_BUILD_CONTEXT=context-link
     assert_failure "symlinked build context rejected" build_or_select_dev_image

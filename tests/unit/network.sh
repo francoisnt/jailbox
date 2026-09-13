@@ -222,6 +222,81 @@ test_initialize_network_state_clears_outputs() {
 }
 
 main() {
+    (
+        source "$JAILBOX_DIR/host/container-runtime.sh"
+        fixture=$(mktemp -d)
+        trap 'rm -rf "$fixture"' EXIT
+        die() { echo "$*" >&2; exit 1; }
+        assert_config_digest_ready() { :; }
+        validate_ssh_state_path() { :; }
+        validate_ssh_file() { :; }
+        CONFIG_DIGEST_LABEL_ARGS=(--label test)
+        UP_PRESENT=() UP_CREATED=() UP_HOST_CREATED=()
+        NETWORK_NAME=test-net PROXY_NAME=test-proxy PROXY_IMAGE=test-image
+        PROJECT_HASH=abcdef123456 EDITOR_BIN="" UP_PROXY_STATE=absent
+        SSH_DIR=$fixture/state
+        SCRIPT_DIR=$JAILBOX_DIR
+        podman() {
+            printf '%s\n' "$*" >> "$fixture/calls"
+            case "$fault:$*" in
+                plain:'network create '*|internal:'network create --internal '*|external:'network create --label '*|inspect:'network inspect '*|run:'run '*|start:'start '*) return 42 ;;
+                partial:'network inspect '*) printf '10.240.1.0/24\n'; return 42 ;;
+                retry:'network create --internal '*) attempts=$((attempts + 1)); [[ "$attempts" -gt 2 ]] || return 42 ;;
+            esac
+            [[ "$1 $2" != 'network inspect' ]] || printf '10.240.1.0/24\n'
+        }
+        mkdir() { [[ "$fault" != mkdir ]] || return 42; command mkdir "$@"; }
+        chmod() { [[ "$fault" != chmod ]] || return 42; command chmod "$@"; }
+        cat() { [[ "$fault" != policy ]] || return 42; command cat "$@"; }
+        for fault in plain internal external inspect partial mkdir chmod policy run start; do
+            : > "$fixture/calls"
+            initialize_network_state
+            UP_PRESENT=() UP_CREATED=()
+            EGRESS_ALLOW=(example.com)
+            [[ "$fault" != plain ]] || EGRESS_ALLOW=()
+            UP_PROXY_STATE=absent
+            [[ "$fault" != start ]] || UP_PROXY_STATE=stopped
+            # Exhausted subnet retries intentionally die; inspect this case in
+            # a child while retaining shared rollback tracking for other cases.
+            if [[ "$fault" == internal ]]; then
+                if (configure_network); then exit 1; fi
+                [[ $(wc -l < "$fixture/calls") -eq 20 ]]
+                continue
+            fi
+            if configure_network 2> "$fixture/error"; then echo "Accepted network failure: $fault" >&2; exit 1; fi
+            case "$fault" in
+                inspect|partial) grep -Fq 'could not determine subnet of internal network test-net-internal' "$fixture/error" ;;
+            esac
+            [[ -z "${NETWORK_STATE[selected_network]}" ]]
+            case "$fault" in
+                plain|external) [[ "${UP_CREATED[*]}" == *network:test-net* ]] ;;
+                run) [[ "${UP_CREATED[*]}" == *container:test-proxy* ]] ;;
+            esac
+            case "$fault" in
+                run|start) ;;
+                *) if grep -Eq '^(run|start) ' "$fixture/calls"; then exit 1; fi ;;
+            esac
+        done
+        fault=retry attempts=0 UP_PROXY_STATE=absent
+        UP_PRESENT=() UP_CREATED=()
+        initialize_network_state
+        if configure_network > /dev/null; then
+            [[ "$attempts" == 3 && "${NETWORK_STATE[selected_network]}" == test-net-internal ]]
+        else
+            exit 1
+        fi
+        fault=reuse UP_PROXY_STATE=running
+        UP_PRESENT=(network:test-net-internal network:test-net-external)
+        UP_CREATED=()
+        : > "$fixture/calls"
+        if configure_network > /dev/null; then
+            [[ -z "${UP_CREATED[*]-}" ]]
+            if grep -Eq '^(network create|run|start)' "$fixture/calls"; then exit 1; fi
+        else
+            exit 1
+        fi
+    )
+    pass 'conditional network setup stops at required failures and retains attempted creations'
     echo "network tests"
     echo ""
 

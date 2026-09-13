@@ -150,11 +150,9 @@ mkdir -p -- /state/jailbox/projects/abc
 chmod 644 /state/jailbox/projects/abc/tinyproxy-filter
 chmod 644 /state/jailbox/projects/abc/tinyproxy.conf
 podman run -d --name jailbox-project-abc-proxy --read-only
-rm -f -- /state/jailbox/projects/abc/gitconfig
 mktemp /state/jailbox/projects/abc/gitconfig.tmp.XXXXXX
 chmod 600 /state/jailbox/projects/abc/gitconfig.tmp.random
 mv /state/jailbox/projects/abc/gitconfig.tmp.random /state/jailbox/projects/abc/gitconfig
-chmod 600 /state/jailbox/projects/abc/gitconfig
 mktemp -d /state/jailbox/projects/abc/.ssh-generation.XXXXXXXX
 mkdir /state/jailbox/projects/abc/.ssh-generation.random/server
 ssh-keygen -t ed25519 -f /state/key -N '' -C jailbox-client -q

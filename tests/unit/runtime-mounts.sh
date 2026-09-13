@@ -218,7 +218,8 @@ with_project_state() {
     # macOS temporary paths can traverse /var, a symlink rejected for SSH state.
     XDG_STATE_HOME=$(cd "$XDG_STATE_HOME" && pwd -P)
     GIT_CONFIG_NOSYSTEM=1
-    export HOME XDG_CONFIG_HOME XDG_STATE_HOME GIT_CONFIG_NOSYSTEM
+    GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
+    export HOME XDG_CONFIG_HOME XDG_STATE_HOME GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL
     MANAGED_USER="jailbox"
     initialize_project_names
     initialize_ssh_state
@@ -297,6 +298,45 @@ main() {
 
     test_minimal_gitconfig_mount
     test_no_identity_gets_no_mount
+    (
+        with_project_state
+        trap cleanup_project_state EXIT
+        mkdir() { echo 'injected mkdir failure' >&2; return 42; }
+        validate_ssh_file() { touch "$PROJECT_DIR/validated"; return 0; }
+        generate_minimal_gitconfig() { touch "$PROJECT_DIR/generated"; }
+        for mode in 0022 0002; do
+            umask "$mode"
+            if configure_runtime_mounts 2> "$PROJECT_DIR/error"; then exit 1; fi
+            grep -q 'injected mkdir failure' "$PROJECT_DIR/error"
+            [[ ! -e "$PROJECT_DIR/validated" && ! -e "$PROJECT_DIR/generated" ]]
+            [[ "${UP_HOST_CREATED[*]}" == *"$SSH_DIR"* ]]
+        done
+    )
+    pass 'failed runtime directory creation stops conditional mount preparation and retains rollback tracking'
+    (
+        source "$JAILBOX_DIR/tests/lib/file-publication.sh"
+        with_project_state
+        trap cleanup_project_state EXIT
+        command git config --global user.name 'Publication Test'
+        command git config --global user.email 'publication@example.invalid'
+        # shellcheck disable=SC2329
+        write_identity() { generate_minimal_gitconfig "$SSH_DIR/gitconfig"; }
+        assert_file_publication write_identity "$SSH_DIR/gitconfig"
+        rm "$SSH_DIR/gitconfig"
+        git() {
+            if [[ " $* " == *' --file '* ]]; then return 42; fi
+            command git "$@"
+        }
+        if configure_runtime_mounts; then exit 1; fi
+        [[ -z "${GITCONFIG_MOUNT[*]-}" && ! -e "$SSH_DIR/gitconfig" ]]
+        unset -f git
+        command git config --global --unset-all user.name
+        command git config --global --unset-all user.email
+        printf 'existing\n' > "$SSH_DIR/gitconfig"
+        generate_minimal_gitconfig "$SSH_DIR/gitconfig"
+        [[ $(cat "$SSH_DIR/gitconfig") == existing ]]
+    )
+    pass 'identity publication preserves destination and caller state across failures and signals'
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

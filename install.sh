@@ -126,18 +126,18 @@ absolute_path() {
     local path parent base
 
     path="$1"
-    parent="$(dirname "$path")"
-    base="$(basename "$path")"
-    mkdir -p "$parent"
-    parent="$(cd "$parent" && pwd -P)"
+    parent="$(dirname "$path")" || return 1
+    base="$(basename "$path")" || return 1
+    mkdir -p "$parent" || return 1
+    parent="$(cd "$parent" && pwd -P)" || return 1
     printf '%s/%s\n' "$parent" "$base"
 }
 
 assert_safe_target_dir() {
     local abs_target abs_home
 
-    abs_target="$(absolute_path "$TARGET_DIR")"
-    abs_home="$(cd "$HOME" && pwd -P)"
+    abs_target="$(absolute_path "$TARGET_DIR")" || die "could not resolve install target"
+    abs_home="$(cd "$HOME" && pwd -P)" || die "could not resolve HOME"
 
     [ -n "$abs_target" ] || die "install target is empty"
     [ "$abs_target" != "/" ] || die "refusing to install to /"
@@ -156,11 +156,13 @@ assert_managed_target_dir() {
 }
 
 assert_replaceable_target_dir() {
+    local contents
     if [ -f "$TARGET_DIR/$MARKER_FILE" ]; then
         return 0
     fi
 
-    if [ -z "$(find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    contents=$(find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit) || die "could not inspect install target: $TARGET_DIR"
+    if [ -z "$contents" ]; then
         return 0
     fi
 

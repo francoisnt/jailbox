@@ -8,6 +8,9 @@ FIXTURE=$(mktemp -d)
 FIXTURE=$(cd "$FIXTURE" && pwd -P)
 trap 'rm -rf "$FIXTURE"' EXIT
 mkdir -p "$FIXTURE/bin" "$FIXTURE/project" "$FIXTURE/engine"
+export GIT_CONFIG_GLOBAL="$FIXTURE/git-identity" GIT_CONFIG_NOSYSTEM=1
+git config --file "$GIT_CONFIG_GLOBAL" user.name 'Convergence Test'
+git config --file "$GIT_CONFIG_GLOBAL" user.email 'convergence@example.invalid'
 export CONVERGENCE_ENGINE="$FIXTURE/engine" CONVERGENCE_LOG="$FIXTURE/actions"
 export XDG_STATE_HOME="$FIXTURE/state"
 export CONVERGENCE_IMAGE=1111111111111111111111111111111111111111111111111111111111111111
@@ -58,6 +61,7 @@ case "$kind $action" in
         ;;
     'network create'|'volume create')
         printf '%s\n' "$*" >> "$log"
+        if [[ ${CONVERGENCE_FAIL_MUTATION:-} == "$kind:before" ]]; then exit 42; fi
         label=""
         while (($#)); do
             case "$1" in --label) label=${2#*=}; shift ;; esac
@@ -65,6 +69,7 @@ case "$kind $action" in
         done
         echo "$label" > "$state/$kind.$name"
         mkdir -p "$state/home"
+        if [[ ${CONVERGENCE_FAIL_MUTATION:-} == "$kind:after" ]]; then exit 42; fi
         ;;
     'network rm'|'volume rm'|'image rm')
         printf '%s\n' "$*" >> "$log"
@@ -178,6 +183,51 @@ assert_no_mutation() {
         echo 'refusal mutated state'; cat "$CONVERGENCE_LOG"; exit 1
     fi
 }
+
+# Failed identity conversion must stop the public CLI before engine work.
+cat > "$FIXTURE/bin/tr" <<'TR'
+#!/bin/bash
+printf '%s' "${CONVERGENCE_PARTIAL:-}"
+exit 42
+TR
+chmod 755 "$FIXTURE/bin/tr"
+for partial in '' plausible; do
+    : > "$CONVERGENCE_LOG"
+    if CONVERGENCE_PARTIAL="$partial" launch up > "$FIXTURE/output" 2>&1; then exit 1; fi
+    [[ ! -s "$CONVERGENCE_LOG" ]]
+done
+rm "$FIXTURE/bin/tr"
+
+# A writer failure after allocation must stop launch and leave no staging file.
+export CONVERGENCE_REAL_GIT
+CONVERGENCE_REAL_GIT=$(command -v git)
+cat > "$FIXTURE/bin/git" <<'GIT'
+#!/bin/bash
+if [[ " $* " == *' --file '* ]]; then exit 42; fi
+exec "$CONVERGENCE_REAL_GIT" "$@"
+GIT
+chmod 755 "$FIXTURE/bin/git"
+: > "$CONVERGENCE_LOG"
+expect_failure "Run 'jailbox stop'"
+if grep -Eq '^(run|volume create)' "$CONVERGENCE_LOG"; then exit 1; fi
+[[ -z $(find "$XDG_STATE_HOME" -name 'gitconfig*') ]]
+[[ -z $(find "$CONVERGENCE_ENGINE" -name 'network.*' -o -name 'container.*') ]]
+rm "$FIXTURE/bin/git"
+
+# The actual CLI must deliver helper failures to its rollback owner, including
+# engine mutations that succeed before reporting an error.
+for kind in network volume; do
+    for phase in before after; do
+        : > "$CONVERGENCE_LOG"
+        CONVERGENCE_FAIL_MUTATION="$kind:$phase" expect_failure "Run 'jailbox stop'"
+        if grep -Eq '^run ' "$CONVERGENCE_LOG" || grep -q 'SSH is up' "$FIXTURE/output"; then exit 1; fi
+        [[ -z $(find "$CONVERGENCE_ENGINE" -name 'network.*' -o -name 'container.*') ]]
+        [[ ! -e "$GENERATION" ]]
+        # Reset this isolated fixture through public cleanup before the next case.
+        launch --clean > /dev/null
+    done
+done
+echo 'PASS: CLI mutation failures reach rollback without readiness success'
 
 CONVERGENCE_IMAGE_MISSING=true expect_success
 grep -q '^pull localhost/convergence$' "$CONVERGENCE_LOG"

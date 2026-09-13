@@ -63,6 +63,16 @@ test_quotes_inside_paths_are_escaped() {
 }
 
 main() {
+    (
+        i=caller SSH_READY=caller
+        SSH_CONFIG=/test/config CONTAINER_NAME=test
+        attempts=0
+        ssh() { attempts=$((attempts + 1)); [[ "$attempts" == 3 ]]; }
+        sleep() { :; }
+        wait_for_ssh > /dev/null
+        [[ "$i" == caller && "$SSH_READY" == caller && "$attempts" == 3 ]]
+    )
+    pass 'SSH readiness retries without overwriting caller variables'
     echo "ssh config tests"
     echo ""
 

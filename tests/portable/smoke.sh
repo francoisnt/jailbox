@@ -120,6 +120,32 @@ main() {
     build_release_tarball
     smoke_install_update_uninstall
     refuse_unmanaged_update_target
+    refuse_failed_target_discovery
+}
+
+refuse_failed_target_discovery() {
+    local tmp partial
+    section "failed target discovery refusal"
+    new_tmp_dir tmp
+    printf 'parent file\n' > "$tmp/parent"
+    mkdir "$tmp/bin"
+    ln -s "$tmp/original" "$tmp/bin/jailbox"
+    if JAILBOX_INSTALL_DIR="$tmp/parent/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh > "$tmp/out" 2>&1; then return 1; fi
+    grep -q 'could not resolve install target' "$tmp/out"
+    [[ $(cat "$tmp/parent") == 'parent file' && $(readlink "$tmp/bin/jailbox") == "$tmp/original" ]]
+    mkdir -p "$tmp/share/jailbox" "$tmp/tools"
+    printf 'keep\n' > "$tmp/share/jailbox/user-file"
+    cat > "$tmp/tools/find" <<'STUB'
+#!/bin/bash
+printf '%s' "$PARTIAL"
+exit 42
+STUB
+    chmod 755 "$tmp/tools/find"
+    for partial in '' user-file; do
+        if PATH="$tmp/tools:$PATH" PARTIAL="$partial" JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh > "$tmp/out" 2>&1; then return 1; fi
+        grep -q 'could not inspect install target' "$tmp/out"
+        [[ $(cat "$tmp/share/jailbox/user-file") == keep && $(readlink "$tmp/bin/jailbox") == "$tmp/original" ]]
+    done
 }
 
 main "$@"

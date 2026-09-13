@@ -28,7 +28,7 @@ open_editor() {
 }
 
 launch_editor_remote() {
-    write_jailbox_editor_user_settings
+    write_jailbox_editor_user_settings || return 1
     write_remote_editor_smoke_settings
     "$EDITOR_BIN" --user-data-dir "$JAILBOX_EDITOR_USER_DATA" \
         --remote "ssh-remote+$CONTAINER_NAME" "$REMOTE_PATH"
@@ -87,18 +87,26 @@ editor_profile_uses_code() {
     [ -z "$requested_editor" ] && ! command -v codium >/dev/null 2>&1 && command -v code >/dev/null 2>&1
 }
 
-write_jailbox_editor_user_settings() {
-    local settings_dir settings_tmp
+write_jailbox_editor_user_settings() (
+    # Keep staging cleanup and signal traps separate from the caller's scope.
+    local settings_dir settings_tmp="" smoke_settings
+    trap 'status=$?; if [ -n "$settings_tmp" ]; then
+        rm -f -- "$settings_tmp" || { echo "Error: could not clean temporary editor settings: $settings_tmp" >&2; [ "$status" -ne 0 ] || status=1; }
+    fi; exit "$status"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
 
-    assert_editor_state_initialized
+    assert_editor_state_initialized || return 1
 
-    settings_dir="$(dirname "$JAILBOX_EDITOR_USER_SETTINGS")"
-    mkdir -p "$settings_dir"
-    settings_tmp=$(mktemp "$settings_dir/settings.json.tmp.XXXXXX")
+    settings_dir="$(dirname "$JAILBOX_EDITOR_USER_SETTINGS")" || return 1
+    mkdir -p "$settings_dir" || return 1
+    settings_tmp=$(mktemp "$settings_dir/settings.json.tmp.XXXXXX") || return 1
+    smoke_settings=$(editor_smoke_profile_settings_json) || return 1
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
-        cat > "$settings_tmp" <<EOF_SETTINGS
+        cat > "$settings_tmp" <<EOF_SETTINGS || return 1
 {
-  "remote.SSH.configFile": "$SSH_CONFIG"$(editor_smoke_profile_settings_json),
+  "remote.SSH.configFile": "$SSH_CONFIG"$smoke_settings,
   "http.proxy": "${NETWORK_STATE[proxy_url]}",
   "terminal.integrated.env.linux": {
     "HTTP_PROXY": "${NETWORK_STATE[proxy_url]}",
@@ -111,12 +119,13 @@ write_jailbox_editor_user_settings() {
 }
 EOF_SETTINGS
     else
-        cat > "$settings_tmp" <<EOF_SETTINGS
+        cat > "$settings_tmp" <<EOF_SETTINGS || return 1
 {
-  "remote.SSH.configFile": "$SSH_CONFIG"$(editor_smoke_profile_settings_json)
+  "remote.SSH.configFile": "$SSH_CONFIG"$smoke_settings
 }
 EOF_SETTINGS
     fi
-    chmod 600 "$settings_tmp"
-    mv "$settings_tmp" "$JAILBOX_EDITOR_USER_SETTINGS"
-}
+    chmod 600 "$settings_tmp" || return 1
+    mv "$settings_tmp" "$JAILBOX_EDITOR_USER_SETTINGS" || return 1
+    settings_tmp=""
+)

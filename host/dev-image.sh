@@ -66,7 +66,7 @@ build_or_select_dev_image() {
     context_status=0
     SELECTED_DEV_BUILD_CONTEXT=$(classify_trusted_directory "$build_context_input" "build context") || context_status=$?
     [ "$context_status" -eq 0 ] || return "$context_status"
-    BUILD_CMD=(podman build -t "$PROJECT_DEV_IMAGE" -f "$SELECTED_DEV_CONTAINERFILE")
+    local -a BUILD_CMD=(podman build -t "$PROJECT_DEV_IMAGE" -f "$SELECTED_DEV_CONTAINERFILE")
     [ -n "$DEV_TARGET_STAGE" ] && BUILD_CMD+=(--target "$DEV_TARGET_STAGE")
     BUILD_CMD+=("$SELECTED_DEV_BUILD_CONTEXT")
 

@@ -98,6 +98,18 @@ main() {
     test_egress_editor_settings_include_proxy
     test_non_egress_editor_settings_skip_proxy
     test_smoke_machine_settings_include_proxy_in_egress
+    (
+        source "$JAILBOX_DIR/tests/lib/file-publication.sh"
+        with_settings_file
+        trap 'rm -rf "$SETTINGS_DIR"' EXIT
+        EGRESS_ALLOW=()
+        assert_file_publication write_jailbox_editor_user_settings "$JAILBOX_EDITOR_USER_SETTINGS"
+        mv() { return 43; }
+        write_remote_editor_smoke_settings() { touch "$SETTINGS_DIR/launched"; }
+        if launch_editor_remote; then exit 1; fi
+        [[ ! -e "$SETTINGS_DIR/launched" ]]
+    )
+    pass 'settings publication preserves destination and caller state across failures and signals'
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

@@ -128,29 +128,37 @@ remote_tag_exists() {
 # A failed release push can leave a local tag behind. Refuse to continue
 # until it is removed so version selection stays based on published tags.
 ensure_no_local_only_version_tags() {
-    local tag
+    local tag tags status
 
+    tags=$(git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*') || die 'could not inspect local release tags'
     while IFS= read -r tag; do
         [ -n "$tag" ] || continue
-        if ! remote_tag_exists "$tag"; then
+        if remote_tag_exists "$tag"; then
+            continue
+        else
+            status=$?
+            [ "$status" -eq 2 ] || die "could not inspect remote release tag: $tag"
             die "local release tag is not on origin: $tag (delete it with: git tag -d $tag)"
         fi
-    done < <(git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*')
+    done <<< "$tags"
 }
 
 # True when any v1+ tag exists; used to keep --first-major one-time only.
 has_v1_or_later_tag() {
-    local tag
+    local tag tags
+    tags=$(git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*') || return 2
     while IFS= read -r tag; do
         [ -n "$tag" ] || continue
         [ "$(version_major "$tag")" -lt 1 ] || return 0
-    done < <(git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*')
+    done <<< "$tags"
     return 1
 }
 
 # Require a clean worktree for real releases. Dry runs intentionally skip this.
 ensure_clean_tree() {
-    [ -z "$(git -C "$ROOT_DIR" status --porcelain)" ] || \
+    local status
+    status=$(git -C "$ROOT_DIR" status --porcelain) || die 'could not inspect working tree'
+    [ -z "$status" ] || \
         die "working tree is not clean (commit or stash changes before releasing)"
 }
 
@@ -205,14 +213,14 @@ ensure_release_branch_synced() {
 select_release_version() {
     local latest api_change
 
-    latest="$(latest_tag)"
+    latest="$(latest_tag)" || die 'could not inspect latest release tag'
     [ -n "$latest" ] || latest="v0.0.0"
     validate_version "$latest"
 
     if [ "$latest" = "v0.0.0" ]; then
         api_change=initial
     else
-        api_change="$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$latest")"
+        api_change="$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$latest")" || die 'could not compare public API'
     fi
     select_version "$latest" "$api_change"
 }
@@ -239,7 +247,7 @@ suggest_bump() {
 
 # Choose SELECTED_VERSION from latest tag, API change status, and --first-major.
 select_version() {
-    local latest="$1" api_change="$2" latest_major
+    local latest="$1" api_change="$2" latest_major status
 
     latest_major="$(version_major "$latest")"
     suggest_bump "$latest" "$api_change"
@@ -253,7 +261,12 @@ select_version() {
 
     if [ "$FIRST_MAJOR" = true ]; then
         [ "$latest_major" -lt 1 ] || die "--first-major is only valid before v1.0.0"
-        ! has_v1_or_later_tag || die "--first-major has already been used; a v1+ tag exists"
+        if has_v1_or_later_tag; then
+            die "--first-major has already been used; a v1+ tag exists"
+        else
+            status=$?
+            [ "$status" -eq 1 ] || die 'could not inspect major release tags'
+        fi
         SELECTED_VERSION="v1.0.0"
         BUMP_REASON="First stable major release requested"
     else
@@ -261,8 +274,12 @@ select_version() {
     fi
 
     validate_version "$SELECTED_VERSION"
-    ! git -C "$ROOT_DIR" rev-parse "$SELECTED_VERSION" >/dev/null 2>&1 || \
+    if git -C "$ROOT_DIR" rev-parse --verify --quiet "$SELECTED_VERSION" >/dev/null; then
         die "tag already exists: $SELECTED_VERSION"
+    else
+        status=$?
+        [ "$status" -eq 1 ] || die 'could not inspect selected release tag'
+    fi
 }
 
 # Human review can raise the policy result before the final yes/no prompt.

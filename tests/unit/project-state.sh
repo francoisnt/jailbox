@@ -69,6 +69,23 @@ main() {
     echo ""
 
     test_project_state_paths
+    (
+        for partial in '' plausible; do
+            tr() { printf '%s' "$partial"; return 42; }
+            if output=$(jailbox_resource_prefix_for_path /project); then
+                echo 'Failed slug construction was accepted' >&2; exit 1
+            fi
+            [[ -z "$output" ]]
+        done
+        unset -f tr
+        basename() { printf 'plausible'; return 42; }
+        if output=$(jailbox_resource_prefix_for_path /project); then exit 1; fi
+        [[ -z "$output" ]]
+        unset -f basename
+        hash=$(jailbox_project_hash_for_path '/!!!')
+        [[ $(jailbox_resource_prefix_for_path '/!!!') == "jailbox-$hash" ]]
+    )
+    pass 'failed slug producers refuse identity; successful empty slugs remain valid'
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

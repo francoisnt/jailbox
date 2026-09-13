@@ -13,7 +13,9 @@
 # repository names): lowercase alphanumerics and single dashes only. Empty
 # when nothing survives sanitization.
 jailbox_project_slug_for_path() {
-    printf '%s' "$(basename "$1")" |
+    local base
+    base=$(basename "$1") || return 1
+    printf '%s' "$base" |
         tr '[:upper:]' '[:lower:]' |
         tr -c 'a-z0-9' '-' |
         cut -c1-24 |
@@ -26,7 +28,7 @@ jailbox_resource_prefix_for_path() {
     local slug hash
 
     hash=$(jailbox_project_hash_for_path "$1") || return 1
-    slug=$(jailbox_project_slug_for_path "$1")
+    slug=$(jailbox_project_slug_for_path "$1") || return 1
     if [ -n "$slug" ]; then
         printf 'jailbox-%s-%s\n' "$slug" "$hash"
     else
