@@ -248,7 +248,8 @@ ledger_record_project_resources() {
     local project_dir="$1" prefix
 
     case "$project_dir" in
-        /tmp/jailbox-editor-*|/tmp/jailbox-e2e-*) ;;
+        # macOS resolves /tmp to /private/tmp when fixtures use pwd -P.
+        /tmp/jailbox-editor-*|/tmp/jailbox-e2e-*|/private/tmp/jailbox-editor-*|/private/tmp/jailbox-e2e-*) ;;
         *)
             echo "Error: refusing to record resources for non-fixture project '$project_dir'" >&2
             return 1

@@ -103,6 +103,7 @@ resource_present() { [ -f "$FAKE_PODMAN_STATE/$1.$2" ]; }
 # their directory early on purpose.
 new_fixture_project() {
     project=$(mktemp -d "/tmp/jailbox-${1:-e2e}-unit.XXXXXX")
+    project=$(cd "$project" && pwd -P)
     PROJECT_DIRS+=("$project")
     prefix=$(jailbox_resource_prefix_for_path "$project")
 }
@@ -160,6 +161,25 @@ if [ "$(printf '%s\n' "$recorded" | grep -c -- "-proxy$")" -eq 2 ]; then
 else
     fail "the shared proxy name is recorded once per kind"
 fi
+
+test_fixture_path_spellings() {
+    # Path-only registration needs no real directory or engine objects. Exercise
+    # both spellings on every host and preserve the supplied path's identity.
+    local LEDGER_FILE="$FIXTURE/path-shapes" root kind path
+    for root in /tmp /private/tmp; do
+        for kind in e2e editor; do
+            path="$root/jailbox-$kind-unit/project"
+            : > "$LEDGER_FILE"
+            ledger_record_project_resources "$path"
+            grep -Fxq "container $(jailbox_resource_prefix_for_path "$path")" "$LEDGER_FILE"
+        done
+        : > "$LEDGER_FILE"
+        if ledger_record_project_resources "$root/unrelated/project" 2>/dev/null; then exit 1; fi
+        [[ ! -s "$LEDGER_FILE" ]]
+    done
+}
+test_fixture_path_spellings
+pass 'fixture path spellings preserve identity and reject unrelated projects'
 
 if ledger_record_project_resources "$FIXTURE/not-a-fixture" 2>/dev/null; then
     fail "recording refuses a project outside the fixture paths"
