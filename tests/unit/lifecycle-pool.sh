@@ -169,6 +169,14 @@ tree="$TEST_ROOT/coordinator"
 mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/host" "$tree/bin"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
 cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts,fixture-ports}.sh "$tree/tests/lib/"
+# The fake workers never bind sockets. Model their Linux socket tables instead
+# of reading the host's /proc, which is absent on macOS. Keep the real selector.
+mkdir -p "$tree/proc/sys/net/ipv4" "$tree/proc/net"
+printf '32768 60999\n' > "$tree/proc/sys/net/ipv4/ip_local_port_range"
+: > "$tree/proc/net/tcp"
+: > "$tree/proc/net/tcp6"
+sed "s|/proc}|$tree/proc}|" "$ROOT/tests/lib/fixture-ports.sh" > "$tree/tests/lib/fixture-ports.sh"
+grep -Fq "$tree/proc}" "$tree/tests/lib/fixture-ports.sh"
 cp "$ROOT/host/"{project-id,public-api}.sh "$tree/host/"
 cat > "$tree/bin/podman" <<'ENGINE'
 #!/bin/bash
