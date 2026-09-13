@@ -1,70 +1,11 @@
 #!/bin/bash
-# Independently maintained coverage floors for the seven healthy fault fixtures.
-# These describe operation roles, not a total derived from the current trace.
-# New operations are still swept automatically. Removing or replacing a required
-# operation needs an explicit review of this contract, even if launch still works.
+# shellcheck source=tests/lib/lifecycle-contracts.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lifecycle-contracts.sh"
+
 lifecycle_require_fault_coverage() {
-    local trace="$1" command="$2" policy="$3" requirement minimum pattern count
-    local -a requirements=()
-    case "$command:$policy" in
-        up:false|up:none|up:new-ephemeral)
-            requirements=(
-                'internal-network|1|^podman network create .* [^ ]+-net-internal$'
-                'external-network|1|^podman network create .* [^ ]+-net-external$'
-                'proxy-container|1|^podman run .* --name [^ ]+-proxy '
-                'development-container|1|^podman run .* --cidfile '
-                'state-directories|4|^mkdir -p '
-                'proxy-filter-permissions|1|^chmod 644 .*/tinyproxy-filter$'
-                'proxy-config-permissions|1|^chmod 644 .*/tinyproxy[.]conf$'
-                'gitconfig-removal|1|^rm .*/gitconfig$'
-                'gitconfig-allocation|1|^mktemp .*/gitconfig[.]tmp[.]'
-                'gitconfig-staging-permissions|1|^chmod 600 .*/gitconfig[.]tmp[.]'
-                'gitconfig-publication|1|^mv .*/gitconfig[.]tmp[.].* /.*gitconfig$'
-                'gitconfig-permissions|1|^chmod 600 .*/gitconfig$'
-                'ssh-allocation|1|^mktemp -d .*/[.]ssh-generation[.]'
-                'ssh-server-directory|1|^mkdir .*/[.]ssh-generation[.][^ /]+/server$'
-                'ssh-client-key|1|^ssh-keygen .* -C jailbox-client '
-                'ssh-server-key|1|^ssh-keygen .* -C jailbox-server '
-                'ssh-authorization|1|^cp .*/server/authorized_keys$'
-                'ssh-private-permissions|1|^chmod 600 .*/server/authorized_keys$'
-                'ssh-public-permissions|1|^chmod 644 .*/server/ssh_host_ed25519_key[.]pub$'
-                'ssh-publication|1|^mv .*/[.]ssh-generation[.].* /.*ssh-generation$'
-                'ssh-staging-cleanup|1|^rm .*/[.]ssh-generation[.][^ /]+$'
-                'proxy-session-configuration|1|^ssh .*jailbox-manage-proxy.*enable'
-            )
-            if [[ "$policy" != false ]]; then
-                requirements+=(
-                    'home-creation|1|^podman volume create '
-                    'home-ownership|1|^podman unshare chown '
-                )
-            fi
-            ;;
-        stop:false|stop:true|--clean:false|--clean:true)
-            requirements=(
-                'development-stop|1|^podman stop jailbox-project-[[:xdigit:]]+$'
-                'proxy-stop|1|^podman stop .*-proxy$'
-                'development-removal|1|^podman rm jailbox-project-[[:xdigit:]]+$'
-                'proxy-removal|1|^podman rm .*-proxy$'
-                'internal-network-removal|1|^podman network rm .*-net-internal$'
-                'external-network-removal|1|^podman network rm .*-net-external$'
-            )
-            if [[ "$command" = --clean || "$policy" = true ]]; then
-                requirements+=('home-removal|1|^podman volume rm .*-home$')
-            fi
-            if [[ "$command" = --clean ]]; then
-                requirements+=(
-                    'development-image-removal|1|^podman image rm .*-image$'
-                    'proxy-image-removal|1|^podman image rm .*-proxy$'
-                    'state-removal|1|^rm -rf -- .*/projects/[[:xdigit:]]+$'
-                )
-            else
-                requirements+=('ssh-removal|1|^rm -rf -- .*/ssh-generation ')
-            fi
-            ;;
-        *) printf 'Unknown fault coverage scenario: %s:%s\n' "$command" "$policy" >&2; return 1 ;;
-    esac
-    for requirement in "${requirements[@]}"; do
-        IFS='|' read -r requirement minimum pattern <<< "$requirement"
+    local trace="$1" command="$2" policy="$3" requirements requirement minimum pattern count
+    requirements=$(lifecycle_fault_requirements "$command" "$policy") || return 1
+    while IFS='|' read -r requirement minimum pattern; do
         count=$(LC_ALL=C grep -Ec -- "$pattern" "$trace") || {
             [[ "$count" = 0 ]] || return 1
         }
@@ -73,7 +14,7 @@ lifecycle_require_fault_coverage() {
                 "$command" "$policy" "$requirement" "$minimum" "$count" >&2
             return 1
         fi
-    done
+    done <<< "$requirements"
 }
 
 # Normalize only allocation suffixes, retaining the operation and its operands.

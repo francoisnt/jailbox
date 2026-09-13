@@ -12,22 +12,22 @@ TEST_CASE=setup
 trap 'printf "FAIL [%s] line %s: %s\n" "$TEST_CASE" "$LINENO" "$BASH_COMMAND" >&2' ERR
 pass() { printf 'PASS: %s\n' "$TEST_CASE"; }
 
-TEST_CASE='all rows, seven fault groups, and targeted failures are scheduled'
+TEST_CASE='all rows, nine fault groups, and targeted failures are scheduled'
 lifecycle_jobs > "$TEST_ROOT/catalog"
-[[ $(wc -l < "$TEST_ROOT/catalog") = 59 ]]
+[[ $(wc -l < "$TEST_ROOT/catalog") = 61 ]]
 [[ $(grep -c '^row\.' "$TEST_ROOT/catalog") = 48 ]]
-[[ $(grep -c '^fault\.' "$TEST_ROOT/catalog") = 7 ]]
+[[ $(grep -c '^fault\.' "$TEST_ROOT/catalog") = 9 ]]
 cut -d '|' -f3- "$TEST_ROOT/catalog" | head -48 > "$TEST_ROOT/rows"
 lifecycle_matrix_rows > "$TEST_ROOT/expected-rows"
 cmp "$TEST_ROOT/expected-rows" "$TEST_ROOT/rows"
 lifecycle_fixed_cases | sort > "$TEST_ROOT/fixed"
-[[ $(wc -l < "$TEST_ROOT/fixed") = 164 ]]
-[[ $(sort -u "$TEST_ROOT/fixed" | wc -l) = 164 ]]
+[[ $(wc -l < "$TEST_ROOT/fixed") = 166 ]]
+[[ $(sort -u "$TEST_ROOT/fixed" | wc -l) = 166 ]]
 pass
 
 TEST_CASE='history changes ordering without dropping or duplicating jobs'
 lifecycle_order_jobs "$TEST_ROOT/catalog" /dev/null > "$TEST_ROOT/ordered"
-[[ $(head -7 "$TEST_ROOT/ordered" | grep -c '^fault\.') = 7 ]]
+[[ $(head -9 "$TEST_ROOT/ordered" | grep -c '^fault\.') = 9 ]]
 sort "$TEST_ROOT/catalog" > "$TEST_ROOT/expected"
 sort "$TEST_ROOT/ordered" > "$TEST_ROOT/actual"
 cmp "$TEST_ROOT/expected" "$TEST_ROOT/actual"
@@ -49,6 +49,20 @@ lifecycle_fault_cases "$TEST_ROOT/trace" up new-ephemeral > "$TEST_ROOT/faults"
 [[ $(wc -l < "$TEST_ROOT/faults") = 8 ]]
 grep -Fxq interrupt.up.new-ephemeral.2.barrier "$TEST_ROOT/faults"
 if grep -Fxq interrupt.up.new-ephemeral.2.after "$TEST_ROOT/faults"; then exit 1; fi
+pass
+
+TEST_CASE='focused fault scenarios retain original trace positions'
+printf '%s\n' 'mkdir /state' 'podman start jailbox-project-abc-proxy' \
+    'ssh sandbox jailbox-manage-proxy enable url' 'podman start jailbox-project-abc' > "$TEST_ROOT/trace"
+lifecycle_fault_cases "$TEST_ROOT/trace" up resume > "$TEST_ROOT/faults"
+[[ $(wc -l < "$TEST_ROOT/faults") = 6 ]]
+grep -Fxq interrupt.up.resume.2.before "$TEST_ROOT/faults"
+grep -Fxq interrupt.up.resume.4.barrier "$TEST_ROOT/faults"
+printf '%s\n' 'podman network create --label digest=abc jailbox-project-abc-net' \
+    'podman network create --internal jailbox-project-abc-net-internal' 'mkdir /state' > "$TEST_ROOT/trace"
+lifecycle_fault_cases "$TEST_ROOT/trace" up plain-network > "$TEST_ROOT/faults"
+[[ $(wc -l < "$TEST_ROOT/faults") = 3 ]]
+grep -Fxq interrupt.up.plain-network.1.after "$TEST_ROOT/faults"
 pass
 
 # External shells keep errexit active when the parent collects failed workers.
@@ -87,7 +101,7 @@ for workers in 1 2 4; do
     cat "$run"/visited-* | sort > "$TEST_ROOT/actual"
     cut -d '|' -f2- "$TEST_ROOT/catalog" | sort > "$TEST_ROOT/expected"
     cmp "$TEST_ROOT/expected" "$TEST_ROOT/actual"
-    [[ $(find "$run/done" -type f | wc -l) = 59 ]]
+    [[ $(find "$run/done" -type f | wc -l) = 61 ]]
     pass
 done
 
@@ -154,7 +168,7 @@ TEST_CASE='the coordinator consolidates complete coverage and cleans every worke
 tree="$TEST_ROOT/coordinator"
 mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/host" "$tree/bin"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
-cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs}.sh "$tree/tests/lib/"
+cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts}.sh "$tree/tests/lib/"
 cp "$ROOT/host/"{project-id,public-api}.sh "$tree/host/"
 cat > "$tree/bin/podman" <<'ENGINE'
 #!/bin/bash
@@ -201,6 +215,21 @@ complete_job() {
 }
 lifecycle_run_queue "$run" complete_job </dev/null
 MOCK_WORKER
+TEST_CASE='invalid mappings fail before coordinator resource preparation'
+cp "$tree/tests/lib/lifecycle-contracts.sh" "$tree/contracts-backup"
+for mapping in LIFECYCLE_COMMAND_CONTRACTS LIFECYCLE_FAULT_SCENARIOS; do
+    cp "$tree/contracts-backup" "$tree/tests/lib/lifecycle-contracts.sh"
+    printf '\nunset "%s[up]"\n' "$mapping" >> "$tree/tests/lib/lifecycle-contracts.sh"
+    if PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" \
+        JAILBOX_LIFECYCLE_JOBS=1 bash "$tree/tests/integration/lifecycle-state.sh" > "$tree/output" 2>&1; then
+        echo 'FAIL: incomplete mapping accepted' >&2; exit 1
+    fi
+    grep -q "missing mapping 'up'" "$tree/output"
+    [[ ! -e "$tree/testlog" && ! -e "$tree/ledger" ]]
+done
+cp "$tree/contracts-backup" "$tree/tests/lib/lifecycle-contracts.sh"
+pass
+TEST_CASE='the coordinator consolidates complete coverage and cleans every worker'
 previous=""
 for workers in 1 2 4; do
     if ! PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" \
@@ -209,7 +238,7 @@ for workers in 1 2 4; do
         cat "$tree/output" >&2; exit 1
     fi
     run=$(sed -n 's/.*matrix passed; logs: //p' "$tree/output")
-    [[ $(wc -l < "$run/completed-cases") = 185 ]]
+    [[ $(wc -l < "$run/completed-cases") = 187 ]]
     if [[ -n "$previous" ]]; then cmp "$previous" "$run/completed-cases"; fi
     previous="$run/completed-cases"
     for file in "$run"/worker-*/fixture; do

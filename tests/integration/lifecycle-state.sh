@@ -11,6 +11,7 @@ source "$ROOT/tests/lib/resource-ledger.sh"
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh
 source "$ROOT/tests/lib/lifecycle-jobs.sh"
+validate_lifecycle_contracts
 
 die() { printf 'FAIL [lifecycle-pool]: %s\n' "$*" >&2; exit 1; }
 if [[ -n ${JAILBOX_LIFECYCLE_JOBS:-} ]]; then

@@ -292,18 +292,19 @@ assert_service() {
     fi
 }
 assert_cleanup() {
-    local command="$1" policy="$2" name
+    local command="$1" policy="$2" name contract
+    contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
     for name in "$PREFIX" "$PREFIX-proxy"; do require_absent container "$name"; done
     for name in "$NETWORK" "$NETWORK-internal" "$NETWORK-external"; do require_absent network "$name"; done
     [[ ! -e "$GENERATION" ]] || matrix_die 'generation survived cleanup'
     if compgen -G "$STATE/.ssh-generation.*" >/dev/null; then matrix_die 'partial generation survived cleanup'; fi
-    if [[ "$command" = --clean || "$policy" = true || "$policy" = none ]]; then
+    if [[ "$contract" = clean || "$policy" = true || "$policy" = none ]]; then
         require_absent volume "$HOME_VOLUME"
     else
         require_present volume "$HOME_VOLUME"
         assert_marker keep
     fi
-    if [[ "$command" = --clean ]]; then
+    if [[ "$contract" = clean ]]; then
         [[ ! -e "$STATE" ]] || matrix_die 'runtime state survived clean'
         for name in "$PREFIX-dev" "$PREFIX-image" "$PREFIX-proxy"; do require_absent image "$name"; done
     elif [[ "$STATE_UNRELATED" = true ]]; then
@@ -312,23 +313,28 @@ assert_cleanup() {
     require_present image jailbox-test-debian
 }
 run_row() {
+    # The row's recovery names a repair action (stop/clean), not the command's
+    # test contract. Refusal recovery deliberately invokes stop or --clean;
+    # subsequent convergence executes the command under test again.
     local key="$1" mode="$2" policy="$3" requested="$4" up="$5" status="$6" diagnosis="$7" attach="$8" recovery="$9" retained="${10}" stopped="${11}" command
-    local dev_id proxy_id generation_present extra_present
+    local dev_id proxy_id generation_present extra_present contract
+    validate_lifecycle_contracts
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+        contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
         matrix_case_begin "$key.$command"
         construct "$key" "$mode" "$policy" "$requested"
         if exists volume "$HOME_VOLUME"; then
             podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/home-labels-before"
         fi
         matrix_observe initial "$status" "$diagnosis" "$attach"
-        if [[ "$command" != up ]]; then
+        if [[ "$contract" != launch ]]; then
             image_snapshot > "$LOG/images-before"
             extra_present=false
             if exists network "$EXTRA"; then extra_present=true; fi
             expect_success "$command"
             assert_cleanup "$command" "$policy"
             if [[ "$extra_present" = true ]]; then require_present network "$EXTRA"; fi
-            if [[ "$command" = stop ]]; then
+            if [[ "$contract" = stop ]]; then
                 image_snapshot > "$LOG/images-after"
                 cmp -s "$LOG/images-before" "$LOG/images-after" || matrix_die 'stop changed images'
                 matrix_observe stopped "$stopped" cleanup refuse
@@ -351,7 +357,7 @@ run_row() {
         fi
         if [[ "$up" = refuse ]]; then
             snapshot > "$LOG/before"
-            if test_log_capture "$LOG/$CASE_KEY.command" cli up; then matrix_die 'damaged state accepted'; fi
+            if test_log_capture "$LOG/$CASE_KEY.command" cli "$command"; then matrix_die 'damaged state accepted'; fi
             snapshot > "$LOG/after"
             cmp -s "$LOG/before" "$LOG/after" || matrix_die 'compatibility refusal mutated pre-existing state'
             if [[ "$recovery" = clean ]]; then
@@ -366,7 +372,7 @@ run_row() {
                 expect_success stop
             fi
         fi
-        expect_success up
+        expect_success "$command"
         if [[ -n "$dev_id" ]]; then
             [[ $(podman container inspect "$PREFIX" --format '{{.Id}}') = "$dev_id" ]] || matrix_die 'convergence replaced development survivor'
         fi

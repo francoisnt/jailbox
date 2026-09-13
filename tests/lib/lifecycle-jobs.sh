@@ -1,21 +1,22 @@
 #!/bin/bash
-# shellcheck source=host/public-api.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/host/public-api.sh"
+# shellcheck source=tests/lib/lifecycle-contracts.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lifecycle-contracts.sh"
 
 # A row is one job (three independent command fixtures). Each fault job keeps
 # its healthy trace and every interruption in one worker's project identity.
 lifecycle_jobs() {
     local row command policy
+    local -a policies=()
+    validate_lifecycle_contracts
     while IFS= read -r row; do
         printf 'row.%s|row|%s\n' "${row%%|*}" "$row"
     done < <(lifecycle_matrix_rows)
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
-        for policy in false true; do
-            if [[ "$command:$policy" = up:true ]]; then continue; fi
+        read -r -a policies <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
+        for policy in "${policies[@]}"; do
             printf 'fault.%s.%s|fault|%s|%s\n' "$command" "$policy" "$command" "$policy"
         done
     done
-    printf '%s\n' 'fault.up.none|fault|up|none' 'fault.up.new-ephemeral|fault|up|new-ephemeral'
     printf '%s\n' 'resume|special|resume' 'removal|special|removal' \
         'dependency|special|dependency' 'inspection|special|inspection'
 }
@@ -39,16 +40,18 @@ lifecycle_order_jobs() {
 
 lifecycle_fixed_cases() {
     local row command policy missing baseline
+    local -a policies=()
+    validate_lifecycle_contracts
     while IFS='|' read -r row _; do
         for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do printf '%s.%s\n' "$row" "$command"; done
     done < <(lifecycle_matrix_rows)
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
-        for policy in false true; do
-            [[ "$command:$policy" != up:true ]] || continue
+        read -r -a policies <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
+        for policy in "${policies[@]}"; do
             printf 'trace.%s.%s\n' "$command" "$policy"
         done
     done
-    printf '%s\n' trace.up.none trace.up.new-ephemeral failed-new-container-cleanup
+    printf '%s\n' failed-new-container-cleanup
     for policy in false true; do
         for missing in false true; do printf 'failed-resume.%s.missing-proxy-%s\n' "$policy" "$missing"; done
         for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do printf 'home-inspection.%s.%s\n' "$policy" "$command"; done
@@ -60,6 +63,7 @@ lifecycle_fault_cases() {
     local trace="$1" command="$2" policy="$3" event point=0 fault
     while IFS= read -r event; do
         point=$((point + 1))
+        lifecycle_fault_event_applies "$policy" "$event" || continue
         for fault in before after barrier; do
             [[ "$event" != mktemp\ * || "$fault" != after ]] || continue
             printf 'interrupt.%s.%s.%s.%s\n' "$command" "$policy" "$point" "$fault"

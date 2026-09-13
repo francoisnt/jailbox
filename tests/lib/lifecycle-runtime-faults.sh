@@ -1,12 +1,17 @@
 #!/bin/bash
 # Sourced by the real-engine matrix. Fault points are discovered from a healthy
 # command's persistent operations; expectations below come from lifecycle
-# contracts. This covers each actual step even when production code is refactored.
+# contracts. These are selected operation boundaries, not every internal write.
 
 fault_baseline() {
-    local command="$1" policy="$2"
-    if [[ "$command" = up ]]; then
-        if [[ "$policy" = none ]]; then
+    local command="$1" policy="$2" contract
+    contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
+    if [[ "$contract" = launch ]]; then
+        if [[ "$policy" = resume ]]; then
+            construct stopped-egress egress false false
+        elif [[ "$policy" = plain-network ]]; then
+            construct home-false-false plain false false
+        elif [[ "$policy" = none ]]; then
             construct absent egress none false
         elif [[ "$policy" = new-ephemeral ]]; then
             construct absent egress none true
@@ -41,7 +46,8 @@ fault_inventory() {
 }
 
 assert_partial_cleanup() {
-    local policy="$1" command="$2" name
+    local policy="$1" command="$2" name contract
+    contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
     if exists container "$PREFIX"; then
         [[ -f "$GENERATION/key" && -f "$GENERATION/container-id" ]] || matrix_die 'cleanup removed authentication before development container'
         require_present volume "$HOME_VOLUME"
@@ -57,7 +63,7 @@ assert_partial_cleanup() {
     elif [[ "$policy" = false ]]; then
         assert_marker keep
     fi
-    if [[ "$command" = stop && "$policy" = false ]]; then require_present volume "$HOME_VOLUME"; fi
+    if [[ "$contract" = stop && "$policy" = false ]]; then require_present volume "$HOME_VOLUME"; fi
 }
 
 interrupt_at_barrier() {
@@ -89,7 +95,11 @@ interrupt_at_barrier() {
 }
 
 run_mutation_faults() {
-    local command="$1" policy="$2" count point fault result inventory recovery retained trace event
+    local command="$1" policy="$2" count point fault result inventory recovery retained trace event contract
+    local dev_id proxy_id home_preexisting
+    # recovery holds the actual CLI command to execute, not a contract name.
+    validate_lifecycle_contracts
+    contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
     # New-home and pre-existing-home launches exercise distinct rollback
     # ownership. Cleanup exercises stored persistent and ephemeral policy.
     matrix_case_begin "trace.$command.$policy"
@@ -106,6 +116,7 @@ run_mutation_faults() {
     matrix_case_pass
     for ((point=1; point<=count; point++)); do
         event=$(sed -n "${point}p" "$trace")
+        lifecycle_fault_event_applies "$policy" "$event" || continue
         for fault in before after barrier; do
             # Allocation is covered before creation and by killing the
             # caller after allocation, before it receives the path. Do
@@ -113,6 +124,14 @@ run_mutation_faults() {
             if [[ "$event" = mktemp\ * && "$fault" = after ]]; then continue; fi
             matrix_case_begin "interrupt.$command.$policy.$point.$fault"
             fault_baseline "$command" "$policy"
+            home_preexisting=false
+            if exists volume "$HOME_VOLUME"; then home_preexisting=true; fi
+            if [[ "$policy" = resume ]]; then
+                dev_id=$(podman container inspect "$PREFIX" --format '{{.Id}}')
+                proxy_id=$(podman container inspect "$PREFIX-proxy" --format '{{.Id}}')
+                podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/networks-before"
+                filesystem_snapshot "$GENERATION" > "$LOG/generation-before"
+            fi
             export LIFECYCLE_EVENTS="$LOG/events" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE="$fault"
             : > "$LIFECYCLE_EVENTS"
             result=0
@@ -128,9 +147,18 @@ run_mutation_faults() {
             unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE
             inventory=$(fault_inventory)
             matrix_observe interrupted "$inventory" partial health-dependent
-            if [[ "$command" = up ]]; then
-                if [[ "$policy" = false ]]; then assert_marker keep; fi
-                if [[ "$result" = 0 ]]; then
+            if [[ "$contract" = launch ]]; then
+                if [[ "$home_preexisting" = true ]]; then assert_marker keep; fi
+                if [[ "$policy" = resume ]]; then
+                    [[ $(podman container inspect "$PREFIX" --format '{{.Id}}') = "$dev_id" ]] || matrix_die 'interrupted resume replaced development survivor'
+                    [[ $(podman container inspect "$PREFIX-proxy" --format '{{.Id}}') = "$proxy_id" ]] || matrix_die 'interrupted resume replaced proxy survivor'
+                    podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/networks-after"
+                    cmp -s "$LOG/networks-before" "$LOG/networks-after" || matrix_die 'interrupted resume replaced networks'
+                    filesystem_snapshot "$GENERATION" > "$LOG/generation-after"
+                    cmp -s "$LOG/generation-before" "$LOG/generation-after" || matrix_die 'interrupted resume changed credentials'
+                    if grep -Eq '^podman (stop|rm) ' "$LOG/$CASE_KEY.events"; then matrix_die 'interrupted resume removed or stopped survivors'; fi
+                    [[ "$result" != 0 ]] || assert_service
+                elif [[ "$result" = 0 ]]; then
                     # Some idempotent operations can confirm success even
                     # after a tool reports failure. Success still owes all
                     # readiness checks, not merely surviving resources.
@@ -140,27 +168,28 @@ run_mutation_faults() {
                     require_absent container "$PREFIX-proxy"
                     require_absent network "$NETWORK-internal"
                     require_absent network "$NETWORK-external"
+                    require_absent network "$NETWORK"
                     [[ ! -e "$GENERATION" ]] || matrix_die 'handled failure left generation material'
                     if compgen -G "$STATE/.ssh-generation.*" >/dev/null; then matrix_die 'handled failure left partial generation'; fi
-                    if [[ "$policy" = none || "$policy" = new-ephemeral ]]; then require_absent volume "$HOME_VOLUME"; fi
+                    if [[ "$home_preexisting" = false ]]; then require_absent volume "$HOME_VOLUME"; fi
                 fi
                 recovery=stop
                 retained=new
-                [[ "$policy" != false ]] || retained=keep
+                if [[ "$home_preexisting" = true ]]; then retained=keep; fi
             else
                 assert_partial_cleanup "$policy" "$command"
                 recovery="$command"
                 retained=delete
-                if [[ "$command:$policy" = stop:false ]]; then retained=keep; fi
+                if [[ "$contract:$policy" = stop:false ]]; then retained=keep; fi
             fi
             # These cases have valid home metadata. Stop/clean is the
             # owning recovery for interrupted operations; execute it.
             expect_success "$recovery"
-            if [[ "$command:$policy" = up:new-ephemeral ]]; then require_absent volume "$HOME_VOLUME"; fi
-            if [[ "$command" != up ]]; then assert_cleanup "$command" "$policy"; fi
+            if [[ "$contract:$policy" = launch:new-ephemeral ]]; then require_absent volume "$HOME_VOLUME"; fi
+            if [[ "$contract" != launch ]]; then assert_cleanup "$command" "$policy"; fi
             expect_success up
             assert_service
-            if [[ "$command:$policy" = up:none ]]; then
+            if [[ "$contract:$policy" = launch:none ]]; then
                 # Forced termination may leave a newly created persistent
                 # home, but it had no pre-existing user marker to retain.
                 assert_marker new
@@ -291,18 +320,20 @@ run_existing_dependency_failure() {
 }
 
 run_home_inspection_failure() {
-    local policy command retained
+    local policy command retained contract
+    validate_lifecycle_contracts
     for policy in false true; do
         for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+            contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
             matrix_case_begin "home-inspection.$policy.$command"
             construct running egress "$policy" "$policy"
             snapshot > "$LOG/inspection-before"
             export LIFECYCLE_FAIL_HOME_INSPECT="$HOME_VOLUME" LIFECYCLE_EVENTS="$LOG/events"
             : > "$LIFECYCLE_EVENTS"
             matrix_observe inspection-error running home-inspection-error refuse
-            if [[ "$command" = --clean ]]; then
+            if [[ "$contract" = clean ]]; then
                 # Explicit clean does not depend on reading retention metadata.
-                expect_success --clean
+                expect_success "$command"
             else
                 if test_log_capture "$LOG/$CASE_KEY.command" cli "$command"; then matrix_die 'home inspection failure was ignored'; fi
                 [[ ! -s "$LIFECYCLE_EVENTS" ]] || matrix_die 'inspection failure attempted lifecycle mutation'
@@ -314,10 +345,10 @@ run_home_inspection_failure() {
             unset LIFECYCLE_FAIL_HOME_INSPECT LIFECYCLE_EVENTS
             # Resolve the engine error and retry the requested command; do not
             # substitute corrupt-label cleanup for an operational failure.
-            if [[ "$command" != --clean ]]; then expect_success "$command"; fi
-            if [[ "$command" != up ]]; then assert_cleanup "$command" "$policy"; fi
+            if [[ "$contract" != clean ]]; then expect_success "$command"; fi
+            if [[ "$contract" != launch ]]; then assert_cleanup "$command" "$policy"; fi
             retained=delete
-            if [[ "$command" = up || "$command:$policy" = stop:false ]]; then retained=keep; fi
+            if [[ "$contract" = launch || "$contract:$policy" = stop:false ]]; then retained=keep; fi
             expect_success up
             assert_service
             assert_marker "$retained"

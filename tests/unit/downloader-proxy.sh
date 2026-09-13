@@ -296,6 +296,84 @@ test_failed_publication_preserves_user_settings() {
     rm -rf "$d"
 }
 
+test_interrupted_pair_recovers() {
+    local d action fault status
+    for action in enable disable; do
+        for fault in second-publication after-first-publication; do
+            d=$(mktemp -d)
+            mkdir "$d/bin" "$d/expected"
+            ln -s "$(command -v mv)" "$d/real-mv"
+            cat > "$d/bin/mv" <<'WRAPPER'
+#!/bin/bash
+set -euo pipefail
+destination=${!#}
+if [[ "$PROXY_TEST_FAULT" = second-publication && "$destination" = */.wgetrc ]]; then exit 1; fi
+"$HOME/real-mv" "$@"
+if [[ "$PROXY_TEST_FAULT" = after-first-publication && "$destination" = */.curlrc ]]; then
+    # The target must be a direct child of the explicitly identified manager,
+    # never the manager itself or another ancestor of the test process.
+    parent_parent=$(ps -o ppid= -p "$PPID")
+    parent_parent=${parent_parent//[[:space:]]/}
+    [[ "$PPID" != "$PROXY_TEST_MANAGER_PID" && "$parent_parent" = "$PROXY_TEST_MANAGER_PID" ]] || {
+        echo 'Unexpected proxy interruption target' >&2
+        exit 97
+    }
+    printf 'verified sync child\n' > "$HOME/kill-confirmed"
+    kill -KILL "$PPID"
+fi
+WRAPPER
+            chmod 755 "$d/bin/mv"
+            printf 'curl-user-option = yes\n' > "$d/.curlrc"
+            printf 'wget-user-option = yes\n' > "$d/.wgetrc"
+            chmod 600 "$d/.curlrc"
+            chmod 640 "$d/.wgetrc"
+            run_script "$d" enable http://old.test:8888
+            cp "$d/.curlrc" "$d/expected/.curlrc"
+            cp "$d/.wgetrc" "$d/expected/.wgetrc"
+            cp "$d/.wgetrc" "$d/wget-before"
+            run_script "$d/expected" "$action" http://new.test:8888
+            status=0
+            HOME="$d" PATH="$d/bin:$PATH" PROXY_TEST_FAULT="$fault" \
+                bash -c 'export PROXY_TEST_MANAGER_PID=$BASHPID; exec bash "$@"' \
+                _ "$MANAGE_PROXY" "$action" http://new.test:8888 > "$d/error" 2>&1 || status=$?
+            if [[ "$status" != 0 ]] &&
+                { [[ "$fault" != after-first-publication ]] || { [[ "$status" = 137 ]] && grep -Fxq 'verified sync child' "$d/kill-confirmed"; }; } &&
+                cmp -s "$d/.curlrc" "$d/expected/.curlrc" &&
+                cmp -s "$d/.wgetrc" "$d/wget-before"; then
+                pass "$action/$fault stops between the two file updates"
+            else
+                fail "$action/$fault did not leave the expected partial update"
+            fi
+            run_script "$d" "$action" http://new.test:8888
+            run_script "$d" "$action" http://new.test:8888
+            if cmp -s "$d/.curlrc" "$d/expected/.curlrc" && cmp -s "$d/.wgetrc" "$d/expected/.wgetrc" &&
+                grep -Fxq 'curl-user-option = yes' "$d/.curlrc" && grep -Fxq 'wget-user-option = yes' "$d/.wgetrc"; then
+                pass "$action/$fault retry converges and preserves user content"
+            else
+                fail "$action/$fault retry damaged user content or failed to converge"
+            fi
+            assert_mode "$action/$fault preserves curl permissions" "$d/.curlrc" 600
+            assert_mode "$action/$fault preserves wget permissions" "$d/.wgetrc" 640
+            if [[ "$fault" = after-first-publication ]]; then
+                rm "$d/kill-confirmed"
+                cp "$d/.curlrc" "$d/replacement"
+                status=0
+                HOME="$d" PROXY_TEST_FAULT="$fault" bash -c '
+                    export PROXY_TEST_MANAGER_PID=$BASHPID
+                    "$HOME/bin/mv" "$HOME/replacement" "$HOME/.curlrc"
+                    exit $?
+                ' > "$d/error" 2>&1 || status=$?
+                if [[ "$status" = 97 && ! -e "$d/kill-confirmed" ]] && grep -Fq 'Unexpected proxy interruption target' "$d/error"; then
+                    pass "$action refuses to kill the manager if the sync subshell disappears"
+                else
+                    fail "$action accepted a changed interruption target"
+                fi
+            fi
+            rm -rf "$d"
+        done
+    done
+}
+
 main() {
     [[ -f "$MANAGE_PROXY" ]] || { echo "Script not found: $MANAGE_PROXY" >&2; exit 1; }
 
@@ -318,6 +396,7 @@ main() {
     test_enable_without_url_fails
     test_preservation_and_refusal
     test_failed_publication_preserves_user_settings
+    test_interrupted_pair_recovers
 
     echo ""
     if [[ "$FAILED" -eq 0 ]]; then

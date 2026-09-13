@@ -160,9 +160,13 @@ podman rm jailbox-project-abc-proxy
 podman network rm jailbox-project-abc-net-internal
 podman network rm jailbox-project-abc-net-external
 TRACE
-for scenario in up:false up:none up:new-ephemeral stop:false stop:true --clean:false --clean:true; do
+for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network stop:false stop:true --clean:false --clean:true; do
     command=${scenario%:*}; policy=${scenario#*:}
-    if [[ "$command" = up ]]; then
+    if [[ "$policy" = resume ]]; then
+        printf '%s\n' 'podman start jailbox-project-abc-proxy' 'podman start jailbox-project-abc' > "$FIXTURE/coverage"
+    elif [[ "$policy" = plain-network ]]; then
+        printf '%s\n' 'podman network create --label digest=abc jailbox-project-abc-net' > "$FIXTURE/coverage"
+    elif [[ "$command" = up ]]; then
         cp "$FIXTURE/up-trace" "$FIXTURE/coverage"
         if [[ "$policy" != false ]]; then
             printf '%s\n' 'podman volume create --label policy home' 'podman unshare chown 1000:1000 /volume' >> "$FIXTURE/coverage"

@@ -34,6 +34,8 @@ missing mapping, rather than silently falling through or losing coverage.
 Declare commands that manage sandbox containers, networks, and home state in
 `CLI_LIFECYCLE_COMMANDS`; declare other commands in `CLI_OTHER_COMMANDS`.
 Derive lifecycle test membership directly from that public category.
+Lifecycle commands also require validated test contracts and fault scenarios
+in `tests/lib/lifecycle-contracts.sh` before the matrix schedules them.
 
 Keep host orchestration in `host/`, container behavior in `container/`,
 maintenance tooling in `scripts/`, and test code in `tests/`.

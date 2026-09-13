@@ -75,6 +75,21 @@ missing_handler_mapping() {
     public_api_validate_mapping 'command handlers' CLI_FLAGS_WITHOUT_VALUES CLI_COMMAND_HANDLERS
 }
 expect_failure "command handlers: missing mapping 'sample'" missing_handler_mapping
+missing_lifecycle_contract() { add_command; lifecycle_jobs; }
+expect_failure "lifecycle command contracts: missing mapping 'sample'" missing_lifecycle_contract
+missing_fault_scenarios() {
+    add_command
+    LIFECYCLE_COMMAND_CONTRACTS[sample]=stop
+    lifecycle_jobs
+}
+expect_failure "lifecycle fault scenarios: missing mapping 'sample'" missing_fault_scenarios
+missing_fault_requirements() {
+    LIFECYCLE_FAULT_SCENARIOS[up]+=' unsupported'
+    lifecycle_jobs
+}
+expect_failure "missing fault requirements for 'up:unsupported'" missing_fault_requirements
+unknown_lifecycle_contract() { LIFECYCLE_COMMAND_CONTRACTS[up]=unknown; lifecycle_fixed_cases; }
+expect_failure "unknown lifecycle contract for 'up'" unknown_lifecycle_contract
 duplicate_category() { CLI_OTHER_COMMANDS+=(up); initialize_public_api_lookups; }
 expect_failure "duplicate declaration 'up'" duplicate_category
 missing_option() {
@@ -103,8 +118,12 @@ expect_failure "README configuration keys: missing mapping 'SAMPLE'" missing_doc
     usage > "$tmp/help"
     grep -Eq '(\[|\|)sample(\||\])' "$tmp/help"
     grep -Fq 'Sample command' "$tmp/help"
+    LIFECYCLE_COMMAND_CONTRACTS[sample]=stop
+    LIFECYCLE_FAULT_SCENARIOS[sample]='false true'
     lifecycle_fixed_cases > "$tmp/cases"
     grep -Fxq 'absent.sample' "$tmp/cases"
+    lifecycle_jobs > "$tmp/jobs"
+    grep -Fxq 'fault.sample.true|fault|sample|true' "$tmp/jobs"
 )
 (
     CLI_OTHER_COMMANDS+=(sample)

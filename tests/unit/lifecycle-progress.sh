@@ -16,15 +16,15 @@ lifecycle_fixed_cases > "$tmp/expected-fixed"
 : > "$tmp/worker-1/expected-faults"
 : > "$tmp/worker-2/expected-faults"
 [[ $(lifecycle_case_label "$tmp" absent.up) = 'CASE [matrix 1/144] absent.up' ]] || fail 'matrix numbering'
-[[ $(lifecycle_case_label "$tmp" trace.up.false) = 'CASE [discovery 1/7] trace.up.false' ]] || fail 'discovery numbering'
+[[ $(lifecycle_case_label "$tmp" trace.up.false) = 'CASE [discovery 1/9] trace.up.false' ]] || fail 'discovery numbering'
 [[ $(lifecycle_case_label "$tmp" failed-new-container-cleanup) = 'CASE [targeted failures 1/13] failed-new-container-cleanup' ]] || fail 'targeted numbering'
-lifecycle_progress "$tmp" | grep -Fq '0/164 known completed' || fail 'initial provisional total'
+lifecycle_progress "$tmp" | grep -Fq '0/166 known completed' || fail 'initial provisional total'
 printf '%s\n' 'interrupt.up.false.1.before' 'interrupt.up.false.1.barrier' > "$tmp/worker-2/expected-faults"
 [[ $(lifecycle_case_label "$tmp" interrupt.up.false.1.barrier) = 'CASE [interruptions up/false 2/2] interrupt.up.false.1.barrier' ]] || fail 'trace-local numbering'
 printf '%s\n' 'absent.up|2' 'interrupt.up.false.1.before|3' > "$tmp/worker-2/cases"
-lifecycle_progress "$tmp" | grep -Fq '2/166 known completed | matrix 1/144 | discovery 0/7 | interruptions 1/2 known (discovering) | targeted 0/13' || fail 'cross-worker progress'
+lifecycle_progress "$tmp" | grep -Fq '2/168 known completed | matrix 1/144 | discovery 0/9 | interruptions 1/2 known (discovering) | targeted 0/13' || fail 'cross-worker progress'
 awk '/^trace\./ {print $0 "|1"}' "$tmp/expected-fixed" > "$tmp/worker-1/cases"
-lifecycle_progress "$tmp" | grep -Fq '9/166 completed | matrix 1/144 | discovery 7/7 | interruptions 1/2 | targeted 0/13' || fail 'final discovered total'
+lifecycle_progress "$tmp" | grep -Fq '11/168 completed | matrix 1/144 | discovery 9/9 | interruptions 1/2 | targeted 0/13' || fail 'final discovered total'
 if lifecycle_case_label "$tmp" nonexistent >/dev/null; then fail 'unknown case accepted'; fi
 pass 'numbered case types and dynamic completion totals across workers'
 

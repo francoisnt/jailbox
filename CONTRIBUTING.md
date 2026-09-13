@@ -34,6 +34,15 @@ refresh the generated command reference.
 Declare sandbox lifecycle commands in `CLI_LIFECYCLE_COMMANDS` and other
 commands in `CLI_OTHER_COMMANDS`; the lifecycle matrix consumes the former
 directly. These describe command responsibilities, not dispatch sequences.
+Each lifecycle command also needs a test contract and fault scenarios in
+`tests/lib/lifecycle-contracts.sh`. Contracts define state outcomes, recovery,
+and independent required operations; share one only for equivalent behavior.
+Scheduling fails for missing mappings or unsupported scenarios. Individual
+interruption points continue to come from healthy execution traces.
+The matrix covers selected tool-call boundaries, not every internal write,
+image build/pull step, rollback step, or possible timing interaction. Restart
+and plain-network scenarios target their distinct operations; proxy-file
+publication and recovery are additionally checked in portable unit tests.
 
 Use `public_api_validate_mapping LABEL DECLARATIONS MAPPING` for completeness
 checks. It accepts associative maps or arrays of `KEY=value` records, rejects
