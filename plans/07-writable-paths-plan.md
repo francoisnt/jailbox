@@ -70,6 +70,13 @@ assignment, API diff fixtures, digest coverage, mount state in
 `host/container-runtime.sh`, semantic validation, readiness validation, and
 README. Use normal Bash 4.4 empty-array expansion in host code.
 
+Reuse existing containment, symlink, and file-type checks for project mount
+paths. Keep writable/read-only overlap decisions in focused helpers with
+explicit inputs, separate from filesystem inspection and mount construction.
+Preserve the different requirements of trusted external build inputs and
+project-relative mounts; reuse must not merge those trust boundaries. No general
+path-policy framework or line-reduction target is needed.
+
 ## Security, tests, and documentation
 
 Retain read-only roots, dropped capabilities, no-new-privileges, socket
@@ -94,6 +101,9 @@ pre-existing resources, and clean up only this invocation's eligible creations;
 dependencies needed by a surviving container remain available. Verify retained
 home data and explicit recovery as well as the failure status. This preserves
 the existing single-operation contract and adds no concurrency guarantee.
+
+Extend existing fixtures for the new combinations, keeping expected permissions
+independent of the production overlap decision.
 
 Run `tests/run portable`, `tests/run runtime`, and `tests/run matrix`. The runtime
 gate must prove the nested read-write lane inside a read-only base and nested

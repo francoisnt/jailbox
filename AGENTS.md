@@ -99,6 +99,41 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   `host/dev-image.sh`, SSH state in `host/ssh.sh`, editor state in
   `host/editor.sh`, network state in `host/network.sh`, and mount/runtime state
   in `host/container-runtime.sh`.
+- Check critical prerequisites and mutations explicitly; `set -e` alone is not
+  a failure contract. Before calling a function through `if`, `!`, `&&`, or
+  `||`, check its callees too: that context can suppress errexit throughout the
+  call chain, including subshell functions. Stop dependent work on failure and
+  preserve nonzero status through cleanup.
+- Check required data producers before trusting their output. A successful
+  consumer of a command/process substitution does not establish producer
+  success. Bash normally clears errexit in command substitutions;
+  `inherit_errexit` preserves it but does not fix discarded producer statuses
+  or conditional-call suppression. Empty output must not turn failure into
+  absence or permission to mutate. Separate local declarations from fallible
+  assignments when checking the assignment's status. Keep intentional advisory
+  fallbacks distinct from required checks.
+- Distinguish three kinds of state: temporary values stay local to a function;
+  configuration and project identity are treated as read-only by convention
+  once finalized; operation state, including attempted creations and rollback
+  inventory, has one clear owner with explicit updates. Shared reads are fine;
+  avoid hidden writes.
+- Prefer pure decision helpers with explicit inputs where they simplify code.
+  Keep external effects apparent and separate from decisions. Check required
+  initialization at meaningful boundaries and retain useful module-owned state.
+- Use subshells for bounded cleanup, directory, or shell-setting scopes that
+  need no caller-state updates. Preserve caller traps and settings, explicitly
+  handle failures, and clean up external effects; subshells only isolate shell
+  state. Keep the design proportional to the demonstrated problem.
+- Give temporary artifacts an operation-scoped cleanup owner. Failed preparation
+  must not publish partial output; cleanup must preserve pre-existing resources
+  and dependencies needed by survivors, and report failures without masking the
+  original failure. Do not broaden lifecycle or concurrency guarantees through
+  a shell-structure refactor.
+- Apply these conventions to demonstrated problems and code being changed,
+  rather than mechanically rewriting working functions. Add focused regressions
+  for failure sequencing, publication, cleanup, or caller-state isolation where
+  behavior warrants them; test conditional invocation when relevant, not merely
+  the arrangement of helpers.
 
 ## Security invariants
 

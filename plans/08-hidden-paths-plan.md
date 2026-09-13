@@ -72,6 +72,12 @@ in `host/container-runtime.sh`, pre-side-effect validation, launch-state
 assertions, native option emission, and readiness checks. No new cleanup or
 project-state behavior is introduced.
 
+Extend the existing project-path validation and plan 7's overlap decision logic
+with hidden-path precedence instead of building a parallel containment or mount
+planner. Keep policy decisions explicit and separate from filesystem inspection
+and native mask emission. Preserve the distinct validation rules for trusted
+external build inputs.
+
 ## Tests and documentation
 
 Portable/runtime tests cover indexed members, comma-bearing paths, every
@@ -107,6 +113,10 @@ readable hardlink/copy aliases, child-mount non-reexposure, inspect policy, and
 stale exec/shell refusal. Extend plan 7's real-Podman fixture and update its
 empty-base expectation from `:Z` to `:Z,rprivate`; effective isolation, not
 argument order/inspect alone, is the contract.
+
+Reuse plan 7's fixture setup and cleanup, while specifying expected masking and
+permission outcomes independently of the production decision helpers. Keep the
+real-Podman assertions that establish effective denial and host preservation.
 
 Run `tests/run portable`, `tests/run runtime`, and `tests/run matrix`.
 
