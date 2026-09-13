@@ -88,9 +88,16 @@ Controlled fixtures prove in-place writes, failed sibling rename, allowed lane
 writes, denied sibling writes, no UID-mismatch false warning, protected nested
 paths, and Git commit behavior.
 
-Run `tests/run portable` and `tests/run runtime`. The runtime gate must prove
-the nested read-write lane inside a read-only base and nested read-only overlay
-with real Podman; argument order alone is not evidence.
+Extend the existing lifecycle interruption coverage for any mutation paths
+changed by this plan. A failure must stop dependent mutations, preserve
+pre-existing resources, and clean up only this invocation's eligible creations;
+dependencies needed by a surviving container remain available. Verify retained
+home data and explicit recovery as well as the failure status. This preserves
+the existing single-operation contract and adds no concurrency guarantee.
+
+Run `tests/run portable`, `tests/run runtime`, and `tests/run matrix`. The runtime
+gate must prove the nested read-write lane inside a read-only base and nested
+read-only overlay with real Podman; argument order alone is not evidence.
 
 ## Acceptance criteria
 

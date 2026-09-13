@@ -92,6 +92,14 @@ particular error code.
 No editor-gate requirement applies here; later editor-specific coverage gets
 a new frontend plan when needed.
 
+Extend the existing lifecycle interruption coverage for mutation paths changed
+by masking and mount propagation. A creation failure must not retry with weaker
+policy or continue dependent mutations. Verify cleanup preserves pre-existing
+resources and home data, removes only this invocation's eligible creations,
+and retains dependencies needed by surviving containers. Recovery remains
+explicit under the existing single-operation contract, without a concurrency
+guarantee.
+
 Also cover literal glob/option-like segments, quoted option construction,
 explicit private propagation, option failure without retry, masked file and
 directory read/write/list denial with read-only root, host visibility unchanged,
@@ -100,7 +108,7 @@ stale exec/shell refusal. Extend plan 7's real-Podman fixture and update its
 empty-base expectation from `:Z` to `:Z,rprivate`; effective isolation, not
 argument order/inspect alone, is the contract.
 
-Run `tests/run portable` and `tests/run runtime`.
+Run `tests/run portable`, `tests/run runtime`, and `tests/run matrix`.
 
 ## Acceptance criteria
 

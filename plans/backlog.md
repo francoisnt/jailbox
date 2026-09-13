@@ -51,6 +51,20 @@ is a caller obligation, not an existing CLI lock; independent terminals can
 still race. The future design must address the multi-command interval as well
 as individual lifecycle commands.
 
+Before implementation, write a dedicated plan defining lock scope and lifetime,
+contention diagnostics and waiting limits, interruption recovery, and how the
+frontend and external callers protect dependent inspection/attachment sequences.
+Keep separate projects independent. Define ownership strongly enough that a
+failed invocation cannot remove resources created by another invocation.
+
+Include deterministic overlapping startup, stop, and clean scenarios at resource
+creation, credential publication, and cleanup boundaries. Verify resource
+ownership, retained home data, and recoverability, not only exit status. Extend
+the existing gates: interruption of one operation and overlap between operations
+are distinct dimensions. Concurrent read-only attachments remain covered by the
+current attachment plans; supported concurrent lifecycle use begins only with
+the locking contract.
+
 ### Digest diagnostics in `doctor`
 
 Doctor already diagnoses missing and inconsistent version-bound digest labels
@@ -338,6 +352,20 @@ mode.
 
 ## Developer experience
 
+### Editor validation on relevant pull requests
+
+Consider enabling the existing editor gate for pull requests that change editor
+integration or its shared dependencies, including SSH setup, wrapper
+construction, networking, and generated settings. Define and maintain the change
+selection rules so dependency changes cannot silently escape the gate. Retain
+the shared gate implementation and both editor variants; releases and canaries
+continue running all four gates regardless of changed paths.
+
+This improves detection before merge rather than adding missing release
+validation. Assess the added CI time before selecting the trigger policy, and
+verify both changes that should select the gate and unrelated changes that
+should not. Do not add another user-facing test mode.
+
 ### Podman support range and CI coverage
 
 Define and document a minimum supported Podman version, backed by runtime-gate
@@ -352,6 +380,14 @@ representations over branching on version strings, while rejecting unknown or
 incompatible values and preserving the security checks. Support claims should
 follow tested evidence rather than imply compatibility with every historical
 release.
+
+Keep the current Ubuntu baseline while adding deliberate minimum/current engine
+coverage. Start with scheduled compatibility runs and record the tested host
+and engine versions. Container distribution coverage does not establish host
+networking, filesystem, or engine compatibility. Add other host configurations
+only for explicit support goals; macOS portable checks alone must not imply
+verified macOS runtime support. Track test-host availability and maintenance
+cost alongside any broader support claim.
 
 ### Test-log pruning
 
