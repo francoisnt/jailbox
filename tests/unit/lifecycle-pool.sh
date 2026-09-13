@@ -168,7 +168,7 @@ TEST_CASE='the coordinator consolidates complete coverage and cleans every worke
 tree="$TEST_ROOT/coordinator"
 mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/host" "$tree/bin"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
-cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts}.sh "$tree/tests/lib/"
+cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts,fixture-ports}.sh "$tree/tests/lib/"
 cp "$ROOT/host/"{project-id,public-api}.sh "$tree/host/"
 cat > "$tree/bin/podman" <<'ENGINE'
 #!/bin/bash
@@ -179,6 +179,19 @@ echo 'Unexpected engine mutation during coordinator test' >&2
 exit 97
 ENGINE
 chmod 755 "$tree/bin/podman"
+# This fixture exercises coordination and ownership, not Linux process-group
+# isolation. Supply its platform prerequisites on every portable host, including
+# macOS, without depending on a host setsid installation.
+cat > "$tree/bin/setsid" <<'SESSION'
+#!/bin/bash
+exec "$@"
+SESSION
+cat > "$tree/bin/uname" <<'PLATFORM'
+#!/bin/bash
+[[ "$*" = -s ]] || exit 97
+printf 'Linux\n'
+PLATFORM
+chmod 755 "$tree/bin/setsid" "$tree/bin/uname"
 cat > "$tree/tests/lib/lifecycle-worker.sh" <<'MOCK_WORKER'
 #!/bin/bash
 set -euo pipefail
@@ -268,7 +281,7 @@ grep -Eq "^owner $$ " "$LIFECYCLE_POOL_LEDGER"
 CLI
 chmod 755 "$TEST_ROOT/toolroot/jailbox"
 ROOT="$TEST_ROOT/toolroot"
-cli up
+PATH="$tree/bin:$PATH" cli up
 grep '^owner ' "$LIFECYCLE_POOL_LEDGER" > "$TEST_ROOT/pool-owner"
 grep '^owner ' "$LEDGER_FILE" > "$TEST_ROOT/worker-owner"
 cmp "$TEST_ROOT/pool-owner" "$TEST_ROOT/worker-owner"
@@ -289,20 +302,20 @@ mkdir -p "$port_proc/sys/net/ipv4" "$port_proc/net"
 printf '32768 60999\n' > "$port_proc/sys/net/ipv4/ip_local_port_range"
 : > "$port_proc/net/tcp"
 : > "$port_proc/net/tcp6"
-if lifecycle_fixture_port_available 56216 "$port_proc"; then exit 1; fi
-lifecycle_fixture_port_available 62000 "$port_proc"
+if test_fixture_port_available 56216 "$port_proc"; then exit 1; fi
+test_fixture_port_available 62000 "$port_proc"
 printf '0: 0100007F:F230 00000000:0000 0A\n' > "$port_proc/net/tcp"
-if lifecycle_fixture_port_available 62000 "$port_proc"; then exit 1; fi
+if test_fixture_port_available 62000 "$port_proc"; then exit 1; fi
 : > "$port_proc/net/tcp"
 printf '0: 00000000000000000000000000000000:F230 0:0000 0A\n' > "$port_proc/net/tcp6"
-if lifecycle_fixture_port_available 62000 "$port_proc"; then exit 1; fi
+if test_fixture_port_available 62000 "$port_proc"; then exit 1; fi
 rm "$port_proc/net/tcp6"
-lifecycle_fixture_port_available 62000 "$port_proc"
+test_fixture_port_available 62000 "$port_proc"
 for port in 65536 00001 bad; do
-    if lifecycle_fixture_port_available "$port" "$port_proc"; then exit 1; fi
+    if test_fixture_port_available "$port" "$port_proc"; then exit 1; fi
 done
 printf 'bad range\n' > "$port_proc/sys/net/ipv4/ip_local_port_range"
-if lifecycle_fixture_port_available 62000 "$port_proc"; then exit 1; fi
+if test_fixture_port_available 62000 "$port_proc"; then exit 1; fi
 pass
 
 TEST_CASE='resource detection respects affinity and nested cgroup headroom'

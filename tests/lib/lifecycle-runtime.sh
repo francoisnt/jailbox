@@ -7,6 +7,11 @@ lifecycle_setup() {
     LOG="$2"
     PROJECT="$FIXTURE/project"
     mkdir -p "$PROJECT" "$LOG" "$FIXTURE/bin" "$FIXTURE/real"
+    # Fault coverage includes publishing the host Git identity into the sandbox.
+    # Supply it independently of the developer's or CI runner's configuration.
+    export GIT_CONFIG_GLOBAL="$FIXTURE/gitconfig" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0
+    unset GIT_CONFIG_PARAMETERS
+    printf '[user]\n\tname = Jailbox Test\n\temail = jailbox-test@example.invalid\n' > "$GIT_CONFIG_GLOBAL"
     # Capture the host ledger location before isolating project runtime state, so
     # interrupted cleanup remains recoverable even if the fixture disappears.
     export JAILBOX_TEST_LEDGER_DIR="${JAILBOX_TEST_LEDGER_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/jailbox-test-ledger}"

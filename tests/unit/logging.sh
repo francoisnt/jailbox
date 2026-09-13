@@ -119,10 +119,16 @@ test_display_stream < "$FIXTURE/input" > "$FIXTURE/output"
 cmp "$FIXTURE/input" "$FIXTURE/output"
 pass
 
-TEST_CASE='narrow terminal progress does not wrap and early EOF leaves a newline'
-printf 'Progress: 1/200 completed\nCASE running\n' | test_display_stream 20 > "$FIXTURE/output"
-# Every transient draw is restricted to 19 columns; the final retained record
-# at EOF may use a normal full-width line because it ends with a newline.
-[[ $(head -c 24 "$FIXTURE/output") = $'\r\033[2KProgress: 1/200 com' ]]
+TEST_CASE='narrow terminal retains every progress count before the next case'
+status='Progress: 139/511 completed | matrix 0/144 | discovery 9/9 | interruptions 129/345 | targeted 1/13'
+for width in 20 80 "${#status}"; do
+    printf '%s\nCASE running\n' "$status" | test_display_stream "$width" > "$FIXTURE/output"
+    printf '\r\033[2K%s\nCASE running\n' "$status" > "$FIXTURE/expected"
+    cmp "$FIXTURE/expected" "$FIXTURE/output"
+done
+pass
+
+TEST_CASE='early EOF ends a transient progress line with a newline'
+printf 'Progress: 1/2 completed\n' | test_display_stream 80 > "$FIXTURE/output"
 [[ $(tail -c 1 "$FIXTURE/output" | od -An -tu1 | tr -d ' ') = 10 ]]
 pass

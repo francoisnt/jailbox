@@ -33,6 +33,8 @@ source "$JAILBOX_DIR/versions.env"
 source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 # shellcheck source=tests/lib/resource-ledger.sh
 source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
+# shellcheck source=tests/lib/fixture-ports.sh
+source "$JAILBOX_DIR/tests/lib/fixture-ports.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
 
@@ -371,6 +373,25 @@ STUB
 # ── run_e2e_case ──────────────────────────────────────────────────────────────
 # Designed to run inside a subshell. PASSED/FAILED are subshell-local.
 
+headless_fixture() {
+    local stage="$1" candidate offset port attempt
+    for ((attempt=1; attempt<=100; attempt++)); do
+        candidate=$(mktemp -d "/tmp/jailbox-e2e-${stage}.XXXXXX") || return 1
+        offset=$(jailbox_project_hash_port_offset "$(jailbox_project_hash_for_path "$candidate")") || {
+            rm -rf "$candidate"; return 1;
+        }
+        port=$((49152 + offset))
+        # Claims live until the entire run ends: later stop/relaunch assertions
+        # must not let another stage borrow this port while it is unbound.
+        if test_fixture_port_available "$port" && mkdir "$stub_dir/ports/$port" 2>/dev/null; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+        rm -rf "$candidate"
+    done
+    die "could not allocate a free SSH port outside the ephemeral range for $stage"
+}
+
 run_e2e_case_logged() {
     ( run_e2e_case "$@" ) 2>&1 | test_timestamp_stream
 }
@@ -392,7 +413,7 @@ run_e2e_case() {
     echo ""
     echo "── e2e: $stage (user: jailbox) ─────────────────────────────────────"
 
-    project_dir=$(mktemp -d "/tmp/jailbox-e2e-${stage}.XXXXXX")
+    project_dir=$(headless_fixture "$stage") || return 1
     # Before anything can create them, and outside the fixture directory.
     ledger_record_project_resources "$project_dir" || return 1
     git -C "$project_dir" init -q
@@ -831,6 +852,7 @@ main() {
     run_meta_reh "$log_dir" "$REH_RELEASE" "$REH_COMMIT"
     stub_dir=$(mktemp -d)
     trap 'rm -rf "$stub_dir"' EXIT
+    mkdir "$stub_dir/ports"
 
     setup_stub_editor
 

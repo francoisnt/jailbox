@@ -45,14 +45,10 @@ test_log_capture() {
 # saved logs retain plain timestamped records; workers never move the cursor.
 # The optional width exercises terminal rendering without a PTY in unit tests.
 test_display_stream() {
-    local width=${1:-} line message status=""
-    if [[ -z "$width" ]]; then
+    local fixed_width=${1:-} width line message status=""
+    if [[ -z "$fixed_width" ]]; then
         if [[ ! -t 1 || ${TERM:-dumb} = dumb ]]; then cat; return; fi
-        width=$(tput cols 2>/dev/null) || width=80
     fi
-    [[ "$width" =~ ^[0-9]+$ && "$width" -gt 1 ]] || width=80
-    # Leave the last column unused to prevent wrapping onto a second line.
-    width=$((width - 1))
     while IFS= read -r line || [[ -n "$line" ]]; do
         message=${line#\[*\] }
         if [[ "$message" = 'Progress: '* ]]; then
@@ -64,7 +60,21 @@ test_display_stream() {
                 status=""
             fi
         fi
-        [[ -z "$status" ]] || printf '\r\033[2K%s' "${status:0:width}"
+        if [[ -n "$status" ]]; then
+            width=$fixed_width
+            if [[ -z "$width" ]]; then
+                # stdin is the log pipeline; query the actual terminal instead.
+                width=$(tput cols 2>/dev/null </dev/tty) || width=80
+            fi
+            [[ "$width" =~ ^[0-9]+$ && "$width" -gt 1 ]] || width=80
+            printf '\r\033[2K%s' "$status"
+            # Only keep a transient line when it fits without wrapping. Longer
+            # records wrap normally and stay in scrollback with every count.
+            if (( ${#status} >= width )); then
+                printf '\n'
+                status=""
+            fi
+        fi
     done
     # Leave the cursor on a clean line even if the producer failed early.
     [[ -z "$status" ]] || printf '\r\033[2K%s\n' "$status"

@@ -161,6 +161,8 @@ gate cannot run in the current environment, state that clearly in the handoff.
 Permission-sensitive test fixtures must explicitly set the permissions required
 by their scenario rather than inherit the caller's umask. Verify relevant
 changes under both `0022` and `0002`.
+Tests that consume a Git identity must create an isolated dummy identity rather
+than rely on or modify the developer's or CI runner's Git configuration.
 
 Do not add another user-facing test mode without explicit agreement. New unit
 scripts are discovered automatically. Keep `scripts/lint.sh` discovery-based so

@@ -122,6 +122,21 @@ pass
 
 # shellcheck source=tests/lib/lifecycle-assertions.sh
 source "$ROOT/tests/lib/lifecycle-assertions.sh"
+# shellcheck source=tests/lib/lifecycle-runtime-faults.sh
+source "$ROOT/tests/lib/lifecycle-runtime-faults.sh"
+TEST_CASE='unknown fault fixtures fail before constructing any state'
+construct() { printf 'unexpected construction\n' > "$FIXTURE/constructed"; }
+matrix_die() { printf '%s\n' "$*" >&2; exit 1; }
+for command in up stop --clean unmapped; do
+    if (fault_baseline "$command" unsupported) > "$FIXTURE/error" 2>&1; then
+        exit 1
+    fi
+    grep -Fxq "No starting state defined for $command:unsupported" "$FIXTURE/error"
+    [[ ! -e "$FIXTURE/constructed" ]]
+done
+unset -f construct matrix_die
+pass
+
 TEST_CASE='independent fault coverage rejects each missing operation'
 # Deliberately authored fixtures, never generated from the coverage requirements.
 # Paths, hashes and allocation suffixes are irrelevant to operation membership.

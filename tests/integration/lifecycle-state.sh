@@ -91,7 +91,7 @@ for ((slot=1; slot<=WORKERS; slot++)); do
         subnet=$((offset % 200))
         fallback=$(((subnet + 7) % 200))
         if [[ -z ${used_ports[$offset]-} && -z ${used_subnets[$subnet]-} && -z ${used_subnets[$fallback]-} ]] &&
-            lifecycle_fixture_port_available "$((49152 + offset))"; then break; fi
+            test_fixture_port_available "$((49152 + offset))"; then break; fi
         rm -rf -- "$fixture"
     done
     used_ports[$offset]=true

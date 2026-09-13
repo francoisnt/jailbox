@@ -5,22 +5,28 @@
 
 fault_baseline() {
     local command="$1" policy="$2" contract
-    contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
-    if [[ "$contract" = launch ]]; then
-        if [[ "$policy" = resume ]]; then
+    contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]-}
+    case "$contract:$policy" in
+        launch:resume)
             construct stopped-egress egress false false
-        elif [[ "$policy" = plain-network ]]; then
+            ;;
+        launch:plain-network)
             construct home-false-false plain false false
-        elif [[ "$policy" = none ]]; then
+            ;;
+        launch:none)
             construct absent egress none false
-        elif [[ "$policy" = new-ephemeral ]]; then
+            ;;
+        launch:new-ephemeral)
             construct absent egress none true
-        else
+            ;;
+        launch:false)
             construct home-false-false egress false false
-        fi
-    else
-        construct running egress "$policy" "$policy"
-    fi
+            ;;
+        stop:false|stop:true|clean:false|clean:true)
+            construct running egress "$policy" "$policy"
+            ;;
+        *) matrix_die "No starting state defined for $command:$policy" ;;
+    esac
 }
 
 # An independent inventory oracle for dynamically constructed interruption
