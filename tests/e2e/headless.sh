@@ -399,6 +399,8 @@ run_e2e_case_logged() {
 run_e2e_case() {
     local stage="$1"
     local log_dir="$2"
+    local status_artifact_dir="$log_dir/$stage.status" status_observation=0
+    mkdir -p "$status_artifact_dir" || { fail 'could not create status artifact directory'; return 1; }
 
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope.
@@ -426,6 +428,11 @@ run_e2e_case() {
 
     local dev_image
     dev_image=$(stage_test_image "$stage")
+    if [[ "$stage" = debian ]]; then
+        assert_isolated_status_inventory "$project_dir" "$dev_image" || {
+            fail 'isolated status inventory fixtures failed'; return 1;
+        }
+    fi
 
     mkdir -p "$project_dir/config"
     cat > "$project_dir/config/runtime.conf" << EOF
@@ -470,6 +477,7 @@ EOF
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
     local ctr
     ctr=$(jailbox_container_name "$project_dir")
+    assert_status "$project_dir" running
     local forward_port reh_probe_port
     forward_port=$(stage_forward_port "$stage")
     reh_probe_port=$(stage_reh_probe_port "$stage")
@@ -601,6 +609,7 @@ EOF
         assert_ssh "$ssh_cfg" "$ctr" 'changed build inputs do not rebuild on reuse' 'test "$(cat /rebuild-payload)" = initial'
     fi
     podman stop "$ctr" >/dev/null
+    assert_status "$project_dir" stopped
     if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up); then
         pass "up resumes the stopped generation"
     else
@@ -757,6 +766,7 @@ assert_home_lifecycle() {
     (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
         fail "clean before ephemeral launch"; return 1;
     }
+    assert_status "$project" absent
 
     # Build a derived dev image so clean must remove its wrapper child first.
     # A derived tag suffices to exercise cleanup ordering; avoid a filesystem
@@ -793,12 +803,14 @@ assert_home_lifecycle() {
         else
             fail "stop deletes the ephemeral generation's home"
         fi
+        assert_status "$project" absent
     else
         fail "ephemeral generation launch"
     fi
     (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
         fail "clean derived dev image and wrapper"; return 1;
     }
+    assert_status "$project" absent
     for home in "$prefix-dev" "$prefix-image" "$prefix-proxy"; do
         if podman image exists "$home"; then
             fail "clean removes derived image $home"
@@ -811,6 +823,54 @@ assert_home_lifecycle() {
     else
         fail "clean preserves external dev image"
     fi
+}
+
+# Keep isolated inventory resources in the runtime gate; adversarial lifecycle
+# combinations and home-label retention expectations belong to the shared matrix.
+assert_status() {
+    local project="$1" expected="$2" output
+    status_observation=$((status_observation + 1))
+    output="$status_artifact_dir/$status_observation-$expected"
+    printf '%s\n' "$expected" > "$output.expected" || return 1
+    if (cd "$project" && "$JAILBOX_DIR/jailbox" status) > "$output.stdout" 2> "$output.stderr" &&
+        cmp -s "$output.expected" "$output.stdout"; then
+        pass "status reports $expected with exact framing"
+    else
+        fail "status did not report $expected with exact framing"
+        return 1
+    fi
+}
+
+assert_isolated_status_inventory() {
+    local project="$1" image="$2" prefix kind name
+    prefix=$(jailbox_container_name "$project") || return 1
+    assert_status "$project" absent || return 1
+    for kind in container network volume; do
+        local -a names=()
+        case "$kind" in
+            container) names=("$prefix" "$prefix-proxy") ;;
+            network) names=("$prefix-net" "$prefix-net-internal" "$prefix-net-external") ;;
+            volume) names=("$prefix-home") ;;
+        esac
+        for name in "${names[@]}"; do
+            case "$kind" in
+                container) podman create --name "$name" --network none "$image" true >/dev/null || return 1 ;;
+                network) podman network create --internal "$name" >/dev/null || return 1 ;;
+                volume) podman volume create "$name" >/dev/null || return 1 ;;
+            esac
+            assert_status "$project" stopped || return 1
+            podman "$kind" exists "$name" || { fail 'status removed inventory resource'; return 1; }
+            case "$kind" in
+                container) podman rm "$name" >/dev/null || return 1 ;;
+                *) podman "$kind" rm "$name" >/dev/null || return 1 ;;
+            esac
+            assert_status "$project" absent || return 1
+        done
+    done
+    podman tag "$image" "$prefix-image" || return 1
+    assert_status "$project" absent || return 1
+    podman image exists "$prefix-image" || { fail 'status removed image'; return 1; }
+    podman image rm "$prefix-image" >/dev/null || return 1
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────

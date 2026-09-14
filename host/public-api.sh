@@ -69,6 +69,8 @@ CLI_LIFECYCLE_COMMANDS=(
 
 CLI_OTHER_COMMANDS=(
     init
+    config-schema
+    status
     doctor
     ssh-config
     --uninstall
@@ -80,6 +82,8 @@ CLI_HELP=(
     "--version=Show the build version without reading configuration"
     "--config=Load configuration from PATH instead of project jailbox.conf"
     "init=Create the default project jailbox.conf"
+    "config-schema=Print machine configuration key names and types"
+    "status=Print this project's resource inventory state"
     "up=Launch the sandbox without opening an editor"
     "stop=Stop and remove this project's jailbox containers, networks, and ephemeral home"
     "doctor=Report editor and SSH config integration for this project"
@@ -279,6 +283,18 @@ cli_flag_help() {
     [[ "$flag" =~ ^-{0,2}[A-Za-z][A-Za-z0-9-]*$ ]] || return 1
     [[ -v CLI_HELP_BY_FLAG[$flag] ]] || return 1
     printf '%s\n' "${CLI_HELP_BY_FLAG[$flag]}"
+}
+
+run_config_schema() {
+    local key
+
+    validate_public_api_declaration
+    for key in "${CONFIG_SCALAR_KEYS[@]}"; do
+        printf '%s\tscalar\n' "$key"
+    done
+    for key in "${CONFIG_ARRAY_KEYS[@]}"; do
+        printf '%s\tarray\n' "$key"
+    done
 }
 
 initialize_public_api_lookups

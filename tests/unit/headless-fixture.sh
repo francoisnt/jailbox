@@ -43,3 +43,34 @@ fi
 grep -Fq 'could not allocate a free SSH port' "$fixture/error"
 [[ $(find "$fixture" -maxdepth 1 -name 'candidate-*' | wc -l) = 1 ]] || fail 'failed allocation leaked directories'
 printf 'PASS: headless fixtures reject unavailable and claimed ports with bounded cleanup\n'
+
+# Status artifacts survive fixture cleanup, remain outside PATH, and retain
+# repeated observations of the same state within each parallel stage.
+(
+    # shellcheck disable=SC1090
+    source <(sed -n '/^assert_status() {/,/^}/p' "$ROOT/tests/e2e/headless.sh")
+    mkdir -p "$fixture/cli" "$fixture/project" "$fixture/logs/debian.status" "$fixture/logs/alpine.status"
+    cat > "$fixture/cli/jailbox" <<'CLI'
+#!/bin/bash
+printf 'absent\n'
+CLI
+    chmod 755 "$fixture/cli/jailbox"
+    # shellcheck disable=SC2034 # Used by the extracted assert_status.
+    JAILBOX_DIR="$fixture/cli"
+    # shellcheck disable=SC2329 # Called by the extracted assert_status.
+    pass() { :; }
+    for stage in debian alpine; do
+        status_artifact_dir="$fixture/logs/$stage.status"
+        # shellcheck disable=SC2034 # Updated by the extracted assert_status.
+        status_observation=0
+        assert_status "$fixture/project" absent
+        assert_status "$fixture/project" absent
+        for observation in 1 2; do
+            [[ -f "$status_artifact_dir/$observation-absent.expected" &&
+               -f "$status_artifact_dir/$observation-absent.stdout" &&
+               -f "$status_artifact_dir/$observation-absent.stderr" ]]
+        done
+    done
+    [[ -z $(find "$stub_dir" -type f) ]] || fail 'status artifacts entered the stub directory'
+)
+printf 'PASS: headless status artifacts retain each stage and observation outside PATH\n'

@@ -89,7 +89,7 @@ image_snapshot() {
     for name in "$PREFIX-dev" "$PREFIX-image" "$PREFIX-proxy"; do
         if exists image "$name"; then
             printf '%s ' "$name"
-            podman image inspect "$name" --format '{{.Id}}'
+            podman image inspect "$name" --format '{{.Id}}' || return 1
         fi
     done
 }
@@ -134,33 +134,68 @@ filesystem_snapshot() {
     ' _ "$1"
 }
 snapshot() {
-    local kind name
+    local kind name home_path
     for kind in container network volume; do
         for name in "$PREFIX" "$PREFIX-proxy" "$NETWORK" "$NETWORK-internal" "$NETWORK-external" "$HOME_VOLUME"; do
             if exists "$kind" "$name"; then
                 printf '%s:%s\n' "$kind" "$name"
                 case "$kind" in
                     container)
-                        podman container inspect "$name" --format '{{.Id}} {{.State.Status}} {{json .Config}} {{json .HostConfig}} {{json .Mounts}} {{json .NetworkSettings.Networks}}'
+                        podman container inspect "$name" --format '{{.Id}} {{.State.Status}} {{json .Config}} {{json .HostConfig}} {{json .Mounts}} {{json .NetworkSettings.Networks}}' || return 1
                         ;;
-                    network) podman network inspect "$name" ;;
-                    volume) podman volume inspect "$name" --format '{{.Name}} {{.CreatedAt}} {{json .Labels}} {{.Mountpoint}}' ;;
+                    network) podman network inspect "$name" || return 1 ;;
+                    volume) podman volume inspect "$name" --format '{{.Name}} {{.CreatedAt}} {{json .Labels}} {{.Mountpoint}}' || return 1 ;;
                 esac
             fi
         done
     done
-    filesystem_snapshot "$XDG_STATE_HOME"
-    if exists volume "$HOME_VOLUME"; then filesystem_snapshot "$(volume_path)"; fi
+    filesystem_snapshot "$XDG_STATE_HOME" || return 1
+    if exists volume "$HOME_VOLUME"; then
+        home_path=$(volume_path) || return 1
+        filesystem_snapshot "$home_path" || return 1
+    fi
     sha256sum "$PROJECT/jailbox.conf"
 }
-# Extension point for 03.2.08/09/09.1/09.2. Observe before any lifecycle
-# mutation and after recovery. Expectations are passed, never computed from
-# the implementation. Dynamic fault rows use 'health-dependent': attachment
-# must follow final observed health, never the failed launch's exit status.
-# The owning interface plans complete those assertions here, without treating
-# these log records as executed diagnostic tests.
+# Observe before lifecycle mutation and after recovery. Expectations are passed,
+# never computed from the implementation. Dynamic fault rows use
+# 'health-dependent': attachment must follow final observed health, never the
+# failed launch's exit status.
+# The remaining diagnostic and attachment assertions belong to 03.2.09/09.1/09.2;
+# their log records are not executed diagnostic tests.
+status_snapshot_required() {
+    # Bound full filesystem/engine comparisons independently of the number of
+    # interruption points. Other observations still check success and framing.
+    case "$1:$2" in
+        absent.up:initial|running.up:initial|stopped.up:initial|stopped-egress.up:initial|\
+        missing-proxy.up:initial|missing-network.up:initial|ssh-mode.up:initial|partial-ssh.up:initial|\
+        missing-proxy.up:recovered)
+            return 0 ;;
+        home-legacy-false.stop:stopped|home-false-false.stop:stopped|home-true-false.stop:stopped|\
+        home-empty-false.stop:stopped|home-corrupt-false.stop:stopped|home-newline-false.stop:stopped|\
+        home-legacy-false.--clean:cleaned|home-false-false.--clean:cleaned|home-true-false.--clean:cleaned|\
+        home-empty-false.--clean:cleaned|home-corrupt-false.--clean:cleaned|home-newline-false.--clean:cleaned)
+            return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 matrix_observe() {
     local phase="$1" status="$2" diagnosis="$3" attachment="$4"
+    local output="$LOG/$CASE_KEY.$phase.status" compare=false
+    if status_snapshot_required "$CASE_KEY" "$phase"; then compare=true; fi
+    if [[ "$compare" = true ]]; then
+        snapshot > "$output.before" || matrix_die 'could not snapshot before status'
+        image_snapshot > "$output.images-before" || matrix_die 'could not snapshot images before status'
+    fi
+    cli status > "$output.stdout" 2> "$output.stderr" || matrix_die "status failed (see $output.stderr)"
+    printf '%s\n' "$status" > "$output.expected"
+    cmp -s "$output.expected" "$output.stdout" || matrix_die "wrong status (see $output.stdout)"
+    if [[ "$compare" = true ]]; then
+        snapshot > "$output.after" || matrix_die 'could not snapshot after status'
+        image_snapshot > "$output.images-after" || matrix_die 'could not snapshot images after status'
+        cmp -s "$output.before" "$output.after" || matrix_die 'status mutated resources or host state'
+        cmp -s "$output.images-before" "$output.images-after" || matrix_die 'status mutated images'
+    fi
     printf '%s|%s|%s|%s|%s\n' "$CASE_KEY" "$phase" "$status" "$diagnosis" "$attachment" >> "$LOG/observations"
 }
 network_disconnect() {

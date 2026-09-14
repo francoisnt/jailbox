@@ -30,6 +30,7 @@ REMOTE_PATH="/home/jailbox/project"
 # validate_cli_implementation rejects missing or undeclared handlers.
 declare -A CLI_COMMAND_HANDLERS=(
     [init]=run_init [up]=run_up [stop]=run_stop
+    [config-schema]=run_config_schema [status]=run_status
     [doctor]=run_doctor [ssh-config]=run_ssh_config [--clean]=run_clean
     [--uninstall]=run_uninstall [--version]=run_version [--help]=usage
 )
@@ -708,11 +709,11 @@ initialize_project_names() {
     # Identity is derived before any preflight, so a host with neither
     # SHA-256 tool fails here — with the dependency diagnostic the hash helper
     # prints — instead of continuing with an empty or partial name.
-    PROJECT_HASH=$(project_path_hash) || exit 1
+    PROJECT_HASH=$(project_path_hash) || die "could not derive project identity"
     # Podman resources carry the project name for readability; the hash of
     # the full path remains the identity. State directories below stay keyed
     # on the hash alone.
-    PROJECT_RESOURCE_PREFIX=$(jailbox_resource_prefix_for_path "$PROJECT_DIR") || exit 1
+    PROJECT_RESOURCE_PREFIX=$(jailbox_resource_prefix_for_path "$PROJECT_DIR") || die "could not derive project resource identity"
     PROJECT_STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/jailbox"
     CONTAINER_NAME="${PROJECT_RESOURCE_PREFIX}"
     PROXY_NAME="${PROJECT_RESOURCE_PREFIX}-proxy"

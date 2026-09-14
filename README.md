@@ -131,6 +131,8 @@ jailbox up            # Launch the sandbox without opening an editor
 jailbox stop          # Stop and remove this project's jailbox containers, networks, and ephemeral home
 jailbox --clean       # Permanently delete this project's containers, networks, home, runtime state, and derived images
 jailbox init          # Create the default project jailbox.conf
+jailbox config-schema # Print machine configuration key names and types
+jailbox status        # Print this project's resource inventory state
 jailbox doctor        # Report editor and SSH config integration for this project
 jailbox ssh-config    # Print manual SSH config instructions for this project
 jailbox --uninstall   # Remove this jailbox installation from the host
@@ -368,8 +370,46 @@ jailbox up
 
 With environment configuration, `jailbox up` needs no `jailbox.conf` at all.
 Only `up`, the bare editor launch, and (for now) `ssh-config` consume
-configuration; `stop`, `doctor`, `init`, `--clean`, `--help`, and
-`--uninstall` never read it.
+configuration; `stop`, `status`, `config-schema`, `doctor`, `init`, `--clean`,
+`--version`, `--help`, and `--uninstall` never read it.
+
+### Machine discovery and inventory
+
+`jailbox config-schema` prints one newline-terminated record per machine key:
+the uppercase key name (`[A-Z][A-Z0-9_]*`), one literal TAB, then `scalar` or
+`array`. Scalars appear in declaration order, followed by arrays in declaration
+order; new keys are appended to their respective declaration arrays. Frontend
+keys such as `EDITOR` are excluded. There are no headings, defaults, values,
+colors, or diagnostics on stdout. Discovery needs no project configuration,
+Podman, SSH, hash utility, or editor.
+
+The jailbox release version governs this schema. Consumers should select a
+compatible release range using `jailbox --version`, accept additional valid
+keys within that range, and reject malformed records, duplicate keys, invalid
+names, unknown types, and missing keys they require. Failed declaration
+validation exits nonzero with diagnostics on stderr and empty stdout.
+
+`jailbox status` uses the canonical physical current directory to identify the
+project. On success it exits zero and prints exactly one word plus newline:
+
+- `running`: the development container is running, regardless of support
+  resource health or SSH damage.
+- `stopped`: the development container is not running and at least one derived
+  development/proxy container, plain/internal/external project network, or home
+  volume exists.
+- `absent`: none of those resources exists.
+
+Images and host SSH/runtime state do not affect this inventory. A persistent,
+legacy unlabeled, or corrupt-label home retained by `stop` yields `stopped`;
+removing an ephemeral home with the other resources yields `absent`, as does
+successful `--clean`. Status needs Podman and SHA-256 project identity hashing,
+but no configuration, configuration digest, SSH, or editor. It does not repair
+or mutate state, and it does not certify readiness to attach.
+
+Failed identity derivation or required engine inspection exits nonzero, leaves
+stdout empty, and reports the error on stderr. Consumers must check both the
+exit status and exact output; initialization requires successful `absent` plus
+newline. Neither discovery command emits configuration values or SSH material.
 
 ### File configuration (`jailbox.conf`)
 
