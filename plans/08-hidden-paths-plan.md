@@ -71,6 +71,24 @@ add lexical validation in `host/common.sh`, semantic/overlap and option state
 in `host/container-runtime.sh`, pre-side-effect validation, launch-state
 assertions, native option emission, and readiness checks. No new cleanup or
 project-state behavior is introduced.
+The shared local checks used by `validate` and launch must both enforce hidden
+path and overlap rules without querying engine state during validation.
+
+Extend the policy-aware batched mount validation and streamed session checks
+from plan 7 to recognize masks and omitted child overlays. Migrate
+`validate_development_mounts` and `container/validate-session.sh` so they do not
+require an ordinary read-only or writable mount that effective masking replaces
+or suppresses. Preserve checks for all unmasked paths, and reject missing or
+ineffective required masks. Attachment validation remains read-only; destructive
+permission probes belong only in controlled test fixtures.
+
+Update the exhaustive allowed-mount inventory in `validate_development_mounts`
+to match effective policy after masking and child-overlay suppression. Accept
+only the remaining authorized mounts and any runtime representation required
+by the declared native masks; a masked destination must not become a blanket
+exception for arbitrary mounts. Continue validating sources, types, and
+permissions and rejecting additional mounts, socket aliases, and child overlays
+that could re-expose hidden or weaken protected paths.
 
 Extend the existing project-path validation and plan 7's overlap decision logic
 with hidden-path precedence instead of building a parallel containment or mount
@@ -117,6 +135,14 @@ argument order/inspect alone, is the contract.
 Reuse plan 7's fixture setup and cleanup, while specifying expected masking and
 permission outcomes independently of the production decision helpers. Keep the
 real-Podman assertions that establish effective denial and host preservation.
+Add regression assertions that valid mask representations pass inventory
+validation while unexpected mounts, socket aliases, and re-exposing child
+overlays refuse reuse and attachment.
+Verify healthy reuse and successful `connection-info`, `exec`, and `shell` with
+valid masks as well as refusal for damaged or incompatible masking. Follow
+03.2.09's bounded snapshot and sample-maintenance requirements as rows grow;
+retain the batched inspections and session checks without adding per-path SSH
+connections.
 
 Run `tests/run portable`, `tests/run runtime`, and `tests/run matrix`.
 

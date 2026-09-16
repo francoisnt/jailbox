@@ -65,23 +65,35 @@ are distinct dimensions. Concurrent read-only attachments remain covered by the
 current attachment plans; supported concurrent lifecycle use begins only with
 the locking contract.
 
-### Digest diagnostics in `doctor`
+### Consolidated sandbox health check
 
-Doctor already diagnoses missing and inconsistent version-bound digest labels
-on the development container, proxy container, and network. Narrow this future
-work to comparing those labels with an explicitly supplied current policy;
-ordinary doctor remains configuration-independent.
+Consider a read-only health-check command for the current project if practical
+troubleshooting shows value beyond operational-command errors, configuration
+validation, status, and ssh-config instructions. No command name or delivery
+commitment is assigned. Cross-project discovery is a separate scope.
 
-After the configuration-digest attachment gate lands, extend `doctor` to report
-the digests recorded on the derived project resource set and, when the current
-configuration can be selected and validated without changing doctor's
-config-optional contract, whether they all match the reproducible current
-digest. Define useful output for absent, stopped, partial, unlabeled, stale, and
-configuration-unavailable states without making `doctor` mutate resources or
-require an editor. Do not expose the NUL-delimited serialization or imply that
-the aggregate digest alone identifies which individual setting changed. If the
-per-input diagnostics below land, they replace this aggregate-only diagnosis
-rather than being added alongside it.
+Potential value is a consolidated view of interrupted-operation leftovers,
+damaged SSH generations, missing support resources, and recorded digest/home
+metadata, including when project configuration is missing or invalid. Reuse
+the existing inspection and attachment rules rather than create a second
+health implementation. Every operational command must remain self-explanatory;
+a health check must never be necessary to obtain its failure reason or recovery.
+
+A future plan must distinguish observable consistency from comparison with an
+explicit requested policy, and define absent, stopped, partial, and unavailable
+evidence as well as exit behavior. Inspection failure is not absence or corrupt
+home metadata and never justifies destructive cleanup. Safe checks should still
+report independent facts. Recovery must respect recorded home retention.
+
+Never pass unvalidated SSH configuration to transport: executable directives,
+includes, symlinks, and unsafe permissions can turn diagnosis into host-side
+execution. Skip live checks when safe transport cannot be established; do not
+repair state or load policy implicitly to enable them. Preserve non-mutation,
+secret-free output, bounded matrix snapshots, and independence of test oracles.
+
+If explicit policy comparison is included, report only what the aggregate
+digest establishes; it cannot identify which input changed. Reassess the
+maintenance cost and overlap with attachment diagnostics before implementing.
 
 ### Per-input digest mismatch diagnostics
 
@@ -94,7 +106,7 @@ to the ordinary aggregate mismatch message.
 Publishing an input hash must be explicitly opted into after reviewing whether
 the value may be secret or easily guessed; future configuration keys must not be
 enrolled automatically. Any resulting diagnostic replaces 03.2.09.1's current
-aggregate-only mismatch explanation and the `doctor` diagnostic above rather
+aggregate-only mismatch explanation and any health-check diagnosis above rather
 than adding another overlapping message. A later design should settle coverage,
 compatibility, metadata exposure, and honest reporting for inputs it cannot
 compare.

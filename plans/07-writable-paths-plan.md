@@ -69,6 +69,23 @@ Add `WRITABLE_PATHS` to `CONFIG_ARRAY_KEYS`/defaults, schema, parser
 assignment, API diff fixtures, digest coverage, mount state in
 `host/container-runtime.sh`, semantic validation, readiness validation, and
 README. Use normal Bash 4.4 empty-array expansion in host code.
+The shared local checks used by `validate` and launch must both enforce writable
+path and overlap rules; validation remains independent of engine state.
+
+Migrate the writable-project-base assumption in `validate_development_mounts`
+and the unconditional project-directory write check in
+`container/validate-session.sh`. Structural and live validation must accept a
+read-only project base with valid writable lanes and reject permissions that
+differ from the effective policy. Extend the existing batched inspections and
+streamed session checks, retaining one implementation shared by launch and
+attachment rather than adding per-lane SSH sessions.
+
+Extend the exhaustive allowed-mount inventory in `validate_development_mounts`
+to include exactly the writable-lane destinations authorized by effective
+policy, alongside the existing required mounts. Retain validation of each
+mount's source, type, and permissions. Reject all additional mounts, including
+socket aliases and undeclared overlays beneath protected paths; do not replace
+exact inventory checks with a blanket allowance for project descendants.
 
 Reuse existing containment, symlink, and file-type checks for project mount
 paths. Keep writable/read-only overlap decisions in focused helpers with
@@ -89,6 +106,8 @@ large-mount runtime fixture is required.
 
 Production readiness proves directory-lane marker create/remove with
 collision-resistant no-clobber cleanup; never modifies an arbitrary user file.
+These mutation probes belong only to launch readiness. Shared attachment
+validation remains read-only and must not create markers or repair permissions.
 For regular-file-only policies, inspect effective mounts and skip an
 inapplicable destructive outside write probe rather than creating a host path.
 Controlled fixtures prove in-place writes, failed sibling rename, allowed lane
@@ -104,6 +123,14 @@ the existing single-operation contract and adds no concurrency guarantee.
 
 Extend existing fixtures for the new combinations, keeping expected permissions
 independent of the production overlap decision.
+Add regression assertions that valid writable lanes pass the inventory check
+while undeclared mounts, socket aliases, and overlays that weaken protected
+paths refuse reuse and attachment.
+Verify healthy reuse and `connection-info`, `exec`, and `shell` under both empty
+and non-empty writable policies, including regular-file-only lanes. Attachment
+checks must preserve project and managed state; test commands used to prove
+write permissions remain separate from the validator itself. Follow 03.2.09's
+bounded snapshot and sample-maintenance requirements when extending matrix rows.
 
 Run `tests/run portable`, `tests/run runtime`, and `tests/run matrix`. The runtime
 gate must prove the nested read-write lane inside a read-only base and nested

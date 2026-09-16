@@ -97,8 +97,9 @@ relative to config loading. `podman version --format '{{.Client.Version}}'`
 gives a parseable value.
 
 Apply the check to commands that create or attach to containers. Keep
-`--version`, `--help`, `config-schema`, `status`, `doctor`, `stop`,
-`--clean`, and uninstall on their documented lighter preflight paths.
+`--version`, `--help`, `config-schema`, `status`, `validate`, `ssh-config`,
+`stop`, `--clean`, and uninstall on their documented lighter preflight paths.
+Configuration validation and connection instructions require no Podman access.
 
 ### The Podman ceiling
 
