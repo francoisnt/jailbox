@@ -265,7 +265,7 @@ run_case() {
             -f "$JAILBOX_DIR/container/Containerfile.wrapper" \
             --pull=never \
             --build-arg "DEV_IMAGE=${test_image_id}" \
-            --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(jailbox_install_cache_bust)" \
+            --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(wrapper_install_cache_bust)" \
             --build-arg "USER_ID=$(id -u)" \
             "$JAILBOX_DIR/container"; then
         if [ "$expect_wrapper_failure" = true ] && grep -Eq "already exists in the dev image|already belongs to existing image user" "$build_log"; then
@@ -347,13 +347,13 @@ run_case() {
     assert_readonly_mount_validation "$ssh_dir/config" "$project_dir"
 }
 
-jailbox_install_cache_bust() {
-    find "$JAILBOX_DIR/container" -type f -print0 \
-        | sort -z \
-        | xargs -0 cksum \
-        | cksum \
-        | cut -d' ' -f1
-}
+wrapper_install_cache_bust() (
+    # Preparation and the CLI must identify the same wrapper build inputs.
+    SCRIPT_DIR=$JAILBOX_DIR
+    # shellcheck source=host/dev-image.sh
+    source "$JAILBOX_DIR/host/dev-image.sh"
+    jailbox_install_cache_bust
+)
 
 # ── main ──────────────────────────────────────────────────────────────────────
 

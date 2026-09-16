@@ -23,9 +23,10 @@ done < <(find scripts tests -type f -name '*.sh' ! -path 'tests/run' -print | so
 shellcheck --external-sources --shell=bash "$@" "${bash_scripts[@]}"
 
 # Bash scripts in container/ (bash justified: container always installs bash)
-echo "shellcheck: container/downloader-proxy-manager.sh"
+echo "shellcheck: container Bash scripts"
 shellcheck --shell=bash "$@" \
-    container/downloader-proxy-manager.sh
+    container/downloader-proxy-manager.sh \
+    container/validate-session.sh
 
 # POSIX sh scripts
 echo "shellcheck: container/ and container/entrypoint.sh"

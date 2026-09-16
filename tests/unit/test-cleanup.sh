@@ -385,6 +385,86 @@ else
     echo "  ⏭️  this host reports no process start time or boot id; only the mocked cases run"
 fi
 
+(
+    # Run the real Linux readers against procfs-shaped fixtures on every host.
+    proc="$FIXTURE/proc"
+    mkdir -p "$proc/self" "$proc/$$" "$proc/123" "$proc/124" "$proc/125" "$proc/sys/kernel/random"
+    printf 'boot-fixture\n' > "$proc/sys/kernel/random/boot_id"
+    {
+        printf '123 (name with ) spaces\nand a newline) S'
+        printf ' 0%.0s' {1..18}
+        printf ' 98765 0\n'
+    } > "$proc/123/stat"
+    cp "$proc/123/stat" "$proc/$$/stat"
+    printf 'malformed\n' > "$proc/124/stat"
+    # pid 125 exists, but its stat data cannot be read; this is not absence.
+    declare -f ledger_boot_id ledger_process_start ledger_run_state ledger_file_state |
+        sed "s|/proc/|$proc/|g" > "$FIXTURE/readers.sh"
+    # shellcheck disable=SC1091
+    source "$FIXTURE/readers.sh"
+    # Any fallback to external probes makes these assertions fail.
+    # shellcheck disable=SC2329 # Catch regressions to the former external readers.
+    cat() { return 97; }
+    # shellcheck disable=SC2329 # Catch regressions to the former external readers.
+    awk() { return 97; }
+    ps() { return 97; }
+    sysctl() { return 97; }
+    tr() { return 97; }
+    [[ $(ledger_boot_id) = boot-fixture ]]
+    [[ $(ledger_process_start 123) = 98765 ]]
+    [[ $(ledger_run_state 123 98765 boot-fixture) = active ]]
+    [[ $(ledger_run_state 123 54321 boot-fixture) = ended ]]
+    [[ $(ledger_run_state 126 98765 boot-fixture) = ended ]]
+    [[ $(ledger_run_state 124 98765 boot-fixture) = unknown ]]
+    [[ $(ledger_run_state 125 98765 boot-fixture) = unknown ]]
+    [[ $(ledger_run_state '../123' 98765 boot-fixture) = unknown ]]
+    [[ $(ledger_run_state 123 98765 old-boot) = ended ]]
+    [[ $(ledger_run_state 123 unknown boot-fixture) = unknown ]]
+    printf 'malformed\n' > "$proc/$$/stat"
+    [[ $(ledger_run_state 126 98765 boot-fixture) = unknown ]]
+)
+pass 'Linux ownership reads use no external probes and preserve uncertain processes'
+
+(
+    ledger_boot_id() { printf 'boot\n' >> "$FIXTURE/shared-reads"; printf 'boot-current\n'; }
+    ledger_process_start() {
+        printf '%s\n' "$1" >> "$FIXTURE/start-reads"
+        case "$1" in
+            "$$") printf 'self\n' ;;
+            123) printf 'live\n' ;;
+            124) return 2 ;;
+            *) return 1 ;;
+        esac
+    }
+    printf 'run %s self boot-current\n' "$$" > "$FIXTURE/scan.ledger"
+    for pid in {200..299}; do printf 'owner %s old\n' "$pid"; done >> "$FIXTURE/scan.ledger"
+    [[ $(ledger_file_state "$FIXTURE/scan.ledger" owners) = ended ]]
+    [[ $(wc -l < "$FIXTURE/shared-reads") = 1 ]]
+    [[ $(grep -cx "$$" "$FIXTURE/start-reads") = 1 ]]
+    [[ $(wc -l < "$FIXTURE/start-reads") = 101 ]]
+    [[ $(ledger_file_state "$FIXTURE/scan.ledger") = active ]]
+    printf 'owner 124 uncertain\n' >> "$FIXTURE/scan.ledger"
+    [[ $(ledger_file_state "$FIXTURE/scan.ledger" owners) = unknown ]]
+    printf 'owner 123 live\n' >> "$FIXTURE/scan.ledger"
+    [[ $(ledger_file_state "$FIXTURE/scan.ledger" owners) = active ]]
+    # A fresh pass must refresh shared facts, not reuse a previous result.
+    ledger_boot_id() { return 1; }
+    [[ $(ledger_file_state "$FIXTURE/scan.ledger" owners) = unknown ]]
+)
+pass 'ledger scans read shared facts once and retain every owner check'
+(
+    ledger_boot_id() { echo 'unexpected boot read' >&2; exit 97; }
+    ledger_process_start() { echo 'unexpected process read' >&2; exit 97; }
+    args=(123 old boot-current boot-current true extra)
+    for count in 0 1 2 4 6; do
+        status=0
+        result=$(ledger_run_state "${args[@]:0:count}" 2> "$FIXTURE/arity-error") || status=$?
+        [[ "$status" = 2 && "$result" = unknown ]]
+        grep -Fxq 'ledger_run_state requires 3 or 5 arguments' "$FIXTURE/arity-error"
+    done
+)
+pass 'invalid owner-check argument counts reject without reading process state'
+
 # ── liveness decisions ────────────────────────────────────────────────────────
 #
 # The remaining cases mock both liveness sources, so the decision logic is

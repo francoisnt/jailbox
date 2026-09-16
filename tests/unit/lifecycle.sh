@@ -28,6 +28,14 @@ resource_file() {
 }
 
 case "$1 $2" in
+    "network ls"|"volume ls")
+        [ "${FAKE_PODMAN_EXISTS_ERROR_KIND:-}" != "$1" ] || exit 125
+        for resource in "$state/$1."*; do
+            [ -f "$resource" ] || continue
+            resource=${resource##*/}
+            printf '%s\n' "${resource#*.}"
+        done
+        ;;
     "container exists"|"volume exists"|"network exists"|"image exists")
         [ "${FAKE_PODMAN_EXISTS_ERROR_KIND:-}" != "$1" ] || exit 125
         if [ "${FAKE_PODMAN_RECHECK_ERROR:-}" = 1 ] && [ -f "$state/vanished" ]; then

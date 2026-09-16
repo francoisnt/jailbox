@@ -310,42 +310,44 @@ inspect_network_for_up() {
 }
 
 validate_container_networks() {
-    local name="$1" template network network_id attachment_id created result ip count=1
+    local name="$1" template network network_id created result ip count=1
+    local -a properties=()
     local networks=("${NETWORK_STATE[selected_network]}")
     if [ "$name" = "$PROXY_NAME" ]; then
         networks+=("${NETWORK_NAME}-external")
         count=2
     fi
     template="{{if eq (len .NetworkSettings.Networks) $count}}true{{end}}"
-    require_container_property "$name" "$template" 'network attachment count'
+    properties+=("$template" 'network attachment count')
     created=$(podman container inspect "$name" --format '{{.Created.UnixNano}}') || die "could not inspect creation time of '$name'"
     [[ "$created" =~ ^[1-9][0-9]{0,18}$ ]] || die "invalid creation time for '$name'"
     for network in "${networks[@]}"; do
-        network_id=$(podman network inspect "$network" --format '{{.ID}}') || die "could not inspect network identity '$network'"
+        result=$(podman network inspect "$network" --format "{{.ID}} {{le .Created.UnixNano $created}}") || die "could not inspect network identity and creation time '$network'"
+        network_id=${result%% *}
+        result=${result#* }
         [[ "$network_id" =~ ^[a-f0-9]{64}$ ]] || die "invalid network identity for '$network'"
         # Stopped endpoints may omit NetworkID, but a network recreated after
         # this container was created cannot be its original dependency.
-        result=$(podman network inspect "$network" --format "{{le .Created.UnixNano $created}}") || die "could not inspect creation time of '$network'"
         [ "$result" = true ] || refuse_sandbox "network '$network' was recreated beneath '$name'"
         # Podman 4.9 reports the network name as NetworkID, even when running.
         # Require the named attachment and retain the creation-time check above
         # so a recreated network cannot pass by reusing its name.
         template="{{with index .NetworkSettings.Networks $(ssh_inspect_quote "$network")}}true{{end}}"
-        require_container_property "$name" "$template" "network '$network' attachment"
-        template="{{with index .NetworkSettings.Networks $(ssh_inspect_quote "$network")}}{{.NetworkID}}{{end}}"
-        attachment_id=$(podman container inspect "$name" --format "$template") || die "could not inspect network '$network' attachment on '$name'"
-        if [ "$attachment_id" != "$network_id" ] && [ "$attachment_id" != "$network" ]; then
-            # Only stopped endpoints may omit their runtime identity.
-            [ -z "$attachment_id" ] || refuse_sandbox "network '$network' attachment on '$name' is incompatible"
-            require_container_property "$name" '{{not .State.Running}}' "network '$network' stopped attachment"
-        fi
+        properties+=("$template" "network '$network' attachment presence")
+        template="{{with index .NetworkSettings.Networks $(ssh_inspect_quote "$network")}}{{or (eq .NetworkID $(ssh_inspect_quote "$network_id")) (eq .NetworkID $(ssh_inspect_quote "$network")) (eq .NetworkID \"\")}}{{end}}"
+        properties+=("$template" "network '$network' attachment identity")
+        # Only stopped endpoints may omit their runtime identity. Keep all
+        # attachment predicates in one container inspection at this boundary.
+        template="{{\$running := .State.Running}}{{with index .NetworkSettings.Networks $(ssh_inspect_quote "$network")}}{{or (ne .NetworkID \"\") (not \$running)}}{{end}}"
+        properties+=("$template" "network '$network' stopped attachment")
     done
     if [ "$name" = "$PROXY_NAME" ]; then
         ip=${NETWORK_STATE[proxy_url]#http://}
         ip=${ip%:8888}
         template="{{if .State.Running}}{{with index .NetworkSettings.Networks $(ssh_inspect_quote "${NETWORK_NAME}-internal")}}{{eq .IPAddress $(ssh_inspect_quote "$ip")}}{{end}}{{else}}true{{end}}"
-        require_container_property "$name" "$template" 'proxy address'
+        properties+=("$template" 'proxy address')
     fi
+    require_container_properties "$name" "${properties[@]}"
 }
 
 prepare_proxy_files() {

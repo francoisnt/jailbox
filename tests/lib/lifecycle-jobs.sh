@@ -34,10 +34,63 @@ lifecycle_order_jobs() {
             }
             duration[$1]=$2; next
         }
-        { priority=($1 in duration) ? duration[$1] : ($2 == "fault" ? 1000000000 : 0)
+        { priority=($1 in duration) ? duration[$1] : ($2 == "fault" ? 1000000000 : ($3 == "inspection" ? 100 : 0))
           print priority "|" $0 }
         END { if (bad) print "Invalid lifecycle timing record" > "/dev/stderr" }
     ' "$timings" "$jobs" | LC_ALL=C sort -t '|' -k1,1nr -k2,2 | cut -d '|' -f2-
+}
+
+# A deterministic benchmark prefix of constructed state/command cases. Keep
+# row jobs intact except for the last row's unselected commands. Fault discovery
+# and interruption sweeps belong only to the full matrix.
+lifecycle_select_sample() {
+    local run="$1" limit="${2:-50}" job kind key rest command record count=0
+    case "$limit" in 50|150) ;; *) return 1 ;; esac
+    : > "$run/sample-catalog" || return 1
+    : > "$run/expected-fixed" || return 1
+    while IFS='|' read -r job kind key rest; do
+        [[ "$kind" = row ]] || continue
+        ((count < limit)) || break
+        printf '%s|%s|%s|%s\n' "$job" "$kind" "$key" "$rest" >> "$run/sample-catalog" || return 1
+        for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+            ((count < limit)) || break
+            printf '%s.%s\n' "$key" "$command" >> "$run/expected-fixed" || return 1
+            count=$((count + 1))
+        done
+    done < "$run/catalog"
+    if [[ "$limit" = 150 ]]; then
+        # The larger sample covers every row plus the complete six-case
+        # inspection job. Fail explicitly if catalog growth changes that fit.
+        [[ "$count" = 144 ]] || { printf '150-case sample requires 144 row cases\n' >&2; return 1; }
+        local inspection_jobs=0
+        while IFS= read -r record; do
+            IFS='|' read -r job kind key rest <<< "$record"
+            if [[ "$kind:$key" = special:inspection ]]; then
+                printf '%s\n' "$record" >> "$run/sample-catalog" || return 1
+                inspection_jobs=$((inspection_jobs + 1))
+            fi
+        done < "$run/catalog"
+        [[ "$inspection_jobs" = 1 ]] || return 1
+        lifecycle_fixed_cases > "$run/sample-fixed" || return 1
+        while IFS= read -r key; do
+            [[ "$key" = home-inspection.* ]] || continue
+            printf '%s\n' "$key" >> "$run/expected-fixed" || return 1
+            count=$((count + 1))
+        done < "$run/sample-fixed"
+        rm "$run/sample-fixed" || return 1
+    fi
+    [[ "$count" = "$limit" ]] || { printf 'Not enough declared cases for a %s-case sample\n' "$limit" >&2; return 1; }
+    mv "$run/sample-catalog" "$run/catalog"
+}
+
+lifecycle_case_selected() {
+    [[ ${LIFECYCLE_SAMPLE_MODE:-false} = true ]] || return 0
+    local result=0
+    grep -Fxq -- "$2" "$1/expected-fixed" || result=$?
+    case "$result" in
+        0|1) return "$result" ;;
+        *) printf 'Could not read lifecycle sample selection\n' >&2; return 2 ;;
+    esac
 }
 
 lifecycle_fixed_cases() {

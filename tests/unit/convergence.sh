@@ -25,13 +25,33 @@ log=$CONVERGENCE_LOG
 kind=${1:-}; action=${2:-}; name=${3:-}
 file="$state/$kind.$name"
 case "$kind $action" in
+    'network ls'|'volume ls')
+        for resource in "$state/$kind."*; do
+            [[ -f "$resource" ]] || continue
+            printf '%s\n' "${resource##*/$kind.}"
+        done
+        ;;
     'image exists') [[ ${CONVERGENCE_IMAGE_MISSING:-false} != true ]] ;;
     'container exists'|'network exists'|'volume exists') [[ -f "$file" ]] ;;
     'container inspect'|'network inspect'|'volume inspect')
         [[ -f "$file" ]] || exit 125
         template=${5:-}
         if [[ ${CONVERGENCE_INSPECT_ERROR:-} == "$kind" ]]; then exit 125; fi
+        if [[ "$template" = *'{{printf "|"}}'* ]]; then
+            while [[ "$template" = *'{{printf "|"}}'* ]]; do
+                predicate=${template%%'{{printf "|"}}'*}
+                template=${template#*'{{printf "|"}}'}
+                if [[ -n ${CONVERGENCE_BAD_PROPERTY:-} && "$predicate" = *"$CONVERGENCE_BAD_PROPERTY"* ]]; then
+                    printf 'false|'
+                else
+                    printf 'true|'
+                fi
+            done
+            printf '\n'
+            exit 0
+        fi
         case "$template" in
+            '{{.ID}} {{le .Created.UnixNano '*) printf '%064d true\n' 3 ;;
             *jailbox.config-digest*) cat "$file" ;;
             *jailbox.ephemeral-home*) cat "$file" ;;
             '{{.State.Status}}') cat "$file.status" ;;
@@ -149,6 +169,7 @@ if [[ -n ${CONVERGENCE_CONNECT_FAILURES:-} && "$command" == *--write-out* ]]; th
     if ((attempts <= CONVERGENCE_CONNECT_FAILURES)); then exit 28; fi
 fi
 case "$command" in
+    'bash -s -- '*) cat >/dev/null; printf '%s\n' "${CONVERGENCE_SESSION_RESULT:-ok}" ;;
     *'--write-out'*) printf '%s' "${CONVERGENCE_DENIAL_CODE:-403}" ;;
     *'jailbox-manage-proxy enable'*|*'jailbox-manage-proxy disable'*) echo sync >> "$CONVERGENCE_LOG" ;;
     *'sh -s'*) cat >/dev/null ;;
@@ -264,9 +285,16 @@ if grep -Eq '^(build|probe)' "$CONVERGENCE_LOG"; then exit 1; fi
 echo 'PASS: moved image tags do not trigger builds or refuse reuse'
 
 before=$(snapshot); : > "$CONVERGENCE_LOG"
-CONVERGENCE_SSH_FAILURE=true expect_failure 'SSH authentication'
+CONVERGENCE_SSH_FAILURE=true expect_failure 'SSH validation command failed'
 grep -q 'refusing sandbox reuse' "$FIXTURE/output"
 assert_no_mutation
+
+for result in authorized-keys project-write sockets mount:0 hardening proxy-env direct-route malformed; do
+    before=$(snapshot); : > "$CONVERGENCE_LOG"
+    CONVERGENCE_SESSION_RESULT=$result expect_failure 'refusing sandbox reuse'
+    assert_no_mutation
+done
+echo 'PASS: batched live validation failures preserve the sandbox'
 
 chmod 644 "$GENERATION/key"
 before=$(snapshot); : > "$CONVERGENCE_LOG"

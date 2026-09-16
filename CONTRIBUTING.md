@@ -102,20 +102,57 @@ The startup log reports the selection and detected resources. The pool stays
 fixed for the run. Each worker owns
 its project, derived SSH port, resources, state directory, logs, and ledger.
 It runs each claimed row's three commands on independently reconstructed state;
-each of the seven interruption groups discovers and tests its trace on the same
-worker. Fixture reset removes mutable resources directly and retains derived
+each interruption group discovers and tests its trace on the same worker.
+Fixture reset removes mutable resources directly and retains derived
 images for the build cache. Actual `--clean` cases still remove and verify image
 names. Final image cleanup waits until all workers and their CLI owners stop.
 
 Set `JAILBOX_LIFECYCLE_JOBS=1` for a serial comparison, or `=4` to measure four
 workers (accepted range: 1–16). The suite retains every case at every worker
 count. Each run writes sorted `completed-cases`, per-case `case-timings`, and
-per-job `timings` files under its `testlog/lifecycle-*` directory. It verifies
+per-job `timings` files under its `testlog/lifecycle-*` directory. A full run also
+writes `run-summary` with worker count, exit status, and elapsed seconds including
+worker setup and final cleanup, excluding image preparation. It verifies
 completed jobs and cases against the catalog and discovered fault points before
 passing. Compare `completed-cases` between runs to check coverage as well as
 elapsed time. `JAILBOX_LIFECYCLE_TIMINGS=/absolute/path/to/previous/timings`
 prioritizes previously slow jobs; idle workers claim the next available job.
-Without history, interruption groups start first. History changes only order.
+Without history, interruption groups start first, followed by the inspection job
+and rows. History changes only order.
+
+For a short before/after performance comparison, prepare the Debian images once
+and run the opt-in 50-case sample with a fixed worker count:
+
+```bash
+tests/integration/wrapper-images.sh --prepare-only debian
+JAILBOX_LIFECYCLE_JOBS=8 tests/integration/lifecycle-state.sh --sample-50
+```
+
+The sample selects the first 50 constructed state/command cases in declaration
+order, including only the selected commands of the last row. It schedules those
+rows in a fixed order, without timing-history reordering. Workers may finish them
+in a different order. Each case retains its complete setup, assertions, recovery,
+and cleanup. Discovery traces, interruption sweeps, and targeted fault scenarios
+are outside this sample; passing it does not mean the matrix gate passed.
+`tests/run matrix` continues to run the full matrix.
+
+The `absent.stop` case requires status to remain `absent`: stopping a project
+with no sandbox resources must not report a stopped container.
+
+For a larger sample, use `--sample-150`: all 144 constructed state/command cases
+plus the six home-inspection failure cases. The inspection job starts first to
+avoid leaving its longer workload until other workers finish. It retains the
+same assertions and cleanup, and excludes discovery traces and interruption sweeps. The selection
+fails explicitly if catalog changes no longer fit these 150 cases. Compare runs
+with the same sample size; a 150-case run is not comparable to a 50-case run.
+
+Save each run's log directory. Compare `completed-cases` to confirm identical
+membership, `sample-summary` for worker count, exit status, and elapsed seconds
+including worker setup and cleanup, and `case-timings` for individual cases.
+Image preparation is outside the sample timing. Keep the worker count, host
+resource limits, and image preparation the same for both versions. Run a warm-up
+sample, then two measured samples per version; compare the spread as well as the
+elapsed times. This measures this sample's speed, not the whole matrix's speed.
 
 Failure injection uses test-only PATH wrappers and FIFO barriers. Each lifecycle
 CLI process is registered in the existing exact-resource ledger before it can

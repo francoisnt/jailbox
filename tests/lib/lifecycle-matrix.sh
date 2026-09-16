@@ -21,7 +21,7 @@ lifecycle_each_row() {
 lifecycle_matrix_rows() {
     local damage policy requested recovery retained status
     cat <<'ROWS'
-absent|plain|none|false|success|absent|absent|refuse|none|new|stopped
+absent|plain|none|false|success|absent|absent|refuse|none|new|absent
 running|plain|false|false|success|running|healthy|allow|none|keep|stopped
 stopped|plain|false|false|success|stopped|stopped|refuse|none|keep|stopped
 stopped-egress|egress|false|false|success|stopped|stopped|refuse|none|keep|stopped

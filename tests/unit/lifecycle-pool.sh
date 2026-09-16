@@ -25,6 +25,42 @@ lifecycle_fixed_cases | sort > "$TEST_ROOT/fixed"
 [[ $(sort -u "$TEST_ROOT/fixed" | wc -l) = 166 ]]
 pass
 
+TEST_CASE='sample membership is exactly the first 50 declared state/command cases'
+mkdir "$TEST_ROOT/sample"
+cp "$TEST_ROOT/catalog" "$TEST_ROOT/sample/catalog"
+lifecycle_select_sample "$TEST_ROOT/sample"
+lifecycle_fixed_cases > "$TEST_ROOT/all-fixed"
+head -50 "$TEST_ROOT/all-fixed" > "$TEST_ROOT/expected-sample"
+cmp "$TEST_ROOT/expected-sample" "$TEST_ROOT/sample/expected-fixed"
+[[ $(wc -l < "$TEST_ROOT/sample/catalog") = 17 ]]
+[[ $(grep -c '^row\.' "$TEST_ROOT/sample/catalog") = 17 ]]
+mkdir "$TEST_ROOT/short-sample"
+head -1 "$TEST_ROOT/catalog" > "$TEST_ROOT/short-sample/catalog"
+if lifecycle_select_sample "$TEST_ROOT/short-sample" > "$TEST_ROOT/short-out" 2> "$TEST_ROOT/short-err"; then
+    echo 'FAIL: incomplete sample accepted' >&2; exit 1
+fi
+grep -Fq 'Not enough declared cases' "$TEST_ROOT/short-err"
+(
+    LIFECYCLE_SAMPLE_MODE=true
+    while IFS= read -r key; do lifecycle_case_selected "$TEST_ROOT/sample" "$key"; done < "$TEST_ROOT/expected-sample"
+    result=0
+    lifecycle_case_selected "$TEST_ROOT/sample" inconsistent-digest.--clean || result=$?
+    [[ "$result" = 1 ]]
+    result=0
+    lifecycle_case_selected "$TEST_ROOT/missing" absent.up 2>/dev/null || result=$?
+    [[ "$result" = 2 ]]
+    LIFECYCLE_SAMPLE_MODE=false
+    lifecycle_case_selected "$TEST_ROOT/missing" inconsistent-digest.--clean
+)
+pass
+
+TEST_CASE='150-case sampling preserves trailing inspection job fields'
+mkdir "$TEST_ROOT/extended-sample"
+sed 's/^inspection|special|inspection$/&|future-field|/' "$TEST_ROOT/catalog" > "$TEST_ROOT/extended-sample/catalog"
+lifecycle_select_sample "$TEST_ROOT/extended-sample" 150
+grep -Fxq 'inspection|special|inspection|future-field|' "$TEST_ROOT/extended-sample/catalog"
+pass
+
 TEST_CASE='history changes ordering without dropping or duplicating jobs'
 lifecycle_order_jobs "$TEST_ROOT/catalog" /dev/null > "$TEST_ROOT/ordered"
 [[ $(head -9 "$TEST_ROOT/ordered" | grep -c '^fault\.') = 9 ]]
@@ -217,7 +253,16 @@ complete_job() {
     local kind="$1" key
     shift
     case "$kind" in
-        row) for key in "${CLI_LIFECYCLE_COMMANDS[@]}"; do printf '%s.%s\n' "$1" "$key"; done ;;
+        row)
+            for key in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+                local selected=0
+                lifecycle_case_selected "$run" "$1.$key" || selected=$?
+                case "$selected" in
+                    0) printf '%s.%s\n' "$1" "$key" ;;
+                    1) ;;
+                    *) return 1 ;;
+                esac
+            done ;;
         fault)
             printf 'trace.%s.%s\n' "$1" "$2"
             printf 'mkdir /fixture/state\n' > "$log/trace"
@@ -260,6 +305,9 @@ for workers in 1 2 4; do
     fi
     run=$(sed -n 's/.*matrix passed; logs: //p' "$tree/output")
     [[ $(wc -l < "$run/completed-cases") = 187 ]]
+    grep -Fxq "workers=$workers" "$run/run-summary"
+    grep -Eq '^elapsed_seconds=[0-9]+$' "$run/run-summary"
+    grep -Fxq 'exit_status=0' "$run/run-summary"
     if [[ -n "$previous" ]]; then cmp "$previous" "$run/completed-cases"; fi
     previous="$run/completed-cases"
     for file in "$run"/worker-*/fixture; do
@@ -268,6 +316,61 @@ for workers in 1 2 4; do
     done
     [[ $(find "$tree/ledger" -name '*.ledger' | wc -l) = 0 ]]
 done
+pass
+
+TEST_CASE='sample coordinator verifies 50 and 150 cases and cleans up'
+for sample_run in 50:1 50:4 50:8 150:1 150:4 150:8; do
+    size=${sample_run%:*}
+    workers=${sample_run#*:}
+    jobs=17
+    cp "$TEST_ROOT/expected-sample" "$TEST_ROOT/current-sample"
+    if [[ "$size" = 150 ]]; then
+        jobs=49
+        lifecycle_fixed_cases > "$TEST_ROOT/all-fixed"
+        head -144 "$TEST_ROOT/all-fixed" > "$TEST_ROOT/current-sample"
+        grep '^home-inspection\.' "$TEST_ROOT/all-fixed" >> "$TEST_ROOT/current-sample"
+    fi
+    if ! PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" \
+        JAILBOX_LIFECYCLE_JOBS="$workers" JAILBOX_LIFECYCLE_TIMINGS=/missing-history \
+        bash "$tree/tests/integration/lifecycle-state.sh" "--sample-$size" > "$tree/output" 2>&1; then
+        cat "$tree/output" >&2; exit 1
+    fi
+    run=$(sed -n 's/.*sample passed (partial coverage); logs: //p' "$tree/output")
+    [[ $(wc -l < "$run/completed-cases") = "$size" ]]
+    LC_ALL=C sort "$TEST_ROOT/current-sample" > "$TEST_ROOT/sorted-sample"
+    cmp "$TEST_ROOT/sorted-sample" "$run/completed-cases"
+    sort "$run/catalog" > "$TEST_ROOT/sample-catalog-sorted"
+    sort "$run/jobs" > "$TEST_ROOT/sample-jobs-sorted"
+    cmp "$TEST_ROOT/sample-catalog-sorted" "$TEST_ROOT/sample-jobs-sorted"
+    if [[ "$size" = 150 ]]; then
+        [[ $(head -1 "$run/jobs") = 'inspection|special|inspection' ]]
+    fi
+    [[ $(wc -l < "$run/completed-jobs") = "$jobs" ]]
+    grep -Fxq "workers=$workers" "$run/sample-summary"
+    grep -Eq '^elapsed_seconds=[0-9]+$' "$run/sample-summary"
+    grep -Fxq 'exit_status=0' "$run/sample-summary"
+    if grep -q 'constructed-state matrix passed' "$tree/output"; then exit 1; fi
+    for file in "$run"/worker-*/fixture; do
+        IFS= read -r fixture < "$file"
+        [[ ! -e "$fixture" ]]
+    done
+    [[ $(find "$tree/ledger" -name '*.ledger' | wc -l) = 0 ]]
+done
+pass
+
+TEST_CASE='the actual row runner skips unselected commands before constructing resources'
+(
+    # shellcheck source=tests/lib/lifecycle-runtime.sh
+    source "$ROOT/tests/lib/lifecycle-runtime.sh"
+    LIFECYCLE_SAMPLE_MODE=true
+    # shellcheck disable=SC2030 # This row-selection fixture is intentionally isolated.
+    RUN="$TEST_ROOT/skip-row"
+    mkdir "$RUN"
+    printf 'absent.up\n' > "$RUN/expected-fixed"
+    construct() { echo 'FAIL: unselected row constructed resources' >&2; exit 1; }
+    matrix_case_begin() { echo 'FAIL: unselected case was started' >&2; exit 1; }
+    run_row running plain false false success running healthy allow none keep stopped
+)
 pass
 
 TEST_CASE='CLI ownership reaches both ledgers before command execution'

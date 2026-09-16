@@ -109,10 +109,11 @@ test_anchor_and_empty_regression() {
     EFFECTIVE_READONLY_PATHS=()
     output_file=$(mktemp)
     (
-        validation_ssh() { printf "%s\n" "$*"; cat >/dev/null; }
+        SCRIPT_DIR=$JAILBOX_DIR
+        validation_ssh() { printf "%s\n" "$*" > "$output_file"; cat >/dev/null; printf 'ok\n'; }
         check_readonly_mounts
-    ) > "$output_file"
-    if grep -Fq "TARGET=/" "$output_file"; then pass "empty protected set still validates root mount"; else fail "empty protected set still validates root mount"; fi
+    )
+    if grep -Eq ' / $' "$output_file"; then pass "empty protected set still validates root mount"; else fail "empty protected set still validates root mount"; fi
     rm -f "$output_file"
     if [ ! -e "$PROJECT_DIR/.env" ] && [ ! -e "$PROJECT_DIR/.github/workflows" ]; then pass "no legacy built-ins or stubs"; else fail "no legacy built-ins or stubs"; fi
     rm -rf "$PROJECT_DIR" "$external"

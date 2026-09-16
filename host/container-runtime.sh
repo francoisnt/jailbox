@@ -102,12 +102,41 @@ jailbox_resource_label() {
 resolve_present_resources() {
     local -n present_ref="$1"
     shift
-    local target kind name status
+    local target kind name status inventory
+    local -A counts=() listings=()
 
     present_ref=()
     for target in "$@"; do
+        kind=${target%%:*}
+        case "$kind" in
+            container|network|volume) ;;
+            image) continue ;;
+            *) die "internal error: unknown resource type '$kind'" ;;
+        esac
+        counts[$kind]=$((${counts[$kind]:-0} + 1))
+    done
+    # Listings win only for sufficiently large groups. Never retain an
+    # inventory beyond this call, especially across a lifecycle mutation.
+    for kind in container network volume; do
+        case "$kind" in
+            container)
+                [[ ${counts[$kind]:-0} -ge 5 ]] || continue
+                inventory=$(podman container ls --all --format '{{.Names}}') || die 'could not determine whether containers exist with Podman'
+                ;;
+            *)
+                [[ ${counts[$kind]:-0} -ge 2 ]] || continue
+                inventory=$(podman "$kind" ls --format '{{.Name}}') || die "could not determine whether ${kind}s exist with Podman"
+                ;;
+        esac
+        listings[$kind]=$'\n'"$inventory"$'\n'
+    done
+    for target in "$@"; do
         kind="${target%%:*}"
         name="${target#*:}"
+        if [[ -v listings[$kind] ]]; then
+            if [[ ${listings[$kind]} = *$'\n'"$name"$'\n'* ]]; then present_ref+=("$target"); fi
+            continue
+        fi
         status=0
         jailbox_resource_exists "$kind" "$name" || status=$?
         case "$status" in
@@ -612,38 +641,73 @@ require_container_property() {
     [ "$result" = true ] || refuse_sandbox "$3 on '$1' is incompatible"
 }
 
+# Each predicate emits only comparison results, never resource data. A separator
+# terminates each result; the sentinel preserves framing through substitution.
+require_container_properties() {
+    local name="$1" template='' result predicate message line
+    shift
+    local -a messages=()
+    while (($#)); do
+        predicate=$1; message=$2; shift 2
+        template+="$predicate"'{{printf "|"}}'
+        messages+=("$message")
+    done
+    result=$(podman container inspect "$name" --format "$template" && printf '.') || die "could not inspect container properties on '$name'"
+    # Podman terminates the complete formatted record with a newline.
+    [[ "$result" = *$'\n.' ]] || die "invalid container property inspection on '$name'"
+    result=${result%$'\n.'}
+    for message in "${messages[@]}"; do
+        [[ "$result" = *'|'* ]] || die "incomplete container property inspection on '$name'"
+        line=${result%%|*}
+        result=${result#*|}
+        if [[ "$line" != true ]]; then
+            refuse_sandbox "$message on '$name' is incompatible"
+            return 1
+        fi
+    done
+    [[ -z "$result" ]] || die "extra container property inspection output on '$name'"
+}
+
 validate_container_hardening() {
     local name="$1"
-    require_container_property "$name" \
-        '{{and .HostConfig.ReadonlyRootfs (not .HostConfig.Privileged) (eq (len .EffectiveCaps) 0) (eq (len .BoundingCaps) 0) (eq (len .HostConfig.CapAdd) 0) (eq (len .HostConfig.Devices) 0)}}' 'runtime hardening'
-    require_container_property "$name" \
-        '{{range .HostConfig.SecurityOpt}}{{if or (eq . "no-new-privileges") (eq . "no-new-privileges=true")}}true{{end}}{{end}}' 'no-new-privileges'
-    require_container_property "$name" \
-        '{{and (or (eq .HostConfig.PidMode "") (eq .HostConfig.PidMode "private")) (or (eq .HostConfig.IpcMode "") (eq .HostConfig.IpcMode "private") (eq .HostConfig.IpcMode "shareable")) (or (eq .HostConfig.UTSMode "") (eq .HostConfig.UTSMode "private")) (ne .HostConfig.NetworkMode "host") (eq .Pod "")}}' 'namespace isolation'
     # shellcheck disable=SC2016  # Go template variables, not shell expansions.
-    require_container_property "$name" \
+    require_container_properties "$name" \
+        '{{and .HostConfig.ReadonlyRootfs (not .HostConfig.Privileged) (eq (len .EffectiveCaps) 0) (eq (len .BoundingCaps) 0) (eq (len .HostConfig.CapAdd) 0) (eq (len .HostConfig.Devices) 0)}}' 'runtime hardening' \
+        '{{range .HostConfig.SecurityOpt}}{{if or (eq . "no-new-privileges") (eq . "no-new-privileges=true")}}true{{end}}{{end}}' 'no-new-privileges' \
+        '{{and (or (eq .HostConfig.PidMode "") (eq .HostConfig.PidMode "private")) (or (eq .HostConfig.IpcMode "") (eq .HostConfig.IpcMode "private") (eq .HostConfig.IpcMode "shareable")) (or (eq .HostConfig.UTSMode "") (eq .HostConfig.UTSMode "private")) (ne .HostConfig.NetworkMode "host") (eq .Pod "")}}' 'namespace isolation' \
         '{{if eq (len .HostConfig.Tmpfs) 2}}{{range $path, $options := .HostConfig.Tmpfs}}{{if not (or (eq $path "/tmp") (eq $path "/run"))}}invalid{{end}}{{end}}true{{end}}' 'tmpfs mount inventory'
 }
 
-require_container_mount() {
-    local name="$1" destination="$2" kind="$3" source="$4" rw="$5" predicate
+container_mount_predicate() {
+    local destination="$1" kind="$2" source="$3" rw="$4" predicate
     predicate="(and (eq .Type $(ssh_inspect_quote "$kind")) (eq .RW $rw)"
     if [ "$kind" = volume ]; then
         predicate+=" (eq .Name $(ssh_inspect_quote "$source")))"
     else
         predicate+=" (eq .Source $(ssh_inspect_quote "$source")))"
     fi
-    require_container_property "$name" \
-        "{{range .Mounts}}{{if eq .Destination $(ssh_inspect_quote "$destination")}}{{$predicate}}{{end}}{{end}}" "mount '$destination'"
+    printf '%s' "{{range .Mounts}}{{if eq .Destination $(ssh_inspect_quote "$destination")}}{{$predicate}}{{end}}{{end}}"
+}
+
+require_container_mount() {
+    local predicate
+    predicate=$(container_mount_predicate "$2" "$3" "$4" "$5") || return 1
+    require_container_property "$1" "$predicate" "mount '$2'"
 }
 
 validate_development_mounts() {
     local path template allowed
-    require_container_mount "$CONTAINER_NAME" "$REMOTE_PATH" bind "$PROJECT_DIR" true
-    require_container_mount "$CONTAINER_NAME" "/home/$MANAGED_USER" volume "$VOLUME_NAME" true
+    local -a properties=()
+    template=$(container_mount_predicate "$REMOTE_PATH" bind "$PROJECT_DIR" true) || return 1
+    properties+=("$template" "mount '$REMOTE_PATH'")
+    template=$(container_mount_predicate "/home/$MANAGED_USER" volume "$VOLUME_NAME" true) || return 1
+    properties+=("$template" "mount '/home/$MANAGED_USER'")
+    require_container_properties "$CONTAINER_NAME" "${properties[@]}" || return 1
     validate_ssh_container_mount || return 1
+    properties=()
     for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        require_container_mount "$CONTAINER_NAME" "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" false
+        template=$(container_mount_predicate "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" false) || return 1
+        properties+=("$template" "mount '$REMOTE_PATH/$path'")
     done
     # Reject additional mounts, including overlays below protected mounts and
     # host socket aliases. Only jailbox's explicit mount inventory is eligible.
@@ -653,9 +717,9 @@ validate_development_mounts() {
     done
     allowed+=" (and (eq .Destination $(ssh_inspect_quote "/home/$MANAGED_USER/.gitconfig")) (eq .Type \"bind\") (not .RW) (eq .Source $(ssh_inspect_quote "$SSH_DIR/gitconfig"))))"
     template="{{range .Mounts}}{{if not $allowed}}invalid{{end}}{{end}}true"
-    require_container_property "$CONTAINER_NAME" "$template" 'mount inventory'
-    require_container_property "$CONTAINER_NAME" \
-        "{{if eq (len .HostConfig.PortBindings) 1}}{{range \$port, \$bindings := .HostConfig.PortBindings}}{{if and (eq \$port \"2222/tcp\") (eq (len \$bindings) 1)}}{{range \$bindings}}{{and (eq .HostIP \"127.0.0.1\") (eq .HostPort $(ssh_inspect_quote "$LOCAL_PORT"))}}{{end}}{{end}}{{end}}{{end}}" 'SSH port publication'
+    properties+=("$template" 'mount inventory')
+    properties+=("{{if eq (len .HostConfig.PortBindings) 1}}{{range \$port, \$bindings := .HostConfig.PortBindings}}{{if and (eq \$port \"2222/tcp\") (eq (len \$bindings) 1)}}{{range \$bindings}}{{and (eq .HostIP \"127.0.0.1\") (eq .HostPort $(ssh_inspect_quote "$LOCAL_PORT"))}}{{end}}{{end}}{{end}}{{end}}" 'SSH port publication')
+    require_container_properties "$CONTAINER_NAME" "${properties[@]}"
 }
 
 validate_sandbox_structure() {

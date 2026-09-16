@@ -59,9 +59,12 @@ ledger_token() {
 ledger_boot_id() {
     local raw=""
 
-    raw=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) ||
-        raw=$(sysctl -n kern.boottime 2>/dev/null) ||
+    if { IFS= read -r raw < /proc/sys/kernel/random/boot_id; } 2>/dev/null; then
+        [[ "$raw" != *[[:space:]]* ]] || return 0
+        printf '%s\n' "$raw"
         return 0
+    fi
+    raw=$(sysctl -n kern.boottime 2>/dev/null) || return 0
     [ -n "$raw" ] || return 0
     ledger_token "$raw"
 }
@@ -69,15 +72,27 @@ ledger_boot_id() {
 # A process's start time, which distinguishes a live run from an unrelated
 # process that later reused its pid. Fails when the process does not exist —
 # and also on a host that can report neither, which ledger_run_state detects by
-# probing its own pid.
+# probing its own pid. Status 2 distinguishes unreadable/malformed Linux data
+# from a process directory that is no longer present (status 1).
 ledger_process_start() {
     local raw
+    local -a fields=()
+    [[ "$1" =~ ^[0-9]+$ ]] || return 2
 
-    if raw=$(cat "/proc/$1/stat" 2>/dev/null); then
+    if [[ -d /proc/self ]]; then
+        if ! { raw=$(< "/proc/$1/stat"); } 2>/dev/null; then
+            [[ ! -d "/proc/$1" ]] && return 1
+            return 2
+        fi
         # Field 2 is the executable name in parentheses and may itself contain
         # spaces and ')'. Everything after the final ') ' is whitespace-
         # separated, so starttime — field 22 overall — is field 20 there.
-        raw=$(printf '%s\n' "${raw##*') '}" | awk '{ print $20 }')
+        [[ "$raw" = *') '* ]] || return 2
+        read -r -a fields <<< "${raw##*') '}"
+        raw=${fields[19]-}
+        [[ "$raw" =~ ^[0-9]+$ ]] || return 2
+        printf '%s\n' "$raw"
+        return 0
     else
         # No procfs (macOS): ps reports the start time to the second, which
         # serves the same purpose.
@@ -91,14 +106,27 @@ ledger_process_start() {
 # <boot>. Anything short of proof that the owner is gone reports uncertainty,
 # and uncertainty preserves.
 ledger_run_state() {
+    case "$#" in
+        3|5) ;;
+        *) printf 'unknown\n'; printf 'ledger_run_state requires 3 or 5 arguments\n' >&2; return 2 ;;
+    esac
     local pid="$1" start="$2" boot="$3"
-    local current_boot current_start
+    local current_boot current_start available status=0
+
+    # A ledger scan supplies these shared facts once. Direct callers still get
+    # a fresh check; there is no cache surviving a scan or cleanup operation.
+    if [[ "$#" = 5 ]]; then
+        current_boot="$4"; available="$5"
+    else
+        current_boot=$(ledger_boot_id) || current_boot=""
+        available=false
+        if ledger_process_start "$$" >/dev/null 2>&1; then available=true; fi
+    fi
 
     # "unknown" is the sentinel ledger_begin_run writes when it could not read
     # the value, and an empty field is a malformed or truncated header. Either
     # way there is nothing to prove the owner ended.
-    current_boot=$(ledger_boot_id)
-    if [[ -z "$current_boot" || -z "$pid" || "$boot" == unknown || -z "$boot" ||
+    if [[ -z "$current_boot" || ! "$pid" =~ ^[0-9]+$ || "$boot" == unknown || -z "$boot" ||
         "$start" == unknown || -z "$start" ]]; then
         printf 'unknown\n'
         return 0
@@ -109,12 +137,15 @@ ledger_run_state() {
     fi
     # A start time this host cannot read even for the running process means the
     # mechanism is unavailable, not that the recorded owner is gone.
-    if ! ledger_process_start "$$" >/dev/null 2>&1; then
+    if [[ "$available" != true ]]; then
         printf 'unknown\n'
         return 0
     fi
-    if ! current_start=$(ledger_process_start "$pid"); then
+    current_start=$(ledger_process_start "$pid") || status=$?
+    if [[ "$status" = 1 ]]; then
         printf 'ended\n'
+    elif [[ "$status" != 0 || -z "$current_start" ]]; then
+        printf 'unknown\n'
     elif [[ "$current_start" == "$start" ]]; then
         printf 'active\n'
     else
@@ -127,18 +158,24 @@ ledger_run_state() {
 # uncertain one, and an uncertain one outranks an ended one, so a run is pruned
 # only once every owner is provably gone.
 ledger_file_state() {
-    local file="$1"
-    local header pid start boot result kind
+    local file="$1" scope="${2:-all}"
+    local header pid start boot result=ended kind current_boot available=false
+    case "$scope" in all|owners) ;; *) return 1 ;; esac
 
     read -r header pid start boot < "$file" || return 1
     [[ "$header" == run ]] || return 1
 
-    result=$(ledger_run_state "$pid" "$start" "$boot")
+    current_boot=$(ledger_boot_id) || current_boot=""
+    if ledger_process_start "$$" >/dev/null 2>&1; then available=true; fi
+    # The pool is checking its own children before its runner exits.
+    if [[ "$scope" = all ]]; then
+        result=$(ledger_run_state "$pid" "$start" "$boot" "$current_boot" "$available")
+    fi
     [[ "$result" != active ]] || { printf 'active\n'; return 0; }
 
     while read -r kind pid start; do
         [[ "$kind" == owner ]] || continue
-        case "$(ledger_run_state "$pid" "$start" "$boot")" in
+        case "$(ledger_run_state "$pid" "$start" "$boot" "$current_boot" "$available")" in
             active) printf 'active\n'; return 0 ;;
             unknown) result=unknown ;;
         esac

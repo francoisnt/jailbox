@@ -483,6 +483,13 @@ state="$FAKE_PODMAN_STATE"
 file="$state/$1.$3"
 
 case "$1 $2" in
+    "network ls"|"volume ls")
+        for resource in "$state/$1."*; do
+            [[ -f "$resource" ]] || continue
+            resource=${resource##*/}
+            printf '%s\n' "${resource#*.}"
+        done
+        ;;
     "container exists"|"volume exists"|"network exists")
         [ -f "$file" ]
         ;;
@@ -604,5 +611,28 @@ assert_gate_refuses "every incompatible member is named" "$state" \
     "container 'jailbox-gate'" "network 'jailbox-gate-net-external'" "jailbox stop"
 
 echo ""
+(
+    SCRIPT_DIR="$FIXTURE/image-[inputs]"
+    mkdir -p "$SCRIPT_DIR/container/tinyproxy"
+    printf 'setup\n' > "$SCRIPT_DIR/container/setup.sh"
+    printf 'proxy\n' > "$SCRIPT_DIR/container/tinyproxy/Containerfile"
+    before=$(jailbox_install_cache_bust)
+    printf 'validation\n' > "$SCRIPT_DIR/container/validate-session.sh"
+    [[ $(jailbox_install_cache_bust) = "$before" ]]
+    printf 'changed validation\n' >> "$SCRIPT_DIR/container/validate-session.sh"
+    [[ $(jailbox_install_cache_bust) = "$before" ]]
+    printf 'changed setup\n' >> "$SCRIPT_DIR/container/setup.sh"
+    after=$(jailbox_install_cache_bust)
+    [[ "$after" != "$before" ]]
+    printf 'changed proxy\n' >> "$SCRIPT_DIR/container/tinyproxy/Containerfile"
+    [[ $(jailbox_install_cache_bust) != "$after" ]]
+    mkdir "$SCRIPT_DIR/host"
+    cp "$JAILBOX_DIR/host/dev-image.sh" "$SCRIPT_DIR/host/"
+    sed -n '/^wrapper_install_cache_bust()/,/^)/p' "$JAILBOX_DIR/tests/integration/wrapper-images.sh" > "$FIXTURE/wrapper-cache.sh"
+    # shellcheck disable=SC1091 # Extract the real preparation helper, not main.
+    source "$FIXTURE/wrapper-cache.sh"
+    [[ $(JAILBOX_DIR=$SCRIPT_DIR wrapper_install_cache_bust) = "$(jailbox_install_cache_bust)" ]]
+)
+pass 'image cache tracks image inputs without depending on streamed validation'
 echo "Configuration digest: $PASSED passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]

@@ -19,22 +19,7 @@ validate_existing_sandbox_health() {
 }
 
 validate_running_development() {
-    validation_ssh true || refuse_sandbox 'pinned SSH authentication failed'
-    check_authorized_keys
-    check_project_write_access
-    check_runtime_sockets_absent
-    check_readonly_mounts
-    # shellcheck disable=SC2016  # Awk fields are interpreted remotely.
-    validation_ssh 'awk '\''
-        /^CapEff:/ { caps = ($2 == "0000000000000000"); seen_caps = 1 }
-        /^CapBnd:/ { bound = ($2 == "0000000000000000"); seen_bound = 1 }
-        /^NoNewPrivs:/ { nnp = ($2 == "1"); seen_nnp = 1 }
-        END { exit !(seen_caps && caps && seen_bound && bound && seen_nnp && nnp) }
-    '\'' /proc/1/status' || refuse_sandbox 'live process hardening could not be established'
-    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
-        check_proxy_env_in_session
-        check_direct_egress_blocked
-    fi
+    validate_development_session full
 }
 
 post_start_validation() {
@@ -48,69 +33,44 @@ post_start_validation() {
     echo '✅ Sandbox is ready'
 }
 
-check_authorized_keys() {
-    validation_ssh 'test -f /run/jailbox-sshd/authorized_keys' || refuse_sandbox 'authorized_keys is unavailable'
-}
-
-check_project_write_access() {
-    validation_ssh "test -w $(printf '%q' "$REMOTE_PATH")" || refuse_sandbox 'managed user cannot write the project'
-}
-
-check_runtime_sockets_absent() {
-    validation_ssh 'test ! -S /var/run/docker.sock && test ! -S /run/podman/podman.sock' || refuse_sandbox 'runtime socket isolation could not be established'
-}
-
-# Inspect the mount table for both files and directories, including the root.
-# Missing input is a failure, never a skipped check. No writable marker probes.
 check_readonly_mounts() {
-    local path
-    local paths=(/)
-    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        paths+=("$REMOTE_PATH/$path")
-    done
-    for path in "${paths[@]}"; do
-        validation_ssh "TARGET=$(printf '%q' "$path") sh -s" <<'REMOTE' || refuse_sandbox "read-only mount '$path' could not be established"
-set -eu
-# The shell passes the path through the environment, not awk -v (which would
-# reinterpret backslashes in a path).
-awk '
-    BEGIN { target = ENVIRON["TARGET"]; found = 0; invalid = 0 }
-    {
-        path = $5
-        gsub(/\\040/, " ", path)
-        gsub(/\\011/, "\t", path)
-        gsub(/\\012/, "\n", path)
-        gsub(/\\134/, "\\", path)
-        if (path != target) next
-        found++
-        if ($6 !~ /(^|,)ro(,|$)/) invalid = 1
-    }
-    END { exit !(found == 1 && !invalid) }
-' /proc/self/mountinfo
-REMOTE
-    done
+    validate_development_session mounts
 }
 
-check_proxy_env_in_session() {
-    validation_ssh "EXPECTED=$(printf '%q' "${NETWORK_STATE[proxy_url]}") bash -s" <<'REMOTE' || refuse_sandbox 'live SSH proxy settings differ from policy'
-set -euo pipefail
-for name in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
-    [[ ${!name-} == "$EXPECTED" ]] || exit 1
-done
-[[ ${NO_PROXY-} == localhost,127.0.0.1 && ${no_proxy-} == localhost,127.0.0.1 ]]
-REMOTE
-}
-
-check_direct_egress_blocked() {
-    # Topology is the isolation evidence. A failed Internet request would also
-    # fail on an offline host and therefore cannot prove this property.
-    validation_ssh 'sh -s' <<'REMOTE' || refuse_sandbox 'direct-route isolation could not be established'
-set -eu
-awk 'NR > 1 && $2 == "00000000" { bad = 1 } END { exit bad }' /proc/net/route
-if [ -e /proc/net/ipv6_route ]; then
-    awk '$1 == "00000000000000000000000000000000" && $2 == "00" && $10 != "lo" { bad = 1 } END { exit bad }' /proc/net/ipv6_route
-fi
-REMOTE
+validate_development_session() {
+    local mode="$1" path arguments result proxy="" index payload status=0
+    local -a paths=(/)
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do paths+=("$REMOTE_PATH/$path"); done
+    if [[ "$mode" = full && -n "${EGRESS_ALLOW[*]-}" ]]; then proxy=${NETWORK_STATE[proxy_url]}; fi
+    if [[ ! -f "$SCRIPT_DIR/container/validate-session.sh" ]] ||
+        ! payload=$(< "$SCRIPT_DIR/container/validate-session.sh"); then
+        refuse_sandbox 'could not read local validation payload; check the jailbox installation'
+        return 1
+    fi
+    printf -v arguments "%q " "$mode" "$REMOTE_PATH" "$proxy" "${paths[@]}"
+    result=$(validation_ssh "bash -s -- $arguments" <<< "$payload" && printf '.') || status=$?
+    if [[ "$status" != 0 ]]; then
+        refuse_sandbox "SSH validation command failed (exit $status; transport or remote execution error)"
+        return 1
+    fi
+    case "$result" in
+        $'ok\n.') return 0 ;;
+        $'authorized-keys\n.') refuse_sandbox 'authorized_keys is unavailable' ;;
+        $'project-write\n.') refuse_sandbox 'managed user cannot write the project' ;;
+        $'sockets\n.') refuse_sandbox 'runtime socket isolation could not be established' ;;
+        $'hardening\n.') refuse_sandbox 'live process hardening could not be established' ;;
+        $'proxy-env\n.') refuse_sandbox 'live SSH proxy settings differ from policy' ;;
+        $'direct-route\n.') refuse_sandbox 'direct-route isolation could not be established' ;;
+        *)
+            for index in "${!paths[@]}"; do
+                if [[ "$result" = "mount:$index"$'\n.' ]]; then
+                    refuse_sandbox "read-only mount '${paths[index]}' could not be established"
+                    return 1
+                fi
+            done
+            refuse_sandbox 'invalid SSH validation response: expected one result; check shell startup files for unexpected output' ;;
+    esac
+    return 1
 }
 
 validate_proxy_ready() {

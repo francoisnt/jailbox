@@ -19,12 +19,36 @@ attachment_present=true
 attachment_count=true
 network_original=true
 running=true
+proxy_address=true
+TEST_CREATED=1770000000000000000
+inspect_failure=false
 
 podman() {
+    [[ "$inspect_failure" = false ]] || return 125
+    if [[ "$1 $2" = 'container inspect' && "$5" = *'{{printf "|"}}'* ]]; then
+        local identity=false stopped=true template="$5" predicate value
+        if [[ "$TEST_ATTACHMENT_ID" = "$TEST_NETWORK_ID" || "$TEST_ATTACHMENT_ID" = test-network || -z "$TEST_ATTACHMENT_ID" ]]; then identity=true; fi
+        if [[ -z "$TEST_ATTACHMENT_ID" && "$running" = true ]]; then stopped=false; fi
+        while [[ "$template" = *'{{printf "|"}}'* ]]; do
+            predicate=${template%%'{{printf "|"}}'*}
+            template=${template#*'{{printf "|"}}'}
+            case "$predicate" in
+                *'(len .NetworkSettings.Networks)'*) value=$attachment_count ;;
+                *'.IPAddress'*) value=$proxy_address ;;
+                *'or (eq .NetworkID'*) value=$identity ;;
+                *'or (ne .NetworkID'*) value=$stopped ;;
+                *) value=$attachment_present ;;
+            esac
+            printf '%s|' "$value"
+        done
+        printf '\n'
+        return
+    fi
     case "$1 $2 $5" in
+        'network inspect {{.ID}} {{le .Created.UnixNano '*) printf '%s %s\n' "$TEST_NETWORK_ID" "$network_original" ;;
         'network inspect {{.ID}}') echo "$TEST_NETWORK_ID" ;;
         'network inspect '*'.Created.UnixNano'*) echo "$network_original" ;;
-        'container inspect {{.Created.UnixNano}}') echo 1770000000000000000 ;;
+        'container inspect {{.Created.UnixNano}}') echo "$TEST_CREATED" ;;
         'container inspect '*'.NetworkID'*) printf '%s\n' "$TEST_ATTACHMENT_ID" ;;
         'container inspect {{not .State.Running}}')
             if [ "$running" = true ]; then echo false; else echo true; fi ;;
@@ -56,6 +80,23 @@ for scenario in running_empty wrong_id missing extra recreated; do
         validate_container_networks test-dev
     ) >/dev/null 2>&1; then
         echo "FAIL: accepted $scenario network attachment" >&2
+        exit 1
+    fi
+done
+NETWORK_NAME='test'
+NETWORK_STATE[proxy_url]=http://10.0.0.2:8888
+TEST_ATTACHMENT_ID=$TEST_NETWORK_ID
+validate_container_networks "$PROXY_NAME"
+for scenario in proxy_address invalid_created inspect_failure; do
+    if (
+        case "$scenario" in
+            proxy_address) proxy_address=false ;;
+            invalid_created) TEST_CREATED='invalid' ;;
+            inspect_failure) inspect_failure=true ;;
+        esac
+        validate_container_networks "$PROXY_NAME"
+    ) >/dev/null 2>&1; then
+        echo "FAIL: accepted $scenario" >&2
         exit 1
     fi
 done

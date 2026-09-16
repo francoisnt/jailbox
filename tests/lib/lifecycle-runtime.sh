@@ -127,17 +127,29 @@ assert_marker() {
 filesystem_snapshot() {
     podman unshare bash -c '
         set -euo pipefail
-        [[ -e "$1" ]] || exit 0
-        cd "$1"
-        find . -printf "%P|%y|%U|%G|%m|%i|%s|%T@|%l\n" | LC_ALL=C sort
-        find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
-    ' _ "$1"
+        for root in "$@"; do
+            [[ -e "$root" ]] || continue
+            (
+                cd "$root" || exit 1
+                find . -printf "%P|%y|%U|%G|%m|%i|%s|%T@|%l\n" | LC_ALL=C sort || exit 1
+                find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum || exit 1
+            ) || exit 1
+        done
+    ' _ "$@"
 }
 snapshot() {
-    local kind name home_path
+    local kind name home_path inventory home_present=false
+    local -a roots=("$XDG_STATE_HOME")
     for kind in container network volume; do
+        # List once per kind, including stopped containers. Match exact names
+        # locally, retaining all six names under every kind (even collisions).
+        case "$kind" in
+            container) inventory=$(podman container ls --all --format '{{.Names}}') || return 1 ;;
+            *) inventory=$(podman "$kind" ls --format '{{.Name}}') || return 1 ;;
+        esac
         for name in "$PREFIX" "$PREFIX-proxy" "$NETWORK" "$NETWORK-internal" "$NETWORK-external" "$HOME_VOLUME"; do
-            if exists "$kind" "$name"; then
+            if [[ $'\n'"$inventory"$'\n' = *$'\n'"$name"$'\n'* ]]; then
+                if [[ "$kind" = volume && "$name" = "$HOME_VOLUME" ]]; then home_present=true; fi
                 printf '%s:%s\n' "$kind" "$name"
                 case "$kind" in
                     container)
@@ -149,11 +161,11 @@ snapshot() {
             fi
         done
     done
-    filesystem_snapshot "$XDG_STATE_HOME" || return 1
-    if exists volume "$HOME_VOLUME"; then
+    if [[ "$home_present" = true ]]; then
         home_path=$(volume_path) || return 1
-        filesystem_snapshot "$home_path" || return 1
+        roots+=("$home_path")
     fi
+    filesystem_snapshot "${roots[@]}" || return 1
     sha256sum "$PROJECT/jailbox.conf"
 }
 # Observe before lifecycle mutation and after recovery. Expectations are passed,
@@ -357,9 +369,16 @@ run_row() {
     # test contract. Refusal recovery deliberately invokes stop or --clean;
     # subsequent convergence executes the command under test again.
     local key="$1" mode="$2" policy="$3" requested="$4" up="$5" status="$6" diagnosis="$7" attach="$8" recovery="$9" retained="${10}" stopped="${11}" command
-    local dev_id proxy_id generation_present extra_present contract
+    local dev_id proxy_id generation_present extra_present contract selection
     validate_lifecycle_contracts
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+        selection=0
+        lifecycle_case_selected "$RUN" "$key.$command" || selection=$?
+        case "$selection" in
+            0) ;;
+            1) continue ;;
+            *) matrix_die 'could not determine selected lifecycle cases' ;;
+        esac
         contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
         matrix_case_begin "$key.$command"
         construct "$key" "$mode" "$policy" "$requested"

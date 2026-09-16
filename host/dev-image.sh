@@ -220,10 +220,12 @@ build_current_proxy_image() {
     fi
 }
 
-jailbox_install_cache_bust() {
-    find "$SCRIPT_DIR/container" -type f -print0 \
+jailbox_install_cache_bust() (
+    cd "$SCRIPT_DIR" || return 1
+    # This payload is streamed by the host, never copied into a built image.
+    find container -type f ! -path 'container/validate-session.sh' -print0 \
         | sort -z \
         | xargs -0 cksum \
         | cksum \
         | cut -d' ' -f1
-}
+)

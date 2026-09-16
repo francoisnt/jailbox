@@ -189,6 +189,8 @@ assert_probe_hardening() {
 assert_readonly_mount_validation() {
     local config="$1" project_dir="$2"
     local output before_hash after_hash before_stat after_stat status
+    # Host validation resolves its shipped payload relative to the CLI root.
+    local SCRIPT_DIR="$JAILBOX_DIR"
 
     # shellcheck source=host/validation.sh
     source "$JAILBOX_DIR/host/validation.sh"
