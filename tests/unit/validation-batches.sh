@@ -99,11 +99,14 @@ done
 
 # Execute the real payload against fixture kernel files. Only absolute input
 # locations are redirected; the predicates and awk programs stay unchanged.
+# Socket checks must also use fixture paths: CI hosts may run Docker or Podman.
 mkdir "$tmp/project" "$tmp/bin"
 chmod 700 "$tmp/project"
 printf key > "$tmp/authorized"
 chmod 600 "$tmp/authorized"
 sed -e "s@/run/jailbox-sshd/authorized_keys@$tmp/authorized@g" \
+    -e "s@/var/run/docker.sock@$tmp/docker.sock@g" \
+    -e "s@/run/podman/podman.sock@$tmp/podman.sock@g" \
     -e "s@/proc/self/mountinfo@$tmp/mountinfo@g" \
     -e "s@/proc/1/status@$tmp/process@g" \
     -e "s@/proc/net/ipv6_route@$tmp/ipv6@g" \
@@ -127,7 +130,8 @@ healthy() {
 }
 remote() { bash "$tmp/remote" full "$tmp/project" '' "${paths[@]}"; }
 healthy
-[[ $(remote) = ok ]] || fail 'healthy remote payload rejected'
+result=$(remote)
+[[ "$result" = ok ]] || fail "healthy remote payload rejected: $result"
 for field in CapEff CapBnd NoNewPrivs; do
     healthy
     sed "/^$field:/d" "$tmp/process" > "$tmp/changed"
