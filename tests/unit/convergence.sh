@@ -51,7 +51,10 @@ case "$kind $action" in
             exit 0
         fi
         case "$template" in
-            '{{.ID}} {{le .Created.UnixNano '*) printf '%064d true\n' 3 ;;
+            '{{.ID}} {{le .Created.UnixNano '*)
+                original=true
+                [[ ! -f "$file.recreated" ]] || original=false
+                printf '%064d %s\n' 3 "$original" ;;
             *jailbox.config-digest*) cat "$file" ;;
             *jailbox.ephemeral-home*) cat "$file" ;;
             '{{.State.Status}}') cat "$file.status" ;;
@@ -94,6 +97,7 @@ case "$kind $action" in
     'network rm'|'volume rm'|'image rm')
         printf '%s\n' "$*" >> "$log"
         rm -f "$file"
+        [[ "$kind" != network ]] || rm -f "$file.recreated"
         ;;
     *)
         case "$kind" in
@@ -172,6 +176,8 @@ case "$command" in
     'bash -s -- '*) cat >/dev/null; printf '%s\n' "${CONVERGENCE_SESSION_RESULT:-ok}" ;;
     *'--write-out'*) printf '%s' "${CONVERGENCE_DENIAL_CODE:-403}" ;;
     *'jailbox-manage-proxy enable'*|*'jailbox-manage-proxy disable'*) echo sync >> "$CONVERGENCE_LOG" ;;
+    *'jailbox-manage-proxy check-enable'*|*'jailbox-manage-proxy check-disable'*)
+        [[ ${CONVERGENCE_MANAGED_SETTINGS_FAILURE:-} != true ]] ;;
     *'sh -s'*) cat >/dev/null ;;
 esac
 SSH
@@ -192,8 +198,15 @@ expect_success() {
     if ! launch up > "$FIXTURE/output" 2>&1; then cat "$FIXTURE/output"; exit 1; fi
 }
 expect_failure() {
-    if launch up > "$FIXTURE/output" 2>&1; then echo 'unexpected convergence success'; exit 1; fi
-    grep -q "$1" "$FIXTURE/output" || { cat "$FIXTURE/output"; exit 1; }
+    if launch up > "$FIXTURE/stdout" 2> "$FIXTURE/output"; then
+        echo 'unexpected convergence success'
+        cat "$FIXTURE/stdout" "$FIXTURE/output"
+        exit 1
+    fi
+    if ! grep -q "$1" "$FIXTURE/output" || grep -q 'Sandbox is ready' "$FIXTURE/stdout"; then
+        cat "$FIXTURE/stdout" "$FIXTURE/output"
+        exit 1
+    fi
 }
 snapshot() {
     find "$CONVERGENCE_ENGINE" "$XDG_STATE_HOME" -type f -exec cksum {} + | LC_ALL=C sort
@@ -203,6 +216,25 @@ assert_no_mutation() {
     if grep -Eq '^(run|start|stop|rm|sync|network create|volume create)' "$CONVERGENCE_LOG"; then
         echo 'refusal mutated state'; cat "$CONVERGENCE_LOG"; exit 1
     fi
+}
+
+check_managed_settings_failure() {
+    local before
+    before=$(snapshot); : > "$CONVERGENCE_LOG"
+    CONVERGENCE_MANAGED_SETTINGS_FAILURE=true expect_failure "$1"
+    grep -q 'sandbox convergence failed' "$FIXTURE/output"
+    grep -q '^sync$' "$CONVERGENCE_LOG"
+    if grep -q 'jailbox --clean' "$FIXTURE/output"; then exit 1; fi
+    [[ "$before" == "$(snapshot)" ]]
+    if grep -Eq '^(run|start|stop|rm|network create|volume create)' "$CONVERGENCE_LOG"; then exit 1; fi
+    # Once the injected check failure clears, another up synchronizes and
+    # validates the same sandbox without replacing its resources or home.
+    : > "$CONVERGENCE_LOG"
+    expect_success
+    grep -q '^sync$' "$CONVERGENCE_LOG"
+    [[ "$before" == "$(snapshot)" ]]
+    if grep -Eq '^(run|start|stop|rm|network create|volume create)' "$CONVERGENCE_LOG"; then exit 1; fi
+    echo "PASS: $1 blocks readiness and permits retry without resource replacement"
 }
 
 # Failed identity conversion must stop the public CLI before engine work.
@@ -273,6 +305,53 @@ if grep -Eq '^(build|probe)' "$CONVERGENCE_LOG"; then exit 1; fi
 [[ $(cat "$CONVERGENCE_ENGINE/home/marker") == retained ]]
 echo 'PASS: stopped resume preserves generation and home'
 
+# A recreated dependency remains incompatible until the advised stop/up cycle.
+echo exited > "$CONVERGENCE_ENGINE/container.$PREFIX.status"
+touch "$CONVERGENCE_ENGINE/network.$PREFIX-net.recreated"
+before=$(snapshot); : > "$CONVERGENCE_LOG"
+expect_failure 'network .* was recreated'
+grep -q "jailbox stop.*jailbox up" "$FIXTURE/output"
+grep -q 'preserves the persistent home' "$FIXTURE/output"
+if grep -q 'jailbox --clean' "$FIXTURE/output"; then exit 1; fi
+assert_no_mutation
+launch stop > /dev/null
+[[ -f "$CONVERGENCE_ENGINE/volume.$PREFIX-home" ]]
+[[ $(cat "$CONVERGENCE_ENGINE/home/marker") == retained ]]
+expect_success
+if grep -q '^volume create' "$CONVERGENCE_LOG"; then exit 1; fi
+echo 'PASS: recreated network refusal names working stop/up recovery and persistent-home retention'
+
+# Partial generation damage must identify the missing material and recover
+# through regeneration, without silently repairing it during refusal.
+rm "$GENERATION/known_hosts"
+before=$(snapshot); : > "$CONVERGENCE_LOG"
+expect_failure 'SSH generation.*known_hosts'
+grep -q "jailbox stop.*jailbox up" "$FIXTURE/output"
+grep -q 'preserves the persistent home' "$FIXTURE/output"
+if grep -q 'jailbox --clean' "$FIXTURE/output"; then exit 1; fi
+assert_no_mutation
+launch stop > /dev/null
+[[ -f "$CONVERGENCE_ENGINE/volume.$PREFIX-home" ]]
+expect_success
+if grep -q '^volume create' "$CONVERGENCE_LOG"; then exit 1; fi
+[[ -s "$GENERATION/known_hosts" && $(cat "$CONVERGENCE_ENGINE/home/marker") == retained ]]
+echo 'PASS: partial SSH generation refusal names working recovery without deleting persistent home'
+
+# A wrong-mode state directory survives stop: the message must name the manual
+# prerequisite, and applying that correction must allow reuse without replacement.
+chmod 755 "$(dirname "$GENERATION")"
+before=$(snapshot); : > "$CONVERGENCE_LOG"
+expect_failure 'runtime directory.*mode 700'
+grep -q 'correct its metadata' "$FIXTURE/output"
+if grep -q 'jailbox --clean' "$FIXTURE/output"; then exit 1; fi
+assert_no_mutation
+chmod 700 "$(dirname "$GENERATION")"
+: > "$CONVERGENCE_LOG"
+expect_success
+[[ "$before" == "$(snapshot)" ]]
+if grep -Eq '^(run|start|stop|rm)' "$CONVERGENCE_LOG"; then exit 1; fi
+echo 'PASS: unsafe directory metadata names a manual correction that preserves the generation and home'
+
 for property in ReadonlyRootfs SecurityOpt PortBindings Mounts NetworkSettings; do
     before=$(snapshot); : > "$CONVERGENCE_LOG"
     CONVERGENCE_BAD_PROPERTY=$property expect_failure 'incompatible\|unsafe authentication'
@@ -296,6 +375,8 @@ for result in authorized-keys project-write sockets mount:0 hardening proxy-env 
 done
 echo 'PASS: batched live validation failures preserve the sandbox'
 
+check_managed_settings_failure 'stale managed downloader settings remain'
+
 chmod 644 "$GENERATION/key"
 before=$(snapshot); : > "$CONVERGENCE_LOG"
 expect_failure 'SSH generation'
@@ -308,17 +389,22 @@ echo corrupt > "$CONVERGENCE_ENGINE/volume.$PREFIX-home"
 echo malformed > "$CONVERGENCE_ENGINE/container.$PREFIX"
 before=$(snapshot); : > "$CONVERGENCE_LOG"
 expect_failure 'permanently deletes'
+grep -q 'corrupt retention metadata' "$FIXTURE/output"
+grep -q 'jailbox --clean.*jailbox up' "$FIXTURE/output"
+grep -q 'home and runtime state' "$FIXTURE/output"
+if grep -q 'jailbox stop' "$FIXTURE/output"; then exit 1; fi
 assert_no_mutation
 before=$(snapshot); : > "$CONVERGENCE_LOG"
 CONVERGENCE_INSPECT_ERROR=volume expect_failure 'could not inspect retention'
 assert_no_mutation
-if grep -q 'jailbox --clean' "$FIXTURE/output"; then exit 1; fi
+if grep -Eq 'jailbox --clean|corrupt retention' "$FIXTURE/output"; then exit 1; fi
 launch --clean >/dev/null
 
 # Egress creation uses the actual fallback subnet before rendering SSH config.
 export JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com
 expect_success
 grep -q 'http://10.240.57.2:8888' "$GENERATION/ssh_config"
+check_managed_settings_failure 'managed downloader settings are not synchronized'
 for state in proxy_stopped dev_stopped proxy_missing; do
     case "$state" in
         proxy_stopped) echo exited > "$CONVERGENCE_ENGINE/container.$PREFIX-proxy.status" ;;

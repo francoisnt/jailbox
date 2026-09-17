@@ -16,6 +16,22 @@ commitments.
 
 ## Lifecycle safety
 
+### Recovery while preserving home data
+
+Consider a supported backup/export or documented manual recovery path when
+ordinary recovery requires deleting a home the user wants to keep, especially
+after corrupt retention metadata. Existing stop/up recovery preserves eligible
+persistent homes, but --clean deliberately deletes home and runtime state.
+
+Start with practical recovery instructions before adding commands. Any later
+tooling must identify the exact volume, preserve content and relevant metadata,
+and verify a usable backup before proposing destructive cleanup. Define how to
+quiesce writers and handle unreadable files or failed export without claiming
+success. Restored home content remains sandbox-controlled; restoring it must
+not reuse old SSH credentials or bypass current policy and structure checks.
+Do not silently repair retention labels or infer that data may be discarded
+from corrupt metadata. Scope and command design remain future work.
+
 ### Named project instances
 
 Consider an explicit jailbox instance selector so one physical project can have

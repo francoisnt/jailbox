@@ -860,6 +860,11 @@ test_home_retention_and_inspection() {
     else
         fail "home inspection failure aborts stop (got: $output)"
     fi
+    if [[ "$output" != *"jailbox --clean"* && "$output" != *"corrupt"* ]]; then
+        pass "failed retention inspection does not imply corruption or recommend destructive recovery"
+    else
+        fail "failed retention inspection gives unsupported recovery advice (got: $output)"
+    fi
     if FAKE_PODMAN_INSPECT_ERROR_KIND=volume run_jailbox "$PROJECT" --clean >/dev/null; then
         pass "clean does not require retention inspection"
     else
@@ -1090,6 +1095,13 @@ test_interrupted_stop_and_exact_images() {
         pass "failed network removal reports failure and leaves home until retry"
     else
         fail "failed network removal (got: $output)"
+    fi
+    if [[ "$output" == *"could not remove network '$PREFIX-net'"* &&
+          "$output" == *"retry the cleanup after resolving the error"* &&
+          "$output" != *"jailbox --clean"* ]]; then
+        pass "failed stop identifies the blocked resource and advises retry after fixing the error"
+    else
+        fail "failed stop recovery advice (got: $output)"
     fi
     run_jailbox "$PROJECT" stop >/dev/null
     if ! resource_present network "$PREFIX-net" && ! resource_present volume "$PREFIX-home"; then
