@@ -168,17 +168,12 @@ snapshot() {
     filesystem_snapshot "${roots[@]}" || return 1
     sha256sum "$PROJECT/jailbox.conf"
 }
-# Observe before lifecycle mutation and after recovery. Expectations are passed,
-# never computed from the implementation. Dynamic fault rows use
-# 'health-dependent': attachment must follow final observed health, never the
-# failed launch's exit status.
-# The remaining diagnostic and attachment assertions belong to 03.2.09/09.1/09.2;
-# their log records are not executed diagnostic tests.
+# Reuse each fixture for inventory and attachment, with bounded full snapshots.
 status_snapshot_required() {
     # Bound full filesystem/engine comparisons independently of the number of
     # interruption points. Other observations still check success and framing.
     case "$1:$2" in
-        absent.up:initial|running.up:initial|stopped.up:initial|stopped-egress.up:initial|\
+        absent.up:initial|running.up:initial|running.up:health-*|stopped.up:initial|stopped-egress.up:initial|\
         missing-proxy.up:initial|missing-network.up:initial|ssh-mode.up:initial|partial-ssh.up:initial|\
         missing-proxy.up:recovered)
             return 0 ;;
@@ -192,7 +187,7 @@ status_snapshot_required() {
 }
 
 matrix_observe() {
-    local phase="$1" status="$2" diagnosis="$3" attachment="$4"
+    local phase="$1" status="$2" attachment="$3"
     local output="$LOG/$CASE_KEY.$phase.status" compare=false
     if status_snapshot_required "$CASE_KEY" "$phase"; then compare=true; fi
     if [[ "$compare" = true ]]; then
@@ -202,14 +197,36 @@ matrix_observe() {
     cli status > "$output.stdout" 2> "$output.stderr" || matrix_die "status failed (see $output.stderr)"
     printf '%s\n' "$status" > "$output.expected"
     cmp -s "$output.expected" "$output.stdout" || matrix_die "wrong status (see $output.stdout)"
+    observe_connection "$attachment" "$LOG/$CASE_KEY.$phase.connection"
     if [[ "$compare" = true ]]; then
         snapshot > "$output.after" || matrix_die 'could not snapshot after status'
         image_snapshot > "$output.images-after" || matrix_die 'could not snapshot images after status'
         cmp -s "$output.before" "$output.after" || matrix_die 'status mutated resources or host state'
         cmp -s "$output.images-before" "$output.images-after" || matrix_die 'status mutated images'
     fi
-    printf '%s|%s|%s|%s|%s\n' "$CASE_KEY" "$phase" "$status" "$diagnosis" "$attachment" >> "$LOG/observations"
+    printf '%s|%s|%s|%s\n' "$CASE_KEY" "$phase" "$status" "$attachment" >> "$LOG/observations"
 }
+# Expected values come from fixture identity and direct network evidence.
+observe_connection() {
+    local expected="$1" output="$2" result=0 subnet proxy=""
+    LIFECYCLE_READONLY=true cli connection-info > "$output.stdout" 2> "$output.stderr" || result=$?
+    if grep -q 'read-only observer attempted mutation' "$output.stderr"; then matrix_die 'attachment attempted mutation'; fi
+    if [[ "$expected" = refuse ]]; then
+        [[ "$result" != 0 && ! -s "$output.stdout" && -s "$output.stderr" ]] ||
+            matrix_die "attachment refusal emitted records or lacked a diagnostic (see $output)"
+        return
+    fi
+    [[ "$expected" = allow && "$result" = 0 ]] || matrix_die "attachment failed (see $output.stderr)"
+    if [[ -n ${JAILBOX_CONFIG_EGRESS_ALLOW_0:-} ]]; then
+        subnet=$(podman network inspect "$NETWORK-internal" --format '{{(index .Subnets 0).Subnet}}') ||
+            matrix_die 'could not inspect fixture subnet'
+        proxy="http://${subnet%.0/24}.2:8888"
+    fi
+    printf 'ssh_config\t%s\0ssh_host\t%s\0remote_path\t%s\0project_id\t%s\0proxy_url\t%s\0' \
+        "$GENERATION/ssh_config" "$PREFIX" /home/jailbox/project "$HASH" "$proxy" > "$output.expected"
+    cmp -s "$output.expected" "$output.stdout" || matrix_die 'invalid connection records'
+}
+
 network_disconnect() {
     local network="$1" name
     for name in "$PREFIX" "$PREFIX-proxy"; do
@@ -236,6 +253,12 @@ construct() {
     if [[ "$mode" = egress ]]; then
         unset JAILBOX_CONFIG_EGRESS_ALLOW
         export JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com
+        if [[ "$key" = health-upstream ]]; then export JAILBOX_CONFIG_EGRESS_ALLOW_0=jailbox-upstream.invalid; fi
+    fi
+    if [[ "$key" = health-protected-mount ]]; then
+        printf 'protected\n' > "$PROJECT/attachment-policy"
+        chmod 644 "$PROJECT/attachment-policy"
+        export JAILBOX_CONFIG_READONLY_PATHS_0=attachment-policy
     fi
     case "$policy" in true|false) export JAILBOX_CONFIG_EPHEMERAL_HOME="$policy" ;; esac
     case "$key" in
@@ -368,7 +391,7 @@ run_row() {
     # The row's recovery names a repair action (stop/clean), not the command's
     # test contract. Refusal recovery deliberately invokes stop or --clean;
     # subsequent convergence executes the command under test again.
-    local key="$1" mode="$2" policy="$3" requested="$4" up="$5" status="$6" diagnosis="$7" attach="$8" recovery="$9" retained="${10}" stopped="${11}" command
+    local key="$1" mode="$2" policy="$3" requested="$4" up="$5" status="$6" attach="$7" recovery="$8" retained="$9" stopped="${10}" command
     local dev_id proxy_id generation_present extra_present contract selection
     validate_lifecycle_contracts
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
@@ -385,7 +408,7 @@ run_row() {
         if exists volume "$HOME_VOLUME"; then
             podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/home-labels-before"
         fi
-        matrix_observe initial "$status" "$diagnosis" "$attach"
+        matrix_observe initial "$status" "$attach"
         if [[ "$contract" != launch ]]; then
             image_snapshot > "$LOG/images-before"
             extra_present=false
@@ -396,9 +419,9 @@ run_row() {
             if [[ "$contract" = stop ]]; then
                 image_snapshot > "$LOG/images-after"
                 cmp -s "$LOG/images-before" "$LOG/images-after" || matrix_die 'stop changed images'
-                matrix_observe stopped "$stopped" cleanup refuse
+                matrix_observe stopped "$stopped" refuse
             else
-                matrix_observe cleaned absent absent refuse
+                matrix_observe cleaned absent refuse
             fi
             expect_success "$command" # Explicit cleanup is retryable.
             matrix_case_pass
@@ -455,7 +478,70 @@ run_row() {
         if [[ "$key" = managed-blocks ]]; then
             podman exec "$PREFIX" sh -c 'grep -q "# user curl preference" "$HOME/.curlrc" && grep -q "# user wget preference" "$HOME/.wgetrc"' || matrix_die 'managed sync lost user settings'
         fi
-        matrix_observe recovered running healthy allow
+        matrix_observe recovered running allow
+        if [[ "$key" = running ]]; then observe_health_variants; fi
         matrix_case_pass
+    done
+}
+
+attachment_health_cases() {
+    printf '%s\n' rootfs capabilities privileges protected-mount socket-mount ssh proxy upstream
+}
+
+# Each variant starts from a healthy, independently constructed fixture. These
+# assertions extend running.up's workload without changing sampled case names.
+observe_health_variants() {
+    local variant mode expected argument command_text modified
+    local -a original=() changed=() variants=()
+    mapfile -t variants < <(attachment_health_cases)
+    for variant in "${variants[@]}"; do
+        mode=plain; expected=refuse
+        case "$variant" in proxy|upstream) mode=egress ;; esac
+        construct "health-$variant" "$mode" false false
+        case "$variant" in
+            rootfs|capabilities|privileges|protected-mount|socket-mount)
+                # Replay the fixture's actual creation argv, altering precisely
+                # one property. All paths in this fixture are newline-free.
+                command_text=$(podman container inspect "$PREFIX" --format '{{range .Config.CreateCommand}}{{printf "%s\n" .}}{{end}}') || matrix_die 'cannot read fixture creation argv'
+                mapfile -t original <<< "$command_text"
+                [[ ${original[0]##*/} = podman && ${original[1]} = run ]] || matrix_die 'unexpected fixture creation argv'
+                changed=(); modified=false
+                for argument in "${original[@]:1}"; do
+                    case "$variant:$argument" in
+                        rootfs:--read-only) argument=--read-only=false; modified=true ;;
+                        capabilities:--cap-drop=ALL) argument=--cap-drop=CHOWN; modified=true ;;
+                        privileges:--security-opt=no-new-privileges) modified=true; continue ;;
+                        protected-mount:*:/home/jailbox/project/attachment-policy:Z,ro)
+                            argument=${argument%:Z,ro}:Z,rw; modified=true ;;
+                    esac
+                    changed+=("$argument")
+                done
+                if [[ "$variant" = socket-mount ]]; then
+                    # An unexpected socket-path overlay must fail the exhaustive
+                    # mount inventory even if its source is an ordinary file.
+                    printf fixture > "$FIXTURE/socket-source"
+                    changed=(run -v "$FIXTURE/socket-source:/run/podman/podman.sock:ro,Z" "${changed[@]:1}")
+                    modified=true
+                fi
+                [[ "$modified" = true ]] || matrix_die 'health fixture did not alter its target property'
+                podman rm -f "$PREFIX" >/dev/null
+                rm "$GENERATION/container-id"
+                podman "${changed[@]}" >/dev/null || matrix_die 'cannot create damaged health fixture'
+                chmod 600 "$GENERATION/container-id"
+                ;;
+            ssh) podman kill --signal STOP "$PREFIX" >/dev/null ;;
+            proxy) podman kill --signal STOP "$PREFIX-proxy" >/dev/null ;;
+            upstream) expected=allow ;;
+            *) matrix_die "unhandled health fixture: $variant" ;;
+        esac
+        matrix_observe "health-$variant" running "$expected"
+        # Every refusal's explicit stop/up recovery must retain persistent home.
+        if [[ "$expected" = refuse ]]; then
+            grep -q 'jailbox stop' "$LOG/$CASE_KEY.health-$variant.connection.stderr" || matrix_die 'health failure lacks recovery'
+            expect_success stop
+            expect_success up
+            assert_marker keep
+            matrix_observe "health-$variant-recovered" running allow
+        fi
     done
 }

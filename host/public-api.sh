@@ -71,7 +71,8 @@ CLI_OTHER_COMMANDS=(
     init
     config-schema
     status
-    doctor
+    connection-info
+    validate
     ssh-config
     --uninstall
     --version
@@ -86,7 +87,8 @@ CLI_HELP=(
     "status=Print this project's resource inventory state"
     "up=Launch the sandbox without opening an editor"
     "stop=Stop and remove this project's jailbox containers, networks, and ephemeral home"
-    "doctor=Report editor and SSH config integration for this project"
+    "connection-info=Print validated NUL-delimited SSH connection metadata"
+    "validate=Check environment configuration and local launch inputs"
     "ssh-config=Print manual SSH config instructions for this project"
     "--clean=Permanently delete this project's containers, networks, home, runtime state, and derived images"
     "--uninstall=Remove this jailbox installation from the host"

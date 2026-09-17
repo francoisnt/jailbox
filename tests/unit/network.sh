@@ -166,6 +166,28 @@ test_configure_proxy_env_computes_static_url() {
     fi
 }
 
+test_configure_proxy_env_rejects_missing_address() {
+    local output
+    # shellcheck disable=SC2030 # Failed derivation and its state stay isolated.
+    if output=$( (
+        NETWORK_STATE[proxy_url]=""
+        EGRESS_ALLOW=(example.com)
+        NETWORK_NAME=jailbox-unittest-net
+        PROXY_NAME=jailbox-unittest-proxy
+        internal_network_subnet() { return 1; }
+        proxy_internal_ip() { return 1; }
+        die() { printf '%s\n' "$*" >&2; exit 1; }
+        configure_proxy_env
+        printf 'unexpected success\n'
+    ) 2>&1); then
+        fail 'proxy env refuses unavailable live and derived addresses'
+    elif [[ "$output" = 'could not determine an internal proxy IPv4 URL' ]]; then
+        pass 'proxy env refuses unavailable addresses without a hostname fallback'
+    else
+        fail "proxy env reports missing IPv4 URL (got $output)"
+    fi
+}
+
 test_effective_egress_allowlist_array_output() {
     local actual
 
@@ -308,6 +330,7 @@ main() {
     test_render_tinyproxy_conf
     test_configure_proxy_env_preserves_precomputed_url
     test_configure_proxy_env_computes_static_url
+    test_configure_proxy_env_rejects_missing_address
     test_effective_egress_allowlist_array_output
     test_initialize_network_state_clears_outputs
 

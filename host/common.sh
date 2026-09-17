@@ -31,7 +31,7 @@ REMOTE_PATH="/home/jailbox/project"
 declare -A CLI_COMMAND_HANDLERS=(
     [init]=run_init [up]=run_up [stop]=run_stop
     [config-schema]=run_config_schema [status]=run_status
-    [doctor]=run_doctor [ssh-config]=run_ssh_config [--clean]=run_clean
+    [connection-info]=run_connection_info [validate]=run_validate [ssh-config]=run_ssh_config [--clean]=run_clean
     [--uninstall]=run_uninstall [--version]=run_version [--help]=usage
 )
 declare -A CLI_OPTION_TARGETS=([--config]=CONFIG_PATH_ARG)
@@ -121,16 +121,15 @@ require_command() {
 }
 
 # Print the canonical project-relative spelling of an existing path. Return
-# non-zero when either side cannot be canonicalized or the path is outside the
-# project. Callers decide whether absence/outside containment is an error or
-# simply means the path needs no project mount.
+# 1 for an outside path and 2 when containment cannot be established. Callers
+# may omit an outside input's project mount, but must not ignore a failed read.
 canonical_project_relative_path() {
     local candidate project_abs candidate_abs
 
     candidate="$1"
-    project_abs=$(realpath -- "$PROJECT_DIR" 2>/dev/null) || return 1
-    candidate_abs=$(realpath -- "$candidate" 2>/dev/null) || return 1
-    [ -e "$candidate_abs" ] || return 1
+    project_abs=$(realpath -- "$PROJECT_DIR" 2>/dev/null) || return 2
+    candidate_abs=$(realpath -- "$candidate" 2>/dev/null) || return 2
+    [ -e "$candidate_abs" ] || return 2
     [[ "$candidate_abs" == "$project_abs/"* ]] || return 1
     printf '%s\n' "${candidate_abs#"$project_abs"/}"
 }
@@ -254,7 +253,7 @@ check_path_no_symlinks() {
 }
 
 classify_trusted_file() {
-    local path description canonical relative
+    local path description canonical relative status=0
 
     path="$1"
     description="$2"
@@ -266,7 +265,12 @@ classify_trusted_file() {
     canonical=$(realpath -- "$path") || die "cannot canonicalize $description path: $path"
     reject_control_characters "canonical $description" "$canonical"
     relative=""
-    relative=$(canonical_project_relative_path "$canonical" 2>/dev/null || true)
+    relative=$(canonical_project_relative_path "$canonical") || status=$?
+    case "$status" in
+        0) ;;
+        1) relative="" ;;
+        *) die "cannot establish project containment for $description path: $path" ;;
+    esac
     printf '%s\t%s\n' "$canonical" "$relative"
 }
 

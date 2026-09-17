@@ -199,12 +199,12 @@ test_global_config_args() {
 
     assert_cli_exit "config option requires a value" 2 "$JAILBOX_UNDER_TEST" --config
     assert_cli_exit "config option rejects an empty value" 2 "$JAILBOX_UNDER_TEST" --config ""
-    assert_cli_exit "misplaced config option rejected" 2 "$JAILBOX_UNDER_TEST" doctor --config lane.conf
+    assert_cli_exit "misplaced config option rejected" 2 "$JAILBOX_UNDER_TEST" status --config lane.conf
     assert_cli_exit "duplicate config option rejected" 2 \
         "$JAILBOX_UNDER_TEST" --config lane.conf --config other.conf
     # shellcheck disable=SC2016  # $1 is intentionally expanded by bash -c.
     assert_cli_exit "unexpected command operand rejected" 2 bash -c \
-        'source "$1/host/public-api.sh"; source "$1/host/common.sh"; source "$1/host/preflight.sh"; parse_args doctor extra' \
+        'source "$1/host/public-api.sh"; source "$1/host/common.sh"; source "$1/host/preflight.sh"; parse_args status extra' \
         bash "$JAILBOX_DIR"
     assert_cli_exit "unknown leading option rejected before config access" 2 \
         "$JAILBOX_UNDER_TEST" --unknown
@@ -328,7 +328,7 @@ test_config_selection_precedence() {
 
     CONFIG_PATH_ARG=""
     CONFIG_FILE=stale
-    prepare_config_selection doctor
+    prepare_config_selection status
     assert_eq "optional command with no config clears stale selection" "" "$CONFIG_FILE"
 
     printf 'DEV_IMAGE=default\n' > "$project/jailbox.conf"
@@ -462,7 +462,7 @@ test_launch_requires_default_anchor() {
             ;;
     esac
     # Inspection and lifecycle commands must stay usable before initialization.
-    for command in doctor ssh-config --clean; do
+    for command in status ssh-config --clean; do
         if prepare_config_selection "$command"; then
             pass "$command does not require the default anchor"
         else

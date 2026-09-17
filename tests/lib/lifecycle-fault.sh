@@ -36,6 +36,15 @@ case "$name" in
         if [[ ${LIFECYCLE_FAIL_SSH:-false} = true ]]; then exit 255; fi
         ;;
 esac
+if [[ ${LIFECYCLE_READONLY:-false} = true ]]; then
+    case "$name:$*" in
+        podman:build*|podman:pull*|podman:run*|podman:network\ connect*|podman:network\ disconnect*) mutation=true ;;
+    esac
+    if [[ "$mutation" = true ]]; then
+        printf 'read-only observer attempted mutation: %s %s\n' "$name" "$*" >&2
+        exit 125
+    fi
+fi
 selected=false
 if [[ "$mutation" = true && -n ${LIFECYCLE_EVENTS:-} ]]; then
     count=0

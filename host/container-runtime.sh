@@ -278,7 +278,7 @@ stop_jailbox() {
 validate_configured_readonly_paths() {
     local path
     for path in "${READONLY_PATHS[@]}"; do
-        check_readonly_path "$path" >/dev/null
+        check_readonly_path "$path" >/dev/null || return 1
     done
 }
 
@@ -470,67 +470,6 @@ rollback_ssh_launch() {
     [ "$1" -eq 0 ] || rollback_up_launch
 }
 
-doctor_jailbox() {
-    local container_status container_os_release
-
-    echo "Project jailbox state: $SSH_DIR"
-    if [ -d "$SSH_DIR" ]; then
-        echo "State directory exists: yes"
-    else
-        echo "State directory exists: no"
-    fi
-
-    if command -v podman >/dev/null 2>&1; then
-        container_status=$(podman container inspect "$CONTAINER_NAME" --format '{{.State.Status}}' 2>/dev/null || true)
-        if [ -n "$container_status" ]; then
-            echo "Container status: $container_status"
-        else
-            echo "Container status: missing"
-        fi
-    else
-        container_status=""
-        echo "Container status: unknown (podman not found)"
-    fi
-
-    echo "SSH config: $SSH_CONFIG"
-    if [ -f "$SSH_CONFIG" ]; then
-        echo "ssh_config exists: yes"
-    else
-        echo "ssh_config exists: no"
-    fi
-
-    echo "Current project host alias: $CONTAINER_NAME"
-    if [ -f "$SSH_CONFIG" ] && ssh -F "$SSH_CONFIG" -o ConnectTimeout=1 "$CONTAINER_NAME" true 2>/dev/null; then
-        echo "Internal SSH works: yes"
-    elif [ -f "$SSH_CONFIG" ]; then
-        echo "Internal SSH works: no"
-    else
-        echo "Internal SSH works: no (missing ssh_config)"
-    fi
-
-    if [ -f "$JAILBOX_EDITOR_USER_SETTINGS" ] && editor_config_has_ssh_config "$JAILBOX_EDITOR_USER_SETTINGS"; then
-        echo "Project-local editor user-data config: yes"
-    else
-        echo "Project-local editor user-data config: no"
-    fi
-
-    if [ "$container_status" = "running" ]; then
-        container_os_release=$(ssh -F "$SSH_CONFIG" -o ConnectTimeout=1 "$CONTAINER_NAME" \
-            "cat /etc/os-release" 2>/dev/null || true)
-        # doctor does not run host_preflight, so EDITOR_BIN is usually unset
-        # here. editor_profile_uses_code then falls back to command -v checks
-        # against the PATH used for this doctor invocation. That is acceptable
-        # for a warning: false negatives are better than blocking doctor, but
-        # the warning may not fire if code/codium are absent from PATH now.
-        if printf '%s\n' "$container_os_release" | grep -Eq '^ID="?alpine"?$' &&
-            [ -f "$JAILBOX_EDITOR_USER_SETTINGS" ] &&
-            editor_config_has_ssh_config "$JAILBOX_EDITOR_USER_SETTINGS" &&
-            editor_profile_uses_code; then
-            echo "Warning: VS Code Remote SSH does not support Alpine SSH hosts; set EDITOR=codium in jailbox.conf."
-        fi
-    fi
-}
-
 # One invocation's immutable inventory and attempted creations. No labels or
 # names supplied by the sandbox are used as associative-array subscripts.
 UP_PRESENT=()
@@ -585,7 +524,7 @@ refuse_sandbox() {
     if [ "$UP_CONVERGING" = true ]; then
         fail_sandbox_readiness "$@"
     fi
-    guidance=$(up_stop_guidance) || return 1
+    guidance=$(up_stop_guidance) || die "could not inspect home retention; resolve the engine error before choosing recovery"
     die "refusing sandbox reuse: $*. $guidance"
 }
 
@@ -600,6 +539,7 @@ inspect_up_container_state() {
 }
 
 inspect_sandbox_for_up() {
+    local mode="${1:-launch}"
     local path
     UP_CREATED=()
     UP_HOST_CREATED=()
@@ -607,9 +547,9 @@ inspect_sandbox_for_up() {
         "container:$CONTAINER_NAME" "container:$PROXY_NAME" \
         "network:$NETWORK_NAME" "network:${NETWORK_NAME}-internal" \
         "network:${NETWORK_NAME}-external" "volume:$VOLUME_NAME"
-    UP_DEV_STATE=$(inspect_up_container_state "$CONTAINER_NAME")
-    UP_PROXY_STATE=$(inspect_up_container_state "$PROXY_NAME")
-    inspect_network_for_up
+    UP_DEV_STATE=$(inspect_up_container_state "$CONTAINER_NAME") || return 1
+    UP_PROXY_STATE=$(inspect_up_container_state "$PROXY_NAME") || return 1
+    inspect_network_for_up || return 1
     validate_ssh_state_path || return 1
     if [ -d "$SSH_DIR" ]; then
         validate_ssh_file "$SSH_DIR" 700 directory || \
@@ -628,8 +568,16 @@ inspect_sandbox_for_up() {
         validate_ssh_resume || { up_stop_guidance >&2; return 1; }
     fi
     # Selection is needed before effective protected mounts can be inspected.
-    if [ -z "$DEV_IMAGE" ]; then select_dev_containerfile_for_launch; fi
-    finalize_effective_readonly_paths
+    if [ -z "$DEV_IMAGE" ]; then
+        if [ "$mode" = launch ]; then
+            select_dev_containerfile_for_launch || return 1
+        else
+            local selection_status=0
+            discover_dev_containerfile || selection_status=$?
+            [ "$selection_status" -le 2 ] || return "$selection_status"
+        fi
+    fi
+    finalize_effective_readonly_paths || return 1
     validate_sandbox_structure
 }
 
@@ -727,12 +675,12 @@ validate_sandbox_structure() {
     resolve_present_resources present "container:$CONTAINER_NAME" "container:$PROXY_NAME"
     for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
         [[ " ${present[*]} " == *" container:$name "* ]] || continue
-        validate_container_hardening "$name"
-        validate_container_networks "$name"
+        validate_container_hardening "$name" || return 1
+        validate_container_networks "$name" || return 1
         if [ "$name" = "$CONTAINER_NAME" ]; then
-            validate_development_mounts
+            validate_development_mounts || return 1
         else
-            validate_proxy_configuration
+            validate_proxy_configuration || return 1
         fi
     done
 }

@@ -568,7 +568,7 @@ test_cksum_is_required_only_by_launch() {
 
     new_project
     project="$PROJECT"
-    for command in stop doctor ssh-config --clean; do
+    for command in stop status ssh-config --clean; do
         if output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
             "$JAILBOX_DIR/jailbox" "$command") 2>&1); then
             pass "$command succeeds without cksum"
@@ -713,7 +713,7 @@ test_identity_requires_a_sha256_tool() {
         fail "restricted PATH has neither sha256sum nor shasum"
     fi
 
-    for command in stop --clean doctor ssh-config up ""; do
+    for command in stop --clean status connection-info ssh-config up ""; do
         new_project
         project="$PROJECT"
         declare_resource container "$PREFIX"

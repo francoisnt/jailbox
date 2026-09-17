@@ -1,10 +1,9 @@
 #!/bin/bash
 # Shared lifecycle expectations, independent of engine inspection. Fields:
-# key | network mode | stored home | requested home | up | status | diagnosis |
+# key | network mode | stored home | requested home | up | status |
 # attachment | recovery | retained home after recovery | status after stop
-# Later interface plans add observers to the runtime driver, using these same
-# cases both before lifecycle mutation and after recovery. 'healthy' means all
-# attachment requirements, not merely a running inventory word.
+# Observers reuse these cases before lifecycle mutation and after recovery.
+# An 'allow' verdict requires attachment health, not merely running inventory.
 
 # Keep the catalog off stdin: callbacks launch SSH and other programs that may
 # read stdin even when the remote command itself does not need input.
@@ -21,30 +20,30 @@ lifecycle_each_row() {
 lifecycle_matrix_rows() {
     local damage policy requested recovery retained status
     cat <<'ROWS'
-absent|plain|none|false|success|absent|absent|refuse|none|new|absent
-running|plain|false|false|success|running|healthy|allow|none|keep|stopped
-stopped|plain|false|false|success|stopped|stopped|refuse|none|keep|stopped
-stopped-egress|egress|false|false|success|stopped|stopped|refuse|none|keep|stopped
-networks-only|egress|false|false|success|stopped|containers-missing|refuse|none|keep|stopped
-stopped-ephemeral|plain|true|true|success|stopped|stopped|refuse|none|keep|absent
-mixed|egress|false|false|success|running|proxy-stopped|refuse|none|keep|stopped
-missing-proxy|egress|false|false|success|running|proxy-missing|refuse|none|keep|stopped
-missing-dev|egress|false|false|success|stopped|dev-missing|refuse|none|keep|stopped
-orphan-ssh|plain|false|false|refuse|stopped|orphan-ssh|refuse|stop|keep|stopped
-partial-ssh|plain|none|false|refuse|absent|orphan-ssh|refuse|stop|new|absent
-missing-network|plain|false|false|refuse|running|network-damaged|refuse|stop|keep|stopped
-missing-internal|egress|false|false|refuse|running|network-damaged|refuse|stop|keep|stopped
-missing-networks|egress|false|false|refuse|running|network-damaged|refuse|stop|keep|stopped
-disconnected|egress|false|false|refuse|running|network-damaged|refuse|stop|keep|stopped
-unexpected-attachment|egress|false|false|refuse|running|network-damaged|refuse|stop|keep|stopped
-missing-digest|egress|false|false|refuse|running|digest-missing|refuse|stop|keep|stopped
-inconsistent-digest|egress|false|false|refuse|running|digest-inconsistent|refuse|stop|keep|stopped
-mismatched-digest|plain|false|false|refuse|running|config-digest-mismatch|refuse|stop|keep|stopped
-mode-and-digest|plain|false|true|refuse|running|home-policy-mismatch|refuse|clean|delete|stopped
-mode-and-ssh|plain|false|true|refuse|running|ssh-damaged|refuse|clean|delete|stopped
-corrupt-and-digest|plain|corrupt|false|refuse|stopped|home-corrupt|refuse|clean|delete|stopped
-collision-fallback|egress|false|false|success|running|healthy|allow|none|keep|stopped
-managed-blocks|egress|false|false|success|running|managed-blocks-stale|refuse|none|keep|stopped
+absent|plain|none|false|success|absent|refuse|none|new|absent
+running|plain|false|false|success|running|allow|none|keep|stopped
+stopped|plain|false|false|success|stopped|refuse|none|keep|stopped
+stopped-egress|egress|false|false|success|stopped|refuse|none|keep|stopped
+networks-only|egress|false|false|success|stopped|refuse|none|keep|stopped
+stopped-ephemeral|plain|true|true|success|stopped|refuse|none|keep|absent
+mixed|egress|false|false|success|running|refuse|none|keep|stopped
+missing-proxy|egress|false|false|success|running|refuse|none|keep|stopped
+missing-dev|egress|false|false|success|stopped|refuse|none|keep|stopped
+orphan-ssh|plain|false|false|refuse|stopped|refuse|stop|keep|stopped
+partial-ssh|plain|none|false|refuse|absent|refuse|stop|new|absent
+missing-network|plain|false|false|refuse|running|refuse|stop|keep|stopped
+missing-internal|egress|false|false|refuse|running|refuse|stop|keep|stopped
+missing-networks|egress|false|false|refuse|running|refuse|stop|keep|stopped
+disconnected|egress|false|false|refuse|running|refuse|stop|keep|stopped
+unexpected-attachment|egress|false|false|refuse|running|refuse|stop|keep|stopped
+missing-digest|egress|false|false|refuse|running|refuse|stop|keep|stopped
+inconsistent-digest|egress|false|false|refuse|running|refuse|stop|keep|stopped
+mismatched-digest|plain|false|false|refuse|running|refuse|stop|keep|stopped
+mode-and-digest|plain|false|true|refuse|running|refuse|clean|delete|stopped
+mode-and-ssh|plain|false|true|refuse|running|refuse|clean|delete|stopped
+corrupt-and-digest|plain|corrupt|false|refuse|stopped|refuse|clean|delete|stopped
+collision-fallback|egress|false|false|success|running|allow|none|keep|stopped
+managed-blocks|egress|false|false|success|running|refuse|none|keep|stopped
 ROWS
     for policy in legacy false true empty corrupt newline; do
         for requested in false true; do
@@ -53,13 +52,13 @@ ROWS
                 legacy:false|false:false) recovery=none; retained=keep ;;
                 true:*) recovery=stop; retained=delete; status=absent ;;
             esac
-            printf 'home-%s-%s|plain|%s|%s|%s|stopped|home-%s|refuse|%s|%s|%s\n' \
+            printf 'home-%s-%s|plain|%s|%s|%s|stopped|refuse|%s|%s|%s\n' \
                 "$policy" "$requested" "$policy" "$requested" \
                 "$([ "$recovery" = none ] && echo success || echo refuse)" \
-                "$policy" "$recovery" "$retained" "$status"
+                "$recovery" "$retained" "$status"
         done
     done
     for damage in missing symlink directory fifo owner mode server-pair client-pair authorized pin config parent-mode; do
-        printf 'ssh-%s|plain|false|false|refuse|stopped|ssh-damaged|refuse|stop|keep|stopped\n' "$damage"
+        printf 'ssh-%s|plain|false|false|refuse|stopped|refuse|stop|keep|stopped\n' "$damage"
     done
 }

@@ -42,13 +42,17 @@ ssh_state_path_error() {
 # are validated separately by the entrypoint.
 validate_ssh_state_path() {
     local path="$SSH_DIR"
+    if contains_control_character "$path"; then
+        ssh_state_path_error "$SSH_DIR" "contains an ASCII control character"
+        return 1
+    fi
     [[ "$path" = /* ]] || { ssh_state_path_error "$SSH_DIR" 'is not absolute'; return 1; }
     while [ "$path" != / ]; do
         [ ! -L "$path" ] || { ssh_state_path_error "$path" 'is a symlink'; return 1; }
         if [[ -e "$path" && ! -d "$path" ]]; then
             ssh_state_path_error "$path" 'is not a directory'; return 1
         fi
-        path=$(dirname "$path")
+        path=$(dirname "$path") || return 1
     done
 }
 
@@ -142,20 +146,22 @@ validate_ssh_receipt() {
 }
 
 validate_ssh_pair() {
-    local key="$1" derived published type bytes rest
+    local key="$1" derived published type bytes rest lines trailing
     derived=$(ssh-keygen -y -P '' -f "$key" 2>/dev/null) || return 1
     read -r type bytes rest < "$key.pub" || return 1
     published="$type $bytes"
     # Comments are not identity, but extra public-key records are invalid.
-    [ "$(wc -l < "$key.pub")" -eq 1 ] || return 1
-    [ -z "$(tail -n +2 "$key.pub")" ] || return 1
+    lines=$(wc -l < "$key.pub") || return 1
+    trailing=$(tail -n +2 "$key.pub") || return 1
+    [ "$lines" -eq 1 ] || return 1
+    [ -z "$trailing" ] || return 1
     [ "$derived" = "$published" ] || [ "${derived% *}" = "$published" ]
 }
 
 # Expected session configuration comes from validated policy and the live
 # network. No file is sourced, repaired, or passed to ssh before comparison.
 validate_ssh_generation() {
-    local root="${1:-$SSH_GENERATION_DIR}" path mode
+    local root="${1:-$SSH_GENERATION_DIR}" path mode public expected_config
     assert_ssh_state_initialized
     validate_ssh_state_path || return 1
     for path in "$SSH_DIR" "$root" "$root/server"; do
@@ -167,10 +173,12 @@ validate_ssh_generation() {
         case "$path" in *.pub) mode=644 ;; esac
         validate_ssh_file "$root/$path" "$mode" file || { ssh_state_error "has invalid $path metadata"; return 1; }
     done
+    public=$(cat "$root/server/ssh_host_ed25519_key.pub") || { ssh_state_error 'could not read server public key'; return 1; }
+    expected_config=$(write_ssh_host_block && printf '.') || { ssh_state_error 'could not render expected client configuration'; return 1; }
     if ! { validate_ssh_pair "$root/key" && validate_ssh_pair "$root/server/ssh_host_ed25519_key" &&
         cmp -s "$root/key.pub" "$root/server/authorized_keys" &&
-        cmp -s "$root/known_hosts" <(printf '[localhost]:%s %s\n' "$LOCAL_PORT" "$(cat "$root/server/ssh_host_ed25519_key.pub")") &&
-        cmp -s "$root/ssh_config" <(write_ssh_host_block); }; then
+        cmp -s "$root/known_hosts" <(printf '[localhost]:%s %s\n' "$LOCAL_PORT" "$public") &&
+        cmp -s "$root/ssh_config" <(printf '%s' "${expected_config%.}"); }; then
         ssh_state_error 'has inconsistent keys, pin, or client configuration'
         return 1
     fi
@@ -210,7 +218,7 @@ validate_ssh_container_mount() {
         template+="$(ssh_inspect_quote "$path")"
         template+='}}exposed{{end}}'
         [ "$path" != / ] || break
-        path=$(dirname "$path")
+        path=$(dirname "$path") || return 1
     done
     template+='{{end}}'
     result=$(podman container inspect "$CONTAINER_NAME" --format "$template") || {
@@ -223,7 +231,7 @@ validate_ssh_resume() {
     local recorded actual
     validate_ssh_generation || return 1
     validate_ssh_receipt || { ssh_state_error 'has invalid container identity metadata'; return 1; }
-    recorded=$(cat "$SSH_GENERATION_DIR/container-id")
+    recorded=$(cat "$SSH_GENERATION_DIR/container-id") || { ssh_state_error 'could not read container identity'; return 1; }
     [[ "$recorded" =~ ^[a-f0-9]{64}$ ]] || { ssh_state_error 'has invalid container identity'; return 1; }
     actual=$(podman container inspect "$CONTAINER_NAME" --format '{{.Id}}') || {
         ssh_state_error 'container identity inspection failed'; return 1;
@@ -245,7 +253,7 @@ write_ssh_host_block() {
     local env_pair setenv_line
     setenv_line=""
 
-    cat <<SSHEOF
+    cat <<SSHEOF || return 1
 Host $CONTAINER_NAME
     HostName localhost
     Port $LOCAL_PORT
@@ -276,22 +284,19 @@ SSHEOF
 }
 
 print_ssh_config_instructions() {
-    cat <<EOF_INSTRUCTIONS
-SSH config path:
-  $SSH_CONFIG
-
-Host alias:
-  $CONTAINER_NAME
-
-Manual ~/.ssh/config include:
-  Include $SSH_CONFIG
-
-VS Code/VSCodium setting:
-  remote.SSH.configFile = $SSH_CONFIG
-
-Host block:
-EOF_INSTRUCTIONS
-    write_ssh_host_block
+    printf 'SSH config path: %s\nHost alias: %s\n' "$SSH_CONFIG" "$CONTAINER_NAME"
+    if [ -e "$SSH_CONFIG" ] || [ -L "$SSH_CONFIG" ]; then
+        printf 'Config path exists: yes\n'
+    else
+        printf 'Config path exists: no\n'
+    fi
+    printf 'Path existence does not establish safe attachment; use connection-info for validated metadata.\n'
+    # Include expands glob patterns, tilde and tokens even inside quotes.
+    if contains_control_character "$SSH_CONFIG" || [[ "$SSH_CONFIG" != /* || "$SSH_CONFIG" = *[\*\?\[\]%\$]* ]]; then
+        printf 'This path cannot be represented safely in an SSH Include instruction.\n'
+        return 0
+    fi
+    printf 'Manual ~/.ssh/config instruction:\n  Include %s\n' "$(ssh_config_quote "$SSH_CONFIG")"
 }
 
 wait_for_ssh() {

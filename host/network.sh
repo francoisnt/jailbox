@@ -164,10 +164,8 @@ configure_proxy_env() {
     # Single source for the proxy URL and no-proxy list. Other modules read
     # these values from the network-owned state map.
     if [ -z "${NETWORK_STATE[proxy_url]}" ] && [ -n "${EGRESS_ALLOW[*]-}" ]; then
-        # ssh-config runs without launching: prefer the live network's subnet
-        # (it may sit on a collision-fallback candidate), else candidate 0.
-        # podman may be absent on this path; internal_network_subnet then
-        # returns empty and the hash candidate is used.
+        # Preserve a live collision-fallback subnet; before network creation,
+        # the deterministic candidate supplies the endpoint.
         existing_subnet=$(internal_network_subnet "${NETWORK_NAME}-internal" || true)
         if [ -n "$existing_subnet" ]; then
             NETWORK_STATE[proxy_url]="http://$(proxy_ip_for_subnet "$existing_subnet"):8888"
@@ -175,7 +173,7 @@ configure_proxy_env() {
             NETWORK_STATE[proxy_url]="http://$(proxy_internal_ip):8888"
         fi
     fi
-    [ -n "${NETWORK_STATE[proxy_url]}" ] || NETWORK_STATE[proxy_url]="http://$PROXY_NAME:8888"
+    [[ "${NETWORK_STATE[proxy_url]}" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}:8888$ ]] || die 'could not determine an internal proxy IPv4 URL'
     NETWORK_STATE[no_proxy]="localhost,127.0.0.1"
     # Rendered into the generated SSH Host block via SetEnv. sshd creates fresh
     # session environments, so client-side SetEnv is the reliable way to expose
@@ -271,7 +269,7 @@ inspect_network_for_up() {
         while IFS= read -r member; do
             case "$member" in
                 ""|"$CONTAINER_NAME"|"$PROXY_NAME") ;;
-                *) refuse_sandbox "network '$name' has unexpected container '$member'; disconnect that container from this network before recovery" ;;
+                *) die "network '$name' has unexpected container '$member'; disconnect that container from this network before retrying" ;;
             esac
         done <<< "$members"
         result=$(podman network inspect "$name" --format '{{.Driver}}') || die "could not inspect network '$name'"
@@ -384,7 +382,7 @@ print_tinyproxy_conf() {
 }
 
 validate_proxy_configuration() {
-    local subnet template
+    local subnet template expected_filter expected_conf
     local effective=()
     effective_egress_allowlist effective
     subnet=$(podman network inspect "${NETWORK_NAME}-internal" --format '{{(index .Subnets 0).Subnet}}') || die 'could not inspect proxy subnet'
@@ -392,8 +390,10 @@ validate_proxy_configuration() {
         ! validate_ssh_file "${NETWORK_STATE[proxy_conf_file]}" 644 file; then
         refuse_sandbox 'unsafe proxy configuration files'
     fi
-    if ! cmp -s "${NETWORK_STATE[filter_file]}" <(print_tinyproxy_filter "${effective[@]}") ||
-        ! cmp -s "${NETWORK_STATE[proxy_conf_file]}" <(print_tinyproxy_conf "$subnet"); then
+    expected_filter=$(print_tinyproxy_filter "${effective[@]}" && printf '.') || die 'could not render expected proxy filter'
+    expected_conf=$(print_tinyproxy_conf "$subnet" && printf '.') || die 'could not read or render expected proxy configuration'
+    if ! cmp -s "${NETWORK_STATE[filter_file]}" <(printf '%s' "${expected_filter%.}") ||
+        ! cmp -s "${NETWORK_STATE[proxy_conf_file]}" <(printf '%s' "${expected_conf%.}"); then
         refuse_sandbox 'proxy configuration differs from requested policy'
     fi
     require_container_mount "$PROXY_NAME" /etc/tinyproxy/filter bind "${NETWORK_STATE[filter_file]}" false

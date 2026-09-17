@@ -151,8 +151,8 @@ run_mutation_faults() {
             [[ $(wc -l < "$LIFECYCLE_EVENTS") -ge "$point" ]] || matrix_die 'fault point not reached'
             lifecycle_same_fault_event "$trace" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'fault point reached a different operation'
             unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE
-            inventory=$(fault_inventory)
-            matrix_observe interrupted "$inventory" partial health-dependent
+            inventory=$(fault_inventory) || matrix_die "could not observe interrupted inventory"
+            matrix_observe_fault interrupted
             if [[ "$contract" = launch ]]; then
                 if [[ "$home_preexisting" = true ]]; then assert_marker keep; fi
                 if [[ "$policy" = resume ]]; then
@@ -202,7 +202,7 @@ run_mutation_faults() {
             else
                 assert_marker "$retained"
             fi
-            matrix_observe recovered running healthy allow
+            matrix_observe recovered running allow
             matrix_case_pass
         done
     done
@@ -238,14 +238,14 @@ run_failed_resume() {
             observed=$(podman container inspect "$PREFIX" --format '{{.State.Status}}')
             lifecycle_reports_state "$LOG/$CASE_KEY.command" "$PREFIX" "$observed" || matrix_die 'diagnosis differs from final observed state'
             assert_marker keep
-            matrix_observe failed-resume "$(fault_inventory)" readiness-failed health-dependent
+            matrix_observe_fault failed-resume
             grep -q 'jailbox stop' "$LOG/$CASE_KEY.command" || matrix_die 'missing explicit recovery'
             expect_success stop
             assert_cleanup stop "$policy"
             expect_success up
             assert_service
             if [[ "$policy" = false ]]; then assert_marker keep; else assert_marker delete; fi
-            matrix_observe recovered running healthy allow
+            matrix_observe recovered running allow
             matrix_case_pass
         done
     done
@@ -277,12 +277,12 @@ run_removal_failure() {
     [[ -f "$GENERATION/key" && -f "$GENERATION/container-id" ]] || matrix_die 'failed container removal lost credentials'
     grep -q 'cleanup could not remove' "$LOG/$CASE_KEY.command" || matrix_die 'missing incomplete-cleanup diagnosis'
     assert_marker keep
-    matrix_observe failed-cleanup "$(fault_inventory)" cleanup-failed health-dependent
+    matrix_observe_fault failed-cleanup
     expect_success stop
     expect_success up
     assert_service
     assert_marker keep
-    matrix_observe recovered running healthy allow
+    matrix_observe recovered running allow
     matrix_case_pass
 }
 
@@ -314,13 +314,13 @@ run_existing_dependency_failure() {
         find "$STATE" -type f -exec sha256sum {} + | LC_ALL=C sort > "$LOG/material-after"
         cmp -s "$LOG/material-before" "$LOG/material-after" || matrix_die 'rollback changed pre-existing runtime content'
         assert_marker keep
-        matrix_observe failed-create stopped partial refuse
+        matrix_observe failed-create stopped refuse
         grep -q 'jailbox stop' "$LOG/$CASE_KEY.command" || matrix_die 'missing explicit recovery'
         expect_success stop
         expect_success up
         assert_service
         assert_marker keep
-        matrix_observe recovered running healthy allow
+        matrix_observe recovered running allow
         matrix_case_pass
     done
 }
@@ -336,7 +336,7 @@ run_home_inspection_failure() {
             snapshot > "$LOG/inspection-before"
             export LIFECYCLE_FAIL_HOME_INSPECT="$HOME_VOLUME" LIFECYCLE_EVENTS="$LOG/events"
             : > "$LIFECYCLE_EVENTS"
-            matrix_observe inspection-error running home-inspection-error refuse
+            matrix_observe inspection-error running refuse
             if [[ "$contract" = clean ]]; then
                 # Explicit clean does not depend on reading retention metadata.
                 expect_success "$command"
@@ -358,8 +358,56 @@ run_home_inspection_failure() {
             expect_success up
             assert_service
             assert_marker "$retained"
-            matrix_observe recovered running healthy allow
+            matrix_observe recovered running allow
             matrix_case_pass
         done
     done
+}
+
+# Faults interrupt known-good creation/resume/cleanup, not arbitrary policy
+# edits. Independently inspect the remaining completeness and live services;
+# never infer health from status or the failed launch's return code.
+fault_attachment() {
+    local name subnet url="" attempt running recorded actual
+    for name in "$PREFIX" "$PREFIX-proxy"; do
+        if [[ "$name" = "$PREFIX-proxy" && -z ${JAILBOX_CONFIG_EGRESS_ALLOW_0:-} ]]; then continue; fi
+        if ! exists container "$name"; then
+            printf 'refuse\n'; return
+        fi
+        running=$(podman container inspect "$name" --format '{{.State.Running}}') || matrix_die "cannot inspect fault running state"
+        if [[ "$running" != true ]]; then
+            printf 'refuse\n'; return
+        fi
+    done
+    if [[ ! -f "$GENERATION/container-id" || ! -f "$GENERATION/ssh_config" ]]; then
+        printf 'refuse\n'; return
+    fi
+    recorded=$(cat "$GENERATION/container-id") || matrix_die 'cannot read fault receipt'
+    actual=$(podman container inspect "$PREFIX" --format '{{.Id}}') || matrix_die 'cannot inspect fault identity'
+    if [[ "$recorded" != "$actual" ]]; then printf 'refuse\n'; return; fi
+    if [[ -n ${JAILBOX_CONFIG_EGRESS_ALLOW_0:-} ]]; then
+        subnet=$(podman network inspect "$NETWORK-internal" --format '{{(index .Subnets 0).Subnet}}') || matrix_die 'cannot inspect fault subnet'
+        url="http://${subnet%.0/24}.2:8888"
+    fi
+    for attempt in 1 2 3; do
+        if ssh -F "$GENERATION/ssh_config" -o ConnectTimeout=3 "$PREFIX" true >/dev/null 2>&1; then break; fi
+        if [[ "$attempt" = 3 ]]; then printf 'refuse\n'; return; fi
+        sleep 1
+    done
+    if [[ -n "$url" ]]; then
+        if ! podman exec "$PREFIX" sh -c '
+            grep -F "$1" "$HOME/.curlrc" >/dev/null &&
+            grep -F "$1" "$HOME/.wgetrc" >/dev/null &&
+            response=$(curl -q --noproxy "" --proxy "$1" -s --connect-timeout 3 --max-time 8 -o /dev/null -w "%{http_code}" http://jailbox-fault-check.invalid/) &&
+            test "$response" = 403
+        ' _ "$url"; then printf 'refuse\n'; return; fi
+    fi
+    printf 'allow\n'
+}
+
+matrix_observe_fault() {
+    local inventory attachment
+    inventory=$(fault_inventory) || matrix_die 'could not observe fault inventory'
+    attachment=$(fault_attachment) || matrix_die 'could not establish fault attachment expectation'
+    matrix_observe "$1" "$inventory" "$attachment"
 }

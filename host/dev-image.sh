@@ -52,9 +52,23 @@ build_or_select_dev_image() {
         return 0
     fi
 
+    validate_local_build_inputs || return $?
+    local display_path
+    local -a BUILD_CMD=(podman build -t "$PROJECT_DEV_IMAGE" -f "$SELECTED_DEV_CONTAINERFILE")
+    [ -n "$DEV_TARGET_STAGE" ] && BUILD_CMD+=(--target "$DEV_TARGET_STAGE")
+    BUILD_CMD+=("$SELECTED_DEV_BUILD_CONTEXT")
+
+    display_path=$(realpath --relative-to="$PROJECT_DIR" "$SELECTED_DEV_CONTAINERFILE" 2>/dev/null || printf '%s' "$SELECTED_DEV_CONTAINERFILE")
+    echo "🏗️  Building dev image from $display_path..."
+    "${BUILD_CMD[@]}"
+}
+
+# Shared local-only launch checks. DEV_IMAGE makes file/context inputs unused.
+validate_local_build_inputs() {
+    [ -z "$DEV_IMAGE" ] || return 0
     select_dev_containerfile_for_launch || return $?
 
-    local build_context_input display_path context_status
+    local build_context_input context_status
     if [ -n "$DEV_BUILD_CONTEXT" ]; then
         case "$DEV_BUILD_CONTEXT" in
             /*) build_context_input="$DEV_BUILD_CONTEXT" ;;
@@ -66,13 +80,16 @@ build_or_select_dev_image() {
     context_status=0
     SELECTED_DEV_BUILD_CONTEXT=$(classify_trusted_directory "$build_context_input" "build context") || context_status=$?
     [ "$context_status" -eq 0 ] || return "$context_status"
-    local -a BUILD_CMD=(podman build -t "$PROJECT_DEV_IMAGE" -f "$SELECTED_DEV_CONTAINERFILE")
-    [ -n "$DEV_TARGET_STAGE" ] && BUILD_CMD+=(--target "$DEV_TARGET_STAGE")
-    BUILD_CMD+=("$SELECTED_DEV_BUILD_CONTEXT")
+}
 
-    display_path=$(realpath --relative-to="$PROJECT_DIR" "$SELECTED_DEV_CONTAINERFILE" 2>/dev/null || printf '%s' "$SELECTED_DEV_CONTAINERFILE")
-    echo "🏗️  Building dev image from $display_path..."
-    "${BUILD_CMD[@]}"
+run_validate() {
+    [ -z "$CONFIG_PATH_ARG" ] || die '--config cannot be used with validate; use JAILBOX_CONFIG_* environment configuration'
+    require_command realpath
+    load_environment_config || return 1
+    validate_configured_readonly_paths || return 1
+    validate_local_build_inputs || return 1
+    finalize_effective_readonly_paths || return 1
+    printf 'Configuration and local launch inputs are valid; sandbox health and build success were not checked.\n'
 }
 
 # Run the trusted selector for a launch, turning a vanished or unusable

@@ -79,9 +79,24 @@ images before running
 the Debian test image and `setsid` for isolated command groups. It covers
 damaged resources, refusal non-mutation, interrupted launch/cleanup, dependency-safe rollback, and actual recovery. Cases live in
 `tests/lib/lifecycle-matrix.sh`; mutation-boundary cases extend the same runner
-through `tests/lib/lifecycle-runtime-faults.sh`. Read-only diagnostic and attach
-interfaces extend the runner's `matrix_observe` hook as they land. Its current
-observation log records expectations, not executed diagnostic assertions.
+through `tests/lib/lifecycle-runtime-faults.sh`. The runner's `matrix_observe`
+hook asserts status bytes and connection-info outcomes for each fixture;
+fault expectations come from independent surviving-resource and live-service
+observations, never the attachment command's verdict.
+
+The `running.up` case also checks eight health variants: writable root, retained capabilities, missing
+no-new-privileges, writable protected mount, unexpected socket-path mount,
+unresponsive SSH, unresponsive proxy, and an advisory upstream outage.
+It executes stop/up recovery for required health failures and checks persistent
+home retention. Full resource/filesystem/image comparisons are bounded to
+36 observation points, independent of interruption count; every connection
+observer also rejects mutation attempts.
+
+The deterministic 50- and 150-case samples retain their declared case membership
+and counts, but now execute connection validation and the health variants above.
+These are workload changes: older timings are not directly comparable merely
+because case names match. Samples remain partial coverage, never replacements
+for the four gates.
 
 Case labels separate the 144 matrix command cases, seven discovery traces,
 13 targeted failures, and interruption cases numbered within each trace.

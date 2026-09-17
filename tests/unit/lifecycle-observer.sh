@@ -20,6 +20,8 @@ cli() {
     printf '%s' "$REPLY"
     return "$RESULT"
 }
+# Connection observation is tested in connection-observer.sh; retain the status oracle.
+observe_connection() { :; }
 MUTATE=''
 RESULT=0
 for expected in absent stopped running; do
@@ -27,7 +29,7 @@ for expected in absent stopped running; do
     for phase in initial recovered; do
         printf original > "$tmp/state"
         printf original > "$tmp/images"
-        matrix_observe "$phase" "$expected" healthy allow
+        matrix_observe "$phase" "$expected" allow
     done
 done
 [[ $(wc -l < "$LOG/observations") -eq 6 ]] || fail 'missing observations'
@@ -36,7 +38,7 @@ done
    -f "$LOG/missing-proxy.up.recovered.status.stdout" ]] || fail 'phase artifacts were overwritten'
 successful=6
 reject() {
-    if (matrix_observe initial absent absent refuse) > "$tmp/out" 2> "$tmp/err"; then
+    if (matrix_observe initial absent refuse) > "$tmp/out" 2> "$tmp/err"; then
         fail 'observer accepted invalid output or mutation'
     fi
     [[ -s "$tmp/err" ]] || fail 'missing observer diagnostic'
@@ -51,8 +53,9 @@ for MUTATE in state images; do reject; done
 MUTATE=''
 
 # All selected observations must be reachable through the shared row catalog.
-# Exactly 21 full comparisons cover initial states, support recovery, and both
+# The original 21 full comparisons cover initial states, support recovery, and both
 # cleanup outcomes for every stored home-label class, independent of faults.
+# Fifteen health-variant observations bring the bounded total to 36.
 # shellcheck source=tests/lib/lifecycle-matrix.sh
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-contracts.sh
@@ -72,7 +75,14 @@ check_selection() {
     done
 }
 lifecycle_each_row check_selection
-[[ "$selected" = 21 ]] || fail 'bounded snapshot cases are missing or unexpectedly expanded'
+while IFS= read -r variant; do
+    for phase in "health-$variant" "health-$variant-recovered"; do
+        [[ "$variant:$phase" != upstream:health-upstream-recovered ]] || continue
+        status_snapshot_required running.up "$phase" || fail "missing health snapshot"
+        selected=$((selected + 1))
+    done
+done < <(attachment_health_cases)
+[[ "$selected" = 36 ]] || fail 'bounded snapshot cases are missing or unexpectedly expanded'
 
 # Increasing interruption cases preserves every classification assertion and
 # produces no extra engine/filesystem snapshots, including recovered phases.
@@ -80,17 +90,17 @@ lifecycle_each_row check_selection
 for ((i=0; i<100; i++)); do
     CASE_KEY="fault.up.false.after.$i"
     REPLY=$'stopped\n'
-    matrix_observe interrupted stopped partial refuse
+    matrix_observe interrupted stopped refuse
     REPLY=$'running\n'
-    matrix_observe recovered running healthy allow
+    matrix_observe recovered running allow
 done
 [[ $(wc -l < "$LOG/observations") -eq 206 ]] || fail 'fault classification was skipped'
 [[ ! -s "$tmp/snapshot-calls" ]] || fail 'growing fault coverage added full snapshots'
 # Reject failures on the cheap path as well as the full-comparison path.
-if (REPLY=$'absent\n'; matrix_observe interrupted stopped partial refuse) >/dev/null 2>&1; then
+if (REPLY=$'absent\n'; matrix_observe interrupted stopped refuse) >/dev/null 2>&1; then
     fail 'cheap observation accepted wrong classification'
 fi
-if (RESULT=125; matrix_observe recovered running healthy allow) >/dev/null 2>&1; then
+if (RESULT=125; matrix_observe recovered running allow) >/dev/null 2>&1; then
     fail 'cheap observation accepted failed status'
 fi
 [[ -f "$LOG/$CASE_KEY.interrupted.status.stdout" &&

@@ -4,6 +4,8 @@
 set -euo pipefail
 TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 JAILBOX_DIR=$(cd "$TEST_DIR/../.." && pwd)
+# shellcheck source=host/common.sh
+source "$JAILBOX_DIR/host/common.sh"
 # shellcheck source=host/ssh.sh
 source "$JAILBOX_DIR/host/ssh.sh"
 # shellcheck source=host/container-runtime.sh
@@ -195,6 +197,8 @@ sed -n '/^bring_up_sandbox() {$/,/^}$/p' "$JAILBOX_DIR/jailbox" > "$FIXTURE/laun
 cat > "$FIXTURE/launch-test" <<'LAUNCH'
 #!/bin/bash
 set -euo pipefail
+# shellcheck disable=SC1091
+source "$GENERATION_REPO/host/common.sh"
 # shellcheck disable=SC1091
 source "$GENERATION_REPO/host/ssh.sh"
 # shellcheck disable=SC1091

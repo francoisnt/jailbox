@@ -59,7 +59,7 @@ git -C "$FIXTURE" checkout -q -- host/public-api.sh
 delete_line '    DEV_IMAGE'
 assert_result "removed configuration detected" removed
 git -C "$FIXTURE" checkout -q -- host/public-api.sh
-delete_line '    doctor'
+delete_line '    status'
 assert_result "removed CLI declaration detected" removed
 git -C "$FIXTURE" checkout -q -- host/public-api.sh
 delete_line '    EDITOR'

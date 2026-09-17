@@ -269,7 +269,7 @@ cmp "$FIXTURE/expected-rows" "$FIXTURE/visited-rows"
 pass
 
 declare -A seen=()
-while IFS='|' read -r key mode policy requested up status diagnosis attachment recovery retained stopped extra; do
+while IFS='|' read -r key mode policy requested up status attachment recovery retained stopped extra; do
     TEST_CASE="catalog row $key"
     [[ "$key" =~ ^[a-z][a-z0-9-]*$ && -z "$extra" ]]
     [[ -z ${seen[$key]-} ]]
@@ -278,7 +278,7 @@ while IFS='|' read -r key mode policy requested up status diagnosis attachment r
     [[ "$requested" = true || "$requested" = false ]]
     [[ "$policy" =~ ^(none|legacy|false|true|empty|corrupt|newline)$ ]]
     [[ "$up" = success || "$up" = refuse ]]
-    [[ "$status" =~ ^(absent|running|stopped)$ && -n "$diagnosis" ]]
+    [[ "$status" =~ ^(absent|running|stopped)$ ]]
     [[ "$attachment" = allow || "$attachment" = refuse ]]
     [[ "$recovery" =~ ^(none|stop|clean)$ ]]
     [[ "$retained" =~ ^(new|keep|delete)$ ]]
