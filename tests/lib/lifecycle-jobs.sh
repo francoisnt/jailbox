@@ -27,7 +27,7 @@ lifecycle_jobs() {
 # start first; otherwise prefer measured long jobs and use stable name ties.
 lifecycle_order_jobs() {
     local jobs="$1" timings="$2"
-    awk -F '|' -f "${BASH_SOURCE[0]%/*}/../fixtures/order-jobs.awk" "$timings" "$jobs" | LC_ALL=C sort -t '|' -k1,1nr -k2,2 | cut -d '|' -f2-
+    awk -F '|' -f "${BASH_SOURCE[0]%/*}/lifecycle/order-jobs.awk" "$timings" "$jobs" | LC_ALL=C sort -t '|' -k1,1nr -k2,2 | cut -d '|' -f2-
 }
 
 # A deterministic benchmark prefix of constructed state/command cases. Keep
@@ -163,7 +163,7 @@ lifecycle_case_label() {
     for file in "$run"/worker-*/expected-faults; do
         [[ ! -f "$file" ]] || manifests+=("$file")
     done
-    awk -v key="$key" -f "${BASH_SOURCE[0]%/*}/../fixtures/case-label.awk" "${manifests[@]}"
+    awk -v key="$key" -f "${BASH_SOURCE[0]%/*}/lifecycle/case-label.awk" "${manifests[@]}"
 }
 
 # Read independently owned manifests: no shared lock can strand workers on
@@ -177,7 +177,7 @@ lifecycle_progress() {
     for file in "$run"/worker-*/cases; do
         [[ ! -f "$file" ]] || completed+=("$file")
     done
-    awk -F '|' -f "${BASH_SOURCE[0]%/*}/../fixtures/progress.awk" "${completed[@]}" "${manifests[@]}"
+    awk -F '|' -f "${BASH_SOURCE[0]%/*}/lifecycle/progress.awk" "${completed[@]}" "${manifests[@]}"
 }
 
 # Startup sizing is a scheduling estimate, not a memory reservation. Use the

@@ -16,6 +16,10 @@ test -x /usr/local/bin/jailbox-write-editor-settings
 test -r /usr/local/lib/jailbox/authentication-mount.awk
 test -r /usr/local/lib/jailbox/readonly-mount.awk
 test -r /usr/local/lib/jailbox/process-hardening.awk
+test "$(stat -c %a /usr/local/lib/jailbox)" = 755
+for helper in /usr/local/lib/jailbox/*.awk; do
+    test "$(stat -c %a "$helper")" = 644
+done
 test "$(stat -c %a /usr/local/bin/jailbox-exec-argv)" = 755
 test "$(/usr/local/bin/jailbox-exec-argv cHdkAA==)" = /home/jailbox/project
 refute /usr/local/bin/jailbox-exec-argv Y2F0

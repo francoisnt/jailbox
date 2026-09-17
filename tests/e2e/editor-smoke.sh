@@ -328,7 +328,7 @@ seed_editor_server_cache() {
         --entrypoint /bin/bash \
         -v "$volume:/home/jailbox" \
         -v "$archive:/seed/server.tar.gz:ro,z" \
-        "$image" -s -- "$relative" "$cli" < "$JAILBOX_DIR/tests/fixtures/seed-editor-cache.sh"; then
+        "$image" -s -- "$relative" "$cli" < "$JAILBOX_DIR/tests/lib/editor/seed-cache.sh"; then
         echo "  Warning: could not seed editor server cache; falling back to cold bootstrap" >&2
         podman volume rm -f "$volume" >/dev/null 2>&1 || true
         return 0
@@ -560,7 +560,7 @@ remote_editor_connections() {
     # .vscode-server/cli/servers/Stable-*/server/... and data/logs/<session>/...,
     # plus older .*-server/bin/*/*.log layouts.
     # A server boot alone is not evidence that a window attached.
-    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' < "$JAILBOX_DIR/tests/fixtures/editor-connections.sh" 2>/dev/null
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' < "$JAILBOX_DIR/tests/lib/editor/connections.sh" 2>/dev/null
 }
 
 snapshot_remote_editor_connections() {
@@ -607,7 +607,7 @@ build_proof_vsix() {
     local out="$1"
     local src="$SCRIPT_DIR/fixtures/proof-extension"
 
-    python3 "$JAILBOX_DIR/tests/fixtures/build-proof-vsix.py" "$src" "$out"
+    python3 "$JAILBOX_DIR/tests/lib/editor/build-proof-vsix.py" "$src" "$out"
 }
 
 # Installs the proof extension through the remote server's own CLI so it does
@@ -622,7 +622,7 @@ install_proof_extension() {
     ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
         'cat > /tmp/jailbox-editor-proof.vsix' < "$PROOF_VSIX" || return 1
 
-    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' < "$JAILBOX_DIR/tests/fixtures/install-proof-extension.sh" 2>&1 | sed 's/^/    /'
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' < "$JAILBOX_DIR/tests/lib/editor/install-proof-extension.sh" 2>&1 | sed 's/^/    /'
 }
 
 # Open a fresh window after installation so its extension host discovers the
@@ -826,13 +826,13 @@ collect_failure_diagnostics() {
         echo ""
         echo "  Remote workspace listing:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            'bash -s -- workspace' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
+            'bash -s -- workspace' < "$JAILBOX_DIR/tests/lib/editor/remote-diagnostics.sh" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
         echo "  Managed downloader proxy blocks:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            'bash -s -- proxy' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
+            'bash -s -- proxy' < "$JAILBOX_DIR/tests/lib/editor/remote-diagnostics.sh" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
@@ -844,13 +844,13 @@ collect_failure_diagnostics() {
         echo ""
         echo "  Editor server directories:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            'bash -s -- directories' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
+            'bash -s -- directories' < "$JAILBOX_DIR/tests/lib/editor/remote-diagnostics.sh" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
         echo "  Remote Machine settings:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            'bash -s -- settings' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
+            'bash -s -- settings' < "$JAILBOX_DIR/tests/lib/editor/remote-diagnostics.sh" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""

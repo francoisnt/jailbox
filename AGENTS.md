@@ -95,8 +95,11 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   context where Bash may expand it more than once.
 - Keep functions focused and follow the existing formatting and naming style.
 - Keep substantive embedded programs in ordinary source files: container
-  programs in `container/`, test programs and fake executables in test fixture
-  directories, and Python helpers in `.py` files. Pass inputs as arguments,
+  programs in `container/`, test machinery in `tests/lib/`, simulated behavior
+  in `tests/fixtures/`, and Python helpers in `.py` files. Group related test
+  helpers by subsystem and related fixtures by scenario; keep single-file
+  fixtures flat. Host-streamed container checks belong in `container/checks/`;
+  installed container dependencies belong outside it. Pass inputs as arguments,
   environment variables, or stdin instead of interpolating data into code.
   Put substantial trap bodies in functions in the owning module. Tiny commands
   and expressions may remain inline; do not create a file for every one-liner.

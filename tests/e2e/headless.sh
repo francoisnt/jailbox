@@ -189,7 +189,7 @@ assert_vscodium_reh_probe() {
     remote_output_file="$(mktemp)"
     printf -v remote_command 'bash -s -- %q %q' "$reh_release" "$reh_commit"
     ssh -F "$config" -o ConnectTimeout=3 "$ctr" \
-        "$remote_command" >"$remote_output_file" 2>&1 < "$JAILBOX_DIR/tests/fixtures/vscodium-reh-probe.sh"
+        "$remote_command" >"$remote_output_file" 2>&1 < "$JAILBOX_DIR/tests/lib/editor/vscodium-reh-probe.sh"
     remote_rc=$?
     remote_output="$(cat "$remote_output_file")"
     rm -f "$remote_output_file"
@@ -380,7 +380,7 @@ EOF
         "! printf 'READONLY_PATHS=attacker\\n' >> /home/jailbox/project/jailbox.conf 2>/dev/null && ! rm /home/jailbox/project/jailbox.conf 2>/dev/null"
     if [[ "$stage" != "egress" ]]; then
         assert_ssh "$ssh_cfg" "$ctr" "no stale managed downloader proxy blocks" \
-            'bash -s -- absent' < "$JAILBOX_DIR/tests/fixtures/check-managed-proxy.sh"
+            'bash -s -- absent' < "$JAILBOX_DIR/tests/lib/sandbox/check-managed-proxy.sh"
     fi
 
     # Command mode must not create host-side editor settings.
@@ -404,9 +404,9 @@ EOF
         assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
             "[ -n \"\$HTTPS_PROXY\" ]"
         assert_ssh "$ssh_cfg" "$ctr" "curl downloader proxy block is managed" \
-            "bash -s -- curl $(printf '%q' "$proxy_url")" < "$JAILBOX_DIR/tests/fixtures/check-managed-proxy.sh"
+            "bash -s -- curl $(printf '%q' "$proxy_url")" < "$JAILBOX_DIR/tests/lib/sandbox/check-managed-proxy.sh"
         assert_ssh "$ssh_cfg" "$ctr" "wget downloader proxy block is managed" \
-            "bash -s -- wget $(printf '%q' "$proxy_url")" < "$JAILBOX_DIR/tests/fixtures/check-managed-proxy.sh"
+            "bash -s -- wget $(printf '%q' "$proxy_url")" < "$JAILBOX_DIR/tests/lib/sandbox/check-managed-proxy.sh"
         if [[ "$proxy_url" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:8888$ ]] &&
             grep -Fq "HTTPS_PROXY=$proxy_url" "$ssh_cfg"; then
             pass "generated SSH config carries proxy environment"
@@ -444,7 +444,7 @@ EOF
         grep -i setenv "$ssh_cfg" 2>/dev/null || echo "(none)"
         echo "  [diag] managed downloader proxy blocks:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            'bash -s -- proxy' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
+            'bash -s -- proxy' < "$JAILBOX_DIR/tests/lib/editor/remote-diagnostics.sh" \
             2>/dev/null || true
         echo "  [diag] tinyproxy filter:"
         sed 's/^/    /' "$filter_path" 2>/dev/null || echo "    (missing)"

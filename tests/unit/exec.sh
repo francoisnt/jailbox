@@ -96,8 +96,8 @@ mkdir "$FIXTURE/decoder-tools"
 export EXEC_REAL_MKTEMP EXEC_REAL_RM
 EXEC_REAL_MKTEMP=$(command -v mktemp)
 EXEC_REAL_RM=$(command -v rm)
-cp "$ROOT/tests/fixtures/exec-mktemp.sh" "$FIXTURE/decoder-tools/mktemp"
-cp "$ROOT/tests/fixtures/exec-rm.sh" "$FIXTURE/decoder-tools/rm"
+cp "$ROOT/tests/fixtures/exec/mktemp.sh" "$FIXTURE/decoder-tools/mktemp"
+cp "$ROOT/tests/fixtures/exec/rm.sh" "$FIXTURE/decoder-tools/rm"
 chmod 755 "$FIXTURE/decoder-tools/"*
 PATH="$FIXTURE/decoder-tools:$PATH" bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output"
 [[ $(cat "$FIXTURE/output") = executed ]] || fail 'secure decoder allocation failed'
@@ -113,7 +113,7 @@ if PATH="$FIXTURE/decoder-tools:$PATH" EXEC_FAIL_CLEANUP=true bash "$CONVERGENCE
 find "$TMPDIR" -type f -exec rm -f {} +
 printf 'PASS: decoder allocation, cleanup, and directory failures stop execution\n'
 # A decoder producer can publish complete-looking bytes and still fail.
-cp "$ROOT/tests/fixtures/exec-base64.sh" "$FIXTURE/decoder-tools/base64"
+cp "$ROOT/tests/fixtures/exec/base64.sh" "$FIXTURE/decoder-tools/base64"
 chmod 755 "$FIXTURE/decoder-tools/base64"
 for interrupt in false true; do
     if PATH="$FIXTURE/decoder-tools:$PATH" EXEC_INTERRUPT_DECODE="$interrupt" bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output" 2> "$FIXTURE/error"; then fail 'failed/interrupted decoder accepted'; fi

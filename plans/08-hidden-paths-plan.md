@@ -76,7 +76,7 @@ path and overlap rules without querying engine state during validation.
 
 Extend the policy-aware batched mount validation and streamed session checks
 from plan 7 to recognize masks and omitted child overlays. Migrate
-`validate_development_mounts` and `container/validate-session.sh` so they do not
+`validate_development_mounts` and `container/checks/validate-session.sh` so they do not
 require an ordinary read-only or writable mount that effective masking replaces
 or suppresses. Preserve checks for all unmasked paths, and reject missing or
 ineffective required masks. Attachment validation remains read-only; destructive

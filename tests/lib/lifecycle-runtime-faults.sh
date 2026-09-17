@@ -395,7 +395,7 @@ fault_attachment() {
         sleep 1
     done
     if [[ -n "$url" ]]; then
-        if ! podman exec -i "$PREFIX" bash -s -- "$url" < "$ROOT/tests/fixtures/check-fault-proxy.sh"; then printf 'refuse\n'; return; fi
+        if ! podman exec -i "$PREFIX" bash -s -- "$url" < "$ROOT/tests/lib/sandbox/check-fault-proxy.sh"; then printf 'refuse\n'; return; fi
     fi
     printf 'allow\n'
 }

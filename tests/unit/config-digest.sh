@@ -587,15 +587,18 @@ assert_gate_refuses "every incompatible member is named" "$state" \
 echo ""
 (
     SCRIPT_DIR="$FIXTURE/image-[inputs]"
-    mkdir -p "$SCRIPT_DIR/container/tinyproxy"
+    mkdir -p "$SCRIPT_DIR/container/tinyproxy" "$SCRIPT_DIR/container/checks"
     printf 'setup\n' > "$SCRIPT_DIR/container/setup.sh"
     printf 'proxy\n' > "$SCRIPT_DIR/container/tinyproxy/Containerfile"
     before=$(jailbox_install_cache_bust)
-    printf 'validation\n' > "$SCRIPT_DIR/container/validate-session.sh"
+    printf 'validation\n' > "$SCRIPT_DIR/container/checks/validate-session.sh"
     [[ $(jailbox_install_cache_bust) = "$before" ]]
-    printf 'changed validation\n' >> "$SCRIPT_DIR/container/validate-session.sh"
+    printf 'changed validation\n' >> "$SCRIPT_DIR/container/checks/validate-session.sh"
     [[ $(jailbox_install_cache_bust) = "$before" ]]
-    printf 'proxy validation\n' > "$SCRIPT_DIR/container/proxy-route.awk"
+    printf 'proxy validation\n' > "$SCRIPT_DIR/container/checks/proxy-route.awk"
+    [[ $(jailbox_install_cache_bust) = "$before" ]]
+    mkdir "$SCRIPT_DIR/container/checks/future"
+    printf 'another streamed check\n' > "$SCRIPT_DIR/container/checks/future/check.sh"
     [[ $(jailbox_install_cache_bust) = "$before" ]]
     printf 'changed setup\n' >> "$SCRIPT_DIR/container/setup.sh"
     after=$(jailbox_install_cache_bust)

@@ -102,7 +102,7 @@ grep -Fxq interrupt.up.plain-network.1.after "$TEST_ROOT/faults"
 pass
 
 # External shells keep errexit active when the parent collects failed workers.
-cp "$ROOT/tests/fixtures/pool-worker.sh" "$TEST_ROOT/worker"
+cp "$ROOT/tests/fixtures/lifecycle-pool/worker.sh" "$TEST_ROOT/worker"
 for workers in 1 2 4; do
     TEST_CASE="$workers workers execute the same complete job set exactly once"
     run="$TEST_ROOT/pool-$workers"
@@ -185,7 +185,7 @@ tree="$TEST_ROOT/coordinator"
 mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/host" "$tree/bin"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
 cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts,fixture-ports}.sh "$tree/tests/lib/"
-cp -R "$ROOT/tests/fixtures" "$tree/tests/"
+cp -R "$ROOT/tests/lib/lifecycle" "$tree/tests/lib/"
 # The fake workers never bind sockets. Model their Linux socket tables instead
 # of reading the host's /proc, which is absent on macOS. Keep the real selector.
 mkdir -p "$tree/proc/sys/net/ipv4" "$tree/proc/net"
@@ -195,7 +195,7 @@ printf '32768 60999\n' > "$tree/proc/sys/net/ipv4/ip_local_port_range"
 sed "s|/proc}|$tree/proc}|" "$ROOT/tests/lib/fixture-ports.sh" > "$tree/tests/lib/fixture-ports.sh"
 grep -Fq "$tree/proc}" "$tree/tests/lib/fixture-ports.sh"
 cp "$ROOT/host/"{project-id,public-api}.sh "$tree/host/"
-cp "$ROOT/tests/fixtures/pool-podman.sh" "$tree/bin/podman"
+cp "$ROOT/tests/fixtures/lifecycle-pool/podman.sh" "$tree/bin/podman"
 chmod 755 "$tree/bin/podman"
 # This fixture exercises coordination and ownership, not Linux process-group
 # isolation. Supply its platform prerequisites on every portable host, including
@@ -210,7 +210,7 @@ cat > "$tree/bin/uname" <<'PLATFORM'
 printf 'Linux\n'
 PLATFORM
 chmod 755 "$tree/bin/setsid" "$tree/bin/uname"
-cp "$ROOT/tests/fixtures/pool-mock-worker.sh" "$tree/tests/lib/lifecycle-worker.sh"
+cp "$ROOT/tests/fixtures/lifecycle-pool/mock-worker.sh" "$tree/tests/lib/lifecycle-worker.sh"
 TEST_CASE='invalid mappings fail before coordinator resource preparation'
 cp "$tree/tests/lib/lifecycle-contracts.sh" "$tree/contracts-backup"
 for mapping in LIFECYCLE_COMMAND_CONTRACTS LIFECYCLE_FAULT_SCENARIOS; do

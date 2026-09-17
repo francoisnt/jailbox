@@ -43,7 +43,7 @@ producer_status=0
 reply=$'ok\n'
 validate_running_development
 [[ $(wc -l < "$tmp/ssh-calls") = 1 ]] || fail 'session checks did not use one SSH call'
-cmp "$ROOT/container/validate-session.sh" "$tmp/payload"
+cmp "$ROOT/container/checks/validate-session.sh" "$tmp/payload"
 for token in authorized-keys project-write sockets hardening proxy-env direct-route mount:0 mount:1 mount:2 'mount:999999999999999999999999' garbage; do
     reply="$token"$'\n'
     if (validate_running_development) > "$tmp/out" 2>&1; then fail "accepted remote failure $token"; fi
@@ -59,7 +59,7 @@ for producer_status in 1 255; do
 done
 producer_status=0
 cp "$tmp/ssh-calls" "$tmp/ssh-before"
-mkdir -p "$tmp/invalid-install/container/validate-session.sh"
+mkdir -p "$tmp/invalid-install/container/checks/validate-session.sh"
 for install in "$tmp/missing-install" "$tmp/invalid-install"; do
     # shellcheck disable=SC2030 # Invalid installations are isolated fixtures.
     if (SCRIPT_DIR=$install; validate_running_development) > "$tmp/out" 2>&1; then fail 'accepted unreadable local payload'; fi
@@ -85,7 +85,7 @@ done
     pass() { printf '%s\n' "$*" >> "$tmp/runtime-passes"; }
     ssh() {
         cat > "$tmp/runtime-payload" || return 1
-        cmp "$ROOT/container/validate-session.sh" "$tmp/runtime-payload" || return 1
+        cmp "$ROOT/container/checks/validate-session.sh" "$tmp/runtime-payload" || return 1
         case "$*" in
             *Dockerfile*) printf 'mount:3\n' ;;
             *.github/workflows*) printf 'mount:1\n' ;;
@@ -112,7 +112,7 @@ sed -e "s@/run/jailbox-sshd/authorized_keys@$tmp/authorized@g" \
     -e "s@/proc/1/status@$tmp/process@g" \
     -e "s@/proc/net/ipv6_route@$tmp/ipv6@g" \
     -e "s@/proc/net/route@$tmp/route@g" \
-    "$ROOT/container/validate-session.sh" > "$tmp/remote"
+    "$ROOT/container/checks/validate-session.sh" > "$tmp/remote"
 paths=(/ '/project with spaces/policy' $'/literal\\path\nnext')
 mounts() {
     local path encoded
@@ -129,7 +129,7 @@ healthy() {
     printf 'Iface Destination\neth0 01000000\n' > "$tmp/route"
     : > "$tmp/ipv6"
 }
-remote() { bash "$tmp/remote" full "$tmp/project" '' "${paths[@]}"; }
+remote() { bash -s -- full "$tmp/project" '' "${paths[@]}" < "$tmp/remote"; }
 healthy
 result=$(remote)
 [[ "$result" = ok ]] || fail "healthy remote payload rejected: $result"
@@ -163,7 +163,7 @@ proxy=http://10.0.0.2:8888
 proxy_remote() {
     HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy" http_proxy="$proxy" https_proxy="$proxy" \
         NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1 \
-        bash "$tmp/remote" full "$tmp/project" "$proxy" "${paths[@]}"
+        bash -s -- full "$tmp/project" "$proxy" "${paths[@]}" < "$tmp/remote"
 }
 [[ $(proxy_remote) = ok ]] || fail 'healthy proxy session rejected'
 [[ $(HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'

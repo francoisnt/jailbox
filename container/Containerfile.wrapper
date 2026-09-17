@@ -14,6 +14,8 @@ RUN chmod 0755 /usr/local/bin/jailbox-exec-argv
 COPY write-editor-settings.sh /usr/local/bin/jailbox-write-editor-settings
 RUN chmod 0755 /usr/local/bin/jailbox-write-editor-settings
 COPY lib/ /usr/local/lib/jailbox/
+RUN find /usr/local/lib/jailbox -type d -exec chmod 0755 {} + \
+    && find /usr/local/lib/jailbox -type f -exec chmod 0644 {} +
 
 EXPOSE 2222
 CMD ["/usr/local/bin/jailbox-start"]

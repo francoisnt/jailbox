@@ -193,6 +193,7 @@ cleanup_wrapper_stage() {
     rm -rf "$home_dir"
     rm -rf "$sshd_runtime_dir"
     rm -rf "$project_dir"
+    rm -rf "$build_context"
     podman stop "$ctr" >/dev/null 2>&1 || true
     podman rm "$ctr" >/dev/null 2>&1 || true
 }
@@ -200,7 +201,7 @@ cleanup_wrapper_stage() {
 run_case() {
     local stage="$1"
     local log_dir="$2"
-    local port forward_port test_build_args expect_wrapper_failure test_image_id
+    local port forward_port test_build_args expect_wrapper_failure test_image_id wrapper_context
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope. Initialize here so the trap can
     # always reference them safely under set -u.
@@ -209,6 +210,7 @@ run_case() {
     sshd_runtime_dir=""
     project_dir=""
     build_log=""
+    build_context=""
 
     port=$(stage_port "$stage")
     forward_port=$(stage_forward_port "$stage")
@@ -264,6 +266,16 @@ run_case() {
         fail "test image identity inspection"
         return 1
     fi
+    # Model library inputs copied by a restrictive installer. Startup and the
+    # unprivileged runtime checks must still be able to read installed helpers.
+    wrapper_context="$JAILBOX_DIR/container"
+    if [[ "$stage" = debian ]]; then
+        build_context=$(mktemp -d) || return 1
+        cp -R "$JAILBOX_DIR/container/." "$build_context/" || return 1
+        find "$build_context/lib" -type d -exec chmod 0700 {} + || return 1
+        find "$build_context/lib" -type f -exec chmod 0600 {} + || return 1
+        wrapper_context="$build_context"
+    fi
     # Build jailbox wrapper
     if ! test_log_capture "$build_log" podman build \
             -t "$wrapper_image" \
@@ -272,7 +284,7 @@ run_case() {
             --build-arg "DEV_IMAGE=${test_image_id}" \
             --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(wrapper_install_cache_bust)" \
             --build-arg "USER_ID=$(id -u)" \
-            "$JAILBOX_DIR/container"; then
+            "$wrapper_context"; then
         if [ "$expect_wrapper_failure" = true ] && grep -Eq "already exists in the dev image|already belongs to existing image user" "$build_log"; then
             pass "wrapper image build rejects unsafe user conflict"
             return 0

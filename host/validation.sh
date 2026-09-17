@@ -42,8 +42,8 @@ validate_development_session() {
     local -a paths=(/)
     for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do paths+=("$REMOTE_PATH/$path"); done
     if [[ "$mode" = full && -n "${EGRESS_ALLOW[*]-}" ]]; then proxy=${NETWORK_STATE[proxy_url]}; fi
-    if [[ ! -f "$SCRIPT_DIR/container/validate-session.sh" ]] ||
-        ! payload=$(< "$SCRIPT_DIR/container/validate-session.sh"); then
+    if [[ ! -f "$SCRIPT_DIR/container/checks/validate-session.sh" ]] ||
+        ! payload=$(< "$SCRIPT_DIR/container/checks/validate-session.sh"); then
         refuse_local_validation 'could not read local validation payload; repair the jailbox installation before retrying'
         return 1
     fi
@@ -84,9 +84,9 @@ validate_proxy_ready() {
     [[ "$gateway" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || refuse_sandbox 'proxy external gateway is missing or invalid'
     # A broken local default route is a readiness failure, not an upstream
     # outage. Compare kernel routing evidence with the external attachment.
-    [[ -f "$SCRIPT_DIR/container/proxy-route.awk" ]] || \
+    [[ -f "$SCRIPT_DIR/container/checks/proxy-route.awk" ]] || \
         refuse_local_validation 'could not read local proxy validation payload; repair the jailbox installation before retrying'
-    podman exec -i -e "EXPECTED_GATEWAY=$gateway" "$PROXY_NAME" awk -f - /proc/net/route < "$SCRIPT_DIR/container/proxy-route.awk" >/dev/null || refuse_sandbox 'proxy external default route is not ready'
+    podman exec -i -e "EXPECTED_GATEWAY=$gateway" "$PROXY_NAME" awk -f - /proc/net/route < "$SCRIPT_DIR/container/checks/proxy-route.awk" >/dev/null || refuse_sandbox 'proxy external default route is not ready'
     # Probe from the proxy's internal address, which its ACL permits, even when
     # the development container is stopped. Positive 403 evidence distinguishes
     # policy denial from DNS/transport failure. nc writes no persistent files.

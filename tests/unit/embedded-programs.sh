@@ -16,13 +16,13 @@ printf '1 2 0:3 / /auth rw - tmpfs tmpfs rw\n' > "$tmp/mounts"
 [[ $(mount_state) = absent ]] || fail 'absent authentication mount accepted'
 export EXPECTED_GATEWAY=10.89.0.1
 printf 'Iface Destination Gateway\neth0 00000000 0100590A\n' > "$tmp/routes"
-awk -f "$ROOT/container/proxy-route.awk" "$tmp/routes" || fail 'valid gateway rejected'
+awk -f "$ROOT/container/checks/proxy-route.awk" "$tmp/routes" || fail 'valid gateway rejected'
 for route in 'eth0 00000000 0200590A' 'eth0 0000590A 00000000' ''; do
     printf 'Iface Destination Gateway\n%s\n' "$route" > "$tmp/routes"
-    if awk -f "$ROOT/container/proxy-route.awk" "$tmp/routes"; then fail 'invalid default route accepted'; fi
+    if awk -f "$ROOT/container/checks/proxy-route.awk" "$tmp/routes"; then fail 'invalid default route accepted'; fi
 done
 printf 'Iface Destination Gateway\neth0 00000000 0100590A\neth1 00000000 0100590A\n' > "$tmp/routes"
-if awk -f "$ROOT/container/proxy-route.awk" "$tmp/routes"; then fail 'duplicate default routes accepted'; fi
+if awk -f "$ROOT/container/checks/proxy-route.awk" "$tmp/routes"; then fail 'duplicate default routes accepted'; fi
 mkdir -m 700 "$tmp/home"
 printf '{"task.allowAutomaticTasks":"on"}\n' > "$tmp/settings"
 HOME="$tmp/home" bash "$ROOT/container/write-editor-settings.sh" < "$tmp/settings"
@@ -52,19 +52,19 @@ result=0
 [[ $(cat "$tmp/debian.counts") = '0 1' ]] || fail 'wrapper cleanup lost stage counts'
 [[ $(grep -Fxc 'rm jailbox-test-debian-ctr' "$tmp/engine") = 2 ]] || fail 'wrapper cleanup lost container identity after return'
 
-HOME="$tmp/home" bash "$ROOT/tests/fixtures/check-managed-proxy.sh" absent
+HOME="$tmp/home" bash "$ROOT/tests/lib/sandbox/check-managed-proxy.sh" absent
 HOME="$tmp/home" bash "$ROOT/container/downloader-proxy-manager.sh" enable http://127.0.0.1:8888
 for client in curl wget; do
-    HOME="$tmp/home" bash "$ROOT/tests/fixtures/check-managed-proxy.sh" "$client" http://127.0.0.1:8888
-    if HOME="$tmp/home" bash "$ROOT/tests/fixtures/check-managed-proxy.sh" "$client" http://wrong:8888; then
+    HOME="$tmp/home" bash "$ROOT/tests/lib/sandbox/check-managed-proxy.sh" "$client" http://127.0.0.1:8888
+    if HOME="$tmp/home" bash "$ROOT/tests/lib/sandbox/check-managed-proxy.sh" "$client" http://wrong:8888; then
         fail 'managed proxy check accepted the wrong URL'
     fi
 done
-if HOME="$tmp/home" bash "$ROOT/tests/fixtures/check-managed-proxy.sh" absent; then
+if HOME="$tmp/home" bash "$ROOT/tests/lib/sandbox/check-managed-proxy.sh" absent; then
     fail 'managed proxy check missed stale settings'
 fi
 if command -v python3 >/dev/null 2>&1; then
-    python3 "$ROOT/tests/fixtures/build-proof-vsix.py" "$ROOT/tests/e2e/fixtures/proof-extension" "$tmp/proof extension.vsix"
+    python3 "$ROOT/tests/lib/editor/build-proof-vsix.py" "$ROOT/tests/e2e/fixtures/proof-extension" "$tmp/proof extension.vsix"
     python3 -m zipfile -t "$tmp/proof extension.vsix"
 else
     printf 'SKIP: proof extension packaging requires python3 (editor prerequisite)\n'

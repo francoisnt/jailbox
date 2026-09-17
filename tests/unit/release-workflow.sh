@@ -21,7 +21,7 @@ done
 grep -Fq 'needs: [select-version, test-gates]' "$workflow"
 grep -Fq 'uses: ./.github/workflows/test-gates.yml' "$workflow"
 if grep -Eq 'run_editor: *false' "$workflow"; then exit 1; fi
-awk -f "$ROOT/tests/fixtures/release-order.awk" "$workflow"
+awk -f "$ROOT/tests/lib/release-order.awk" "$workflow"
 # shellcheck disable=SC2016 # Match the validator invocation literally.
 grep -Fq 'bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$DIST_DIR"' "$ROOT/scripts/build-tarball.sh"
 grep -Fq 'git push origin ":refs/tags/' "$workflow"

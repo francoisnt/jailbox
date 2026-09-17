@@ -20,7 +20,7 @@ cmp "$FIXTURE/expected" "$FIXTURE/actual"
 pass
 
 TEST_CASE='detached helpers cannot retain the extra capture writer'
-cp "$ROOT/tests/fixtures/logging-detach.sh" "$FIXTURE/detach"
+cp "$ROOT/tests/fixtures/logging/detach.sh" "$FIXTURE/detach"
 mkfifo "$FIXTURE/notification"
 exec {notification}<> "$FIXTURE/notification"
 (
@@ -74,7 +74,7 @@ grep -q '] stderr$' "$FIXTURE/capture"
 pass
 
 TEST_CASE='entrypoint preserves stdin, errexit and exit traps'
-cp "$ROOT/tests/fixtures/logging-entrypoint.sh" "$FIXTURE/entrypoint"
+cp "$ROOT/tests/fixtures/logging/entrypoint.sh" "$FIXTURE/entrypoint"
 result=0
 printf 'caller input\n' | bash "$FIXTURE/entrypoint" "$ROOT" > "$FIXTURE/output" || result=$?
 [[ "$result" = 1 ]]

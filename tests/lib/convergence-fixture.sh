@@ -15,8 +15,8 @@ export CONVERGENCE_IMAGE=1111111111111111111111111111111111111111111111111111111
 export CONVERGENCE_PROXY_IMAGE=2222222222222222222222222222222222222222222222222222222222222222
 export JAILBOX_CONFIG_DEV_IMAGE=localhost/convergence
 export PATH="$FIXTURE/bin:$PATH"
-cp "$ROOT/tests/fixtures/convergence-podman.sh" "$FIXTURE/bin/podman"
-cp "$ROOT/tests/fixtures/convergence-ssh.sh" "$FIXTURE/bin/ssh"
+cp "$ROOT/tests/fixtures/convergence/podman.sh" "$FIXTURE/bin/podman"
+cp "$ROOT/tests/fixtures/convergence/ssh.sh" "$FIXTURE/bin/ssh"
 # Avoid thirty seconds of readiness retries in deliberately failed starts.
 cat > "$FIXTURE/bin/sleep" <<'SLEEP'
 #!/bin/bash

@@ -74,7 +74,7 @@ path and overlap rules; validation remains independent of engine state.
 
 Migrate the writable-project-base assumption in `validate_development_mounts`
 and the unconditional project-directory write check in
-`container/validate-session.sh`. Structural and live validation must accept a
+`container/checks/validate-session.sh`. Structural and live validation must accept a
 read-only project base with valid writable lanes and reject permissions that
 differ from the effective policy. Extend the existing batched inspections and
 streamed session checks, retaining one implementation shared by launch and

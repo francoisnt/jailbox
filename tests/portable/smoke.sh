@@ -40,13 +40,16 @@ section() {
 syntax_check() {
     local script
     section "syntax"
-    bash -n jailbox install.sh host/*.sh scripts/*.sh tests/ci/*.sh tests/e2e/*.sh tests/integration/*.sh tests/lib/*.sh tests/portable/*.sh tests/unit/*.sh tests/run
-    bash -n container/downloader-proxy-manager.sh container/jailbox-exec-argv
+    for script in jailbox install.sh tests/run container/jailbox-exec-argv; do
+        bash -n "$script" || return 1
+    done
     while IFS= read -r script; do
         bash -n "$script" || return 1
-    done < <(find tests/fixtures -type f -name '*.sh' -print | sort)
-    bash -n container/write-editor-settings.sh
-    sh -n container/setup.sh container/entrypoint.sh
+    done < <(find host scripts tests container -type f -name '*.sh' \
+        ! -path 'container/setup.sh' ! -path 'container/entrypoint.sh' -print | sort)
+    for script in container/setup.sh container/entrypoint.sh; do
+        sh -n "$script" || return 1
+    done
 }
 
 reject_macos_system_bash() {
@@ -88,7 +91,8 @@ smoke_install_update_uninstall() {
     test -r "$tmp/share/jailbox/container/lib/authentication-mount.awk"
     test -r "$tmp/share/jailbox/container/lib/process-hardening.awk"
     test -r "$tmp/share/jailbox/container/write-editor-settings.sh"
-    test -r "$tmp/share/jailbox/container/proxy-route.awk"
+    test -r "$tmp/share/jailbox/container/checks/proxy-route.awk"
+    test -r "$tmp/share/jailbox/container/checks/validate-session.sh"
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox dev' ]]
 
     tar -xzf "$JAILBOX_DIR/dist/jailbox-v9.9.9.tar.gz" -C "$tmp"

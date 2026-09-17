@@ -229,6 +229,8 @@ ledger_start_worker() {
 
     barrier=$(mktemp -d) || return 1
     parent=$BASHPID
+    # An explicit stdin redirection prevents Bash from substituting /dev/null
+    # for this asynchronous child when job control is disabled.
     (
         ticks=0
         while [ ! -f "$barrier/ready" ]; do
@@ -242,7 +244,7 @@ ledger_start_worker() {
         done
         rm -rf -- "$barrier"
         "$@"
-    ) &
+    ) <&0 &
     worker=$!
     # Returned to the sourcing runner so it can join this worker.
     # shellcheck disable=SC2034

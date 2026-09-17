@@ -303,7 +303,7 @@ test_interrupted_pair_recovers() {
             d=$(mktemp -d)
             mkdir "$d/bin" "$d/expected"
             ln -s "$(command -v mv)" "$d/real-mv"
-            cp "$JAILBOX_DIR/tests/fixtures/proxy-mv.sh" "$d/bin/mv"
+            cp "$JAILBOX_DIR/tests/fixtures/downloader-proxy/mv.sh" "$d/bin/mv"
             chmod 755 "$d/bin/mv"
             printf 'curl-user-option = yes\n' > "$d/.curlrc"
             printf 'wget-user-option = yes\n' > "$d/.wgetrc"
@@ -340,7 +340,7 @@ test_interrupted_pair_recovers() {
                 rm "$d/kill-confirmed"
                 cp "$d/.curlrc" "$d/replacement"
                 status=0
-                HOME="$d" PROXY_TEST_FAULT="$fault" bash "$JAILBOX_DIR/tests/fixtures/proxy-interruption-target.sh" > "$d/error" 2>&1 || status=$?
+                HOME="$d" PROXY_TEST_FAULT="$fault" bash "$JAILBOX_DIR/tests/fixtures/downloader-proxy/interruption-target.sh" > "$d/error" 2>&1 || status=$?
                 if [[ "$status" = 97 && ! -e "$d/kill-confirmed" ]] && grep -Fq 'Unexpected proxy interruption target' "$d/error"; then
                     pass "$action refuses to kill the manager if the sync subshell disappears"
                 else

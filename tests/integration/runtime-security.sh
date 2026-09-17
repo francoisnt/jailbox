@@ -23,8 +23,7 @@ runtime_file_metadata() {
 assert_runtime_dir_valid() {
     local config="$1" desc="$2"
 
-    # shellcheck disable=SC2016  # remote script expands inside the container
-    if ssh_run "$config" 'bash -s' < "$JAILBOX_DIR/tests/fixtures/check-runtime-dir.sh" 2>/dev/null; then
+    if ssh_run "$config" 'bash -s' < "$JAILBOX_DIR/tests/lib/sandbox/check-runtime-dir.sh" 2>/dev/null; then
         pass "$desc"
     else
         fail "$desc"

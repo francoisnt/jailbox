@@ -104,7 +104,7 @@ seed_home() {
     # In podman unshare, 0:0 maps to the invoking host user/group. keep-id
     # maps that host identity to the managed container user. Using the host's
     # numeric UID inside unshare instead assigns a subordinate host identity.
-    podman unshare bash "$ROOT/tests/fixtures/seed-home.sh" "$(volume_path)"
+    podman unshare bash "$ROOT/tests/lib/lifecycle/seed-home.sh" "$(volume_path)"
 }
 assert_marker() {
     local expected="$1" path
@@ -118,7 +118,7 @@ assert_marker() {
 # Stable filesystem metadata and hashes, never key bytes. Do not follow symlinks
 # or read FIFOs; access times change when inspected and are intentionally absent.
 filesystem_snapshot() {
-    podman unshare bash "$ROOT/tests/fixtures/filesystem-snapshot.sh" "$@"
+    podman unshare bash "$ROOT/tests/lib/lifecycle/filesystem-snapshot.sh" "$@"
 }
 snapshot() {
     local kind name home_path inventory home_present=false
@@ -235,8 +235,7 @@ verify_exec_proxy_environment() {
     local subnet proxy
     subnet=$(podman network inspect "$NETWORK-internal" --format '{{(index .Subnets 0).Subnet}}') || matrix_die 'could not inspect proxy subnet'
     proxy="http://${subnet%.0/24}.2:8888"
-    # shellcheck disable=SC2016 # Assertions run inside the remote command.
-    LIFECYCLE_READONLY=true cli exec bash -s -- "$proxy" < "$ROOT/tests/fixtures/check-proxy-environment.sh" || matrix_die 'exec lost proxy environment or added a login shell'
+    LIFECYCLE_READONLY=true cli exec bash -s -- "$proxy" < "$ROOT/tests/lib/sandbox/check-proxy-environment.sh" || matrix_die 'exec lost proxy environment or added a login shell'
 }
 # Expected values come from fixture identity and direct network evidence.
 observe_connection() {

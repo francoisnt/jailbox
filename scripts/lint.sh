@@ -22,18 +22,30 @@ while IFS= read -r script; do
 done < <(find scripts tests -type f -name '*.sh' ! -path 'tests/run' -print | sort)
 shellcheck --external-sources --shell=bash "$@" "${bash_scripts[@]}"
 
-# Bash scripts in container/ (bash justified: container always installs bash)
+# Discover nested and extensionless container scripts. The shebang owns the
+# dialect; a .sh file without a supported shebang must not silently escape.
+container_bash=()
+container_sh=()
+while IFS= read -r script; do
+    IFS= read -r interpreter < "$script" || interpreter=""
+    case "$interpreter" in
+        '#!/bin/bash'|'#!/usr/bin/env bash') container_bash+=("$script") ;;
+        '#!/bin/sh'|'#!/usr/bin/env sh') container_sh+=("$script") ;;
+        *)
+            if [[ "$script" = *.sh ]]; then
+                printf 'Error: unsupported shell shebang in %s\n' "$script" >&2
+                exit 1
+            fi
+            ;;
+    esac
+done < <(find container -type f -print | sort)
 echo "shellcheck: container Bash scripts"
-shellcheck --shell=bash "$@" \
-    container/downloader-proxy-manager.sh \
-    container/jailbox-exec-argv \
-    container/write-editor-settings.sh \
-    container/validate-session.sh
-
-# POSIX sh scripts
-echo "shellcheck: container/ and container/entrypoint.sh"
-shellcheck --shell=sh "$@" \
-    container/setup.sh \
-    container/entrypoint.sh
+if [[ -n ${container_bash[*]-} ]]; then
+    shellcheck --shell=bash "$@" "${container_bash[@]}"
+fi
+echo "shellcheck: container POSIX sh scripts"
+if [[ -n ${container_sh[*]-} ]]; then
+    shellcheck --shell=sh "$@" "${container_sh[@]}"
+fi
 
 echo "shellcheck: all clean"
