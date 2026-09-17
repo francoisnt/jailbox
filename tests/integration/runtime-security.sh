@@ -37,6 +37,10 @@ assert_runtime_dir_valid() {
         refute_append() { if true 2>/dev/null >> "$1"; then exit 1; fi; }
 
         test -d /run/jailbox-sshd
+        test -x /usr/local/bin/jailbox-exec-argv
+        test "$(stat -c %a /usr/local/bin/jailbox-exec-argv)" = 755
+        test "$(/usr/local/bin/jailbox-exec-argv cHdkAA==)" = /home/jailbox/project
+        refute /usr/local/bin/jailbox-exec-argv Y2F0
         refute_write /run/jailbox-sshd/probe
         refute_append /run/jailbox-sshd/authorized_keys
         refute_append /run/jailbox-sshd/ssh_host_ed25519_key

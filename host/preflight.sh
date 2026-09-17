@@ -25,6 +25,9 @@ run_version() {
 
 parse_args() {
     local option arg
+    if cli_command_accepts_arguments "${1:-}"; then
+        return 0
+    fi
     for option in "${CLI_FLAGS_WITH_VALUES[@]}"; do
         for arg in "$@"; do
             if [[ "$arg" = "$option" ]]; then

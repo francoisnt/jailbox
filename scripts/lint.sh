@@ -26,6 +26,7 @@ shellcheck --external-sources --shell=bash "$@" "${bash_scripts[@]}"
 echo "shellcheck: container Bash scripts"
 shellcheck --shell=bash "$@" \
     container/downloader-proxy-manager.sh \
+    container/jailbox-exec-argv \
     container/validate-session.sh
 
 # POSIX sh scripts

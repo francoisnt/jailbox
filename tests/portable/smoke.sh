@@ -40,7 +40,7 @@ section() {
 syntax_check() {
     section "syntax"
     bash -n jailbox install.sh host/*.sh scripts/*.sh tests/ci/*.sh tests/e2e/*.sh tests/integration/*.sh tests/lib/*.sh tests/portable/*.sh tests/unit/*.sh tests/run
-    bash -n container/downloader-proxy-manager.sh
+    bash -n container/downloader-proxy-manager.sh container/jailbox-exec-argv
     sh -n container/setup.sh container/entrypoint.sh
 }
 
@@ -64,6 +64,7 @@ build_release_tarball() {
     bash scripts/build-tarball.sh v9.9.9
     test -f dist/jailbox-v9.9.9.tar.gz
     test -f dist/jailbox-latest.tar.gz
+    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/jailbox-exec-argv
     cmp -s dist/jailbox-v9.9.9.tar.gz dist/jailbox-latest.tar.gz
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/install.sh
 }
@@ -76,6 +77,7 @@ smoke_install_update_uninstall() {
 
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh
     "$tmp/bin/jailbox" --help >/dev/null
+    test -x "$tmp/share/jailbox/container/jailbox-exec-argv"
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox dev' ]]
 
     tar -xzf "$JAILBOX_DIR/dist/jailbox-v9.9.9.tar.gz" -C "$tmp"

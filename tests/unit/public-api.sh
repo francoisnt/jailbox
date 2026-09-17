@@ -64,6 +64,16 @@ duplicate_help() { CLI_HELP+=("up=duplicate"); validate_public_api_declaration; 
 expect_failure "CLI help: duplicate mapping 'up'" duplicate_help
 unknown_help() { CLI_HELP+=("sample=unknown"); validate_public_api_declaration; }
 expect_failure "CLI help: undeclared mapping 'sample'" unknown_help
+unknown_argument_command() { CLI_ARGUMENT_COMMANDS+=(sample); validate_public_api_declaration; }
+expect_failure "argument command 'sample' is undeclared" unknown_argument_command
+(
+    CLI_OTHER_COMMANDS+=(sample)
+    CLI_HELP+=("sample=Sample command")
+    CLI_ARGUMENT_COMMANDS+=(sample)
+    initialize_public_api_lookups
+    parse_args sample --config literal ''
+) || fail 'declared argument support did not propagate to parsing'
+expect_failure 'unexpected argument' parse_args status literal
 
 add_command() {
     CLI_LIFECYCLE_COMMANDS+=(sample)

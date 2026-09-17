@@ -74,6 +74,8 @@ source "$SCRIPT_DIR/host/container-runtime.sh"
 source "$SCRIPT_DIR/host/validation.sh"
 # shellcheck source=host/config-digest.sh
 source "$SCRIPT_DIR/host/config-digest.sh"
+# shellcheck source=host/exec.sh
+source "$SCRIPT_DIR/host/exec.sh"
 
 bring_up_sandbox() {
     local pre_build_hook="${1:-}"
@@ -199,7 +201,7 @@ initialize_launch_state() {
 }
 
 main() {
-    local option
+    local option handler
     local -A seen_options=()
     validate_cli_implementation
     validate_digest_api_mapping
@@ -220,7 +222,9 @@ main() {
     if [[ -z "${1:-}" ]]; then
         run_launch
     else
-        "${CLI_COMMAND_HANDLERS[$1]}"
+        handler=${CLI_COMMAND_HANDLERS[$1]}
+        shift
+        "$handler" "$@"
     fi
 }
 

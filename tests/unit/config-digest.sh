@@ -624,6 +624,10 @@ echo ""
     printf 'changed setup\n' >> "$SCRIPT_DIR/container/setup.sh"
     after=$(jailbox_install_cache_bust)
     [[ "$after" != "$before" ]]
+    printf 'decoder\n' > "$SCRIPT_DIR/container/jailbox-exec-argv"
+    before=$(jailbox_install_cache_bust)
+    printf 'changed decoder\n' >> "$SCRIPT_DIR/container/jailbox-exec-argv"
+    [[ $(jailbox_install_cache_bust) != "$before" ]]
     printf 'changed proxy\n' >> "$SCRIPT_DIR/container/tinyproxy/Containerfile"
     [[ $(jailbox_install_cache_bust) != "$after" ]]
     mkdir "$SCRIPT_DIR/host"

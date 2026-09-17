@@ -22,6 +22,9 @@ cli() {
 }
 # Connection observation is tested in connection-observer.sh; retain the status oracle.
 observe_connection() { :; }
+observe_exec() { :; }
+verify_exec_transport() { :; }
+verify_exec_proxy_environment() { :; }
 MUTATE=''
 RESULT=0
 for expected in absent stopped running; do

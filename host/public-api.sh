@@ -68,6 +68,7 @@ CLI_LIFECYCLE_COMMANDS=(
 )
 
 CLI_OTHER_COMMANDS=(
+    exec
     init
     config-schema
     status
@@ -79,7 +80,10 @@ CLI_OTHER_COMMANDS=(
     --help
 )
 
+CLI_ARGUMENT_COMMANDS=(exec)
+
 CLI_HELP=(
+    "exec=Run a command: exec [--] CMD [ARG...]"
     "--version=Show the build version without reading configuration"
     "--config=Load configuration from PATH instead of project jailbox.conf"
     "init=Create the default project jailbox.conf"
@@ -224,6 +228,17 @@ validate_public_api_declaration() {
         [[ "$key" =~ ^-{0,2}[A-Za-z][A-Za-z0-9-]*$ ]] || public_api_error "invalid CLI name '$key'"
     done
     public_api_validate_mapping 'frontend defaults' FRONTEND_SCALAR_KEYS FRONTEND_DEFAULTS allow-empty
+    for key in "${CLI_ARGUMENT_COMMANDS[@]}"; do
+        [[ " ${CLI_FLAGS_WITHOUT_VALUES[*]} " = *" $key "* ]] || public_api_error "argument command '$key' is undeclared"
+    done
+}
+
+cli_command_accepts_arguments() {
+    local command
+    for command in "${CLI_ARGUMENT_COMMANDS[@]}"; do
+        [[ "$command" != "${1:-}" ]] || return 0
+    done
+    return 1
 }
 
 public_api_error() {

@@ -198,6 +198,13 @@ matrix_observe() {
     printf '%s\n' "$status" > "$output.expected"
     cmp -s "$output.expected" "$output.stdout" || matrix_die "wrong status (see $output.stdout)"
     observe_connection "$attachment" "$LOG/$CASE_KEY.$phase.connection"
+    observe_exec "$attachment" "$LOG/$CASE_KEY.$phase.exec"
+    if [[ "$CASE_KEY:$phase" = running.up:initial ]]; then
+        verify_exec_transport
+    fi
+    if [[ "$CASE_KEY:$phase" = missing-proxy.up:recovered ]]; then
+        verify_exec_proxy_environment
+    fi
     if [[ "$compare" = true ]]; then
         snapshot > "$output.after" || matrix_die 'could not snapshot after status'
         image_snapshot > "$output.images-after" || matrix_die 'could not snapshot images after status'
@@ -205,6 +212,53 @@ matrix_observe() {
         cmp -s "$output.images-before" "$output.images-after" || matrix_die 'status mutated images'
     fi
     printf '%s|%s|%s|%s\n' "$CASE_KEY" "$phase" "$status" "$attachment" >> "$LOG/observations"
+}
+observe_exec() {
+    local expected="$1" output="$2" result=0
+    printf 'binary\0input\377\n' > "$output.input"
+    LIFECYCLE_READONLY=true cli exec -- cat < "$output.input" > "$output.stdout" 2> "$output.stderr" || result=$?
+    if grep -q 'read-only observer attempted mutation' "$output.stderr"; then matrix_die 'exec attempted mutation'; fi
+    if [[ "$expected" = refuse ]]; then
+        [[ "$result" != 0 && ! -s "$output.stdout" && -s "$output.stderr" ]] || matrix_die "exec ran after refusal (see $output)"
+    else
+        [[ "$result" = 0 ]] || matrix_die "exec failed (see $output)"
+        cmp -s "$output.input" "$output.stdout" || matrix_die "exec lost input (see $output)"
+    fi
+}
+
+verify_exec_transport() {
+    local first second status result actual
+    local -a args=('' ' ' '"quotes"' '*' $'line\n' $'\377' --config --)
+    printf '%s\0' "${args[@]}" > "$LOG/exec-argv.expected"
+    LIFECYCLE_READONLY=true cli exec -- printf '%s\0' "${args[@]}" > "$LOG/exec-argv.actual" || matrix_die 'exec argv failed'
+    cmp -s "$LOG/exec-argv.expected" "$LOG/exec-argv.actual" || matrix_die 'exec argv changed'
+    actual=$(LIFECYCLE_READONLY=true cli exec pwd) || matrix_die 'exec pwd failed'
+    [[ "$actual" = /home/jailbox/project ]] || matrix_die 'wrong exec directory'
+    for status in 1 42 126 127 130 255; do
+        result=0
+        # shellcheck disable=SC2016 # Expanded by the remote Bash command.
+        LIFECYCLE_READONLY=true cli exec bash -c 'exit "$1"' bash "$status" || result=$?
+        [[ "$result" = "$status" ]] || matrix_die 'exec lost remote status'
+    done
+    LIFECYCLE_READONLY=true cli exec cat < "$LOG/exec-argv.expected" > "$LOG/exec-first" & first=$!
+    LIFECYCLE_READONLY=true cli exec printf '%s' independent > "$LOG/exec-second" & second=$!
+    wait "$first" || matrix_die 'first concurrent exec failed'
+    wait "$second" || matrix_die 'second concurrent exec failed'
+    cmp -s "$LOG/exec-argv.expected" "$LOG/exec-first" || matrix_die 'concurrent exec lost stdin'
+    [[ $(cat "$LOG/exec-second") = independent ]] || matrix_die 'concurrent exec lost argv'
+}
+
+verify_exec_proxy_environment() {
+    local subnet proxy
+    subnet=$(podman network inspect "$NETWORK-internal" --format '{{(index .Subnets 0).Subnet}}') || matrix_die 'could not inspect proxy subnet'
+    proxy="http://${subnet%.0/24}.2:8888"
+    # shellcheck disable=SC2016 # Assertions run inside the remote command.
+    LIFECYCLE_READONLY=true cli exec bash -c '
+        [[ "$HTTP_PROXY" = "$1" && "$HTTPS_PROXY" = "$1" &&
+           "$http_proxy" = "$1" && "$https_proxy" = "$1" &&
+           -n "$NO_PROXY" && "$NO_PROXY" = "$no_proxy" ]] &&
+        ! shopt -q login_shell
+    ' bash "$proxy" || matrix_die 'exec lost proxy environment or added a login shell'
 }
 # Expected values come from fixture identity and direct network evidence.
 observe_connection() {

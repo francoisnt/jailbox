@@ -6,6 +6,9 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=tests/lib/convergence-fixture.sh
 source "$ROOT/tests/lib/convergence-fixture.sh"
 export CONVERGENCE_SSH_LOG="$FIXTURE/ssh-calls"
+export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
+sed "s|^cd /home/jailbox/project |cd \"\$CONVERGENCE_ENGINE\" |" "$ROOT/container/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+printf 'attachment\0input\377\n' > "$FIXTURE/exec-input"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 observe() {
     local expected="$1" diagnostic="${2:-}" before result=0
@@ -22,6 +25,16 @@ observe() {
     else
         [[ "$result" != 0 && ! -s "$FIXTURE/records" ]] || fail 'refusal published connection records'
         grep -q "$diagnostic" "$FIXTURE/diagnostic" || { cat "$FIXTURE/diagnostic"; fail "missing diagnostic: $diagnostic"; }
+    fi
+    result=0
+    CONVERGENCE_DRAIN_STDIN=true launch exec -- cat < "$FIXTURE/exec-input" > "$FIXTURE/exec-output" 2> "$FIXTURE/exec-diagnostic" || result=$?
+    [[ "$before" = "$(snapshot)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'exec mutated resources'
+    if [[ "$expected" = allow ]]; then
+        [[ "$result" = 0 ]] || fail 'exec attachment failed'
+        cmp "$FIXTURE/exec-input" "$FIXTURE/exec-output" || fail 'exec attachment lost command input'
+    else
+        [[ "$result" != 0 && ! -s "$FIXTURE/exec-output" ]] || fail 'exec ran after attachment refusal'
+        grep -q "$diagnostic" "$FIXTURE/exec-diagnostic" || fail 'exec lost refusal diagnostic'
     fi
 }
 check_foreign_network_member() {
@@ -183,3 +196,11 @@ done
 PATH="$FIXTURE/attach-only" launch connection-info > "$FIXTURE/records" 2> "$FIXTURE/diagnostic" || { cat "$FIXTURE/diagnostic"; fail 'attachment added a build or editor dependency'; }
 cmp "$FIXTURE/full-path-records" "$FIXTURE/records"
 printf 'PASS: healthy attachment needs no cksum, Base64, or editor\n'
+for tool in base64 mktemp rm; do
+    ln -s "$(command -v "$tool")" "$FIXTURE/attach-only/$tool"
+done
+PATH="$FIXTURE/attach-only" launch exec bash -c 'printf %s attached' > "$FIXTURE/exec-output" 2> "$FIXTURE/exec-diagnostic" || {
+    cat "$FIXTURE/exec-diagnostic"; fail 'exec added a build or editor dependency'
+}
+[[ $(cat "$FIXTURE/exec-output") = attached ]] || fail 'exec without build tools lost output'
+printf 'PASS: healthy exec needs no cksum or editor\n'

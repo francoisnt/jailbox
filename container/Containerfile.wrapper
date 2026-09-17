@@ -9,6 +9,8 @@ RUN : "$JAILBOX_INSTALL_CACHE_BUST" && sh /tmp/jailbox-container/setup.sh && rm 
 
 COPY entrypoint.sh /usr/local/bin/jailbox-start
 RUN chmod +x /usr/local/bin/jailbox-start
+COPY jailbox-exec-argv /usr/local/bin/jailbox-exec-argv
+RUN chmod 0755 /usr/local/bin/jailbox-exec-argv
 
 EXPOSE 2222
 CMD ["/usr/local/bin/jailbox-start"]

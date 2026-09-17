@@ -130,6 +130,7 @@ jailbox --config PATH   # Load configuration from PATH instead of project jailbo
 jailbox up              # Launch the sandbox without opening an editor
 jailbox stop            # Stop and remove this project's jailbox containers, networks, and ephemeral home
 jailbox --clean         # Permanently delete this project's containers, networks, home, runtime state, and derived images
+jailbox exec            # Run a command: exec [--] CMD [ARG...]
 jailbox init            # Create the default project jailbox.conf
 jailbox config-schema   # Print machine configuration key names and types
 jailbox status          # Print this project's resource inventory state
@@ -371,11 +372,33 @@ jailbox up
   are frontend-only inputs for the bare editor launch.
 
 With environment configuration, `jailbox up` needs no `jailbox.conf` at all.
-`up`, the bare editor launch, `connection-info`, and `validate` consume
+`up`, the bare editor launch, `exec`, `connection-info`, and `validate` consume
 configuration; `stop`, `status`, `config-schema`, `ssh-config`, `init`, `--clean`,
 `--version`, `--help`, and `--uninstall` never read it.
 
 ### Connection metadata and local validation
+
+`jailbox exec [--] CMD [ARG...]` runs a non-interactive command in a healthy,
+already-running sandbox using only `JAILBOX_CONFIG_*` environment policy.
+It uses the same complete attachment checks as `connection-info`, and never
+creates, starts, repairs, or replaces resources. Arguments after `exec` (and
+its optional leading `--`) are passed literally, including empty arguments;
+binary stdin belongs exclusively to the command, even during validation.
+The installed Bash decoder starts the command in `/home/jailbox/project`.
+No login shell is added: request one explicitly with
+`jailbox exec -- bash -lc 'your command'` when needed. The SSH session retains
+the generated uppercase and lowercase HTTP/HTTPS/NO_PROXY environment policy.
+
+The Base64 argument frame is limited to 49,152 bytes; larger frames fail with
+`argument list too long for jailbox exec`. SSH uses pinned host keys and no
+PTY. The remote exit status is returned, with 255 ambiguous between a remote
+exit and SSH failure. Ctrl-C ends local SSH promptly, but neither Ctrl-C nor
+closing SSH guarantees signal delivery or termination of an unconfirmed remote
+process. Coordinate lifecycle mutations separately from attachments.
+Digest mismatch diagnostics list only recognized current invocation key names
+in declaration order (or explicitly say none are present), never values.
+Those names provide current-side context and cannot identify which launch-side
+input differed; matching effective policy is required, regardless of provenance.
 
 `jailbox connection-info` consumes only `JAILBOX_CONFIG_*` environment
 configuration, including defaults when none is set. It validates the current
