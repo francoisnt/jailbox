@@ -7,7 +7,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 source "$ROOT/tests/lib/convergence-fixture.sh"
 export CONVERGENCE_SSH_LOG="$FIXTURE/ssh-calls"
 export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
-sed "s|^cd /home/jailbox/project |cd \"\$CONVERGENCE_ENGINE\" |" "$ROOT/container/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+sed "s|^cd /home/jailbox/project |cd \"\$CONVERGENCE_ENGINE\" |" "$ROOT/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
 printf 'attachment\0input\377\n' > "$FIXTURE/exec-input"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 observe() {

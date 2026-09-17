@@ -76,7 +76,7 @@ mkdir -m 700 "$tmp/home"
 ssh() {
     [[ "$1" = -F && "$2" = "$SSH_CONFIG" && "$3" = "$CONTAINER_NAME" &&
        "$4" = /usr/local/bin/jailbox-write-editor-settings ]] || return 98
-    HOME="$tmp/home" bash "$ROOT/container/write-editor-settings.sh" || return $?
+    HOME="$tmp/home" bash "$ROOT/container/runtime/bin/jailbox-write-editor-settings" || return $?
     return "$ssh_transport_status"
 }
 editor_smoke_settings_json_object > "$tmp/expected"

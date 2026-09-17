@@ -266,14 +266,14 @@ run_case() {
         fail "test image identity inspection"
         return 1
     fi
-    # Model library inputs copied by a restrictive installer. Startup and the
+    # Model runtime inputs copied by a restrictive installer. Startup and the
     # unprivileged runtime checks must still be able to read installed helpers.
     wrapper_context="$JAILBOX_DIR/container"
     if [[ "$stage" = debian ]]; then
         build_context=$(mktemp -d) || return 1
         cp -R "$JAILBOX_DIR/container/." "$build_context/" || return 1
-        find "$build_context/lib" -type d -exec chmod 0700 {} + || return 1
-        find "$build_context/lib" -type f -exec chmod 0600 {} + || return 1
+        find "$build_context/runtime" -type d -exec chmod 0700 {} + || return 1
+        find "$build_context/runtime" -type f -exec chmod 0600 {} + || return 1
         wrapper_context="$build_context"
     fi
     # Build jailbox wrapper

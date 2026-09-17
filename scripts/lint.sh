@@ -22,23 +22,9 @@ while IFS= read -r script; do
 done < <(find scripts tests -type f -name '*.sh' ! -path 'tests/run' -print | sort)
 shellcheck --external-sources --shell=bash "$@" "${bash_scripts[@]}"
 
-# Discover nested and extensionless container scripts. The shebang owns the
-# dialect; a .sh file without a supported shebang must not silently escape.
-container_bash=()
-container_sh=()
-while IFS= read -r script; do
-    IFS= read -r interpreter < "$script" || interpreter=""
-    case "$interpreter" in
-        '#!/bin/bash'|'#!/usr/bin/env bash') container_bash+=("$script") ;;
-        '#!/bin/sh'|'#!/usr/bin/env sh') container_sh+=("$script") ;;
-        *)
-            if [[ "$script" = *.sh ]]; then
-                printf 'Error: unsupported shell shebang in %s\n' "$script" >&2
-                exit 1
-            fi
-            ;;
-    esac
-done < <(find container -type f -print | sort)
+# shellcheck source=scripts/lib/container-shells.sh
+source "$SCRIPT_DIR/lib/container-shells.sh"
+collect_container_shells .
 echo "shellcheck: container Bash scripts"
 if [[ -n ${container_bash[*]-} ]]; then
     shellcheck --shell=bash "$@" "${container_bash[@]}"

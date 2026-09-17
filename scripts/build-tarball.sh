@@ -50,8 +50,14 @@ tarball="$DIST_DIR/$release_name.tar.gz"
 latest_tarball="$DIST_DIR/$APP_NAME-latest.tar.gz"
 checksums_file="$DIST_DIR/SHA256SUMS"
 
-bash -n "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox" "$ROOT_DIR"/host/*.sh "$ROOT_DIR"/scripts/*.sh
-sh -n "$ROOT_DIR"/container/*.sh
+for script in "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox"; do
+    bash -n "$script" || die "invalid shell syntax: $script"
+done
+while IFS= read -r script; do
+    bash -n "$script" || die "invalid shell syntax: $script"
+done < <(find "$ROOT_DIR/host" "$ROOT_DIR/scripts" -type f -name '*.sh' -print)
+source "$ROOT_DIR/scripts/lib/container-shells.sh"
+check_container_syntax "$ROOT_DIR" || die 'invalid container shell source'
 
 rm -rf "$stage_dir" "$tarball" "$latest_tarball" "$checksums_file"
 mkdir -p "$stage_dir"

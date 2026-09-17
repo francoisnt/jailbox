@@ -603,13 +603,14 @@ echo ""
     printf 'changed setup\n' >> "$SCRIPT_DIR/container/setup.sh"
     after=$(jailbox_install_cache_bust)
     [[ "$after" != "$before" ]]
-    printf 'decoder\n' > "$SCRIPT_DIR/container/jailbox-exec-argv"
+    mkdir -p "$SCRIPT_DIR/container/runtime/bin"
+    printf 'decoder\n' > "$SCRIPT_DIR/container/runtime/bin/jailbox-exec-argv"
     before=$(jailbox_install_cache_bust)
-    printf 'changed decoder\n' >> "$SCRIPT_DIR/container/jailbox-exec-argv"
+    printf 'changed decoder\n' >> "$SCRIPT_DIR/container/runtime/bin/jailbox-exec-argv"
     [[ $(jailbox_install_cache_bust) != "$before" ]]
-    mkdir "$SCRIPT_DIR/container/lib"
+    mkdir -p "$SCRIPT_DIR/container/runtime/lib/jailbox"
     before=$(jailbox_install_cache_bust)
-    printf 'installed mount check\n' > "$SCRIPT_DIR/container/lib/readonly-mount.awk"
+    printf 'installed mount check\n' > "$SCRIPT_DIR/container/runtime/lib/jailbox/readonly-mount.awk"
     [[ $(jailbox_install_cache_bust) != "$before" ]]
     printf 'changed proxy\n' >> "$SCRIPT_DIR/container/tinyproxy/Containerfile"
     [[ $(jailbox_install_cache_bust) != "$after" ]]

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Unit tests for container/downloader-proxy-manager.sh.
+# Unit tests for container/runtime/bin/jailbox-manage-proxy.
 #
 # Tests are run with a temporary HOME directory so the script operates on
 # isolated dotfiles without touching the developer's actual home.
@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MANAGE_PROXY="$JAILBOX_DIR/container/downloader-proxy-manager.sh"
+MANAGE_PROXY="$JAILBOX_DIR/container/runtime/bin/jailbox-manage-proxy"
 
 PASSED=0
 FAILED=0

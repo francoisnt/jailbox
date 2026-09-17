@@ -86,8 +86,8 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   `install.sh` and any code explicitly required to support Bash 3.2. For an
   array whose valid elements cannot be empty, test it with `${array[*]-}`
   instead of `${#array[@]}`.
-- `container/setup.sh` and `container/entrypoint.sh` are POSIX `sh`; do not add
-  Bash syntax to them. `container/downloader-proxy-manager.sh` is Bash.
+- `container/setup.sh` and `container/runtime/bin/jailbox-start` are POSIX `sh`; do not add
+  Bash syntax to them. `container/runtime/bin/jailbox-manage-proxy` is Bash.
 - Quote expansions, use explicit error handling, and avoid evaluating project
   configuration as shell code.
 - Validate configuration-derived and other untrusted associative-array
@@ -99,7 +99,9 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   in `tests/fixtures/`, and Python helpers in `.py` files. Group related test
   helpers by subsystem and related fixtures by scenario; keep single-file
   fixtures flat. Host-streamed container checks belong in `container/checks/`;
-  installed container dependencies belong outside it. Pass inputs as arguments,
+  installed container dependencies belong in `container/runtime/`, mirroring
+  their paths beneath `/usr/local` (`bin/` programs and `lib/` data). Setup
+  installs that tree with directory-based permissions. Pass inputs as arguments,
   environment variables, or stdin instead of interpolating data into code.
   Put substantial trap bodies in functions in the owning module. Tiny commands
   and expressions may remain inline; do not create a file for every one-liner.

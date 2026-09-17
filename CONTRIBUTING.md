@@ -8,9 +8,11 @@
 ├── host/                    # Host orchestration modules sourced by jailbox
 ├── container/               # Files copied into wrapper/proxy images
 │   ├── Containerfile.wrapper
-│   ├── entrypoint.sh        # Wrapper container runtime entrypoint
 │   ├── setup.sh             # Wrapper image setup script
-│   ├── downloader-proxy-manager.sh
+│   ├── runtime/             # Installed beneath /usr/local by setup.sh
+│   │   ├── bin/             # Executable programs, including jailbox-start
+│   │   └── lib/jailbox/     # Runtime library data
+│   ├── checks/              # Host-streamed checks, not installed in images
 │   └── tinyproxy/
 ├── scripts/                 # Repository tooling (lint, release, tarball)
 ├── tests/                   # Unit, integration, and e2e tests
@@ -21,6 +23,9 @@
 The `host/` tree runs on the developer machine. The `container/` tree is
 copied into images or executed inside containers. Repository maintenance
 commands stay under `scripts/`, and test suites stay under `tests/`.
+Add installed wrapper helpers to `container/runtime/bin/` and library data to
+`container/runtime/lib/jailbox/`. Setup discovers files recursively, installing
+programs as 0755 and library files as 0644; no Containerfile entry is needed.
 
 `host/public-api.sh` declares the public config keys and CLI flags; changes
 to it drive release version suggestions (see `scripts/release.sh --help`).

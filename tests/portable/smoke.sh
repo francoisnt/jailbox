@@ -40,16 +40,14 @@ section() {
 syntax_check() {
     local script
     section "syntax"
-    for script in jailbox install.sh tests/run container/jailbox-exec-argv; do
+    for script in jailbox install.sh tests/run; do
         bash -n "$script" || return 1
     done
     while IFS= read -r script; do
         bash -n "$script" || return 1
-    done < <(find host scripts tests container -type f -name '*.sh' \
-        ! -path 'container/setup.sh' ! -path 'container/entrypoint.sh' -print | sort)
-    for script in container/setup.sh container/entrypoint.sh; do
-        sh -n "$script" || return 1
-    done
+    done < <(find host scripts tests -type f -name '*.sh' -print | sort)
+    source scripts/lib/container-shells.sh
+    check_container_syntax . || return 1
 }
 
 reject_macos_system_bash() {
@@ -72,7 +70,7 @@ build_release_tarball() {
     bash scripts/build-tarball.sh v9.9.9
     test -f dist/jailbox-v9.9.9.tar.gz
     test -f dist/jailbox-latest.tar.gz
-    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/jailbox-exec-argv
+    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/runtime/bin/jailbox-exec-argv
     cmp -s dist/jailbox-v9.9.9.tar.gz dist/jailbox-latest.tar.gz
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/install.sh
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/scripts/lib/public-api-values.awk
@@ -86,11 +84,11 @@ smoke_install_update_uninstall() {
 
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh
     "$tmp/bin/jailbox" --help >/dev/null
-    test -x "$tmp/share/jailbox/container/jailbox-exec-argv"
-    test -r "$tmp/share/jailbox/container/lib/readonly-mount.awk"
-    test -r "$tmp/share/jailbox/container/lib/authentication-mount.awk"
-    test -r "$tmp/share/jailbox/container/lib/process-hardening.awk"
-    test -r "$tmp/share/jailbox/container/write-editor-settings.sh"
+    test -x "$tmp/share/jailbox/container/runtime/bin/jailbox-exec-argv"
+    test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/readonly-mount.awk"
+    test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/authentication-mount.awk"
+    test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/process-hardening.awk"
+    test -r "$tmp/share/jailbox/container/runtime/bin/jailbox-write-editor-settings"
     test -r "$tmp/share/jailbox/container/checks/proxy-route.awk"
     test -r "$tmp/share/jailbox/container/checks/validate-session.sh"
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox dev' ]]

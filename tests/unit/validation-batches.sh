@@ -105,7 +105,7 @@ chmod 700 "$tmp/project"
 printf key > "$tmp/authorized"
 chmod 600 "$tmp/authorized"
 sed -e "s@/run/jailbox-sshd/authorized_keys@$tmp/authorized@g" \
-    -e "s@/usr/local/lib/jailbox/@$ROOT/container/lib/@g" \
+    -e "s@/usr/local/lib/jailbox/@$ROOT/container/runtime/lib/jailbox/@g" \
     -e "s@/var/run/docker.sock@$tmp/docker.sock@g" \
     -e "s@/run/podman/podman.sock@$tmp/podman.sock@g" \
     -e "s@/proc/self/mountinfo@$tmp/mountinfo@g" \

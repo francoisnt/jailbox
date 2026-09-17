@@ -5,6 +5,40 @@ set -eu
 
 MANAGED_USER=jailbox
 
+# Install a shipped subtree without changing unrelated base-image permissions.
+# Subshells keep recursive traversal state and umask local to each invocation.
+install_runtime_tree() (
+    umask 022
+    [ -d "$1" ] || return 1
+    if [ ! -d "$2" ]; then
+        mkdir "$2" && chmod 0755 "$2" || return 1
+    fi
+    for source in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+        [ -e "$source" ] || [ -L "$source" ] || continue
+        target="$2/${source##*/}"
+        if [ -L "$target" ]; then
+            echo "Error: runtime destination is a symlink: $target" >&2
+            return 1
+        fi
+        if [ -L "$source" ]; then
+            echo "Error: runtime sources must not be symlinks: $source" >&2
+            return 1
+        elif [ -d "$source" ]; then
+            install_runtime_tree "$source" "$target" "$3" || return 1
+            # Shipped directories need traversal permissions even when the
+            # base image already contained them. Shared bin/lib roots retain
+            # their existing modes because only children are normalized here.
+            chmod 0755 "$target" || return 1
+        elif [ -f "$source" ]; then
+            [ ! -d "$target" ] || return 1
+            cp "$source" "$target" && chmod "$3" "$target" || return 1
+        else
+            echo "Error: unsupported runtime source: $source" >&2
+            return 1
+        fi
+    done
+)
+
 # Portable /etc/passwd lookup — getent is absent on Alpine/busybox images.
 get_passwd_entry() {
     if command -v getent >/dev/null 2>&1; then
@@ -175,5 +209,5 @@ AllowUsers ${MANAGED_USER}
 EOF
 
 # ── jailbox runtime helpers ───────────────────────────────────────────────────
-cp /tmp/jailbox-container/downloader-proxy-manager.sh /usr/local/bin/jailbox-manage-proxy
-chmod 755 /usr/local/bin/jailbox-manage-proxy
+install_runtime_tree /tmp/jailbox-container/runtime/bin /usr/local/bin 0755
+install_runtime_tree /tmp/jailbox-container/runtime/lib /usr/local/lib 0644

@@ -10,7 +10,7 @@ run_exec() {
     require_command base64 || return 1
     require_command tr || return 1
     frame=$(set -o pipefail; printf '%s\0' "$@" | base64 | tr -d '\n') || die 'could not encode jailbox exec arguments'
-    # Wire limit shared with container/jailbox-exec-argv; tested at both ends.
+    # Wire limit shared with container/runtime/bin/jailbox-exec-argv; tested at both ends.
     [[ ${#frame} -le 49152 ]] || die 'argument list too long for jailbox exec'
     [[ -n "$frame" && "$frame" != *[!A-Za-z0-9+/=]* ]] || die 'invalid jailbox exec argument encoding'
     load_environment_config || return 1

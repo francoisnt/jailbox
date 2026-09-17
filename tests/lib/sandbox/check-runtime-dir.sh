@@ -20,7 +20,10 @@ test "$(stat -c %a /usr/local/lib/jailbox)" = 755
 for helper in /usr/local/lib/jailbox/*.awk; do
     test "$(stat -c %a "$helper")" = 644
 done
-test "$(stat -c %a /usr/local/bin/jailbox-exec-argv)" = 755
+for helper in /usr/local/bin/jailbox-*; do
+    test -x "$helper"
+    test "$(stat -c %a "$helper")" = 755
+done
 test "$(/usr/local/bin/jailbox-exec-argv cHdkAA==)" = /home/jailbox/project
 refute /usr/local/bin/jailbox-exec-argv Y2F0
 refute_write /run/jailbox-sshd/probe

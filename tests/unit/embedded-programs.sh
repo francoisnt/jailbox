@@ -5,7 +5,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-mount_state() { awk -v target=/auth -v prefix=/auth/ -f "$ROOT/container/lib/authentication-mount.awk" "$tmp/mounts"; }
+mount_state() { awk -v target=/auth -v prefix=/auth/ -f "$ROOT/container/runtime/lib/jailbox/authentication-mount.awk" "$tmp/mounts"; }
 printf '1 2 0:3 / /auth ro - tmpfs tmpfs ro\n' > "$tmp/mounts"
 [[ $(mount_state) = ok ]] || fail 'read-only authentication mount rejected'
 printf '4 1 0:5 / /auth/key rw - tmpfs tmpfs rw\n' >> "$tmp/mounts"
@@ -25,7 +25,7 @@ printf 'Iface Destination Gateway\neth0 00000000 0100590A\neth1 00000000 0100590
 if awk -f "$ROOT/container/checks/proxy-route.awk" "$tmp/routes"; then fail 'duplicate default routes accepted'; fi
 mkdir -m 700 "$tmp/home"
 printf '{"task.allowAutomaticTasks":"on"}\n' > "$tmp/settings"
-HOME="$tmp/home" bash "$ROOT/container/write-editor-settings.sh" < "$tmp/settings"
+HOME="$tmp/home" bash "$ROOT/container/runtime/bin/jailbox-write-editor-settings" < "$tmp/settings"
 cmp "$tmp/settings" "$tmp/home/.vscodium-server/data/Machine/settings.json"
 cmp "$tmp/settings" "$tmp/home/.vscode-server/data/Machine/settings.json"
 # Execute a real wrapper stage that returns on build failure. Its EXIT cleanup
@@ -53,7 +53,7 @@ result=0
 [[ $(grep -Fxc 'rm jailbox-test-debian-ctr' "$tmp/engine") = 2 ]] || fail 'wrapper cleanup lost container identity after return'
 
 HOME="$tmp/home" bash "$ROOT/tests/lib/sandbox/check-managed-proxy.sh" absent
-HOME="$tmp/home" bash "$ROOT/container/downloader-proxy-manager.sh" enable http://127.0.0.1:8888
+HOME="$tmp/home" bash "$ROOT/container/runtime/bin/jailbox-manage-proxy" enable http://127.0.0.1:8888
 for client in curl wget; do
     HOME="$tmp/home" bash "$ROOT/tests/lib/sandbox/check-managed-proxy.sh" "$client" http://127.0.0.1:8888
     if HOME="$tmp/home" bash "$ROOT/tests/lib/sandbox/check-managed-proxy.sh" "$client" http://wrong:8888; then

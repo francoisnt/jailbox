@@ -7,7 +7,7 @@ CONVERGENCE_REAL_SLEEP=$(command -v sleep)
 source "$ROOT/tests/lib/convergence-fixture.sh"
 export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper" CONVERGENCE_DRAIN_STDIN=true
 # shellcheck disable=SC2016 # The fixture decoder expands its working directory.
-sed 's|^cd /home/jailbox/project |cd "$CONVERGENCE_ENGINE" |' "$ROOT/container/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+sed 's|^cd /home/jailbox/project |cd "$CONVERGENCE_ENGINE" |' "$ROOT/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
 export TMPDIR="$FIXTURE/tmp"
 mkdir -m 700 "$TMPDIR"
 fail() { echo "FAIL: $*" >&2; exit 1; }
