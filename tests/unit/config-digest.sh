@@ -475,33 +475,7 @@ fi
 echo "── compatibility gate ──"
 
 mkdir -p "$FIXTURE/bin"
-cat > "$FIXTURE/bin/podman" <<'EOF_PODMAN'
-#!/bin/bash
-# Fake Podman over a directory of resource files named <kind>.<name>, each
-# holding LABEL=VALUE lines. Absent files are absent resources.
-state="$FAKE_PODMAN_STATE"
-file="$state/$1.$3"
-
-case "$1 $2" in
-    "network ls"|"volume ls")
-        for resource in "$state/$1."*; do
-            [[ -f "$resource" ]] || continue
-            resource=${resource##*/}
-            printf '%s\n' "${resource#*.}"
-        done
-        ;;
-    "container exists"|"volume exists"|"network exists")
-        [ -f "$file" ]
-        ;;
-    "container inspect"|"volume inspect"|"network inspect")
-        [ -f "$file" ] || exit 1
-        label=$(printf '%s' "$5" | sed -n 's/.*index [^ ]* "\([^"]*\)".*/\1/p')
-        [ -n "$label" ] || exit 1
-        sed -n "s|^$label=||p" "$file"
-        ;;
-    *) exit 1 ;;
-esac
-EOF_PODMAN
+cp "$JAILBOX_DIR/tests/fixtures/digest-podman.sh" "$FIXTURE/bin/podman"
 chmod +x "$FIXTURE/bin/podman"
 
 GATE_DIGEST=$(printf 'gate' | sha256sum | cut -d' ' -f1)
@@ -621,12 +595,18 @@ echo ""
     [[ $(jailbox_install_cache_bust) = "$before" ]]
     printf 'changed validation\n' >> "$SCRIPT_DIR/container/validate-session.sh"
     [[ $(jailbox_install_cache_bust) = "$before" ]]
+    printf 'proxy validation\n' > "$SCRIPT_DIR/container/proxy-route.awk"
+    [[ $(jailbox_install_cache_bust) = "$before" ]]
     printf 'changed setup\n' >> "$SCRIPT_DIR/container/setup.sh"
     after=$(jailbox_install_cache_bust)
     [[ "$after" != "$before" ]]
     printf 'decoder\n' > "$SCRIPT_DIR/container/jailbox-exec-argv"
     before=$(jailbox_install_cache_bust)
     printf 'changed decoder\n' >> "$SCRIPT_DIR/container/jailbox-exec-argv"
+    [[ $(jailbox_install_cache_bust) != "$before" ]]
+    mkdir "$SCRIPT_DIR/container/lib"
+    before=$(jailbox_install_cache_bust)
+    printf 'installed mount check\n' > "$SCRIPT_DIR/container/lib/readonly-mount.awk"
     [[ $(jailbox_install_cache_bust) != "$before" ]]
     printf 'changed proxy\n' >> "$SCRIPT_DIR/container/tinyproxy/Containerfile"
     [[ $(jailbox_install_cache_bust) != "$after" ]]

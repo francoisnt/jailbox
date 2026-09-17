@@ -17,29 +17,11 @@ index=0
 for TARGET in "$@"; do
     export TARGET
     # Environment transport preserves backslashes that awk -v would interpret.
-    awk '
-        BEGIN { target = ENVIRON["TARGET"]; found = 0; invalid = 0 }
-        {
-            path = $5
-            gsub(/\\040/, " ", path)
-            gsub(/\\011/, "\t", path)
-            gsub(/\\012/, "\n", path)
-            gsub(/\\134/, "\\", path)
-            if (path != target) next
-            found++
-            if ($6 !~ /(^|,)ro(,|$)/) invalid = 1
-        }
-        END { exit !(found == 1 && !invalid) }
-    ' /proc/self/mountinfo || reject "mount:$index"
+    awk -f "/usr/local/lib/jailbox/readonly-mount.awk" /proc/self/mountinfo || reject "mount:$index"
     index=$((index + 1))
 done
 if [[ "$mode" = full ]]; then
-    awk '
-        /^CapEff:/ { caps = ($2 == "0000000000000000"); seen_caps = 1 }
-        /^CapBnd:/ { bound = ($2 == "0000000000000000"); seen_bound = 1 }
-        /^NoNewPrivs:/ { nnp = ($2 == "1"); seen_nnp = 1 }
-        END { exit !(seen_caps && caps && seen_bound && bound && seen_nnp && nnp) }
-    ' /proc/1/status || reject hardening
+    awk -f "/usr/local/lib/jailbox/process-hardening.awk" /proc/1/status || reject hardening
     if [[ -n "$proxy" ]]; then
         for name in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
             [[ ${!name-} = "$proxy" ]] || reject proxy-env

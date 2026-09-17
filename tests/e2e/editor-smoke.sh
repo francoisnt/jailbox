@@ -320,16 +320,15 @@ seed_editor_server_cache() {
     volume_path=$(podman volume inspect "$volume" --format '{{.Mountpoint}}') || return 1
     podman unshare chown "$(id -u):$(id -g)" "$volume_path" || return 1
 
-    if ! podman run --rm \
+    if ! podman run --rm -i \
         --name "$helper" \
         --network=none \
         --userns=keep-id \
         --user "$(id -u):$(id -g)" \
-        --entrypoint /bin/sh \
+        --entrypoint /bin/bash \
         -v "$volume:/home/jailbox" \
         -v "$archive:/seed/server.tar.gz:ro,z" \
-        "$image" -c \
-        "mkdir -p '/home/jailbox/${relative%/*}' && tar -xzf /seed/server.tar.gz -C '/home/jailbox/${relative%/*}' && test -x '/home/jailbox/$relative/bin/$cli'"; then
+        "$image" -s -- "$relative" "$cli" < "$JAILBOX_DIR/tests/fixtures/seed-editor-cache.sh"; then
         echo "  Warning: could not seed editor server cache; falling back to cold bootstrap" >&2
         podman volume rm -f "$volume" >/dev/null 2>&1 || true
         return 0
@@ -561,14 +560,7 @@ remote_editor_connections() {
     # .vscode-server/cli/servers/Stable-*/server/... and data/logs/<session>/...,
     # plus older .*-server/bin/*/*.log layouts.
     # A server boot alone is not evidence that a window attached.
-    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' <<'REMOTE' 2>/dev/null
-set -euo pipefail
-for root in "$HOME/.vscodium-server" "$HOME/.vscode-server"; do
-    [ -d "$root" ] || continue
-    find "$root" -maxdepth 8 -type f \( -name '*.log' -o -name 'log.txt' \) \
-        -exec awk '/Launched Extension Host Process/' {} +
-done
-REMOTE
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' < "$JAILBOX_DIR/tests/fixtures/editor-connections.sh" 2>/dev/null
 }
 
 snapshot_remote_editor_connections() {
@@ -615,45 +607,7 @@ build_proof_vsix() {
     local out="$1"
     local src="$SCRIPT_DIR/fixtures/proof-extension"
 
-    python3 - "$src" "$out" <<'PY'
-import pathlib
-import sys
-import zipfile
-
-src = pathlib.Path(sys.argv[1])
-out = pathlib.Path(sys.argv[2])
-
-manifest = """<?xml version="1.0" encoding="utf-8"?>
-<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
-  <Metadata>
-    <Identity Language="en-US" Id="jailbox-editor-proof" Version="0.0.1" Publisher="jailbox"/>
-    <DisplayName>jailbox editor proof</DisplayName>
-    <Description>jailbox e2e instrumentation extension</Description>
-  </Metadata>
-  <Installation>
-    <InstallationTarget Id="Microsoft.VisualStudio.Code"/>
-  </Installation>
-  <Dependencies/>
-  <Assets>
-    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/>
-  </Assets>
-</PackageManifest>
-"""
-
-content_types = """<?xml version="1.0" encoding="utf-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="json" ContentType="application/json"/>
-  <Default Extension="js" ContentType="application/javascript"/>
-  <Default Extension="vsixmanifest" ContentType="text/xml"/>
-</Types>
-"""
-
-with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-    z.writestr("[Content_Types].xml", content_types)
-    z.writestr("extension.vsixmanifest", manifest)
-    for name in ("package.json", "extension.js"):
-        z.write(src / name, f"extension/{name}")
-PY
+    python3 "$JAILBOX_DIR/tests/fixtures/build-proof-vsix.py" "$src" "$out"
 }
 
 # Installs the proof extension through the remote server's own CLI so it does
@@ -668,21 +622,7 @@ install_proof_extension() {
     ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
         'cat > /tmp/jailbox-editor-proof.vsix' < "$PROOF_VSIX" || return 1
 
-    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' <<'REMOTE' 2>&1 | sed 's/^/    /'
-set -eu
-server_bin=""
-for candidate in "$HOME/.vscodium-server/bin"/*/bin/codium-server \
-                 "$HOME/.vscode-server/bin"/*/bin/code-server \
-                 "$HOME/.vscodium-server/cli/servers"/*/server/bin/codium-server \
-                 "$HOME/.vscode-server/cli/servers"/*/server/bin/code-server; do
-    if [ -x "$candidate" ]; then
-        server_bin="$candidate"
-        break
-    fi
-done
-[ -n "$server_bin" ] || { echo "no remote editor server CLI found" >&2; exit 1; }
-"$server_bin" --install-extension /tmp/jailbox-editor-proof.vsix --force
-REMOTE
+    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" 'bash -s' < "$JAILBOX_DIR/tests/fixtures/install-proof-extension.sh" 2>&1 | sed 's/^/    /'
 }
 
 # Open a fresh window after installation so its extension host discovers the
@@ -886,13 +826,13 @@ collect_failure_diagnostics() {
         echo ""
         echo "  Remote workspace listing:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "pwd; ls -la /home/jailbox/project; printf 'run_id_file='; cat /home/jailbox/project/.jailbox-editor-run-id 2>/dev/null || true; env | grep -E '^(HTTP|HTTPS|NO)_PROXY=' || true" \
+            'bash -s -- workspace' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
         echo "  Managed downloader proxy blocks:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "for f in \"\$HOME/.curlrc\" \"\$HOME/.wgetrc\"; do echo --- \$f; if [ -f \"\$f\" ]; then sed -n '/# >>> jailbox managed proxy >>>/,/# <<< jailbox managed proxy <<</p' \"\$f\"; else echo '(missing)'; fi; done" \
+            'bash -s -- proxy' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
@@ -904,13 +844,13 @@ collect_failure_diagnostics() {
         echo ""
         echo "  Editor server directories:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "for d in /home/jailbox/.vscode-server /home/jailbox/.vscodium-server; do echo --- \$d; if [ -e \"\$d\" ]; then find \"\$d\" -maxdepth 3 -print | sed -n '1,120p'; else echo '(missing)'; fi; done" \
+            'bash -s -- directories' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
         echo "  Remote Machine settings:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "for d in .vscodium-server .vscode-server; do f=\"\$HOME/\$d/data/Machine/settings.json\"; echo --- \$f; if [ -f \"\$f\" ]; then cat \"\$f\"; else echo '(missing)'; fi; done" \
+            'bash -s -- settings' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
             2>&1 | sed 's/^/    /' || true
 
         echo ""
@@ -946,6 +886,16 @@ cleanup_successful_stage() {
     cleanup_stage "$1"
 }
 
+cleanup_open_editor_stage() {
+    if [[ -n "$project_dir" ]]; then
+        if [[ "$editor_opened" -eq 1 ]]; then
+            cleanup_editor_workspace "$project_dir" "$ctr" 2>/dev/null || true
+        fi
+        cleanup_stage "$project_dir" 2>/dev/null || true
+        project_dir=""
+    fi
+}
+
 run_stage() {
     local stage="$1"
     local idx="$2"
@@ -959,14 +909,7 @@ run_stage() {
     editor_opened=0
     rc=0
 
-    trap '
-        if [[ -n "$project_dir" ]]; then
-            [[ "$editor_opened" -eq 1 ]] && \
-                cleanup_editor_workspace "$project_dir" "$ctr" 2>/dev/null || true
-            cleanup_stage "$project_dir" 2>/dev/null || true
-            project_dir=""
-        fi
-    ' EXIT
+    trap cleanup_open_editor_stage EXIT
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

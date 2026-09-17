@@ -102,27 +102,7 @@ grep -Fxq interrupt.up.plain-network.1.after "$TEST_ROOT/faults"
 pass
 
 # External shells keep errexit active when the parent collects failed workers.
-cat > "$TEST_ROOT/worker" <<'WORKER'
-#!/bin/bash
-set -euo pipefail
-source "$1/tests/lib/lifecycle-jobs.sh"
-run="$2"
-record_job() {
-    local IFS='|'
-    cat >/dev/null # Must not consume another catalog record.
-    if [[ ${POOL_TEST_BARRIER:-false} = true ]]; then
-        touch "$run/barrier-$BASHPID"
-        local deadline=$((SECONDS + 5))
-        while [[ $(find "$run" -name 'barrier-*' | wc -l) -lt 2 ]]; do
-            [[ "$SECONDS" -lt "$deadline" ]] || exit 1
-            sleep 0.01
-        done
-    fi
-    if [[ "$1" = fail ]]; then false; fi
-    printf '%s\n' "$*" >> "$run/visited-$BASHPID"
-}
-lifecycle_run_queue "$run" record_job
-WORKER
+cp "$ROOT/tests/fixtures/pool-worker.sh" "$TEST_ROOT/worker"
 for workers in 1 2 4; do
     TEST_CASE="$workers workers execute the same complete job set exactly once"
     run="$TEST_ROOT/pool-$workers"
@@ -205,6 +185,7 @@ tree="$TEST_ROOT/coordinator"
 mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/host" "$tree/bin"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
 cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts,fixture-ports}.sh "$tree/tests/lib/"
+cp -R "$ROOT/tests/fixtures" "$tree/tests/"
 # The fake workers never bind sockets. Model their Linux socket tables instead
 # of reading the host's /proc, which is absent on macOS. Keep the real selector.
 mkdir -p "$tree/proc/sys/net/ipv4" "$tree/proc/net"
@@ -214,14 +195,7 @@ printf '32768 60999\n' > "$tree/proc/sys/net/ipv4/ip_local_port_range"
 sed "s|/proc}|$tree/proc}|" "$ROOT/tests/lib/fixture-ports.sh" > "$tree/tests/lib/fixture-ports.sh"
 grep -Fq "$tree/proc}" "$tree/tests/lib/fixture-ports.sh"
 cp "$ROOT/host/"{project-id,public-api}.sh "$tree/host/"
-cat > "$tree/bin/podman" <<'ENGINE'
-#!/bin/bash
-set -euo pipefail
-[[ "$*" != 'image exists jailbox-test-debian' ]] || exit 0
-[[ ${2:-} != exists ]] || exit 1
-echo 'Unexpected engine mutation during coordinator test' >&2
-exit 97
-ENGINE
+cp "$ROOT/tests/fixtures/pool-podman.sh" "$tree/bin/podman"
 chmod 755 "$tree/bin/podman"
 # This fixture exercises coordination and ownership, not Linux process-group
 # isolation. Supply its platform prerequisites on every portable host, including
@@ -236,51 +210,7 @@ cat > "$tree/bin/uname" <<'PLATFORM'
 printf 'Linux\n'
 PLATFORM
 chmod 755 "$tree/bin/setsid" "$tree/bin/uname"
-cat > "$tree/tests/lib/lifecycle-worker.sh" <<'MOCK_WORKER'
-#!/bin/bash
-set -euo pipefail
-root=$(cd "$(dirname "$0")/../.." && pwd)
-source "$root/tests/lib/lifecycle-matrix.sh"
-source "$root/tests/lib/lifecycle-jobs.sh"
-source "$root/tests/lib/resource-ledger.sh"
-run="$1"; log="$2"
-ledger_begin_run mock-worker
-printf '%s\n' "$LEDGER_FILE" > "$log/ledger"
-printf '%s\n' "$3" > "$log/fixture"
-: > "$log/cases"
-: > "$log/expected-faults"
-complete_job() {
-    local kind="$1" key
-    shift
-    case "$kind" in
-        row)
-            for key in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
-                local selected=0
-                lifecycle_case_selected "$run" "$1.$key" || selected=$?
-                case "$selected" in
-                    0) printf '%s.%s\n' "$1" "$key" ;;
-                    1) ;;
-                    *) return 1 ;;
-                esac
-            done ;;
-        fault)
-            printf 'trace.%s.%s\n' "$1" "$2"
-            printf 'mkdir /fixture/state\n' > "$log/trace"
-            lifecycle_fault_cases "$log/trace" "$1" "$2" | tee -a "$log/expected-faults"
-            ;;
-        special)
-            case "$1" in
-                resume) key='^failed-resume\.' ;;
-                removal) key='^failed-new-container-cleanup$' ;;
-                dependency) key='^failed-create\.' ;;
-                inspection) key='^home-inspection\.' ;;
-            esac
-            lifecycle_fixed_cases | grep -E "$key"
-            ;;
-    esac | sed 's/$/|0/' >> "$log/cases"
-}
-lifecycle_run_queue "$run" complete_job </dev/null
-MOCK_WORKER
+cp "$ROOT/tests/fixtures/pool-mock-worker.sh" "$tree/tests/lib/lifecycle-worker.sh"
 TEST_CASE='invalid mappings fail before coordinator resource preparation'
 cp "$tree/tests/lib/lifecycle-contracts.sh" "$tree/contracts-backup"
 for mapping in LIFECYCLE_COMMAND_CONTRACTS LIFECYCLE_FAULT_SCENARIOS; do

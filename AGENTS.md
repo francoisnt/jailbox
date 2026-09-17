@@ -94,6 +94,14 @@ maintenance tooling in `scripts/`, and test code in `tests/`.
   subscripts before lookup. Never use an untrusted subscript in an arithmetic
   context where Bash may expand it more than once.
 - Keep functions focused and follow the existing formatting and naming style.
+- Keep substantive embedded programs in ordinary source files: container
+  programs in `container/`, test programs and fake executables in test fixture
+  directories, and Python helpers in `.py` files. Pass inputs as arguments,
+  environment variables, or stdin instead of interpolating data into code.
+  Put substantial trap bodies in functions in the owning module. Tiny commands
+  and expressions may remain inline; do not create a file for every one-liner.
+  Include extracted programs in the applicable lint, syntax, packaging, and
+  runtime checks, preserving stdin, exit status, cleanup, and cache behavior.
 - Declare mutable host state in the module that owns its lifecycle. Keep shared
   project/resource identity in `host/common.sh`, image state in
   `host/dev-image.sh`, SSH state in `host/ssh.sh`, editor state in

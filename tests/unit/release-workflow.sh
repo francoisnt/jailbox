@@ -21,13 +21,7 @@ done
 grep -Fq 'needs: [select-version, test-gates]' "$workflow"
 grep -Fq 'uses: ./.github/workflows/test-gates.yml' "$workflow"
 if grep -Eq 'run_editor: *false' "$workflow"; then exit 1; fi
-awk '
-    /bash scripts\/build-tarball.sh/ { if (tag || publish) exit 1; build++ }
-    /git tag -a/ { if (build != 1) exit 1; tag++ }
-    /git push origin "\$VERSION"/ { if (tag != 1) exit 1; pushed++ }
-    /uses: softprops\/action-gh-release/ { if (pushed != 1) exit 1; publish++ }
-    END { if (build != 1 || tag != 1 || pushed != 1 || publish != 1) exit 1 }
-' "$workflow"
+awk -f "$ROOT/tests/fixtures/release-order.awk" "$workflow"
 # shellcheck disable=SC2016 # Match the validator invocation literally.
 grep -Fq 'bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$DIST_DIR"' "$ROOT/scripts/build-tarball.sh"
 grep -Fq 'git push origin ":refs/tags/' "$workflow"

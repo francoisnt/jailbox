@@ -98,7 +98,13 @@ create_ssh_generation() (
         mkdir -p "$SSH_DIR" || exit 1
     fi
     stage=$(mktemp -d "$SSH_DIR/.ssh-generation.XXXXXXXX") || exit 1
-    trap 'if ! rm -rf -- "$stage"; then echo "Error: SSH preparation cleanup failed; run jailbox stop then jailbox up." >&2; exit 1; fi' EXIT
+    cleanup_ssh_stage() {
+        if ! rm -rf -- "$stage"; then
+            echo "Error: SSH preparation cleanup failed; run jailbox stop then jailbox up." >&2
+            exit 1
+        fi
+    }
+    trap cleanup_ssh_stage EXIT
     trap 'exit 1' HUP INT TERM
     mkdir "$stage/server" || exit 1
     ssh-keygen -t ed25519 -f "$stage/key" -N '' -C jailbox-client -q || exit 1

@@ -179,7 +179,7 @@ assert_local_forwarding() {
 
 assert_vscodium_reh_probe() {
     local config="$1" ctr="$2" port="$3" desc="$4"
-    local remote_output remote_output_file remote_rc listening_on tunnel_pid=""
+    local remote_output remote_output_file remote_rc remote_command listening_on tunnel_pid=""
 
     # Mirrors the current VSCodium/Open Remote SSH server used in editor smoke
     # tests (file-scope REH_RELEASE/REH_COMMIT, from versions.env or env).
@@ -187,109 +187,9 @@ assert_vscodium_reh_probe() {
     local reh_commit="$REH_COMMIT"
 
     remote_output_file="$(mktemp)"
+    printf -v remote_command 'bash -s -- %q %q' "$reh_release" "$reh_commit"
     ssh -F "$config" -o ConnectTimeout=3 "$ctr" \
-        "JAILBOX_E2E_REH_RELEASE='$reh_release' JAILBOX_E2E_REH_COMMIT='$reh_commit' bash -s" >"$remote_output_file" 2>&1 <<'REMOTE'
-set -uo pipefail
-echo "REH_RELEASE=$JAILBOX_E2E_REH_RELEASE"
-echo "REH_COMMIT=$JAILBOX_E2E_REH_COMMIT"
-
-SERVER_DATA_DIR="$HOME/.vscodium-server"
-SERVER_DIR="$SERVER_DATA_DIR/bin/$JAILBOX_E2E_REH_COMMIT"
-SERVER_SCRIPT="$SERVER_DIR/bin/codium-server"
-SERVER_LOGFILE="$SERVER_DATA_DIR/.$JAILBOX_E2E_REH_COMMIT.log"
-SERVER_PIDFILE="$SERVER_DATA_DIR/.$JAILBOX_E2E_REH_COMMIT.pid"
-SERVER_TOKENFILE="$SERVER_DATA_DIR/.$JAILBOX_E2E_REH_COMMIT.token"
-
-os_release_id="$(grep -i '^ID=' /etc/os-release 2>/dev/null | sed 's/^ID=//gi' | sed 's/"//g' || true)"
-platform="linux"
-if [[ "$os_release_id" == "alpine" ]]; then
-    platform="alpine"
-fi
-
-arch="$(uname -m)"
-case "$arch" in
-    x86_64 | amd64) server_arch="x64" ;;
-    aarch64 | arm64) server_arch="arm64" ;;
-    *) echo "unsupported arch: $arch"; exit 1 ;;
-esac
-
-mkdir -p "$SERVER_DIR" "$SERVER_DATA_DIR" || {
-    echo "REH_MKDIR_FAILED=$?"
-    exit 1
-}
-
-echo "REH_SERVER_DIR=$SERVER_DIR"
-if [[ ! -f "$SERVER_SCRIPT" ]]; then
-    url="https://github.com/VSCodium/vscodium/releases/download/$JAILBOX_E2E_REH_RELEASE/vscodium-reh-${platform}-${server_arch}-$JAILBOX_E2E_REH_RELEASE.tar.gz"
-    echo "REH_DOWNLOAD_URL=$url"
-    tmp="$SERVER_DIR/vscode-server.tar.gz"
-    if command -v curl >/dev/null 2>&1; then
-        curl --retry 3 --connect-timeout 10 --max-time 120 --location --show-error --silent --output "$tmp" "$url"
-        rc=$?
-        if [[ "$rc" -ne 0 ]]; then
-            echo "REH_DOWNLOAD_FAILED=$rc"
-            exit 1
-        fi
-    else
-        wget --tries=3 --timeout=10 --continue --no-verbose -O "$tmp" "$url"
-        rc=$?
-        if [[ "$rc" -ne 0 ]]; then
-            echo "REH_DOWNLOAD_FAILED=$rc"
-            exit 1
-        fi
-    fi
-    echo "REH_DOWNLOAD_OK"
-    tar -xf "$tmp" -C "$SERVER_DIR" --strip-components 1
-    rc=$?
-    if [[ "$rc" -ne 0 ]]; then
-        echo "REH_EXTRACT_FAILED=$rc"
-        ls -lh "$tmp" 2>&1 || true
-        exit 1
-    fi
-    echo "REH_EXTRACT_OK"
-    rm -f "$tmp"
-else
-    echo "REH_SERVER_ALREADY_INSTALLED"
-fi
-
-if [[ ! -x "$SERVER_SCRIPT" ]]; then
-    echo "REH_SERVER_SCRIPT_NOT_EXECUTABLE=$SERVER_SCRIPT"
-    ls -la "$SERVER_DIR" "$SERVER_DIR/bin" 2>&1 || true
-    exit 1
-fi
-
-if [[ -f "$SERVER_PIDFILE" ]]; then
-    kill "$(cat "$SERVER_PIDFILE")" >/dev/null 2>&1 || true
-fi
-rm -f "$SERVER_LOGFILE" "$SERVER_TOKENFILE"
-printf '%s\n' "jailbox-e2e-token" > "$SERVER_TOKENFILE"
-chmod 600 "$SERVER_TOKENFILE"
-
-echo "REH_STARTING=$SERVER_SCRIPT"
-"$SERVER_SCRIPT" --start-server --host=127.0.0.1 --port=0 \
-    --connection-token-file "$SERVER_TOKENFILE" \
-    --telemetry-level off --enable-remote-auto-shutdown \
-    --accept-server-license-terms > "$SERVER_LOGFILE" 2>&1 &
-echo "$!" > "$SERVER_PIDFILE"
-echo "REH_PID=$(cat "$SERVER_PIDFILE")"
-
-for _ in $(seq 1 30); do
-    listening_on="$(grep -E 'Extension host agent listening on .+' "$SERVER_LOGFILE" 2>/dev/null | tail -1 | sed 's/.*Extension host agent listening on //')"
-    if [[ -n "$listening_on" ]]; then
-        echo "LISTENING_ON=$listening_on"
-        exit 0
-    fi
-    sleep 0.2
-done
-
-echo "REH_LISTENING_PORT_NOT_FOUND"
-cat "$SERVER_LOGFILE" || true
-echo "### process list"
-ps -o pid,ppid,args -A | grep -E 'codium|node|server-main' | grep -v grep || true
-echo "### server dir"
-ls -la "$SERVER_DIR" "$SERVER_DIR/bin" 2>&1 || true
-exit 1
-REMOTE
+        "$remote_command" >"$remote_output_file" 2>&1 < "$JAILBOX_DIR/tests/fixtures/vscodium-reh-probe.sh"
     remote_rc=$?
     remote_output="$(cat "$remote_output_file")"
     rm -f "$remote_output_file"
@@ -332,40 +232,7 @@ REMOTE
 # The real SSH assertions run after jailbox exits, while the container is up.
 
 setup_stub_editor() {
-    cat > "$stub_dir/code" << 'STUB'
-#!/bin/bash
-set -euo pipefail
-
-container=""
-user_data_dir=""
-prev=""
-for arg in "$@"; do
-    if [[ "$prev" == "--remote" ]]; then
-        container="${arg#ssh-remote+}"
-    elif [[ "$prev" == "--user-data-dir" ]]; then
-        user_data_dir="$arg"
-    elif [[ "$prev" == "-F" ]]; then
-        echo "stub: unexpected SSH -F option passed to editor" >&2
-        exit 1
-    fi
-    prev="$arg"
-done
-
-[[ -n "${JAILBOX_E2E_PROJECT:-}" ]] || { echo "stub: JAILBOX_E2E_PROJECT not set" >&2; exit 1; }
-[[ "${JAILBOX_E2E_REJECT_EDITOR:-}" != "1" ]] || { echo "stub: editor must not be called by up" >&2; exit 1; }
-[[ -n "$user_data_dir" ]] || { echo "stub: no --user-data-dir argument received" >&2; exit 1; }
-[[ -f "$user_data_dir/User/settings.json" ]] || { echo "stub: user-data settings missing" >&2; exit 1; }
-grep -Fq '"remote.SSH.configFile":' "$user_data_dir/User/settings.json" || {
-    echo "stub: user-data settings missing remote.SSH.configFile" >&2
-    exit 1
-}
-if [[ -z "$container" ]]; then
-    echo "stub: no ssh-remote+<container> argument received" >&2
-    exit 1
-fi
-
-echo "stub: editor called"
-STUB
+    cp "$JAILBOX_DIR/tests/fixtures/headless-editor.sh" "$stub_dir/code"
     chmod +x "$stub_dir/code"
     ln -sf "$stub_dir/code" "$stub_dir/codium"
 }
@@ -392,6 +259,14 @@ headless_fixture() {
     die "could not allocate a free SSH port outside the ephemeral range for $stage"
 }
 
+cleanup_e2e_stage() {
+    echo "$PASSED $FAILED" > "$stage_counts_file"
+    if [[ -n "$project_dir" ]]; then
+        (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --clean 2>/dev/null || true)
+        rm -rf "$project_dir"
+    fi
+}
+
 run_e2e_case_logged() {
     ( run_e2e_case "$@" ) 2>&1 | test_timestamp_stream
 }
@@ -406,11 +281,8 @@ run_e2e_case() {
     # point local variables are out of scope.
     project_dir=""
 
-    trap 'echo "$PASSED $FAILED" > "'"$log_dir"'/'"$stage"'.counts"
-          if [[ -n "$project_dir" ]]; then
-              (cd "$project_dir" && "'"$JAILBOX_DIR"'/jailbox" --clean 2>/dev/null || true)
-              rm -rf "$project_dir"
-          fi' EXIT
+    stage_counts_file="$log_dir/$stage.counts"
+    trap cleanup_e2e_stage EXIT
 
     echo ""
     echo "── e2e: $stage (user: jailbox) ─────────────────────────────────────"
@@ -508,7 +380,7 @@ EOF
         "! printf 'READONLY_PATHS=attacker\\n' >> /home/jailbox/project/jailbox.conf 2>/dev/null && ! rm /home/jailbox/project/jailbox.conf 2>/dev/null"
     if [[ "$stage" != "egress" ]]; then
         assert_ssh "$ssh_cfg" "$ctr" "no stale managed downloader proxy blocks" \
-            "! { { test -f \"\$HOME/.curlrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\"; } || { test -f \"\$HOME/.wgetrc\" && grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\"; }; }"
+            'bash -s -- absent' < "$JAILBOX_DIR/tests/fixtures/check-managed-proxy.sh"
     fi
 
     # Command mode must not create host-side editor settings.
@@ -532,9 +404,9 @@ EOF
         assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
             "[ -n \"\$HTTPS_PROXY\" ]"
         assert_ssh "$ssh_cfg" "$ctr" "curl downloader proxy block is managed" \
-            "grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.curlrc\" && grep -Fqx 'proxy = \"$proxy_url\"' \"\$HOME/.curlrc\" && grep -Fqx '# <<< jailbox managed proxy <<<' \"\$HOME/.curlrc\""
+            "bash -s -- curl $(printf '%q' "$proxy_url")" < "$JAILBOX_DIR/tests/fixtures/check-managed-proxy.sh"
         assert_ssh "$ssh_cfg" "$ctr" "wget downloader proxy block is managed" \
-            "grep -Fqx '# >>> jailbox managed proxy >>>' \"\$HOME/.wgetrc\" && grep -Fqx 'use_proxy = on' \"\$HOME/.wgetrc\" && grep -Fqx 'http_proxy = $proxy_url' \"\$HOME/.wgetrc\" && grep -Fqx 'https_proxy = $proxy_url' \"\$HOME/.wgetrc\" && grep -Fqx '# <<< jailbox managed proxy <<<' \"\$HOME/.wgetrc\""
+            "bash -s -- wget $(printf '%q' "$proxy_url")" < "$JAILBOX_DIR/tests/fixtures/check-managed-proxy.sh"
         if [[ "$proxy_url" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:8888$ ]] &&
             grep -Fq "HTTPS_PROXY=$proxy_url" "$ssh_cfg"; then
             pass "generated SSH config carries proxy environment"
@@ -572,7 +444,7 @@ EOF
         grep -i setenv "$ssh_cfg" 2>/dev/null || echo "(none)"
         echo "  [diag] managed downloader proxy blocks:"
         ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-            "for f in \"\$HOME/.curlrc\" \"\$HOME/.wgetrc\"; do echo --- \$f; if [ -f \"\$f\" ]; then sed -n '/# >>> jailbox managed proxy >>>/,/# <<< jailbox managed proxy <<</p' \"\$f\"; else echo '(missing)'; fi; done" \
+            'bash -s -- proxy' < "$JAILBOX_DIR/tests/fixtures/remote-diagnostics.sh" \
             2>/dev/null || true
         echo "  [diag] tinyproxy filter:"
         sed 's/^/    /' "$filter_path" 2>/dev/null || echo "    (missing)"

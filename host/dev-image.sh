@@ -239,8 +239,8 @@ build_current_proxy_image() {
 
 jailbox_install_cache_bust() (
     cd "$SCRIPT_DIR" || return 1
-    # This payload is streamed by the host, never copied into a built image.
-    find container -type f ! -path 'container/validate-session.sh' -print0 \
+    # These payloads are streamed by the host, never copied into a built image.
+    find container -type f ! -path 'container/validate-session.sh' ! -path 'container/proxy-route.awk' -print0 \
         | sort -z \
         | xargs -0 cksum \
         | cksum \

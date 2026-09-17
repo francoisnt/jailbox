@@ -187,10 +187,20 @@ assert_local_forwarding() {
 # Designed to run inside a subshell. PASSED/FAILED are subshell-local;
 # written to $log_dir/$stage.counts at exit for the parent to collect.
 
+cleanup_wrapper_stage() {
+    echo "$PASSED $FAILED" > "$stage_counts_file"
+    rm -rf "$ssh_dir"
+    rm -rf "$home_dir"
+    rm -rf "$sshd_runtime_dir"
+    rm -rf "$project_dir"
+    podman stop "$ctr" >/dev/null 2>&1 || true
+    podman rm "$ctr" >/dev/null 2>&1 || true
+}
+
 run_case() {
     local stage="$1"
     local log_dir="$2"
-    local port forward_port test_build_args ctr expect_wrapper_failure test_image_id
+    local port forward_port test_build_args expect_wrapper_failure test_image_id
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope. Initialize here so the trap can
     # always reference them safely under set -u.
@@ -224,13 +234,8 @@ run_case() {
     build_log="$log_dir/${stage}.build.log"
 
     # Fires when the subshell exits — cleans up regardless of success/failure.
-    trap 'echo "$PASSED $FAILED" > "'"$log_dir"'/'"$stage"'.counts"
-          rm -rf "$ssh_dir"
-          rm -rf "$home_dir"
-          rm -rf "$sshd_runtime_dir"
-          rm -rf "$project_dir"
-          podman stop "'"$ctr"'" >/dev/null 2>&1 || true
-          podman rm   "'"$ctr"'" >/dev/null 2>&1 || true' EXIT
+    stage_counts_file="$log_dir/$stage.counts"
+    trap cleanup_wrapper_stage EXIT
 
     echo ""
     echo "── $stage (user: jailbox, port: $port) ──────────────────────────────"

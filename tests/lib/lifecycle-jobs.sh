@@ -27,17 +27,7 @@ lifecycle_jobs() {
 # start first; otherwise prefer measured long jobs and use stable name ties.
 lifecycle_order_jobs() {
     local jobs="$1" timings="$2"
-    awk -F '|' '
-        FILENAME == ARGV[1] {
-            if (NF != 2 || $1 !~ /^[a-z][a-z0-9.-]*$/ || $2 !~ /^[0-9]+$/ || length($2) > 9) {
-                bad=1; exit 1
-            }
-            duration[$1]=$2; next
-        }
-        { priority=($1 in duration) ? duration[$1] : ($2 == "fault" ? 1000000000 : ($3 == "inspection" ? 100 : 0))
-          print priority "|" $0 }
-        END { if (bad) print "Invalid lifecycle timing record" > "/dev/stderr" }
-    ' "$timings" "$jobs" | LC_ALL=C sort -t '|' -k1,1nr -k2,2 | cut -d '|' -f2-
+    awk -F '|' -f "${BASH_SOURCE[0]%/*}/../fixtures/order-jobs.awk" "$timings" "$jobs" | LC_ALL=C sort -t '|' -k1,1nr -k2,2 | cut -d '|' -f2-
 }
 
 # A deterministic benchmark prefix of constructed state/command cases. Keep
@@ -173,16 +163,7 @@ lifecycle_case_label() {
     for file in "$run"/worker-*/expected-faults; do
         [[ ! -f "$file" ]] || manifests+=("$file")
     done
-    awk -v key="$key" '
-        function group(k, a) {
-            if (k ~ /^interrupt\./) { split(k,a,"."); return "interruptions " a[2] "/" a[3] }
-            if (k ~ /^trace\./) return "discovery"
-            if (k ~ /^(failed-|home-inspection\.)/) return "targeted failures"
-            return "matrix"
-        }
-        group($0) == group(key) { total++; if ($0 == key) number=total }
-        END { if (!number) exit 1; printf "CASE [%s %d/%d] %s\n",group(key),number,total,key }
-    ' "${manifests[@]}"
+    awk -v key="$key" -f "${BASH_SOURCE[0]%/*}/../fixtures/case-label.awk" "${manifests[@]}"
 }
 
 # Read independently owned manifests: no shared lock can strand workers on
@@ -196,23 +177,7 @@ lifecycle_progress() {
     for file in "$run"/worker-*/cases; do
         [[ ! -f "$file" ]] || completed+=("$file")
     done
-    awk -F '|' '
-        function group(k) {
-            if (k ~ /^interrupt\./) return "interruptions"
-            if (k ~ /^trace\./) return "discovery"
-            if (k ~ /^(failed-|home-inspection\.)/) return "targeted"
-            return "matrix"
-        }
-        FILENAME ~ /\/cases$/ { done[group($1)]++; finished++; next }
-        { total[group($1)]++; expected++ }
-        END {
-            provisional=(done["discovery"] < total["discovery"])
-            printf "Progress: %d/%d%s completed | matrix %d/%d | discovery %d/%d | interruptions %d/%d%s | targeted %d/%d\n", \
-                finished,expected,(provisional ? " known" : ""),done["matrix"],total["matrix"], \
-                done["discovery"],total["discovery"],done["interruptions"],total["interruptions"], \
-                (provisional ? " known (discovering)" : ""),done["targeted"],total["targeted"]
-        }
-    ' "${completed[@]}" "${manifests[@]}"
+    awk -F '|' -f "${BASH_SOURCE[0]%/*}/../fixtures/progress.awk" "${completed[@]}" "${manifests[@]}"
 }
 
 # Startup sizing is a scheduling estimate, not a memory reservation. Use the

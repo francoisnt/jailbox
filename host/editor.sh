@@ -58,11 +58,7 @@ editor_smoke_profile_settings_json() {
 write_remote_editor_smoke_settings() {
     [ "${JAILBOX_EDITOR_SMOKE_TEST_SETTINGS:-}" = "1" ] || return 0
 
-    editor_smoke_settings_json_object | ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" '
-        mkdir -p "$HOME/.vscodium-server/data/Machine" "$HOME/.vscode-server/data/Machine"
-        tee "$HOME/.vscodium-server/data/Machine/settings.json" \
-            > "$HOME/.vscode-server/data/Machine/settings.json"
-    '
+    editor_smoke_settings_json_object | ssh -F "$SSH_CONFIG" "$CONTAINER_NAME" /usr/local/bin/jailbox-write-editor-settings
 }
 
 editor_config_has_ssh_config() {
@@ -90,9 +86,14 @@ editor_profile_uses_code() {
 write_jailbox_editor_user_settings() (
     # Keep staging cleanup and signal traps separate from the caller's scope.
     local settings_dir settings_tmp="" smoke_settings
-    trap 'status=$?; if [ -n "$settings_tmp" ]; then
-        rm -f -- "$settings_tmp" || { echo "Error: could not clean temporary editor settings: $settings_tmp" >&2; [ "$status" -ne 0 ] || status=1; }
-    fi; exit "$status"' EXIT
+    cleanup_editor_settings() {
+        local status=$?
+        if [ -n "$settings_tmp" ]; then
+            rm -f -- "$settings_tmp" || { echo "Error: could not clean temporary editor settings: $settings_tmp" >&2; [ "$status" -ne 0 ] || status=1; }
+        fi
+        exit "$status"
+    }
+    trap cleanup_editor_settings EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     trap 'exit 129' HUP

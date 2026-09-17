@@ -11,6 +11,9 @@ COPY entrypoint.sh /usr/local/bin/jailbox-start
 RUN chmod +x /usr/local/bin/jailbox-start
 COPY jailbox-exec-argv /usr/local/bin/jailbox-exec-argv
 RUN chmod 0755 /usr/local/bin/jailbox-exec-argv
+COPY write-editor-settings.sh /usr/local/bin/jailbox-write-editor-settings
+RUN chmod 0755 /usr/local/bin/jailbox-write-editor-settings
+COPY lib/ /usr/local/lib/jailbox/
 
 EXPOSE 2222
 CMD ["/usr/local/bin/jailbox-start"]

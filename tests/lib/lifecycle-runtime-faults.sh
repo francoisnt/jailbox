@@ -395,12 +395,7 @@ fault_attachment() {
         sleep 1
     done
     if [[ -n "$url" ]]; then
-        if ! podman exec "$PREFIX" sh -c '
-            grep -F "$1" "$HOME/.curlrc" >/dev/null &&
-            grep -F "$1" "$HOME/.wgetrc" >/dev/null &&
-            response=$(curl -q --noproxy "" --proxy "$1" -s --connect-timeout 3 --max-time 8 -o /dev/null -w "%{http_code}" http://jailbox-fault-check.invalid/) &&
-            test "$response" = 403
-        ' _ "$url"; then printf 'refuse\n'; return; fi
+        if ! podman exec -i "$PREFIX" bash -s -- "$url" < "$ROOT/tests/fixtures/check-fault-proxy.sh"; then printf 'refuse\n'; return; fi
     fi
     printf 'allow\n'
 }

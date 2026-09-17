@@ -13,16 +13,7 @@ pass() { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail() { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 mkdir "$FIXTURE/bin"
-cat > "$FIXTURE/bin/podman" <<'EOF_PODMAN'
-#!/bin/sh
-if [ "$1 $2" = "container exists" ]; then
-    [ "${FAKE_CONTAINER_NAME:-}" = "$3" ]
-elif [ "$1 $2" = "container inspect" ]; then
-    printf '%s\n' "${FAKE_CONTAINER_LABELS:-}"
-else
-    exit 1
-fi
-EOF_PODMAN
+cp "$JAILBOX_DIR/tests/fixtures/init-podman.sh" "$FIXTURE/bin/podman"
 chmod +x "$FIXTURE/bin/podman"
 
 run_jailbox() {

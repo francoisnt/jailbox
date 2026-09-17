@@ -303,25 +303,7 @@ test_interrupted_pair_recovers() {
             d=$(mktemp -d)
             mkdir "$d/bin" "$d/expected"
             ln -s "$(command -v mv)" "$d/real-mv"
-            cat > "$d/bin/mv" <<'WRAPPER'
-#!/bin/bash
-set -euo pipefail
-destination=${!#}
-if [[ "$PROXY_TEST_FAULT" = second-publication && "$destination" = */.wgetrc ]]; then exit 1; fi
-"$HOME/real-mv" "$@"
-if [[ "$PROXY_TEST_FAULT" = after-first-publication && "$destination" = */.curlrc ]]; then
-    # The target must be a direct child of the explicitly identified manager,
-    # never the manager itself or another ancestor of the test process.
-    parent_parent=$(ps -o ppid= -p "$PPID")
-    parent_parent=${parent_parent//[[:space:]]/}
-    [[ "$PPID" != "$PROXY_TEST_MANAGER_PID" && "$parent_parent" = "$PROXY_TEST_MANAGER_PID" ]] || {
-        echo 'Unexpected proxy interruption target' >&2
-        exit 97
-    }
-    printf 'verified sync child\n' > "$HOME/kill-confirmed"
-    kill -KILL "$PPID"
-fi
-WRAPPER
+            cp "$JAILBOX_DIR/tests/fixtures/proxy-mv.sh" "$d/bin/mv"
             chmod 755 "$d/bin/mv"
             printf 'curl-user-option = yes\n' > "$d/.curlrc"
             printf 'wget-user-option = yes\n' > "$d/.wgetrc"
@@ -358,11 +340,7 @@ WRAPPER
                 rm "$d/kill-confirmed"
                 cp "$d/.curlrc" "$d/replacement"
                 status=0
-                HOME="$d" PROXY_TEST_FAULT="$fault" bash -c '
-                    export PROXY_TEST_MANAGER_PID=$BASHPID
-                    "$HOME/bin/mv" "$HOME/replacement" "$HOME/.curlrc"
-                    exit $?
-                ' > "$d/error" 2>&1 || status=$?
+                HOME="$d" PROXY_TEST_FAULT="$fault" bash "$JAILBOX_DIR/tests/fixtures/proxy-interruption-target.sh" > "$d/error" 2>&1 || status=$?
                 if [[ "$status" = 97 && ! -e "$d/kill-confirmed" ]] && grep -Fq 'Unexpected proxy interruption target' "$d/error"; then
                     pass "$action refuses to kill the manager if the sync subshell disappears"
                 else

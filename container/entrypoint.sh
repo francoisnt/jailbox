@@ -45,16 +45,7 @@ check_path() {
 assert_immutable_mount() {
     mount_dir=$1
     [ -r /proc/self/mountinfo ] || fail "cannot read the mount table for $mount_dir"
-    mount_state=$(awk -v target="$mount_dir" -v prefix="$mount_dir/" '
-        $5 == target { self = $6 }
-        index($5, prefix) == 1 && $6 !~ /(^|,)ro(,|$)/ { nested = nested " " $5 }
-        END {
-            if (self == "") print "absent"
-            else if (self !~ /(^|,)ro(,|$)/) print "writable:" self
-            else if (nested != "") print "nested:" nested
-            else print "ok"
-        }
-    ' /proc/self/mountinfo) || fail "cannot inspect the mount table for $mount_dir"
+    mount_state=$(awk -v target="$mount_dir" -v prefix="$mount_dir/" -f "/usr/local/lib/jailbox/authentication-mount.awk" /proc/self/mountinfo) || fail "cannot inspect the mount table for $mount_dir"
     case "$mount_state" in
         ok) ;;
         absent) fail "authentication material is not a mount point: $mount_dir" ;;

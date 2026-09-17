@@ -5,6 +5,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/scripts" "$tmp/host"
 cp "$ROOT/scripts/"{release,public-api-diff,select-release-request}.sh "$tmp/scripts/"
+cp -R "$ROOT/scripts/lib" "$tmp/scripts/"
 cat > "$tmp/host/public-api.sh" <<'API'
 CONFIG_SCALAR_KEYS=(
     ORIGINAL

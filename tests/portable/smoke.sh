@@ -38,9 +38,14 @@ section() {
 }
 
 syntax_check() {
+    local script
     section "syntax"
     bash -n jailbox install.sh host/*.sh scripts/*.sh tests/ci/*.sh tests/e2e/*.sh tests/integration/*.sh tests/lib/*.sh tests/portable/*.sh tests/unit/*.sh tests/run
     bash -n container/downloader-proxy-manager.sh container/jailbox-exec-argv
+    while IFS= read -r script; do
+        bash -n "$script" || return 1
+    done < <(find tests/fixtures -type f -name '*.sh' -print | sort)
+    bash -n container/write-editor-settings.sh
     sh -n container/setup.sh container/entrypoint.sh
 }
 
@@ -67,6 +72,7 @@ build_release_tarball() {
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/jailbox-exec-argv
     cmp -s dist/jailbox-v9.9.9.tar.gz dist/jailbox-latest.tar.gz
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/install.sh
+    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/scripts/lib/public-api-values.awk
 }
 
 smoke_install_update_uninstall() {
@@ -78,6 +84,11 @@ smoke_install_update_uninstall() {
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh
     "$tmp/bin/jailbox" --help >/dev/null
     test -x "$tmp/share/jailbox/container/jailbox-exec-argv"
+    test -r "$tmp/share/jailbox/container/lib/readonly-mount.awk"
+    test -r "$tmp/share/jailbox/container/lib/authentication-mount.awk"
+    test -r "$tmp/share/jailbox/container/lib/process-hardening.awk"
+    test -r "$tmp/share/jailbox/container/write-editor-settings.sh"
+    test -r "$tmp/share/jailbox/container/proxy-route.awk"
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox dev' ]]
 
     tar -xzf "$JAILBOX_DIR/dist/jailbox-v9.9.9.tar.gz" -C "$tmp"

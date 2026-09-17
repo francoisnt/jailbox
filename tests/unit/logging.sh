@@ -20,13 +20,7 @@ cmp "$FIXTURE/expected" "$FIXTURE/actual"
 pass
 
 TEST_CASE='detached helpers cannot retain the extra capture writer'
-cat > "$FIXTURE/detach" <<'SCRIPT'
-#!/bin/bash
-set -euo pipefail
-sleep 30 >/dev/null 2>&1 &
-printf '%s\n' "$!" > "$1"
-printf 'command finished\n'
-SCRIPT
+cp "$ROOT/tests/fixtures/logging-detach.sh" "$FIXTURE/detach"
 mkfifo "$FIXTURE/notification"
 exec {notification}<> "$FIXTURE/notification"
 (
@@ -34,7 +28,14 @@ exec {notification}<> "$FIXTURE/notification"
     printf 'complete\n' > "$FIXTURE/notification"
 ) &
 capture_pid=$!
-trap 'kill "$capture_pid" 2>/dev/null || true; if [[ -f "$FIXTURE/daemon-pid" ]]; then kill "$(cat "$FIXTURE/daemon-pid")" 2>/dev/null || true; fi; rm -rf "$FIXTURE"' EXIT
+cleanup_capture() {
+    kill "$capture_pid" 2>/dev/null || true
+    if [[ -f "$FIXTURE/daemon-pid" ]]; then
+        kill "$(cat "$FIXTURE/daemon-pid")" 2>/dev/null || true
+    fi
+    rm -rf "$FIXTURE"
+}
+trap cleanup_capture EXIT
 completed=false
 if IFS= read -r -t 5 token <&"$notification"; then
     [[ "$token" != complete ]] || completed=true
@@ -73,16 +74,7 @@ grep -q '] stderr$' "$FIXTURE/capture"
 pass
 
 TEST_CASE='entrypoint preserves stdin, errexit and exit traps'
-cat > "$FIXTURE/entrypoint" <<'SCRIPT'
-#!/bin/bash
-set -euo pipefail
-source "$1/tests/lib/logging.sh"
-test_log_entrypoint "$0" "$@"
-trap 'echo cleanup >&2' EXIT
-cat
-false
-echo unreachable
-SCRIPT
+cp "$ROOT/tests/fixtures/logging-entrypoint.sh" "$FIXTURE/entrypoint"
 result=0
 printf 'caller input\n' | bash "$FIXTURE/entrypoint" "$ROOT" > "$FIXTURE/output" || result=$?
 [[ "$result" = 1 ]]

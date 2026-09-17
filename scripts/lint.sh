@@ -27,6 +27,7 @@ echo "shellcheck: container Bash scripts"
 shellcheck --shell=bash "$@" \
     container/downloader-proxy-manager.sh \
     container/jailbox-exec-argv \
+    container/write-editor-settings.sh \
     container/validate-session.sh
 
 # POSIX sh scripts

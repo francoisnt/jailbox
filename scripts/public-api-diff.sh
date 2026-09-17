@@ -29,15 +29,7 @@ public_api_values() {
     [ -n "$api_file" ] || { echo "Error: no public API declarations at $ref" >&2; return 1; }
 
     printf '%s\n' "$api_file" |
-        awk -v array="$array_name" '
-            $0 ~ "^[[:space:]]*" array "=[(]" { in_array = 1; next }
-            in_array && /^[[:space:]]*[)]/ { in_array = 0; next }
-            in_array {
-                gsub(/#.*/, "")
-                gsub(/["'\''"]/, "")
-                for (i = 1; i <= NF; i++) print $i
-            }
-        ' |
+        awk -v array="$array_name" -f "$ROOT_DIR/scripts/lib/public-api-values.awk" |
         sed '/^$/d' |
         sort -u
 }

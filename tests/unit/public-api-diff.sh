@@ -14,6 +14,7 @@ fail() { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 mkdir -p "$FIXTURE/host" "$FIXTURE/scripts"
 cp "$JAILBOX_DIR/host/public-api.sh" "$FIXTURE/host/public-api.sh"
 cp "$JAILBOX_DIR/scripts/public-api-diff.sh" "$FIXTURE/scripts/public-api-diff.sh"
+cp -R "$JAILBOX_DIR/scripts/lib" "$FIXTURE/scripts/"
 git -C "$FIXTURE" init -q
 git -C "$FIXTURE" config user.name test
 git -C "$FIXTURE" config user.email test@example.invalid
@@ -74,15 +75,7 @@ mkdir "$FIXTURE/bin"
 for tool in sort awk sed cat comm git; do
     real_tool=$(command -v "$tool")
     for partial in '' ORIGINAL; do
-        cat > "$FIXTURE/bin/$tool" <<'STUB'
-#!/bin/bash
-if [ ! -e "$FAULT_MARKER" ]; then
-    : > "$FAULT_MARKER"
-    printf '%s' "$FAULT_OUTPUT"
-    exit 42
-fi
-exec "$REAL_TOOL" "$@"
-STUB
+        cp "$JAILBOX_DIR/tests/fixtures/api-diff-tool.sh" "$FIXTURE/bin/$tool"
         chmod 755 "$FIXTURE/bin/$tool"
         rm -f "$FIXTURE/fired"
         if output=$(PATH="$FIXTURE/bin:$PATH" REAL_TOOL="$real_tool" FAULT_MARKER="$FIXTURE/fired" FAULT_OUTPUT="$partial" "$FIXTURE/scripts/public-api-diff.sh" HEAD); then

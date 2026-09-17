@@ -334,9 +334,14 @@ build_readonly_mounts() {
 generate_minimal_gitconfig() (
     # This scope owns only its staging file; launch rollback owns published files.
     local gitconfig_file name email tmp_file="" parent
-    trap 'status=$?; if [ -n "$tmp_file" ]; then
-        rm -f -- "$tmp_file" || { echo "Error: could not clean temporary Git identity: $tmp_file" >&2; [ "$status" -ne 0 ] || status=1; }
-    fi; exit "$status"' EXIT
+    cleanup_gitconfig() {
+        local status=$?
+        if [ -n "$tmp_file" ]; then
+            rm -f -- "$tmp_file" || { echo "Error: could not clean temporary Git identity: $tmp_file" >&2; [ "$status" -ne 0 ] || status=1; }
+        fi
+        exit "$status"
+    }
+    trap cleanup_gitconfig EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     trap 'exit 129' HUP

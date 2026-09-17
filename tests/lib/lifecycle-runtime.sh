@@ -104,14 +104,7 @@ seed_home() {
     # In podman unshare, 0:0 maps to the invoking host user/group. keep-id
     # maps that host identity to the managed container user. Using the host's
     # numeric UID inside unshare instead assigns a subordinate host identity.
-    podman unshare bash -c '
-        set -euo pipefail
-        chown 0:0 "$1"
-        chmod 755 "$1"
-        printf "retained\n" > "$1/lifecycle-marker"
-        chmod 644 "$1/lifecycle-marker"
-        [[ $(stat -c "%u:%g:%a" "$1") = 0:0:755 ]]
-    ' _ "$(volume_path)"
+    podman unshare bash "$ROOT/tests/fixtures/seed-home.sh" "$(volume_path)"
 }
 assert_marker() {
     local expected="$1" path
@@ -125,17 +118,7 @@ assert_marker() {
 # Stable filesystem metadata and hashes, never key bytes. Do not follow symlinks
 # or read FIFOs; access times change when inspected and are intentionally absent.
 filesystem_snapshot() {
-    podman unshare bash -c '
-        set -euo pipefail
-        for root in "$@"; do
-            [[ -e "$root" ]] || continue
-            (
-                cd "$root" || exit 1
-                find . -printf "%P|%y|%U|%G|%m|%i|%s|%T@|%l\n" | LC_ALL=C sort || exit 1
-                find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum || exit 1
-            ) || exit 1
-        done
-    ' _ "$@"
+    podman unshare bash "$ROOT/tests/fixtures/filesystem-snapshot.sh" "$@"
 }
 snapshot() {
     local kind name home_path inventory home_present=false
@@ -253,12 +236,7 @@ verify_exec_proxy_environment() {
     subnet=$(podman network inspect "$NETWORK-internal" --format '{{(index .Subnets 0).Subnet}}') || matrix_die 'could not inspect proxy subnet'
     proxy="http://${subnet%.0/24}.2:8888"
     # shellcheck disable=SC2016 # Assertions run inside the remote command.
-    LIFECYCLE_READONLY=true cli exec bash -c '
-        [[ "$HTTP_PROXY" = "$1" && "$HTTPS_PROXY" = "$1" &&
-           "$http_proxy" = "$1" && "$https_proxy" = "$1" &&
-           -n "$NO_PROXY" && "$NO_PROXY" = "$no_proxy" ]] &&
-        ! shopt -q login_shell
-    ' bash "$proxy" || matrix_die 'exec lost proxy environment or added a login shell'
+    LIFECYCLE_READONLY=true cli exec bash -s -- "$proxy" < "$ROOT/tests/fixtures/check-proxy-environment.sh" || matrix_die 'exec lost proxy environment or added a login shell'
 }
 # Expected values come from fixture identity and direct network evidence.
 observe_connection() {

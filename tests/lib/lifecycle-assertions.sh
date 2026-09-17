@@ -34,10 +34,5 @@ lifecycle_same_fault_event() {
 # Identity and state must occur in the same diagnostic record. Token boundaries
 # prevent a proxy name or 'not-running' from satisfying the development record.
 lifecycle_reports_state() {
-    LC_ALL=C awk -v name="$2" -v state="$3" '
-        { gsub(/[^[:alnum:]_-]+/, " "); named=0; observed=0
-          for (i=1; i<=NF; i++) { if ($i == name) named=1; if ($i == state) observed=1 }
-          if (named && observed) found=1 }
-        END { exit !found }
-    ' "$1"
+    LC_ALL=C awk -v name="$2" -v state="$3" -f "${BASH_SOURCE[0]%/*}/../fixtures/reports-state.awk" "$1"
 }
