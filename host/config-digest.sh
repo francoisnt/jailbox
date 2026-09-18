@@ -280,5 +280,42 @@ require_compatible_project_resources() {
             *) guidance+=" Stop preserves the persistent home." ;;
         esac
     fi
-    die "refusing to reuse project resources that do not match this configuration and jailbox version: $summary. $guidance"
+    # Attempt the required refusal before advisory context. Output failures
+    # must neither suppress this attempt nor change the refusal's exit status.
+    # Keep the prefix consistent with die in host/common.sh; calling die here
+    # would exit before the advisory context can be attempted.
+    printf 'Error: %s\n' "refusing to reuse project resources that do not match this configuration and jailbox version: $summary. $guidance" >&2 || true
+    if [[ ${1:-} = attach ]]; then
+        print_attachment_digest_context >&2 || true
+    fi
+    exit 1
+}
+
+# Current-side context only: the digest cannot recover launch-side inputs.
+# Iterate public declarations, then name-only metadata; never serialize values.
+print_attachment_digest_context() {
+    local key name prefix separator=""
+    local -a names=() selected=()
+    mapfile -t names < <(environment_config_names)
+    for key in "${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}"; do
+        prefix="JAILBOX_CONFIG_$key"
+        for name in "${names[@]}"; do
+            if [[ "$name" = "$prefix" ]]; then
+                selected+=("$name")
+            elif is_config_array_key "$key" && [[ "$name" =~ ^${prefix}_(0|[1-9][0-9]*)$ ]]; then
+                selected+=("$name")
+            fi
+        done
+    done
+    if [[ -n ${selected[*]-} ]]; then
+        printf 'Current invocation configuration names: '
+        for name in "${selected[@]}"; do
+            printf '%s%s' "$separator" "$name"
+            separator=', '
+        done
+        printf '\n'
+    else
+        printf 'Current invocation has no recognized JAILBOX_CONFIG_* environment variables.\n'
+    fi
+    printf 'This is current-side context only; it cannot identify which launch-side key differed. Attachment requires the same effective policy, not the same provenance.\n'
 }

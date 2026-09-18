@@ -131,6 +131,7 @@ jailbox up              # Launch the sandbox without opening an editor
 jailbox stop            # Stop and remove this project's jailbox containers, networks, and ephemeral home
 jailbox --clean         # Permanently delete this project's containers, networks, home, runtime state, and derived images
 jailbox exec            # Run a command: exec [--] CMD [ARG...]
+jailbox shell           # Open an interactive login shell in a running sandbox
 jailbox init            # Create the default project jailbox.conf
 jailbox config-schema   # Print machine configuration key names and types
 jailbox status          # Print this project's resource inventory state
@@ -372,9 +373,9 @@ jailbox up
   are frontend-only inputs for the bare editor launch.
 
 With environment configuration, `jailbox up` needs no `jailbox.conf` at all.
-`up`, the bare editor launch, `exec`, `connection-info`, and `validate` consume
-configuration; `stop`, `status`, `config-schema`, `ssh-config`, `init`, `--clean`,
-`--version`, `--help`, and `--uninstall` never read it.
+`up`, the bare editor launch, `exec`, `shell`, `connection-info`, and `validate`
+consume configuration; `stop`, `status`, `config-schema`, `ssh-config`, `init`,
+`--clean`, `--version`, `--help`, and `--uninstall` never read it.
 
 ### Connection metadata and local validation
 
@@ -399,6 +400,28 @@ Digest mismatch diagnostics list only recognized current invocation key names
 in declaration order (or explicitly say none are present), never values.
 Those names provide current-side context and cannot identify which launch-side
 input differed; matching effective policy is required, regardless of provenance.
+
+`jailbox shell` opens an interactive login Bash in an already-running compatible
+sandbox. It requires terminals on both stdin and stdout, accepts no arguments
+or `--config`, and uses only `JAILBOX_CONFIG_*` environment policy. Use the same
+effective policy as launch, including any editor-added policy. It performs the
+same attachment validation and digest diagnostics as `exec`; it never prompts
+to launch or repair resources. An absent compatible sandbox needs an explicit
+`jailbox up` before retrying. Other refusals explain the required recovery.
+
+The shell starts in `/home/jailbox/project` with the SSH session environment,
+including jailbox's proxy variables, before sandbox-local login startup files
+run. A failed directory change aborts attachment. Startup files may customize
+PATH, the working directory, and proxy variables; jailbox does not reset those
+customizations afterward or load the host's login profiles. You can also use
+your editor's terminal; shell adds no file-configured shortcut.
+
+SSH allocates a remote PTY: terminal Ctrl-C interrupts the foreground remote
+command, resizing propagates, and normal exit or disconnect restores the local
+terminal. Signals sent directly to the local client retain ordinary SSH
+behavior. The remote exit status is returned; 255 can also mean SSH failure.
+Disconnecting does not guarantee termination of every remote process. Coordinate
+lifecycle mutations separately from shell attachment, as with `exec`.
 
 `jailbox connection-info` consumes only `JAILBOX_CONFIG_*` environment
 configuration, including defaults when none is set. It validates the current

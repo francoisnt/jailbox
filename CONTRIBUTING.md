@@ -61,6 +61,10 @@ macOS, install it with `brew install bash`. The `jailbox` entrypoint remains
 Bash 3.2-parseable through its version guard, and `install.sh` remains Bash
 3.2-compatible.
 
+All four gates require Python 3: portable, runtime, and matrix use it for
+bounded pseudoterminal tests, and editor uses it to package the proof extension.
+The CI setup scripts install it; jailbox itself does not require Python.
+
 ```bash
 tests/run            # Every gate in order
 tests/run portable   # ShellCheck, unit tests, packaging, and installer lifecycle
@@ -85,26 +89,27 @@ the Debian test image and `setsid` for isolated command groups. It covers
 damaged resources, refusal non-mutation, interrupted launch/cleanup, dependency-safe rollback, and actual recovery. Cases live in
 `tests/lib/lifecycle-matrix.sh`; mutation-boundary cases extend the same runner
 through `tests/lib/lifecycle-runtime-faults.sh`. The runner's `matrix_observe`
-hook asserts status bytes, connection-info outcomes, and exec execution/refusal
-with binary stdin for each fixture;
-fault expectations come from independent surviving-resource and live-service
-observations, never the attachment command's verdict.
+hook asserts status bytes, connection-info outcomes, exec execution/refusal
+with binary stdin, and shell attachment/refusal with valid local TTYs for each
+fixture; fault expectations come from independent surviving-resource and
+live-service observations, never the attachment command's verdict.
 
 The `running.up` case also checks eight health variants: writable root, retained capabilities, missing
 no-new-privileges, writable protected mount, unexpected socket-path mount,
 unresponsive SSH, unresponsive proxy, and an advisory upstream outage.
 It executes stop/up recovery for required health failures and checks persistent
 home retention. Full resource/filesystem/image comparisons are bounded to
-36 observation points, independent of interruption count; every connection
-and exec observer also rejects mutation attempts. The bounded snapshots include
-exec, and `running.up` additionally verifies argv, working directory, exit
-statuses, and independent concurrent attachments.
+36 observation points, independent of interruption count; every connection,
+exec, and shell observer also rejects mutation attempts. The bounded snapshots
+include exec and shell, and `running.up` additionally verifies argv, working
+directory, exit statuses, and independent concurrent attachments.
 The recovered `missing-proxy.up` observation also verifies the command's proxy
 environment and absence of an implicit login shell.
 
 The deterministic 50- and 150-case samples retain their declared case membership
 and counts, but now execute connection validation, exec validation/execution,
-and the health variants above. Each observation adds one complete exec attachment;
+shell validation/attachment, and the health variants above. Each observation
+includes a complete exec attachment and a shell attachment with a PTY;
 `running.up` adds the transport and concurrency assertions described above.
 These are workload changes: older timings are not directly comparable merely
 because case names match. Samples remain partial coverage, never replacements

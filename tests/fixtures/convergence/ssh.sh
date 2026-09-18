@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 command=${!#}
+if [[ "$command" = 'cd /home/jailbox/project && exec bash -il' ]]; then
+    [[ " $* " = *' -tt -- '* && -t 0 && -t 1 ]] || exit 99
+    # Model the fixed transport without loading the test host's login files.
+    cd "${CONVERGENCE_SHELL_DIRECTORY:-$CONVERGENCE_ENGINE}" || exit 1
+    exec bash --noprofile --norc -il
+fi
 if [[ "$command" = '/usr/local/bin/jailbox-exec-argv '* ]]; then
     [[ " $* " = *' -T '* ]] || exit 99
     if [[ -n ${CONVERGENCE_EXEC_WAIT:-} ]]; then

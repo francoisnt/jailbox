@@ -69,6 +69,7 @@ CLI_LIFECYCLE_COMMANDS=(
 
 CLI_OTHER_COMMANDS=(
     exec
+    shell
     init
     config-schema
     status
@@ -84,6 +85,7 @@ CLI_ARGUMENT_COMMANDS=(exec)
 
 CLI_HELP=(
     "exec=Run a command: exec [--] CMD [ARG...]"
+    "shell=Open an interactive login shell in a running sandbox"
     "--version=Show the build version without reading configuration"
     "--config=Load configuration from PATH instead of project jailbox.conf"
     "init=Create the default project jailbox.conf"

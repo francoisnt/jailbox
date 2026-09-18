@@ -319,6 +319,9 @@ EOF
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/config/runtime.conf"
     fi
+    # Explicit anchors let machine attachments reproduce this file-driven
+    # fixture's complete mount inventory with identical environment policy.
+    printf 'READONLY_PATHS=jailbox.conf,config/runtime.conf\n' >> "$project_dir/config/runtime.conf"
 
     # Launch requires the default policy anchor even when it selects another
     # config. Create it with the real command so this gate covers the
@@ -359,6 +362,22 @@ EOF
         "shell=\$(grep -m1 '^jailbox:' /etc/passwd | cut -d: -f7); test -x \"\$shell\""
     assert_ssh "$ssh_cfg" "$ctr" "bash available" "command -v bash >/dev/null"
     assert_ssh "$ssh_cfg" "$ctr" "git available"  "git --version >/dev/null"
+    if (
+        export JAILBOX_CONFIG_DEV_IMAGE="$dev_image"
+        export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
+        export JAILBOX_CONFIG_READONLY_PATHS_1=config/runtime.conf
+        if [[ "$stage" = debian ]]; then
+            unset JAILBOX_CONFIG_DEV_IMAGE
+            export JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile
+        elif [[ "$stage" = egress ]]; then
+            export JAILBOX_CONFIG_EGRESS_ALLOW_0=api.ipify.org
+        fi
+        bash "$JAILBOX_DIR/tests/lib/shell-runtime.sh" "$JAILBOX_DIR" "$project_dir" "$ctr" "$log_dir/$stage.shell"
+    ); then
+        pass 'public shell terminal and login behavior'
+    else
+        fail 'public shell terminal and login behavior'
+    fi
     assert_local_forwarding "$ssh_cfg" "$ctr" "$forward_port" "SSH local forwarding works"
     if [[ "$stage" == "alpine" ]]; then
         assert_vscodium_reh_probe "$ssh_cfg" "$ctr" "$reh_probe_port" "VSCodium REH reachable through OpenSSH tunnel"
@@ -756,6 +775,7 @@ main() {
     command -v ssh        >/dev/null 2>&1 || die "ssh is required"
     command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen is required"
     command -v curl       >/dev/null 2>&1 || die "curl is required"
+    command -v python3    >/dev/null 2>&1 || die "python3 is required"
     command -v git        >/dev/null 2>&1 || die "git is required"
 
     local stages=("$@")

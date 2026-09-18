@@ -112,6 +112,7 @@ gate_selected() {
 # editor gate's display requirement is met by re-executing the whole run under
 # xvfb-run, so an all-gates run stays one process with one report.
 require_gate_prerequisites() {
+    command -v python3 >/dev/null 2>&1 || die "python3 is required for test gates"
     if gate_selected portable; then
         command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the portable gate"
     fi

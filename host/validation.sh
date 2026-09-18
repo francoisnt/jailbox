@@ -174,7 +174,7 @@ validate_attachment() {
     validate_configured_readonly_paths || return 1
     require_compatible_home || return 1
     compute_config_digest attach || return 1
-    require_compatible_project_resources || return 1
+    require_compatible_project_resources attach || return 1
     inspect_sandbox_for_up attach || return 1
     [ "$UP_DEV_STATE" = running ] || die "development sandbox is $UP_DEV_STATE; run 'jailbox up' before attaching"
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then

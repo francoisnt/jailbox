@@ -182,6 +182,7 @@ matrix_observe() {
     cmp -s "$output.expected" "$output.stdout" || matrix_die "wrong status (see $output.stdout)"
     observe_connection "$attachment" "$LOG/$CASE_KEY.$phase.connection"
     observe_exec "$attachment" "$LOG/$CASE_KEY.$phase.exec"
+    observe_shell "$attachment" "$LOG/$CASE_KEY.$phase.shell"
     if [[ "$CASE_KEY:$phase" = running.up:initial ]]; then
         verify_exec_transport
     fi
@@ -196,6 +197,22 @@ matrix_observe() {
     fi
     printf '%s|%s|%s|%s\n' "$CASE_KEY" "$phase" "$status" "$attachment" >> "$LOG/observations"
 }
+shell_observer_exec() {
+    LEDGER_FILE="$LIFECYCLE_POOL_LEDGER" ledger_record_owner "$BASHPID" || exit 1
+    exec setsid env PATH="$FIXTURE/bin:$PATH" LIFECYCLE_READONLY=true \
+        python3 "$ROOT/tests/lib/shell-terminal.py" --cwd "$PROJECT" --expect "$1" --output "$2" \
+        -- bash "$ROOT/tests/lib/lifecycle/shell-command.sh" "$ROOT"
+}
+
+observe_shell() {
+    local result=0
+    ledger_start_worker shell_observer_exec "$@" || matrix_die 'could not start shell observer'
+    ACTIVE_PID="$LEDGER_WORKER_PID"
+    wait "$ACTIVE_PID" || result=$?
+    ACTIVE_PID=""
+    [[ "$result" = 0 ]] || matrix_die "shell attachment failed (see $2)"
+}
+
 observe_exec() {
     local expected="$1" output="$2" result=0
     printf 'binary\0input\377\n' > "$output.input"

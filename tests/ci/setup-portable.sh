@@ -17,7 +17,7 @@ install_portable_tools() {
                 echo "Error: Homebrew is required to install portable test dependencies" >&2
                 return 1
             }
-            HOMEBREW_NO_AUTO_UPDATE=1 brew install bash coreutils shellcheck
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install bash coreutils shellcheck python
             prepend_path "$(brew --prefix bash)/bin"
             prepend_path "$(brew --prefix coreutils)/libexec/gnubin"
             command -v bash
@@ -31,6 +31,7 @@ install_portable_tools() {
             packages=()
             command -v realpath >/dev/null 2>&1 || packages+=(coreutils)
             command -v shellcheck >/dev/null 2>&1 || packages+=(shellcheck)
+            command -v python3 >/dev/null 2>&1 || packages+=(python3)
             if [[ -n "${packages[*]-}" ]]; then
                 sudo apt-get update
                 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \

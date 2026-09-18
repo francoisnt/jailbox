@@ -18,15 +18,19 @@ ledger_begin_run stdin-worker
 ROOT="$tmp/toolroot"
 FIXTURE="$tmp/fixture"
 PROJECT="$FIXTURE/project"
-mkdir -p "$PROJECT" "$FIXTURE/bin" "$ROOT/tests/lib/sandbox"
+mkdir -p "$PROJECT" "$FIXTURE/bin" "$ROOT/tests/lib/sandbox" "$ROOT/tests/lib/lifecycle" "$ROOT/host"
 cp "$REPO_ROOT/tests/fixtures/worker-stdin-cli.sh" "$ROOT/jailbox"
 cp "$REPO_ROOT/tests/lib/sandbox/check-proxy-environment.sh" "$ROOT/tests/lib/sandbox/"
+cp "$REPO_ROOT/tests/lib/lifecycle/shell-command.sh" "$ROOT/tests/lib/lifecycle/"
+cp "$REPO_ROOT/tests/lib/resource-ledger.sh" "$REPO_ROOT/tests/lib/shell-terminal.py" "$ROOT/tests/lib/"
+cp "$REPO_ROOT/host/project-id.sh" "$ROOT/host/"
 # Process-group isolation is independent of stdin and unavailable on macOS.
 printf '#!/bin/bash\nexec "$@"\n' > "$FIXTURE/bin/setsid"
 chmod 755 "$ROOT/jailbox" "$FIXTURE/bin/setsid"
 PATH="$FIXTURE/bin:$PATH"
 
 observe_exec allow "$tmp/observed"
+observe_shell allow "$tmp/shell"
 printf 'first\0binary\377\n' > "$tmp/first.input"
 printf 'second\0binary\376\n' > "$tmp/second.input"
 cli exec cat < "$tmp/first.input" > "$tmp/first.output" & first=$!

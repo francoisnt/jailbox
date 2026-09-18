@@ -31,7 +31,7 @@ else
     WORKER_SELECTION="auto: $AVAILABLE_CPUS CPUs, $((AVAILABLE_MEMORY / 1024)) MiB available; budget 2 CPUs + 2048 MiB per worker, reserve 1024 MiB"
 fi
 [[ "$WORKERS" =~ ^([1-9]|1[0-6])$ ]] || die 'JAILBOX_LIFECYCLE_JOBS must be 1 through 16'
-for tool in podman ssh ssh-keygen git setsid; do
+for tool in podman ssh ssh-keygen git setsid python3; do
     command -v "$tool" >/dev/null || die "$tool is required"
 done
 [[ $(uname -s) = Linux ]] || die 'Linux is required'
@@ -45,6 +45,7 @@ if [[ "$LIFECYCLE_SAMPLE_MODE" = true ]]; then
     # Fixed defaults make samples reproducible while starting long work early.
     lifecycle_order_jobs "$RUN/catalog" /dev/null > "$RUN/jobs"
     printf 'Lifecycle sample: %s declared cases; partial coverage\n' "$LIFECYCLE_SAMPLE_SIZE"
+    printf 'Each observed state checks status, connection-info, exec, and shell (with a PTY).\n'
 else
     TIMINGS=${JAILBOX_LIFECYCLE_TIMINGS:-/dev/null}
     [[ -r "$TIMINGS" ]] || die "cannot read timing history: $TIMINGS"

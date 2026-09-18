@@ -6,6 +6,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=tests/lib/convergence-fixture.sh
 source "$ROOT/tests/lib/convergence-fixture.sh"
 export CONVERGENCE_SSH_LOG="$FIXTURE/ssh-calls"
+ATTACH_PYTHON=$(command -v python3)
 export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
 sed "s|^cd /home/jailbox/project |cd \"\$CONVERGENCE_ENGINE\" |" "$ROOT/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
 printf 'attachment\0input\377\n' > "$FIXTURE/exec-input"
@@ -35,6 +36,14 @@ observe() {
     else
         [[ "$result" != 0 && ! -s "$FIXTURE/exec-output" ]] || fail 'exec ran after attachment refusal'
         grep -q "$diagnostic" "$FIXTURE/exec-diagnostic" || fail 'exec lost refusal diagnostic'
+    fi
+    CONVERGENCE_DRAIN_STDIN=true "$ATTACH_PYTHON" "$ROOT/tests/lib/shell-terminal.py" \
+        --cwd "$FIXTURE/project" --output "$FIXTURE/shell" --expect "$expected" -- "$ROOT/jailbox" shell || {
+        cat "$FIXTURE/shell.stderr"; fail 'shell attachment decision failed';
+    }
+    [[ "$before" = "$(snapshot)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'shell mutated resources'
+    if [[ "$expected" = refuse ]]; then
+        grep -q "$diagnostic" "$FIXTURE/shell.stderr" || fail 'shell lost refusal diagnostic'
     fi
 }
 check_foreign_network_member() {
@@ -196,6 +205,10 @@ done
 PATH="$FIXTURE/attach-only" launch connection-info > "$FIXTURE/records" 2> "$FIXTURE/diagnostic" || { cat "$FIXTURE/diagnostic"; fail 'attachment added a build or editor dependency'; }
 cmp "$FIXTURE/full-path-records" "$FIXTURE/records"
 printf 'PASS: healthy attachment needs no cksum, Base64, or editor\n'
+PATH="$FIXTURE/attach-only" "$ATTACH_PYTHON" "$ROOT/tests/lib/shell-terminal.py" \
+    --cwd "$FIXTURE/project" --output "$FIXTURE/shell-tools" -- "$ROOT/jailbox" shell || {
+    cat "$FIXTURE/shell-tools.stderr"; fail 'shell added a build, encoding, or editor dependency';
+}
 for tool in base64 mktemp rm; do
     ln -s "$(command -v "$tool")" "$FIXTURE/attach-only/$tool"
 done

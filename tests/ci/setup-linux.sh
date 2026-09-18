@@ -26,6 +26,7 @@ install_base_tools() {
         fuse-overlayfs
         openssh-client
         podman
+        python3
         shellcheck
         slirp4netns
         uidmap

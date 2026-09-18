@@ -29,7 +29,7 @@ REMOTE_PATH="/home/jailbox/project"
 # Each handler owns its setup and behavior. Membership comes from public-api.sh;
 # validate_cli_implementation rejects missing or undeclared handlers.
 declare -A CLI_COMMAND_HANDLERS=(
-    [exec]=run_exec [init]=run_init [up]=run_up [stop]=run_stop
+    [exec]=run_exec [shell]=run_shell [init]=run_init [up]=run_up [stop]=run_stop
     [config-schema]=run_config_schema [status]=run_status
     [connection-info]=run_connection_info [validate]=run_validate [ssh-config]=run_ssh_config [--clean]=run_clean
     [--uninstall]=run_uninstall [--version]=run_version [--help]=usage
