@@ -22,8 +22,13 @@ podman() {
             printf '%s\n' podman run --read-only --cap-drop=ALL --security-opt=no-new-privileges \
                 -v "$tmp/project/attachment-policy:/home/jailbox/project/attachment-policy:Z,ro" fixture-image
             ;;
-        rm) : ;;
+        rm)
+            if [[ "$remove_receipt" = true ]]; then
+                rm "$GENERATION/container-id"
+            fi
+            ;;
         run)
+            [[ ! -e "$GENERATION/container-id" ]] || fail 'old container receipt survived removal'
             printf receipt > "$GENERATION/container-id"
             printf '%s\n' "$*" >> "$tmp/replays"
             ;;
@@ -37,14 +42,17 @@ matrix_observe() {
 }
 expect_success() { printf '%s\n' "$1" >> "$tmp/recoveries"; }
 assert_marker() { [[ "$1" = keep ]] || fail 'health recovery lost persistent home'; }
-observe_health_variants < /dev/null
-[[ $(wc -l < "$tmp/constructed") = 8 && $(wc -l < "$tmp/observed") = 15 ]] || fail 'health variants or recovery observations were skipped'
-[[ $(wc -l < "$tmp/recoveries") = 14 ]] || fail 'health recovery not executed'
-[[ $(wc -l < "$tmp/replays") = 5 && $(wc -l < "$tmp/signals") = 2 ]] || fail 'health damage not applied'
-grep -q -- '--read-only=false' "$tmp/replays"
-grep -q -- '--cap-drop=CHOWN' "$tmp/replays"
-grep -q -- 'attachment-policy:Z,rw' "$tmp/replays"
-grep -q -- '/run/podman/podman.sock:ro,Z' "$tmp/replays"
-[[ $(grep -c -- '--security-opt=no-new-privileges' "$tmp/replays") = 4 ]] || fail 'privileges variant did not remove no-new-privileges'
-grep -Fxq 'health-upstream:allow' "$tmp/observed"
+for remove_receipt in false true; do
+    rm -f "$tmp/constructed" "$tmp/observed" "$tmp/recoveries" "$tmp/replays" "$tmp/signals"
+    observe_health_variants < /dev/null
+    [[ $(wc -l < "$tmp/constructed") = 8 && $(wc -l < "$tmp/observed") = 15 ]] || fail 'health variants or recovery observations were skipped'
+    [[ $(wc -l < "$tmp/recoveries") = 14 ]] || fail 'health recovery not executed'
+    [[ $(wc -l < "$tmp/replays") = 5 && $(wc -l < "$tmp/signals") = 2 ]] || fail 'health damage not applied'
+    grep -q -- '--read-only=false' "$tmp/replays"
+    grep -q -- '--cap-drop=CHOWN' "$tmp/replays"
+    grep -q -- 'attachment-policy:Z,rw' "$tmp/replays"
+    grep -q -- '/run/podman/podman.sock:ro,Z' "$tmp/replays"
+    [[ $(grep -c -- '--security-opt=no-new-privileges' "$tmp/replays") = 4 ]] || fail 'privileges variant did not remove no-new-privileges'
+    grep -Fxq 'health-upstream:allow' "$tmp/observed"
+done
 printf 'PASS: all eight health variants alter their target and execute their assertions\n'

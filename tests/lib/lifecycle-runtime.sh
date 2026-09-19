@@ -573,7 +573,7 @@ observe_health_variants() {
                 fi
                 [[ "$modified" = true ]] || matrix_die 'health fixture did not alter its target property'
                 podman rm -f "$PREFIX" >/dev/null
-                rm "$GENERATION/container-id"
+                rm -f "$GENERATION/container-id"
                 podman "${changed[@]}" >/dev/null || matrix_die 'cannot create damaged health fixture'
                 chmod 600 "$GENERATION/container-id"
                 ;;
