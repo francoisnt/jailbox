@@ -5,7 +5,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-mkdir -p "$tmp/scripts/lib" "$tmp/tests" "$tmp/container/checks" "$tmp/container/runtime/bin" "$tmp/host"
+mkdir -p "$tmp/scripts/lib" "$tmp/tests" "$tmp/container/checks" "$tmp/container/runtime/bin" "$tmp/host/frontend"
 cp "$ROOT/scripts/lint.sh" "$tmp/scripts/"
 cp "$ROOT/scripts/build-tarball.sh" "$tmp/scripts/"
 cp "$ROOT/scripts/lib/container-shells.sh" "$tmp/scripts/lib/"
@@ -14,6 +14,13 @@ source "$ROOT/scripts/lib/container-shells.sh"
 for script in jailbox install.sh tests/run; do
     printf '#!/bin/bash\ntrue\n' > "$tmp/$script"
 done
+# Prepared frontend modules are not yet sourced by the public entrypoint.
+# shellcheck disable=SC2016 # Deliberately invalid source for the lint fixture.
+printf '#!/bin/bash\nvalue="two words"\necho $value\n' > "$tmp/host/frontend/future.sh"
+if bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1; then fail 'missed prepared frontend'; fi
+grep -Fq 'host/frontend/future.sh' "$tmp/output"
+grep -Fq SC2086 "$tmp/output"
+rm "$tmp/host/frontend/future.sh"
 for name in future.sh extensionless; do
     # shellcheck disable=SC2016 # Deliberately invalid source for the lint fixture.
     printf '#!/bin/bash\nvalue="two words"\necho $value\n' > "$tmp/container/checks/$name"

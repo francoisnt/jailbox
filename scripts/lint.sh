@@ -15,11 +15,11 @@ shellcheck --check-sourced --external-sources --shell=bash "$@" jailbox
 
 # Standalone bash scripts. Discover repository tooling and tests so adding a
 # new suite cannot silently leave it outside ShellCheck coverage.
-echo "shellcheck: scripts/ and tests/"
+echo "shellcheck: scripts/, tests/, and prepared frontend modules"
 bash_scripts=(install.sh tests/run)
 while IFS= read -r script; do
     bash_scripts+=("$script")
-done < <(find scripts tests -type f -name '*.sh' ! -path 'tests/run' -print | sort)
+done < <(find scripts tests host/frontend -type f -name '*.sh' ! -path 'tests/run' -print | sort)
 shellcheck --external-sources --shell=bash "$@" "${bash_scripts[@]}"
 
 # shellcheck source=scripts/lib/container-shells.sh

@@ -24,7 +24,10 @@ generations, and machine attachment commands described here already exist.
 The strict separation of the editor frontend from core is **planned**. Until
 that work is implemented, host modules live directly in `host/`, bare launch
 calls lifecycle helpers in-process, and `up` retains a configuration-file
-fallback. Current `init` also requires Podman and an absent sandbox inventory.
+fallback. File policy, local initialization, and editor-client helpers are
+prepared under `host/frontend/` and unit-tested, but public dispatch does not
+use them yet. Current `init` also requires Podman and an absent sandbox
+inventory.
 
 The intended frontend owns the file workflow and invokes machine commands as
 child processes. It adds `--no-editor` and `--config PATH validate`, makes `up`
@@ -164,8 +167,9 @@ the compatibility digest and the actual proxy filter. A headless file launch
 adds no editor hosts. An empty allowlist means unfiltered networking, so choosing
 an editor must not silently turn it into filtered networking.
 
-Explicit file validation uses the same headless composition and calls core
-`validate`. Plain `jailbox validate` remains environment-only. `validate` checks
+Planned explicit file validation uses the same headless composition and calls
+core `validate`; `jailbox --config jailbox.conf validate` will check the default
+file. Plain `jailbox validate` remains environment-only. `validate` checks
 configuration and local inputs; it does not prove an image builds, an editor is
 ready, or a sandbox is healthy. Planned `init` only publishes a minimal config
 without overwriting an existing destination. Its protection suggestions are
