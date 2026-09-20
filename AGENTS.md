@@ -213,6 +213,14 @@ display fails immediately instead of after the portable gate.
   contract and its negative image cases. Requires Podman, an editor, and a
   display or Xvfb.
 
+Keep editor-gate assertions focused on editor integration: actual editor
+attachment, isolated settings, bootstrap, and reopen/switch behavior. Core SSH,
+networking, proxy enforcement, and sandbox-security assertions belong in runtime
+or matrix. Editor tests rely on public core readiness checks rather than
+duplicate those assertions; a dependency failure can still fail an editor test.
+Portable coverage includes frontend, core, and shared-product contracts within
+one gate. Preserve core coverage when moving or removing duplicate assertions.
+
 Run `tests/run portable` for every code change. Also run `tests/run runtime`
 for host, container, SSH, mount, network, or lifecycle changes when Podman is
 available. Run `tests/run matrix` for lifecycle or matrix changes when its
@@ -231,6 +239,10 @@ new test scripts cannot silently escape ShellCheck.
 
 ## Workflows and generated content
 
+- Keep README.md focused on user-facing documentation. Do not link to
+  ARCHITECTURE.md or CONTRIBUTING.md from README.md, whether by relative path
+  or repository URL. Those guides remain repository-only and may link to one
+  another; README.md continues to ship with the installed package.
 - Pull requests use portable, runtime, and matrix gates.
 - Releases and canary runs use all four gates: portable, runtime, matrix, editor.
   Runtime and matrix are independent jobs with no duplicated assertions.

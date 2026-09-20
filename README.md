@@ -829,9 +829,6 @@ validates the final archive's stamp and `--version` output against the selected
 version before creating the release tag. It publishes those same validated
 archive bytes, the identical `latest` alias, and their checksums.
 
-Development setup, repository layout, and test suites are documented in
-[CONTRIBUTING.md](CONTRIBUTING.md).
-
 ## Project Status
 
 jailbox is usable today for real projects and is actively maintained, but

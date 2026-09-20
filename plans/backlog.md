@@ -131,12 +131,28 @@ compare.
 
 ### New-home bootstrap
 
+Consider a configuration key selecting a user setup script to customize the
+managed `jailbox` user's home and shell configuration: dotfiles, shell startup
+files, PATH additions, and user-scoped tool settings. The wrapper creates this
+user after the development image is built, so the current recommendation to
+install dependencies system-wide does not provide an explicit user-setup hook.
+Keep system packages and shared dependencies in the Containerfile; the script
+would run inside the sandbox as `jailbox`, without root or host-side execution.
+The configuration value selects a script file, not inline shell code. Key naming
+and execution timing remain future design work.
+
 Consider a trusted setup artifact that an orchestrator or the editor frontend
 can request through jailbox only when jailbox
 creates a new empty sandbox home. This would make the opt-in
 `EPHEMERAL_HOME=true` mode convenient by reinstalling shell configuration,
 development tools, and other reproducible user state without preserving files
 written by an earlier sandbox generation.
+
+New-home initialization is the initial scope for the user setup script, for
+both persistent and ephemeral homes. Distinguish shell startup on each session
+from setup that writes those startup files. Reapplying changed setup to an
+existing home needs a separately designed explicit action; ordinary launches
+must not silently rerun it or overwrite subsequent user customizations.
 
 A later design must define artifact selection and trusted-path validation,
 read-only protection for an in-project artifact, content identity, execution as

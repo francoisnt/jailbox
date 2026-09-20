@@ -1,5 +1,9 @@
 # Contributing to jailbox
 
+Start with [Understanding jailbox](ARCHITECTURE.md) for the lifecycle,
+core/frontend responsibilities, security concepts, testing strategy, and
+glossary. The guide marks frontend behavior that is still planned.
+
 ## Repository layout
 
 ```text
@@ -55,6 +59,13 @@ missing/unknown/duplicate names and empty values, and accepts `allow-empty` as
 the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 ## Linting and tests
+
+Test ownership follows the behavior being asserted. The editor gate covers
+real editor integration and relies on public core readiness checks. Runtime
+and matrix own core SSH, networking, proxy enforcement, and sandbox-security
+assertions; do not repeat those checks in editor tests. Portable combines
+frontend contracts, core contracts, and shared declaration, boundary,
+packaging, and installation checks in one gate.
 
 Host orchestration and the portable test gate require Bash 4.4 or newer. On
 macOS, install it with `brew install bash`. The `jailbox` entrypoint remains
