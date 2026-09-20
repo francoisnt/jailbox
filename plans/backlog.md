@@ -380,6 +380,12 @@ mode.
 
 ## Developer experience
 
+### Installer required-file coverage
+
+Assigned to 03.2.16 as a release requirement for the machine-boundary series.
+It owns complete runtime dependency coverage and portable regressions rejecting
+incomplete payloads, following 03.2.11's directory and installer path migration.
+
 ### Editor validation on relevant pull requests
 
 Consider enabling the existing editor gate for pull requests that change editor

@@ -31,14 +31,27 @@ consumer needs per-member behavior or metadata, validate that its mapping covers
 every applicable declaration exactly; missing mappings must fail explicitly.
 Keep regression tests proving that new declarations propagate or fail for a
 missing mapping, rather than silently falling through or losing coverage.
-Declare commands that manage sandbox containers, networks, and home state in
-`CLI_LIFECYCLE_COMMANDS`; declare other commands in `CLI_OTHER_COMMANDS`.
+Declare core commands that own sandbox container, network, and home-state
+mutations in `CLI_LIFECYCLE_COMMANDS`; declare other named commands in
+`CLI_OTHER_COMMANDS`. Frontend commands are not lifecycle commands: they
+compose and invoke public core commands rather than own resource mutations.
+This includes bare launch and `--no-editor`, which delegate lifecycle work to
+`up`. Test frontend composition, delegation, sequencing, and failure propagation
+separately from the core lifecycle matrix.
 Derive lifecycle test membership directly from that public category.
 Lifecycle commands also require validated test contracts and fault scenarios
 in `tests/lib/lifecycle-contracts.sh` before the matrix schedules them.
 
 Keep host orchestration in `host/`, container behavior in `container/`,
 maintenance tooling in `scripts/`, and test code in `tests/`.
+The frontend split must place all frontend implementation files in
+`host/frontend/` and machine implementation files in `host/core/`. This
+includes any frontend entry module and editor module. Keep shared public
+declarations in `host/public-api.sh`, usable by both layers without core
+initialization. Perform the directory migration with the frontend split,
+updating source paths, installer inventory, tests, tooling, and this file's
+module paths together. The flat module paths below describe the current tree
+until that migration.
 
 ## Git and release safety
 
@@ -246,6 +259,16 @@ it happens.
 
 ## Plan authoring
 
+- New plans must use numbers not already used by active or archived plans.
+  Check both inventories before assigning a number; preserve filename
+  implementation order with an unused number or dotted insertion number.
+  Number reuse predating this rule is grandfathered; do not renumber existing
+  plans solely to remove that reuse.
+- Archived plans record completed implementation work. Do not edit them to
+  reflect later decisions or handoff changes; record those changes in active
+  plans. When transferring a handoff from an archived plan, document its
+  original assignment and new ownership in the active transferring and
+  receiving plans.
 - When editing plans, minimize the diff without sacrificing correctness,
   clarity, or completeness. Preserve existing wording and structure wherever
   they still serve the final design; prefer targeted changes over broad
