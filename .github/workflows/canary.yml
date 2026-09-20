@@ -69,6 +69,7 @@ jobs:
           curl -fsSL \
             "https://github.com/VSCodium/vscodium/releases/download/${CODIUM_VERSION}/codium_${CODIUM_VERSION}_amd64.deb" \
             -o /tmp/codium.deb
+          sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/codium.deb
           commit="$(codium --version | sed -n 2p)"
           [[ -n "$commit" ]]
