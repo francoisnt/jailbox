@@ -103,6 +103,8 @@ prepare_server_keys() {
     local ssh_dir="$1" port="$2" runtime_dir="$3"
     ssh-keygen -t ed25519 -f "$runtime_dir/ssh_host_ed25519_key" -N "" -q
     cp "$ssh_dir/key.pub" "$runtime_dir/authorized_keys"
+    printf '# unfiltered SSH session\n' > "$runtime_dir/session.conf"
+    chmod 600 "$runtime_dir/session.conf"
     chmod 600 "$runtime_dir/authorized_keys" "$runtime_dir/ssh_host_ed25519_key"
     printf "[localhost]:%s %s\n" "$port" "$(cat "$runtime_dir/ssh_host_ed25519_key.pub")" > "$ssh_dir/known_hosts"
 }

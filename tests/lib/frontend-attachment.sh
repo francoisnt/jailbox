@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT=$1 PROJECT=$2 CONTAINER=$3 OUTPUT=$4
 for name in "${!JAILBOX_CONFIG_@}"; do unset "$name"; done
-export JAILBOX_CONFIG_DEV_IMAGE=jailbox-test-debian
+export JAILBOX_CONFIG_DEV_IMAGE="$5"
 export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
 export JAILBOX_CONFIG_READONLY_PATHS_1=config/runtime.conf
 export JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com

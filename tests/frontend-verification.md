@@ -29,7 +29,13 @@ a platform or complete gate has passed. Run results belong in the handoff.
 ## Real runtime and lifecycle evidence
 
 `e2e/headless.sh` retains core assertions for SSH, mounts, proxy enforcement,
-resource reuse and cleanup. Its filtered bare launch explicitly selects Codium
+resource reuse and cleanup. A copy of the generated SSH configuration with
+client `SetEnv` removed checks server delivery of all six proxy variables;
+`unit/ssh-generation.sh` checks publication and refusal of damaged or stale
+server session configuration. The real editor task remains the proof that
+these variables reach editor-launched tools.
+
+The filtered bare launch explicitly selects Codium
 and `EGRESS_ALLOW=example.com`. `lib/frontend-attachment.sh` independently supplies
 that file's complete machine policy, including both config anchors and Codium
 hosts. It checks successful connection-info, literal exec argv and binary stdin,
@@ -73,3 +79,9 @@ the frontend umbrella complete. Consumer compatibility and complete installer
 dependency inventory verification remain with the closing machine-boundary work.
 The new real runtime/editor cases require Linux/Podman and the editor jobs require
 a display or Xvfb; portable simulations cannot establish those results.
+
+The user reported a complete local editor-gate pass after the SSH server proxy
+fix. That run exercised the effective-settings API read and editor-task proxy
+inheritance for its selected editor. It does not establish results for the other
+editor's CI job. The user also confirmed passing editor tests after the
+fixture-review changes, closing the pending local editor rerun.

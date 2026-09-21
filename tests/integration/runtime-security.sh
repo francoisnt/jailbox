@@ -40,6 +40,8 @@ assert_bad_runtime_dir_fails() {
     bad_uid=$(( $(id -u) + 10000 ))
     ssh-keygen -t ed25519 -f "$bad_runtime/ssh_host_ed25519_key" -N "" -q
     cp "$ssh_dir/key.pub" "$bad_runtime/authorized_keys"
+    printf '# unfiltered SSH session\n' > "$bad_runtime/session.conf"
+    chmod 600 "$bad_runtime/session.conf"
     chmod 600 "$bad_runtime/authorized_keys"
     logs=""
     rc=0

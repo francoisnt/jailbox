@@ -3,8 +3,8 @@
 #
 # For each stage: creates a temporary VS Code/VSCodium workspace fixture,
 # launches the workspace through jailbox, waits for an editor window to attach
-# to the Remote SSH server. Then closes the
-# bootstrap editor, installs the proof extension (fixtures/proof-extension/)
+# to the Remote SSH server. Then closes the bootstrap editor, installs the
+# proof extension (fixtures/proof-extension/)
 # into the remote server, and opens a fresh validation window. It verifies
 # the remote extension host activates the extension and executes a shell
 # task in the mounted workspace with exit code 0 — i.e. a user opening their
@@ -27,7 +27,6 @@
 #        JAILBOX_EDITOR_CACHE_FILL_TIMEOUT seconds for a cold cache fill (default: 300)
 #        JAILBOX_EDITOR_COLD_BOOTSTRAP=1 bypasses the shared test cache
 #        JAILBOX_KEEP_FAILED=1 keeps failed temp projects/containers for diagnosis
-# shellcheck disable=SC2030,SC2031 # Fixture subprocesses each set their own environment.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -938,10 +937,13 @@ run_stage() {
         for config_name in "${!JAILBOX_CONFIG_@}"; do
             unset "$config_name"
         done
+        # shellcheck disable=SC2031 # This launch initializes its own child environment.
         export JAILBOX_TEST_EDITOR_REAL JAILBOX_TEST_CLI="$JAILBOX_DIR/src/jailbox"
         JAILBOX_TEST_EDITOR_REAL=$(editor_bin) || exit $?
+        # shellcheck disable=SC2031 # Assigned from this stage immediately below.
         export JAILBOX_CONFIG_DEV_IMAGE
         JAILBOX_CONFIG_DEV_IMAGE=$(stage_test_image "$stage") || exit $?
+        # shellcheck disable=SC2031 # This launch sets its own config anchor.
         export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
         if [[ "$stage" = egress ]]; then
             export JAILBOX_CONFIG_EGRESS_ALLOW_0=api.ipify.org

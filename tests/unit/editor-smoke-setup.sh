@@ -96,9 +96,9 @@ JAILBOX_DIR=$ROOT
 source "$ROOT/tests/lib/editor/workflows.sh"
 PROOF_FILE=proof EXT_ACTIVATION_MARKER=activated EXT_TASK_RESULT=task-result
 cleanup_editor_workspace() { printf 'close\n' >> "$SMOKE_TRACE"; }
-podman() { [[ $* == 'stop test-host' ]]; printf 'stop\n' >> "$SMOKE_TRACE"; }
+podman() { [[ $* == 'stop test-host' ]] || return 91; printf 'stop\n' >> "$SMOKE_TRACE"; }
 editor_public_launch() {
-    [[ ! -e "$1/$PROOF_FILE" && ! -e "$1/$EXT_ACTIVATION_MARKER" && ! -e "$1/$EXT_TASK_RESULT" && ! -e "$1/.jailbox-editor-settings.json" ]]
+    [[ ! -e "$1/$PROOF_FILE" && ! -e "$1/$EXT_ACTIVATION_MARKER" && ! -e "$1/$EXT_TASK_RESULT" && ! -e "$1/.jailbox-editor-settings.json" ]] || return 90
     printf 'public-launch\n' >> "$SMOKE_TRACE"
     return "${SMOKE_LAUNCH_STATUS:-0}"
 }
@@ -122,3 +122,40 @@ export SMOKE_LAUNCH_STATUS=25
 if editor_reopen "$tmp/project" egress test-host reopen; then exit 1; fi
 [[ $(cat "$SMOKE_TRACE") == $'close\npublic-launch' ]]
 printf 'PASS: public reopen/resume requires fresh task proof and propagates launch failure\n'
+
+# Switching policy preserves the selected fixture image rather than assuming
+# that the egress stage always uses Debian.
+editor_policy_fixture "$tmp/policy" different-stage-image codium example.com jailbox.conf
+grep -qx 'DEV_IMAGE=different-stage-image' "$tmp/policy"
+
+# A network can disappear between listing and inspection. Only confirmed
+# absence permits continuing to another network with the required subnet.
+LOG_DIR="$tmp/logs"
+mkdir "$LOG_DIR"
+jailbox_project_hash_for_path() { printf 'fixture-hash\n'; }
+jailbox_project_hash_port_offset() { printf '4\n'; }
+ledger_record() { [[ $* == 'network test-host-editor-collision' ]] || return 1; }
+podman() {
+    case "$1 $2" in
+        'network create') return 125 ;;
+        'network ls') printf 'disappearing\noccupied\n' ;;
+        'network inspect')
+            if [[ $3 == disappearing ]]; then echo 'inspect failed' >&2; return 125; fi
+            [[ $3 == occupied ]] || return 92
+            printf '10.240.5.0/24\n'
+            ;;
+        'network exists') return "$NETWORK_EXISTS_STATUS" ;;
+        *) return 93 ;;
+    esac
+}
+NETWORK_EXISTS_STATUS=1
+occupy_editor_subnet "$tmp/project" test-host
+[[ -s "$LOG_DIR/test-host.network-names" && -s "$LOG_DIR/test-host.subnets" ]]
+[[ ! -e "$tmp/project/network-names" && ! -e "$tmp/project/subnets" ]]
+for NETWORK_EXISTS_STATUS in 0 125; do
+    if occupy_editor_subnet "$tmp/project" test-host > "$tmp/network-error" 2>&1; then
+        echo 'FAIL: network inspection error was ignored' >&2; exit 1
+    fi
+    grep -q 'inspect failed' "$tmp/network-error"
+done
+printf 'PASS: collision fixture isolates diagnostics and tolerates only confirmed disappearance\n'

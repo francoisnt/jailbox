@@ -16,6 +16,11 @@ semantics, a visible effective allowlist, internal-only listener binding,
 accurate documentation, and the baseline adversarial runtime assertions.
 Replacing tinyproxy must not weaken those properties.
 
+Retain phase 1's automatic delivery of proxy settings into SSH sessions,
+including editor tasks and clients without client-side environment forwarding.
+Changing the proxy implementation must preserve that delivery and its
+verification; transparent interception is not required by either phase.
+
 ## Required enforcement
 
 The strict proxy must enforce all of the following without terminating TLS:

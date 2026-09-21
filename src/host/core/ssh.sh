@@ -114,6 +114,7 @@ create_ssh_generation() (
     chmod 644 "$stage/key.pub" "$stage/server/ssh_host_ed25519_key.pub" || exit 1
     printf '[localhost]:%s %s\n' "$LOCAL_PORT" "$(cat "$stage/server/ssh_host_ed25519_key.pub")" > "$stage/known_hosts" || exit 1
     write_ssh_host_block > "$stage/ssh_config" || exit 1
+    write_sshd_session_config > "$stage/server/session.conf" || exit 1
     validate_ssh_generation "$stage" || exit 1
     mv -- "$stage" "$SSH_GENERATION_DIR" || exit 1
 )
@@ -167,13 +168,13 @@ validate_ssh_pair() {
 # Expected session configuration comes from validated policy and the live
 # network. No file is sourced, repaired, or passed to ssh before comparison.
 validate_ssh_generation() {
-    local root="${1:-$SSH_GENERATION_DIR}" path mode public expected_config
+    local root="${1:-$SSH_GENERATION_DIR}" path mode public expected_config expected_session
     assert_ssh_state_initialized
     validate_ssh_state_path || return 1
     for path in "$SSH_DIR" "$root" "$root/server"; do
         validate_ssh_file "$path" 700 directory || { ssh_state_error 'has unsafe directory metadata'; return 1; }
     done
-    for path in key key.pub known_hosts ssh_config server/authorized_keys \
+    for path in key key.pub known_hosts ssh_config server/authorized_keys server/session.conf \
         server/ssh_host_ed25519_key server/ssh_host_ed25519_key.pub; do
         mode=600
         case "$path" in *.pub) mode=644 ;; esac
@@ -181,11 +182,13 @@ validate_ssh_generation() {
     done
     public=$(cat "$root/server/ssh_host_ed25519_key.pub") || { ssh_state_error 'could not read server public key'; return 1; }
     expected_config=$(write_ssh_host_block && printf '.') || { ssh_state_error 'could not render expected client configuration'; return 1; }
+    expected_session=$(write_sshd_session_config && printf '.') || { ssh_state_error 'could not render expected session configuration'; return 1; }
     if ! { validate_ssh_pair "$root/key" && validate_ssh_pair "$root/server/ssh_host_ed25519_key" &&
         cmp -s "$root/key.pub" "$root/server/authorized_keys" &&
         cmp -s "$root/known_hosts" <(printf '[localhost]:%s %s\n' "$LOCAL_PORT" "$public") &&
-        cmp -s "$root/ssh_config" <(printf '%s' "${expected_config%.}"); }; then
-        ssh_state_error 'has inconsistent keys, pin, or client configuration'
+        cmp -s "$root/ssh_config" <(printf '%s' "${expected_config%.}") &&
+        cmp -s "$root/server/session.conf" <(printf '%s' "${expected_session%.}"); }; then
+        ssh_state_error 'has inconsistent keys, pin, or SSH configuration'
         return 1
     fi
 }
@@ -255,10 +258,15 @@ ssh_config_quote() {
     printf '"%s"' "$value"
 }
 
-write_ssh_host_block() {
-    local env_pair setenv_line
-    setenv_line=""
+# Server-owned session defaults also reach clients whose SSH libraries ignore
+# client SetEnv directives, including VSCodium's Open Remote SSH. The immutable
+# generation binds these settings to the same live network as the client file.
+write_sshd_session_config() {
+    printf '# jailbox SSH session environment\n' || return 1
+    write_ssh_setenv ''
+}
 
+write_ssh_host_block() {
     cat <<SSHEOF || return 1
 Host $CONTAINER_NAME
     HostName localhost
@@ -275,17 +283,18 @@ Host $CONTAINER_NAME
     BatchMode yes
 SSHEOF
 
+    write_ssh_setenv '    '
+}
+
+write_ssh_setenv() {
+    local indent="$1" env_pair setenv_line=""
     for env_pair in "${NETWORK_SSH_SESSION_ENV[@]}"; do
         setenv_line="${setenv_line:+$setenv_line }$env_pair"
     done
     if [ -n "$setenv_line" ]; then
-        # All proxy vars on one SetEnv line. OpenSSH processes only the first
-        # SetEnv directive per Host block; multiple SetEnv lines silently drop
-        # all but the first. Space-separated vars on one directive is the
-        # only portable form. sshd creates fresh session environments, so
-        # client-side SetEnv is the reliable way to expose proxy settings to
-        # editor terminals and tools.
-        printf '    SetEnv %s\n' "$setenv_line"
+        # Both OpenSSH client and server use only the first SetEnv directive.
+        # Keep every variable on one line so none silently disappear.
+        printf '%sSetEnv %s\n' "$indent" "$setenv_line"
     fi
 }
 

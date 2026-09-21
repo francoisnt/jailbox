@@ -35,7 +35,8 @@ File `EDITOR` selects the editor, otherwise discovery prefers Codium then Code.
 Inherited editor variables do not override file selection. Preflight checks the
 selected executable and Remote SSH extension before lifecycle calls. Editor
 settings contain the connection endpoint and optional HTTP proxy; SSH supplies
-remote session proxy environment variables.
+remote session proxy environment variables from immutable server configuration,
+including for editor SSH libraries that ignore client `SetEnv` directives.
 
 Runtime sources live under `src/`. Packaging flattens that directory into the
 bundle root and adds `README.md`; repository tooling stays outside
@@ -419,8 +420,9 @@ The editor gate focuses on editor integration: opening the project, applying
 isolated settings, bootstrapping through the configured proxy, and reopening
 or resuming sessions through the public frontend. A remote editor task produces
 the proxy-inheritance proof; a direct SSH probe cannot substitute for it.
-The proof extension also reads effective settings through the editor API. Runtime and matrix verify core SSH, networking, proxy enforcement,
-and sandbox security. Editor tests rely on core readiness checks instead of
+The proof extension also reads effective settings through the editor API.
+Runtime and matrix verify core SSH, networking, proxy enforcement, and sandbox
+security. Editor tests rely on core readiness checks instead of
 repeating those assertions. An SSH or network regression can still break an
 editor test because the editor depends on that infrastructure.
 

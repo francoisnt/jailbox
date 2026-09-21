@@ -5,7 +5,8 @@
 source "$JAILBOX_DIR/tests/lib/shell-connection.sh"
 
 occupy_editor_subnet() {
-    local project=$1 ctr=$2 hash offset subnet name
+    local project=$1 ctr=$2 hash offset subnet name status
+    local names="$LOG_DIR/$ctr.network-names" subnets="$LOG_DIR/$ctr.subnets" errors="$LOG_DIR/$ctr.network-inspect-error"
     hash=$(jailbox_project_hash_for_path "$project") || return 1
     offset=$(jailbox_project_hash_port_offset "$hash") || return 1
     subnet="10.240.$((1 + offset % 200)).0/24"
@@ -13,11 +14,22 @@ occupy_editor_subnet() {
     if podman network create --internal --subnet "$subnet" "$ctr-editor-collision" >/dev/null 2>&1; then return 0; fi
     # An existing exact subnet also establishes the fixture; an unrelated
     # create failure does not. Cleanup only owns the ledger-recorded name.
-    podman network ls --format '{{.Name}}' > "$project/network-names" || return 1
+    podman network ls --format '{{.Name}}' > "$names" || return 1
     while IFS= read -r name; do
-        podman network inspect "$name" --format '{{range .Subnets}}{{println .Subnet}}{{end}}' > "$project/subnets" || return 1
-        if grep -Fxq "$subnet" "$project/subnets"; then return 0; fi
-    done < "$project/network-names"
+        if ! podman network inspect "$name" --format '{{range .Subnets}}{{println .Subnet}}{{end}}' > "$subnets" 2> "$errors"; then
+            # Listing and inspecting are separate operations. Only confirmed
+            # disappearance is harmless; engine and existing-network errors fail.
+            if podman network exists "$name"; then
+                cat "$errors" >&2
+                return 1
+            else
+                status=$?
+                if [[ $status != 1 ]]; then cat "$errors" >&2; return 1; fi
+            fi
+            continue
+        fi
+        if grep -Fxq "$subnet" "$subnets"; then return 0; fi
+    done < "$names"
     return 1
 }
 
@@ -77,11 +89,12 @@ editor_reopen() {
 }
 
 editor_policy_fixture() {
-    printf 'DEV_IMAGE=jailbox-test-debian\nEDITOR=%s\nEGRESS_ALLOW=%s\nREADONLY_PATHS=%s\n' "$2" "$3" "$4" > "$1"
+    printf 'DEV_IMAGE=%s\nEDITOR=%s\nEGRESS_ALLOW=%s\nREADONLY_PATHS=%s\n' "$2" "$3" "$4" "$5" > "$1"
 }
 
 verify_editor_workflows() {
-    local project=$1 stage=$2 ctr=$3 selected other hosts
+    local project=$1 stage=$2 ctr=$3 selected other hosts image
+    image=$(stage_test_image "$stage") || return 1
     editor_reopen "$project" "$stage" "$ctr" reopen || return 1
     editor_reopen "$project" "$stage" "$ctr" resume || return 1
     [[ $stage == egress ]] || return 0
@@ -92,15 +105,15 @@ verify_editor_workflows() {
     # selection/launch while this job's real client proves actual attachment.
     cp "$JAILBOX_DIR/tests/fixtures/editor-client/editor.sh" "$project/.vscode/test-editor-bin/$other" || return 1
     chmod 755 "$project/.vscode/test-editor-bin/$other" || return 1
-    export FAKE_TRACE="$project/switch-trace"
+    local -x FAKE_TRACE="$project/switch-trace"
     : > "$FAKE_TRACE"
     if editor_public_launch "$project" --no-editor > "$project/refusal" 2>&1; then return 1; fi
     grep -q 'jailbox stop' "$project/refusal" || return 1
-    editor_policy_fixture "$project/jailbox.conf" "$other" api.ipify.org '' || return 1
+    editor_policy_fixture "$project/jailbox.conf" "$image" "$other" api.ipify.org '' || return 1
     if editor_public_launch "$project" > "$project/refusal" 2>&1; then return 1; fi
     grep -q 'jailbox stop' "$project/refusal" || return 1
     if grep -q '^launch:' "$FAKE_TRACE"; then return 1; fi
-    editor_policy_fixture "$project/jailbox.conf" "$selected" api.ipify.org '' || return 1
+    editor_policy_fixture "$project/jailbox.conf" "$image" "$selected" api.ipify.org '' || return 1
     cp "$project/jailbox.conf" "$project/selected.conf" || return 1
     if editor_public_launch "$project" --config selected.conf > "$project/refusal" 2>&1; then return 1; fi
     grep -q 'jailbox stop' "$project/refusal" || return 1
@@ -109,10 +122,10 @@ verify_editor_workflows() {
     # Explicit recovery creates a policy where each switch is equivalent.
     (cd "$project" && "$JAILBOX_DIR/src/jailbox" stop) || return 1
     hosts=githubusercontent.com,api.ipify.org,github.com,vo.msecnd.net,main.vscode-cdn.net,vscode.download.prss.microsoft.com,update.code.visualstudio.com,api.ipify.org
-    editor_policy_fixture "$project/jailbox.conf" "$selected" "$hosts" jailbox.conf,selected.conf || return 1
+    editor_policy_fixture "$project/jailbox.conf" "$image" "$selected" "$hosts" jailbox.conf,selected.conf || return 1
     cp "$project/jailbox.conf" "$project/selected.conf" || return 1
     editor_public_launch "$project" --no-editor || return 1
-    editor_policy_fixture "$project/jailbox.conf" "$other" "$hosts" jailbox.conf,selected.conf || return 1
+    editor_policy_fixture "$project/jailbox.conf" "$image" "$other" "$hosts" jailbox.conf,selected.conf || return 1
     : > "$FAKE_TRACE"
     editor_public_launch "$project" || return 1
     grep -qx "launch:$other" "$FAKE_TRACE" || return 1

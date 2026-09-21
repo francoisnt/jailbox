@@ -57,6 +57,7 @@ assert_immutable_mount() {
 
 for dir in / /run "$SSHD_RUNTIME_DIR"; do check_path "$dir" directory; done
 check_path "$SSHD_RUNTIME_DIR/authorized_keys" file
+check_path "$SSHD_RUNTIME_DIR/session.conf" file
 check_path "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" private
 check_path "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub" file
 derived=$(ssh-keygen -y -P '' -f "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" 2>/dev/null) || fail 'invalid server key'

@@ -149,9 +149,9 @@ configure_proxy_env() {
     fi
     [[ "${NETWORK_STATE[proxy_url]}" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}:8888$ ]] || die 'could not determine an internal proxy IPv4 URL'
     NETWORK_STATE[no_proxy]="localhost,127.0.0.1"
-    # Rendered into the generated SSH Host block via SetEnv. sshd creates fresh
-    # session environments, so client-side SetEnv is the reliable way to expose
-    # proxy settings to editor terminals and tools.
+    # SSH renders these into both client and immutable server configuration so
+    # every remote session receives the live proxy settings, including clients
+    # that ignore the SSH Host block's SetEnv directive.
     NETWORK_SSH_SESSION_ENV=(
         "HTTP_PROXY=${NETWORK_STATE[proxy_url]}"
         "HTTPS_PROXY=${NETWORK_STATE[proxy_url]}"

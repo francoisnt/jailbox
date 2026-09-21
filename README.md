@@ -246,9 +246,11 @@ share of it, and `stop` removes SSH credentials while retaining unrelated state.
 Each development-container object owns one SSH generation, prepared on the host
 before creation. Its client private key, pinned server identity, and client
 configuration stay host-only under the project's `ssh-generation/` directory.
-Only server keys and authorized keys enter the container, through a read-only
-mount. The keep-id user mapping preserves strict ownership; the authorized-keys
-path and its parents are not group- or other-writable. Mutable daemon state
+Server keys, authorized keys, and SSH session proxy settings enter the container
+through a read-only mount. The SSH server supplies proxy variables even when an
+editor's SSH client does not forward them. The keep-id user mapping preserves
+strict ownership; the authorized-keys path and its parents are not group- or
+other-writable. Mutable daemon state
 lives separately on a private, managed-user-owned `/run` tmpfs. Startup validates
 authentication material and never repairs it or generates replacement keys.
 

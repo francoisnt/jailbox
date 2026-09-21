@@ -422,6 +422,12 @@ EOF
 
         assert_ssh "$ssh_cfg" "$ctr" "HTTPS_PROXY is set in SSH session" \
             "[ -n \"\$HTTPS_PROXY\" ]"
+        # Model editor SSH libraries that do not forward client SetEnv. Keep
+        # the generated identity and strict host pinning in this test copy.
+        local server_env_config="$log_dir/$stage.server-env.ssh-config"
+        sed '/^[[:space:]]*SetEnv[[:space:]]/d' "$ssh_cfg" > "$server_env_config" || return 1
+        assert_ssh "$server_env_config" "$ctr" "server supplies all proxy variables without client SetEnv" \
+            "bash -s -- $(printf '%q' "$proxy_url")" < "$JAILBOX_DIR/tests/lib/sandbox/check-proxy-environment.sh"
         assert_ssh "$ssh_cfg" "$ctr" "curl downloader proxy block is managed" \
             "bash -s -- curl $(printf '%q' "$proxy_url")" < "$JAILBOX_DIR/tests/lib/sandbox/check-managed-proxy.sh"
         assert_ssh "$ssh_cfg" "$ctr" "wget downloader proxy block is managed" \
@@ -618,7 +624,7 @@ EOF
         else
             fail "bare VSCodium launch adds editor bootstrap hosts"
         fi
-        if bash "$JAILBOX_DIR/tests/lib/frontend-attachment.sh" "$JAILBOX_DIR" "$project_dir" "$ctr" "$log_dir/$stage.frontend"; then
+        if bash "$JAILBOX_DIR/tests/lib/frontend-attachment.sh" "$JAILBOX_DIR" "$project_dir" "$ctr" "$log_dir/$stage.frontend" "$dev_image"; then
             pass 'filtered editor launch supports public exec and shell'
         else
             fail 'filtered editor launch supports public exec and shell'

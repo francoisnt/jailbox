@@ -205,6 +205,7 @@ AllowStreamLocalForwarding yes
 PermitTunnel no
 GatewayPorts no
 AcceptEnv HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy
+Include /run/jailbox-sshd/session.conf
 AllowUsers ${MANAGED_USER}
 EOF
 

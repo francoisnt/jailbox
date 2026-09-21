@@ -65,7 +65,7 @@ reject create_ssh_generation
 [ "$before" = "$(snapshot)" ]
 cp -R "$SSH_GENERATION_DIR" "$FIXTURE/pristine"
 
-for damage in missing symlink directory fifo owner mode server_pair client_pair authorized pin config parent_mode parent_link; do
+for damage in missing symlink directory fifo owner mode server_pair client_pair authorized pin config session_missing session_link session_mode session_content parent_mode parent_link; do
     rm -rf "$SSH_GENERATION_DIR"
     cp -R "$FIXTURE/pristine" "$SSH_GENERATION_DIR"
     case "$damage" in
@@ -83,6 +83,10 @@ for damage in missing symlink directory fifo owner mode server_pair client_pair 
         authorized) printf 'altered\n' >> "$SSHD_RUNTIME_DIR/authorized_keys" ;;
         pin) printf '\n' >> "$KNOWN_HOSTS" ;;
         config) printf '    StrictHostKeyChecking no\n' >> "$SSH_CONFIG" ;;
+        session_missing) rm "$SSHD_RUNTIME_DIR/session.conf" ;;
+        session_link) rm "$SSHD_RUNTIME_DIR/session.conf"; ln -s "$FIXTURE/pristine/server/session.conf" "$SSHD_RUNTIME_DIR/session.conf" ;;
+        session_mode) chmod 664 "$SSHD_RUNTIME_DIR/session.conf" ;;
+        session_content) printf 'SetEnv HTTP_PROXY=http://wrong:8888\n' >> "$SSHD_RUNTIME_DIR/session.conf" ;;
         parent_mode) chmod 777 "$SSHD_RUNTIME_DIR" ;;
         parent_link) rm -rf "$SSHD_RUNTIME_DIR"; ln -s "$FIXTURE/pristine/server" "$SSHD_RUNTIME_DIR" ;;
     esac
@@ -113,6 +117,34 @@ reject_state_path remove_ssh_generation
 [ -f "$SSH_DIR.saved/gitconfig" ]
 rm "$SSH_DIR"
 mv "$SSH_DIR.saved" "$SSH_DIR"
+
+# Server configuration must independently carry every proxy variable, including
+# a collision-fallback endpoint, and unfiltered generations must clear them.
+NETWORK_SSH_SESSION_ENV=(HTTP_PROXY=http://10.240.32.2:8888 HTTPS_PROXY=http://10.240.32.2:8888
+    http_proxy=http://10.240.32.2:8888 https_proxy=http://10.240.32.2:8888
+    'NO_PROXY=localhost,127.0.0.1' 'no_proxy=localhost,127.0.0.1')
+create_ssh_generation
+cat > "$FIXTURE/expected-session" <<'EXPECTED'
+# jailbox SSH session environment
+SetEnv HTTP_PROXY=http://10.240.32.2:8888 HTTPS_PROXY=http://10.240.32.2:8888 http_proxy=http://10.240.32.2:8888 https_proxy=http://10.240.32.2:8888 NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1
+EXPECTED
+cmp "$FIXTURE/expected-session" "$SSHD_RUNTIME_DIR/session.conf"
+# Matching client configuration cannot hide stale or missing server policy.
+cp "$FIXTURE/pristine/server/session.conf" "$SSHD_RUNTIME_DIR/session.conf"
+reject validate_ssh_generation
+remove_ssh_generation
+NETWORK_SSH_SESSION_ENV=()
+create_ssh_generation
+printf '# jailbox SSH session environment\n' > "$FIXTURE/expected-session"
+cmp "$FIXTURE/expected-session" "$SSHD_RUNTIME_DIR/session.conf"
+if (write_sshd_session_config() { printf 'partial\n'; return 1; }; validate_ssh_generation); then
+    echo 'FAIL: session renderer failure was ignored during validation' >&2; exit 1
+fi
+remove_ssh_generation
+if (write_sshd_session_config() { printf 'partial\n'; return 1; }; create_ssh_generation); then
+    echo 'FAIL: session renderer failure was ignored during publication' >&2; exit 1
+fi
+if ssh_generation_present; then echo 'FAIL: session preparation leaked state'; exit 1; fi
 
 # A failing second key generation must remove the first pair and staging dir.
 real_keygen=$(command -v ssh-keygen)
