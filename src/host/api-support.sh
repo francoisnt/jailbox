@@ -1,4 +1,4 @@
-# Shared validation and lookups for public.sh declarations.
+# Shared validation and lookups for public-api.sh declarations.
 # Derived from the command categories during lookup initialization.
 CLI_FLAGS_WITHOUT_VALUES=()
 declare -A CONFIG_SCALAR_KEY_SET=()

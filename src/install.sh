@@ -58,7 +58,7 @@ REQUIRED_PATHS=(
     "host/frontend/file-policy.sh"
     "host/frontend/init.sh"
     "host/frontend/settings.sh"
-    "public.sh"
+    "public-api.sh"
     "container/setup.sh"
     "container/runtime/bin/jailbox-manage-proxy"
     "container/runtime/bin/jailbox-start"
@@ -66,12 +66,6 @@ REQUIRED_PATHS=(
     "container/Containerfile.wrapper"
     "container/tinyproxy/tinyproxy.conf"
 )
-
-# Checkout sources live under src; release and installed bundles are flat.
-RUNTIME_SOURCE_DIR="$SOURCE_DIR"
-if [ -d "$SOURCE_DIR/src" ]; then
-    RUNTIME_SOURCE_DIR="$SOURCE_DIR/src"
-fi
 
 usage() {
     cat <<EOF_USAGE
@@ -125,7 +119,7 @@ installer_bundle_is_available() {
     local path
 
     for path in "${REQUIRED_PATHS[@]}"; do
-        [ -e "$RUNTIME_SOURCE_DIR/$path" ] || return 1
+        [ -e "$SOURCE_DIR/$path" ] || return 1
     done
 }
 
@@ -180,7 +174,7 @@ validate_source_tree() {
     local path
 
     for path in "${REQUIRED_PATHS[@]}"; do
-        [ -e "$RUNTIME_SOURCE_DIR/$path" ] || die "installer bundle is missing required path: $path"
+        [ -e "$SOURCE_DIR/$path" ] || die "installer bundle is missing required path: $path"
     done
 }
 
@@ -220,13 +214,14 @@ install_from_release() {
 }
 
 copy_bundle() {
-    local tmp_dir path script
+    local tmp_dir script
 
     tmp_dir="$1"
-    cp -R "$RUNTIME_SOURCE_DIR/." "$tmp_dir/"
-    for path in README.md install.sh; do
-        cp "$SOURCE_DIR/$path" "$tmp_dir/"
-    done
+    cp -R "$SOURCE_DIR/." "$tmp_dir/"
+    # Release bundles include the README; checkouts keep it above src/.
+    if [ ! -f "$tmp_dir/README.md" ]; then
+        cp "$SOURCE_DIR/../README.md" "$tmp_dir/README.md"
+    fi
 
     chmod 755 "$tmp_dir/jailbox"
     for script in "$tmp_dir"/container/*.sh; do

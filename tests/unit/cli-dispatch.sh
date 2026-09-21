@@ -6,7 +6,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/tool/host" "$tmp/project"
 cp "$ROOT/src/jailbox" "$tmp/tool/jailbox"
-cp "$ROOT/src/public.sh" "$tmp/tool/"
+cp "$ROOT/src/public-api.sh" "$tmp/tool/"
 cp "$ROOT/src/host/"{api-support,cli}.sh "$tmp/tool/host/"
 mkdir "$tmp/tool/host/core"
 cp "$ROOT/src/host/core/schema.sh" "$tmp/tool/host/core/"
@@ -37,8 +37,8 @@ for args in repeated misplaced missing unexpected; do
 done
 # Every declared command except file-driven launch/validation rejects --config
 # before attempting to load core (which is deliberately absent in this fixture).
-# shellcheck source=src/public.sh
-source "$ROOT/src/public.sh"
+# shellcheck source=src/public-api.sh
+source "$ROOT/src/public-api.sh"
 # shellcheck source=src/host/api-support.sh
 source "$ROOT/src/host/api-support.sh"
 initialize_public_api_lookups

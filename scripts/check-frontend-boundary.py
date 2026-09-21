@@ -42,7 +42,7 @@ def written_state(text):
 
 core = '\n'.join(code(p) for p in (root / 'host/core').rglob('*.sh'))
 files = sorted((root / 'host/frontend').rglob('*.sh'))
-public = code(root / 'public.sh') + '\n' + code(root / 'host/api-support.sh') + '\n' + code(root / 'host/cli.sh')
+public = code(root / 'public-api.sh') + '\n' + code(root / 'host/api-support.sh') + '\n' + code(root / 'host/cli.sh')
 # These two names deliberately have independent implementations in each layer.
 # New frontend declarations must not silently exempt additional core helpers.
 private_functions = functions(core) - functions(public) - {'die', 'run_validate'}

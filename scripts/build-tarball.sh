@@ -5,7 +5,7 @@ APP_NAME="jailbox"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 
-RELEASE_PATHS=(install.sh README.md)
+RELEASE_PATHS=(README.md)
 
 usage() {
     cat <<EOF_USAGE
@@ -44,7 +44,7 @@ tarball="$DIST_DIR/$release_name.tar.gz"
 latest_tarball="$DIST_DIR/$APP_NAME-latest.tar.gz"
 checksums_file="$DIST_DIR/SHA256SUMS"
 
-for script in "$ROOT_DIR/install.sh" "$ROOT_DIR/src/jailbox" "$ROOT_DIR/src/public.sh"; do
+for script in "$ROOT_DIR/src/install.sh" "$ROOT_DIR/src/jailbox" "$ROOT_DIR/src/public-api.sh"; do
     bash -n "$script" || die "invalid shell syntax: $script"
 done
 while IFS= read -r script; do

@@ -9,13 +9,13 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 (
     before=$(declare -F)
     DEV_IMAGE=untouched CONFIG_PATH_ARG=untouched
-    # shellcheck source=src/public.sh
-    source "$ROOT/src/public.sh"
+    # shellcheck source=src/public-api.sh
+    source "$ROOT/src/public-api.sh"
     [[ $(declare -F) = "$before" && "$DEV_IMAGE" = untouched && "$CONFIG_PATH_ARG" = untouched ]]
     [[ ! -v CONFIG_SCALAR_KEY_SET ]]
 )
-# shellcheck source=src/public.sh
-source "$ROOT/src/public.sh"
+# shellcheck source=src/public-api.sh
+source "$ROOT/src/public-api.sh"
 # shellcheck source=src/host/api-support.sh
 source "$ROOT/src/host/api-support.sh"
 initialize_public_api_lookups
@@ -176,8 +176,8 @@ printf 'PASS: public API additions propagate and incomplete mappings fail\n'
 mkdir "$tmp/cli"
 cp "$ROOT/src/jailbox" "$tmp/cli/jailbox"
 cp -R "$ROOT/src/host" "$tmp/cli/host"
-cp "$ROOT/src/public.sh" "$tmp/cli/public.sh"
-cat >> "$tmp/cli/public.sh" <<'API'
+cp "$ROOT/src/public-api.sh" "$tmp/cli/public-api.sh"
+cat >> "$tmp/cli/public-api.sh" <<'API'
 CLI_OTHER_COMMANDS+=(sample)
 CLI_HELP+=("sample=Sample command")
 API
@@ -188,7 +188,7 @@ printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='usage'" >> "$tmp/cli/host/cli.sh"
 bash "$tmp/cli/jailbox" sample > "$tmp/dispatched"
 grep -Fq 'Sample command' "$tmp/dispatched"
 # A new value option also propagates to parsing through its declared target.
-cat >> "$tmp/cli/public.sh" <<'API'
+cat >> "$tmp/cli/public-api.sh" <<'API'
 CLI_FLAGS_WITH_VALUES+=(--sample2)
 CLI_HELP+=("--sample2=Sample value")
 CLI_VALUE_NAMES[--sample2]=VALUE

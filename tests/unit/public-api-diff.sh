@@ -12,13 +12,13 @@ pass() { echo "  ✅ $*"; PASSED=$((PASSED + 1)); }
 fail() { echo "  ❌ $*"; FAILED=$((FAILED + 1)); }
 
 mkdir -p "$FIXTURE/src" "$FIXTURE/scripts"
-cp "$JAILBOX_DIR/src/public.sh" "$FIXTURE/src/public.sh"
+cp "$JAILBOX_DIR/src/public-api.sh" "$FIXTURE/src/public-api.sh"
 cp "$JAILBOX_DIR/scripts/public-api-diff.sh" "$FIXTURE/scripts/public-api-diff.sh"
 cp -R "$JAILBOX_DIR/scripts/lib" "$FIXTURE/scripts/"
 git -C "$FIXTURE" init -q
 git -C "$FIXTURE" config user.name test
 git -C "$FIXTURE" config user.email test@example.invalid
-git -C "$FIXTURE" add src/public.sh scripts/public-api-diff.sh
+git -C "$FIXTURE" add src/public-api.sh scripts/public-api-diff.sh
 git -C "$FIXTURE" commit -qm baseline
 
 assert_result() {
@@ -27,7 +27,7 @@ assert_result() {
     if [ "$actual" = "$expected" ]; then pass "$name"; else fail "$name (expected $expected, got $actual)"; fi
 }
 
-API_FILE="$FIXTURE/src/public.sh"
+API_FILE="$FIXTURE/src/public-api.sh"
 
 # The portable gate also runs on macOS, where sed is BSD sed: it requires an
 # argument to -i and does not accept a one-line `a\text` append. Edit the
@@ -53,19 +53,19 @@ delete_line() {
 assert_result "unchanged public API detected" unchanged
 insert_after_line 'CONFIG_SCALAR_KEYS=(' '    TEST_CONFIG'
 assert_result "added configuration detected" added
-git -C "$FIXTURE" checkout -q -- src/public.sh
+git -C "$FIXTURE" checkout -q -- src/public-api.sh
 insert_after_line 'CLI_OTHER_COMMANDS=(' '    test-command'
 assert_result "added CLI declaration detected" added
-git -C "$FIXTURE" checkout -q -- src/public.sh
+git -C "$FIXTURE" checkout -q -- src/public-api.sh
 delete_line '    DEV_IMAGE'
 assert_result "removed configuration detected" removed
-git -C "$FIXTURE" checkout -q -- src/public.sh
+git -C "$FIXTURE" checkout -q -- src/public-api.sh
 delete_line '    status'
 assert_result "removed CLI declaration detected" removed
-git -C "$FIXTURE" checkout -q -- src/public.sh
+git -C "$FIXTURE" checkout -q -- src/public-api.sh
 delete_line '    EDITOR'
 assert_result "removed frontend declaration detected" removed
-git -C "$FIXTURE" checkout -q -- src/public.sh
+git -C "$FIXTURE" checkout -q -- src/public-api.sh
 insert_after_line 'FRONTEND_SCALAR_KEYS=(' '    TEST_FRONTEND'
 assert_result "added frontend declaration detected" added
 
@@ -110,23 +110,27 @@ mkdir "$FIXTURE/lib"
 for declaration in CLI_FLAGS CLI_FLAGS_WITHOUT_VALUES; do
     printf 'CONFIG_SCALAR_KEYS=(\n    ORIGINAL\n)\n%s=(\n    --help\n)\n' "$declaration" > "$API_FILE"
     cp "$API_FILE" "$FIXTURE/lib/public-api.sh"
-    git -C "$FIXTURE" rm -fq src/public.sh
+    git -C "$FIXTURE" rm -fq src/public-api.sh
     git -C "$FIXTURE" add lib/public-api.sh
     git -C "$FIXTURE" commit -qm historical
     mkdir -p "$FIXTURE/src"
     cp "$FIXTURE/lib/public-api.sh" "$API_FILE"
     assert_result "historical $declaration in lib" unchanged
-    git -C "$FIXTURE" add src/public.sh
+    git -C "$FIXTURE" add src/public-api.sh
     git -C "$FIXTURE" commit -qm current-location
 done
 
-# The previous host/ declaration location remains readable after migration.
-mkdir -p "$FIXTURE/host"
-git -C "$FIXTURE" mv src/public.sh host/public-api.sh
-git -C "$FIXTURE" commit -qm previous-host-layout
-mkdir -p "$FIXTURE/src"
-cp "$FIXTURE/host/public-api.sh" "$API_FILE"
-assert_result "historical host declarations survive source migration" unchanged
+# Both previous declaration locations remain readable after renaming.
+for previous in host/public-api.sh src/public.sh; do
+    mkdir -p "$FIXTURE/${previous%/*}"
+    git -C "$FIXTURE" mv src/public-api.sh "$previous"
+    git -C "$FIXTURE" commit -qm previous-layout
+    mkdir -p "$FIXTURE/src"
+    cp "$FIXTURE/$previous" "$API_FILE"
+    assert_result "historical $previous declarations survive renaming" unchanged
+    git -C "$FIXTURE" add src/public-api.sh
+    git -C "$FIXTURE" commit -qm current-layout
+done
 
 echo ""
 if [ "$FAILED" -eq 0 ]; then

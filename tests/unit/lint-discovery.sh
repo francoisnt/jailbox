@@ -11,7 +11,7 @@ cp "$ROOT/scripts/build-tarball.sh" "$tmp/scripts/"
 cp "$ROOT/scripts/lib/container-shells.sh" "$tmp/scripts/lib/"
 # shellcheck source=scripts/lib/container-shells.sh
 source "$ROOT/scripts/lib/container-shells.sh"
-for script in src/jailbox src/public.sh install.sh tests/run; do
+for script in src/jailbox src/public-api.sh src/install.sh tests/run; do
     printf '#!/bin/bash\ntrue\n' > "$tmp/$script"
 done
 # New modules in either layer must be linted before they are even sourced.

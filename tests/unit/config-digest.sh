@@ -13,7 +13,7 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/src/public.sh"
+source "$JAILBOX_DIR/src/public-api.sh"
 # shellcheck source=src/host/api-support.sh
 source "$JAILBOX_DIR/src/host/api-support.sh"
 initialize_public_api_lookups
@@ -229,12 +229,12 @@ assert_ne "a development build differs from a stamped release" \
 # An unstamped source checkout and an install made from it share the 'dev'
 # token, so identical remaining inputs produce one digest from either copy.
 cp -R "$JAILBOX_DIR/src/host" "$FIXTURE/installed-host"
-cp "$JAILBOX_DIR/src/public.sh" "$FIXTURE/public.sh"
+cp "$JAILBOX_DIR/src/public-api.sh" "$FIXTURE/public-api.sh"
 installed_digest=$(
     PROJECT_DIR="$VECTOR_DIR"
     SCRIPT_DIR="$FIXTURE"
     # shellcheck disable=SC1091
-    source "$FIXTURE/public.sh"
+    source "$FIXTURE/public-api.sh"
     # shellcheck disable=SC1091
     source "$FIXTURE/installed-host/api-support.sh"
     initialize_public_api_lookups

@@ -1,7 +1,7 @@
 # Shared CLI syntax, help rendering, and dispatch mappings.
 CONFIG_PATH_ARG=${CONFIG_PATH_ARG:-}
 
-# Each handler owns its setup and behavior. Membership comes from public.sh;
+# Each handler owns its setup and behavior. Membership comes from public-api.sh;
 # validate_cli_implementation rejects missing or undeclared handlers.
 declare -A CLI_COMMAND_HANDLERS=(
     [--no-editor]=run_headless [exec]=run_exec [shell]=run_shell [init]=run_init [up]=run_up [stop]=run_stop

@@ -18,15 +18,16 @@ them as speculative productization or complexity without a consumer.
 ## Repository map
 
 - `src/jailbox`: host CLI entrypoint and command dispatch.
+- `src/install.sh`: installer shipped with the runtime bundle.
 - `src/host/`: host-side orchestration modules sourced by `jailbox`.
 - `src/container/`: wrapper/proxy image files and container-side scripts.
 - `scripts/`: repository, release, and generated-file tooling.
 - `tests/`: unit, distribution, runtime, and editor tests.
 - `.github/workflows/test-gates.yml`: reusable definition of the four CI gates.
-- `src/public.sh`: canonical public configuration keys and CLI flags.
+- `src/public-api.sh`: canonical public configuration keys and CLI flags.
 
 Commands, flags, and configuration-key membership must come from
-`src/public.sh`. Derive consuming lists from those declarations. Where a
+`src/public-api.sh`. Derive consuming lists from those declarations. Where a
 consumer needs per-member behavior or metadata, validate that its mapping covers
 every applicable declaration exactly; missing mappings must fail explicitly.
 Keep regression tests proving that new declarations propagate or fail for a
@@ -45,7 +46,7 @@ in `tests/lib/lifecycle-contracts.sh` before the matrix schedules them.
 Keep host orchestration in `src/host/`, container behavior in `src/container/`,
 maintenance tooling in `scripts/`, and test code in `tests/`.
 Frontend implementation lives in `src/host/frontend/`, machine implementation in
-`src/host/core/`. App-wide declarations live in `src/public.sh`, which
+`src/host/core/`. App-wide declarations live in `src/public-api.sh`, which
 contains data only: no function definitions, initialization calls, or runtime
 configuration mutation. Shared host validation and lookups live in
 `src/host/api-support.sh`; shared CLI parsing, help, and dispatch mappings live
@@ -54,9 +55,9 @@ The `src/jailbox` entrypoint selects a layer before loading
 its implementation. Frontend code invokes core only through public CLI child
 processes; it never sources core modules or accesses private core state.
 
-Runtime sources live under `src/`; tests, maintenance tools, plans, documentation,
-and the installer remain at the repository root. Packaging copies `src/` contents
-to the bundle root and adds `README.md` and `install.sh`. Checkout and installed
+Runtime sources and the installer live under `src/`; tests, maintenance tools,
+plans, and documentation remain at the repository root. Packaging copies `src/`
+contents to the bundle root and adds `README.md`. Checkout and installed
 paths differ: source callers use `src/jailbox`, while installed runtime paths
 remain relative to the executable. Keep both layouts covered by tests.
 
@@ -100,10 +101,10 @@ remain relative to the executable. Keep both layouts covered by tests.
   `set -euo pipefail` in executable Bash scripts.
 - Host modules and the portable gate require Bash 4.4 or newer. The `src/jailbox`
   entrypoint before its version guard must remain parseable by macOS Bash 3.2,
-  and `install.sh` must remain compatible with Bash 3.2.
+  and `src/install.sh` must remain compatible with Bash 3.2.
 - In Bash 4.4-or-newer code, expand possibly empty arrays normally with
   `"${array[@]}"`. Keep the Bash 3.2-safe `${array[@]+"${array[@]}"}` form in
-  `install.sh` and any code explicitly required to support Bash 3.2. For an
+  `src/install.sh` and any code explicitly required to support Bash 3.2. For an
   array whose valid elements cannot be empty, test it with `${array[*]-}`
   instead of `${#array[@]}`.
 - `src/container/setup.sh` and `src/container/runtime/bin/jailbox-start` are POSIX `sh`; do not add
@@ -257,7 +258,7 @@ new test scripts cannot silently escape ShellCheck.
   workflows should pass inputs instead of duplicating test jobs.
 - Run `scripts/gen-tested-matrix.sh --check` after changing tested versions or
   matrix inputs; the portable gate also performs this check.
-- Changes to `src/public.sh` affect release-version selection. Review the
+- Changes to `src/public-api.sh` affect release-version selection. Review the
   generated public API diff and documentation when changing config keys or CLI
   flags.
 

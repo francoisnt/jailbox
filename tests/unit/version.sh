@@ -5,7 +5,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/source" "$tmp/project" "$tmp/bin"
 cp -R "$ROOT/src" "$ROOT/scripts" \
-    "$ROOT/install.sh" "$ROOT/README.md" "$tmp/source/"
+    "$ROOT/README.md" "$tmp/source/"
 cat > "$tmp/bin/podman" <<'STUB'
 #!/bin/bash
 echo 'Podman must not be called' >&2
@@ -53,7 +53,7 @@ tar -xzf "$dist/jailbox-v1.2.3.tar.gz" -C "$tmp/extracted"
 tree="$tmp/extracted/jailbox-v1.2.3"
 cmp "$tmp/source/src/host/future.sh" "$tree/host/future.sh"
 [[ ! -e "$tree/src" && ! -e "$tree/scripts" && ! -e "$tree/tests" ]]
-[[ -f "$tree/public.sh" ]]
+[[ -f "$tree/public-api.sh" ]]
 
 repack() {
     (cd "$tmp/extracted" && tar -czf "$dist/jailbox-v1.2.3.tar.gz" jailbox-v1.2.3)

@@ -40,7 +40,7 @@ section() {
 syntax_check() {
     local script
     section "syntax"
-    for script in src/jailbox src/public.sh install.sh tests/run; do
+    for script in src/jailbox src/public-api.sh src/install.sh tests/run; do
         bash -n "$script" || return 1
     done
     while IFS= read -r script; do
@@ -73,7 +73,7 @@ build_release_tarball() {
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/runtime/bin/jailbox-exec-argv
     cmp -s dist/jailbox-v9.9.9.tar.gz dist/jailbox-latest.tar.gz
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/install.sh
-    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/public.sh
+    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/public-api.sh
     if tar -tzf dist/jailbox-latest.tar.gz | grep -Eq "^jailbox-v9.9.9/(src|scripts|tests|plans)/"; then return 1; fi
 }
 
@@ -83,8 +83,10 @@ smoke_install_update_uninstall() {
     section "install update uninstall"
     new_tmp_dir tmp
 
-    JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh
+    JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./src/install.sh
     "$tmp/bin/jailbox" --help >/dev/null
+    cmp README.md "$tmp/share/jailbox/README.md"
+    cmp src/install.sh "$tmp/share/jailbox/install.sh"
     test -x "$tmp/share/jailbox/container/runtime/bin/jailbox-exec-argv"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/readonly-mount.awk"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/authentication-mount.awk"
@@ -97,6 +99,7 @@ smoke_install_update_uninstall() {
     tar -xzf "$JAILBOX_DIR/dist/jailbox-v9.9.9.tar.gz" -C "$tmp"
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" >/dev/null
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.9' ]]
+    cmp "$tmp/jailbox-v9.9.9/README.md" "$tmp/share/jailbox/README.md"
     cmp "$tmp/share/jailbox/VERSION" "$tmp/jailbox-v9.9.9/VERSION"
 
     # Updating from another stamped tree replaces the installed identity.
@@ -104,7 +107,7 @@ smoke_install_update_uninstall() {
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" >/dev/null
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.10' ]]
 
-    JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh >/dev/null
+    JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./src/install.sh >/dev/null
     test -L "$tmp/bin/jailbox"
     test -f "$tmp/share/jailbox/.jailbox-install"
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox dev' ]]
@@ -123,7 +126,7 @@ refuse_unmanaged_update_target() {
 
     mkdir -p "$tmp/share/jailbox" "$tmp/bin"
     printf x > "$tmp/share/jailbox/user-file"
-    if JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh >"$tmp/out" 2>&1; then
+    if JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./src/install.sh >"$tmp/out" 2>&1; then
         cat "$tmp/out"
         return 1
     fi
@@ -146,7 +149,7 @@ refuse_failed_target_discovery() {
     printf 'parent file\n' > "$tmp/parent"
     mkdir "$tmp/bin"
     ln -s "$tmp/original" "$tmp/bin/jailbox"
-    if JAILBOX_INSTALL_DIR="$tmp/parent/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh > "$tmp/out" 2>&1; then return 1; fi
+    if JAILBOX_INSTALL_DIR="$tmp/parent/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./src/install.sh > "$tmp/out" 2>&1; then return 1; fi
     grep -q 'could not resolve install target' "$tmp/out"
     [[ $(cat "$tmp/parent") == 'parent file' && $(readlink "$tmp/bin/jailbox") == "$tmp/original" ]]
     mkdir -p "$tmp/share/jailbox" "$tmp/tools"
@@ -158,7 +161,7 @@ exit 42
 STUB
     chmod 755 "$tmp/tools/find"
     for partial in '' user-file; do
-        if PATH="$tmp/tools:$PATH" PARTIAL="$partial" JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./install.sh > "$tmp/out" 2>&1; then return 1; fi
+        if PATH="$tmp/tools:$PATH" PARTIAL="$partial" JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./src/install.sh > "$tmp/out" 2>&1; then return 1; fi
         grep -q 'could not inspect install target' "$tmp/out"
         [[ $(cat "$tmp/share/jailbox/user-file") == keep && $(readlink "$tmp/bin/jailbox") == "$tmp/original" ]]
     done

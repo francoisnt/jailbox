@@ -38,7 +38,7 @@ its reach into your machine.
 ### 1. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/francoisnt/jailbox/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/francoisnt/jailbox/master/src/install.sh | bash
 ```
 
 ### 2. Use

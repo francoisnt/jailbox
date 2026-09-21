@@ -10,17 +10,18 @@ glossary. The guide marks frontend behavior that is still planned.
 .
 ├── src/
 │   ├── jailbox              # Host CLI entrypoint
-│   ├── public.sh            # App-wide declarations only
+│   ├── install.sh           # Installer for the jailbox bundle
+│   ├── public-api.sh        # App-wide declarations only
 │   ├── host/                # Shared CLI/API helpers, frontend/, and core/
 │   └── container/           # Files copied into wrapper/proxy images
 ├── scripts/                 # Repository tooling (lint, release, tarball)
 ├── tests/                   # Unit, integration, and e2e tests
-├── install.sh               # Installer for the jailbox bundle
 └── README.md
 ```
 
-Run the checkout CLI as `src/jailbox`. Releases flatten `src/` into the bundle
-root and add `README.md` and `install.sh`; maintenance scripts and tests do not ship.
+Run the checkout CLI as `src/jailbox`, or install it with `bash src/install.sh`.
+Releases flatten `src/` into the bundle root and add `README.md`; maintenance
+scripts and tests do not ship.
 
 The `src/host/` tree runs on the developer machine. The `src/container/` tree is
 copied into images or executed inside containers. Repository maintenance
@@ -29,7 +30,7 @@ Add installed wrapper helpers to `src/container/runtime/bin/` and library data t
 `src/container/runtime/lib/jailbox/`. Setup discovers files recursively, installing
 programs as 0755 and library files as 0644; no Containerfile entry is needed.
 
-`src/public.sh` declares the public config keys and CLI flags; changes
+`src/public-api.sh` declares the public config keys and CLI flags; changes
 to it drive release version suggestions (see `scripts/release.sh --help`).
 Help, parsing, configuration assignment, digest membership, and lifecycle command
 selection derive their lists from these declarations. Command handlers, option
@@ -67,7 +68,7 @@ packaging, and installation checks in one gate.
 
 Host orchestration and the portable test gate require Bash 4.4 or newer. On
 macOS, install it with `brew install bash`. The `jailbox` entrypoint remains
-Bash 3.2-parseable through its version guard, and `install.sh` remains Bash
+Bash 3.2-parseable through its version guard, and `src/install.sh` remains Bash
 3.2-compatible.
 
 All four gates require Python 3: portable, runtime, and matrix use it for

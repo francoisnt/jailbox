@@ -17,12 +17,15 @@ file_at_ref() {
     fi
 }
 
-# Extract one array from src/public.sh as a sorted list of values.
+# Extract one array from src/public-api.sh as a sorted list of values.
 public_api_values() {
     local ref="$1" array_name="$2"
     local api_file
 
-    api_file="$(file_at_ref "$ref" "src/public.sh")" || return 1
+    api_file="$(file_at_ref "$ref" "src/public-api.sh")" || return 1
+    if [ -z "$api_file" ]; then
+        api_file="$(file_at_ref "$ref" "src/public.sh")" || return 1
+    fi
     if [ -z "$api_file" ]; then
         api_file="$(file_at_ref "$ref" "host/public-api.sh")" || return 1
     fi

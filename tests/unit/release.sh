@@ -6,7 +6,7 @@ trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/scripts" "$tmp/src"
 cp "$ROOT/scripts/"{release,public-api-diff,select-release-request}.sh "$tmp/scripts/"
 cp -R "$ROOT/scripts/lib" "$tmp/scripts/"
-cat > "$tmp/src/public.sh" <<'API'
+cat > "$tmp/src/public-api.sh" <<'API'
 CONFIG_SCALAR_KEYS=(
     ORIGINAL
 )
@@ -46,14 +46,14 @@ reject bash "$tmp/scripts/release.sh" --print-version --first-major --bump major
 # Additions stay patch before 1.0; removals dominate simultaneous additions.
 sed '/    ORIGINAL/a\
     ADDED
-' "$tmp/src/public.sh" > "$tmp/api"
-cp "$tmp/api" "$tmp/src/public.sh"
+' "$tmp/src/public-api.sh" > "$tmp/api"
+cp "$tmp/api" "$tmp/src/public-api.sh"
 assert_version v0.8.3
-sed '/    ORIGINAL/d' "$tmp/api" > "$tmp/src/public.sh"
+sed '/    ORIGINAL/d' "$tmp/api" > "$tmp/src/public-api.sh"
 assert_version v0.9.0 --bump patch
 assert_version v0.9.0 --bump minor
 
-git -C "$tmp" show HEAD:src/public.sh > "$tmp/src/public.sh"
+git -C "$tmp" show HEAD:src/public-api.sh > "$tmp/src/public-api.sh"
 for level in patch minor major; do
     case "$level" in
         patch) expected=v0.8.3 ;;
@@ -87,9 +87,9 @@ assert_version v1.2.4
 assert_version v1.3.0 --bump minor
 assert_version v2.0.0 --bump major
 reject bash "$tmp/scripts/release.sh" --print-version --first-major
-cp "$tmp/api" "$tmp/src/public.sh"
+cp "$tmp/api" "$tmp/src/public-api.sh"
 assert_version v1.3.0 --bump patch
-sed '/    ORIGINAL/d' "$tmp/api" > "$tmp/src/public.sh"
+sed '/    ORIGINAL/d' "$tmp/api" > "$tmp/src/public-api.sh"
 assert_version v2.0.0 --bump minor
 
 # Exercise the actual prompt and emitted dispatch arguments without pushing.
@@ -104,7 +104,7 @@ assert_version v2.0.0 --bump minor
             command git "$@"
         fi
     }
-    command git -C "$tmp" show HEAD:src/public.sh > "$tmp/src/public.sh"
+    command git -C "$tmp" show HEAD:src/public-api.sh > "$tmp/src/public-api.sh"
     select_release_version
     REQUESTED_BUMP=minor
     select_release_version

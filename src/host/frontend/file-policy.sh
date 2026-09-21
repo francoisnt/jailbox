@@ -1,7 +1,7 @@
 # File parsing and composition for public frontend workflows.
 # This module depends only on shared public declarations, never core state.
-# shellcheck source=src/public.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/public.sh"
+# shellcheck source=src/public-api.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/public-api.sh"
 # shellcheck source=src/host/api-support.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/api-support.sh"
 initialize_public_api_lookups

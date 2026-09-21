@@ -16,7 +16,7 @@ shellcheck --check-sourced --external-sources --shell=bash "$@" src/jailbox
 # Standalone bash scripts. Discover repository tooling and tests so adding a
 # new suite cannot silently leave it outside ShellCheck coverage.
 echo "shellcheck: scripts/, tests/, and host modules"
-bash_scripts=(install.sh tests/run)
+bash_scripts=(src/install.sh tests/run)
 while IFS= read -r script; do
     bash_scripts+=("$script")
 done < <(find scripts tests -type f -name '*.sh' ! -path 'tests/run' -print | sort)
@@ -24,7 +24,7 @@ shellcheck --external-sources --shell=bash "$@" "${bash_scripts[@]}"
 
 # Modules are checked in entrypoint context above. Also discover every module,
 # including new unreferenced files; standalone module state/callbacks are shared.
-host_scripts=(src/public.sh)
+host_scripts=(src/public-api.sh)
 while IFS= read -r script; do host_scripts+=("$script"); done < <(find src/host -type f -name '*.sh' -print | sort)
 if [[ -n ${host_scripts[*]-} ]]; then
     shellcheck --external-sources --shell=bash --exclude=SC2034,SC2329 "$@" "${host_scripts[@]}"

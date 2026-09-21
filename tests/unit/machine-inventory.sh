@@ -9,7 +9,7 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 mkdir -p "$tmp/project" "$tmp/home" "$tmp/bin" "$tmp/source"
 cp "$ROOT/src/jailbox" "$tmp/source/jailbox"
 cp -R "$ROOT/src/host" "$tmp/source/host"
-cp "$ROOT/src/public.sh" "$tmp/source/public.sh"
+cp "$ROOT/src/public-api.sh" "$tmp/source/public-api.sh"
 for tool in bash dirname basename tr cut sed cat; do
     ln -s "$(command -v "$tool")" "$tmp/bin/$tool"
 done
@@ -45,7 +45,7 @@ done
 
 # Newly declared members flow through the real dispatcher, with every required
 # per-key mapping supplied. No renderer list is updated.
-cat >> "$tmp/source/public.sh" <<'API'
+cat >> "$tmp/source/public-api.sh" <<'API'
 CONFIG_SCALAR_KEYS+=(SAMPLE_SCALAR)
 CONFIG_ARRAY_KEYS+=(SAMPLE_ARRAY)
 CONFIG_DEFAULTS+=('SAMPLE_SCALAR=' 'SAMPLE_ARRAY=')
@@ -60,11 +60,11 @@ for declaration in \
     'CONFIG_SCALAR_KEYS+=(invalid)' \
     'CONFIG_ARRAY_KEYS+=(MISSING_DEFAULT)' \
     'CONFIG_ARRAY_KEYS+=(READONLY_PATHS_0)'; do
-    cp "$ROOT/src/public.sh" "$tmp/source/public.sh"
-    printf '\n%s\n' "$declaration" >> "$tmp/source/public.sh"
+    cp "$ROOT/src/public-api.sh" "$tmp/source/public-api.sh"
+    printf '\n%s\n' "$declaration" >> "$tmp/source/public-api.sh"
     failure cli config-schema
 done
-cp "$ROOT/src/public.sh" "$tmp/source/public.sh"
+cp "$ROOT/src/public-api.sh" "$tmp/source/public-api.sh"
 
 # Derive expected names using the existing identity contract, then assert that
 # the stub sees precisely these resources, never images, labels, or SSH state.

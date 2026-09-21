@@ -843,7 +843,7 @@ run_home_function() (
     # Exercise creation/reuse at the owning layer, without a complete fake
     # image build/SSH stack. The CLI refusal cases above test dispatch wiring.
     # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/src/public.sh"
+    source "$JAILBOX_DIR/src/public-api.sh"
     # shellcheck source=src/host/api-support.sh
     source "$JAILBOX_DIR/src/host/api-support.sh"
     initialize_public_api_lookups

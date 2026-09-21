@@ -2,8 +2,8 @@
 # Generate the README command reference from the canonical declarations.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-# shellcheck source=src/public.sh
-source "$ROOT/src/public.sh"
+# shellcheck source=src/public-api.sh
+source "$ROOT/src/public-api.sh"
 # shellcheck source=src/host/api-support.sh
 source "$ROOT/src/host/api-support.sh"
 initialize_public_api_lookups
