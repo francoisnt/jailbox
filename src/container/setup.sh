@@ -178,6 +178,16 @@ fi
 # so these image-level keys are only baseline compatibility state.
 ssh-keygen -A
 
+# Parse the required server feature independently of runtime-mounted host keys.
+# Do not infer capabilities from distro version strings or vendor backports.
+# Debian's root-run configuration test also requires its privilege-separation
+# directory. Runtime uses an unprivileged daemon and a separate /run tmpfs.
+mkdir -p /run/sshd && chmod 0755 /run/sshd || exit 1
+if ! sshd -T -f /dev/null -o 'SetEnv JAILBOX_SSH_FEATURE_CHECK=yes' >/dev/null; then
+    echo 'Error: could not validate SSH server session settings; jailbox requires SetEnv support (OpenSSH 7.8+). Check the error above and update the development image if unsupported.' >&2
+    exit 1
+fi
+
 # Write jailbox settings to a dedicated sshd config. The wrapper starts sshd
 # with this file directly so distro defaults cannot override jailbox policy.
 #
@@ -205,7 +215,6 @@ AllowStreamLocalForwarding yes
 PermitTunnel no
 GatewayPorts no
 AcceptEnv HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy
-Include /run/jailbox-sshd/session.conf
 AllowUsers ${MANAGED_USER}
 EOF
 

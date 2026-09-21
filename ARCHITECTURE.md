@@ -35,8 +35,10 @@ File `EDITOR` selects the editor, otherwise discovery prefers Codium then Code.
 Inherited editor variables do not override file selection. Preflight checks the
 selected executable and Remote SSH extension before lifecycle calls. Editor
 settings contain the connection endpoint and optional HTTP proxy; SSH supplies
-remote session proxy environment variables from immutable server configuration,
+remote session proxy environment variables through server startup options,
 including for editor SSH libraries that ignore client `SetEnv` directives.
+Core passes the live proxy address through the container environment and
+validates it on reuse; startup validates the address before creating SSH options.
 
 Runtime sources live under `src/`. Packaging flattens that directory into the
 bundle root and adds `README.md`; repository tooling stays outside

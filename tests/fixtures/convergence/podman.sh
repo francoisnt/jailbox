@@ -50,6 +50,8 @@ case "$kind $action" in
             *'.Gateway'*) echo 10.89.0.1 ;;
             *'unsafe authentication'* ) exit 125 ;;
             *'overlay'* ) echo ok ;;
+            *'.Config.Env'*)
+                if [[ ${CONVERGENCE_BAD_PROPERTY:-} == '.Config.Env' ]]; then echo invalid; else echo ok; fi ;;
             *)
                 if [[ -n ${CONVERGENCE_BAD_PROPERTY:-} && "$template" == *"$CONVERGENCE_BAD_PROPERTY"* ]]; then
                     echo false

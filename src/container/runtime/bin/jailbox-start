@@ -55,9 +55,38 @@ assert_immutable_mount() {
     esac
 }
 
+# Only one internal input crosses from container configuration to SSH options.
+# Validate it before constructing the single SetEnv directive; never evaluate it.
+ssh_session_environment() (
+    [ "${JAILBOX_SSH_PROXY_URL+x}" = x ] || {
+        echo 'Error: missing jailbox SSH proxy configuration' >&2; exit 1;
+    }
+    proxy=$JAILBOX_SSH_PROXY_URL
+    bypass=''
+    if [ -n "$proxy" ]; then
+        case "$proxy" in
+            http://*:8888) address=${proxy#http://}; address=${address%:8888} ;;
+            *) echo 'Error: invalid jailbox SSH proxy URL' >&2; exit 1 ;;
+        esac
+        case "$address" in ''|*[!0-9.]*) echo 'Error: invalid jailbox SSH proxy IPv4 address' >&2; exit 1 ;; esac
+        set -f
+        IFS=.
+        # shellcheck disable=SC2086 # Split the validated numeric address only.
+        set -- $address
+        [ "$#" -eq 4 ] || { echo 'Error: invalid jailbox SSH proxy IPv4 address' >&2; exit 1; }
+        [ "$1.$2.$3.$4" = "$address" ] || { echo 'Error: invalid jailbox SSH proxy IPv4 address' >&2; exit 1; }
+        for octet do
+            case "$octet" in ''|????*) echo 'Error: invalid jailbox SSH proxy IPv4 octet' >&2; exit 1 ;; esac
+            [ "$octet" -le 255 ] || { echo 'Error: invalid jailbox SSH proxy IPv4 octet' >&2; exit 1; }
+        done
+        bypass=localhost,127.0.0.1
+    fi
+    printf 'SetEnv HTTP_PROXY=%s HTTPS_PROXY=%s http_proxy=%s https_proxy=%s NO_PROXY=%s no_proxy=%s\n' \
+        "$proxy" "$proxy" "$proxy" "$proxy" "$bypass" "$bypass"
+)
+
 for dir in / /run "$SSHD_RUNTIME_DIR"; do check_path "$dir" directory; done
 check_path "$SSHD_RUNTIME_DIR/authorized_keys" file
-check_path "$SSHD_RUNTIME_DIR/session.conf" file
 check_path "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" private
 check_path "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key.pub" file
 derived=$(ssh-keygen -y -P '' -f "$SSHD_RUNTIME_DIR/ssh_host_ed25519_key" 2>/dev/null) || fail 'invalid server key'
@@ -72,5 +101,8 @@ assert_immutable_mount "$SSHD_RUNTIME_DIR"
 probe=/run/.jailbox-entrypoint-probe
 true 2>/dev/null > "$probe" || fail 'daemon state directory is not writable'
 rm -f "$probe"
-"$SSHD" -t -f /etc/ssh/jailbox_sshd_config
-exec "$SSHD" -D -e -f /etc/ssh/jailbox_sshd_config
+session_env=$(ssh_session_environment) || exit 1
+# Image and caller proxy settings cannot leak into this server's own tools.
+unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy
+"$SSHD" -t -f /etc/ssh/jailbox_sshd_config -o "$session_env" || exit 1
+exec "$SSHD" -D -e -f /etc/ssh/jailbox_sshd_config -o "$session_env"

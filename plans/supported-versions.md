@@ -141,10 +141,27 @@ Reconcile `README.md` while doing so: the Requirements section says "**Linux**
 with **Podman**", which contradicts jailbox's macOS support and the Bash plan
 that exists to serve it.
 
+## OpenSSH — separate host client and container server requirements
+
+The generated host SSH client configuration uses `SetEnv` for filtered
+sessions; that feature was introduced in OpenSSH 7.8. This is distinct from
+the older baseline flags and ed25519 key support, so the host client cannot
+be described as requiring only features available since 2014.
+
+The container server also requires `SetEnv`, introduced in OpenSSH 7.8.
+Jailbox's wrapper build checks that the installed server accepts it and reports
+a clear failure while preserving the server's diagnostic. Startup receives the
+validated proxy address through the container environment and passes session
+settings as command-line options. It does not use server `Include`, avoiding
+that directive's OpenSSH 8.2 requirement.
+
+These are feature-derived requirements, not evidence that the complete wrapper
+has passed on OpenSSH 7.8. Record minimum-version testing separately from the
+current distribution/image test matrix before claiming a fully tested floor.
+See the [OpenSSH 7.8 release notes](https://www.openssh.org/txt/release-7.8).
+
 ## Deliberately unversioned
 
-- **OpenSSH.** jailbox uses `-F`, `ConnectTimeout`, and ed25519 keys, all
-  available since 2014. No realistic host fails this.
 - **git.** Optional, already guarded by `command -v` before the gitconfig mount.
 - **`cksum`.** POSIX and required only by the remaining wrapper-cache path.
 - **`sha256sum`, `shasum`.** Core requires one for deterministic identity

@@ -28,8 +28,7 @@ test "$(/usr/local/bin/jailbox-exec-argv cHdkAA==)" = /home/jailbox/project
 refute /usr/local/bin/jailbox-exec-argv Y2F0
 refute_write /run/jailbox-sshd/probe
 refute_append /run/jailbox-sshd/authorized_keys
-test -s /run/jailbox-sshd/session.conf
-refute_append /run/jailbox-sshd/session.conf
+refute test -e /run/jailbox-sshd/session.conf
 refute_append /run/jailbox-sshd/ssh_host_ed25519_key
 refute test -e /run/jailbox-sshd/key
 refute test -e /run/jailbox-sshd/known_hosts

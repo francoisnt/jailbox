@@ -45,19 +45,19 @@ optional requirement in `egress-filter-phase-2-recommendation.md`.
 
 ### Automatic proxy settings for SSH sessions
 
-This phase owns the proxy-delivery simplification handed off by
-`03.2.11.5-frontend-verification-plan.md`. Implement it after the machine-boundary
-series; it is not a dependency of closing the frontend/backend split. That
-series retains its working server-side SSH session configuration and its
-existing gate requirements until this migration is implemented.
+Proxy delivery is owned by and must be verified in
+`03.2.11.5-frontend-verification-plan.md` before this phase. That plan originally
+handed the simplification to phase 1; the work now returns to frontend closing
+verification at the user's request. This phase preserves the resulting contract
+below while changing filtering, and does not repeat the delivery migration.
 
 Supply the core-generated proxy settings through the container environment and
 explicitly carry them into SSH sessions at server startup. In filtered mode,
 SSH-launched editors, terminals, exec commands, and tasks must receive all six
 uppercase/lowercase proxy variables without client `SetEnv` support or generated
 editor terminal settings.
-Remove the separate mounted SSH session configuration file. This changes
-settings delivery only: retain the explicit HTTP(S) proxy, effective allowlist,
+Keep proxy delivery free of a separate mounted SSH session configuration file.
+Preserve the delivery contract: retain the explicit HTTP(S) proxy, effective allowlist,
 no-direct-route enforcement, read-only root, and zero added capabilities.
 Transparent traffic interception and a new public configuration surface are
 outside this work.
@@ -85,25 +85,18 @@ Acceptance requires:
 
 ## Implementation detail
 
-### Migrate the existing SSH session configuration
+### Preserve the integrated SSH delivery path
 
-The current implementation writes `server/session.conf` in the SSH generation
-from `src/host/core/ssh.sh`, includes it from the configuration produced by
-`src/container/setup.sh`, and requires it in
-`src/container/runtime/bin/jailbox-start`. Replace that delivery path with
-explicit container environment values and startup options for the SSH server.
-Server `SetEnv` supplied through `sshd -o` is the intended mechanism; validate
-its behavior against the supported servers before adopting it.
+Core passes the live proxy address through a container environment input.
+Startup validates it and supplies one server `SetEnv` option containing all six
+session variables. Core validates the immutable container input on reuse and
+attachment. Empty unfiltered input clears the SSH session's proxy values.
 
-Remove the obsolete renderer, file publication/comparison, startup file check,
-and `Include` directive. Update generation fixtures and immutable-mount tests
-that require this file, preserving coverage for keys and authorized keys.
-Adapt the existing no-client-`SetEnv` runtime test and real editor task proof
-rather than duplicating them or moving core assertions into the editor gate.
+Reuse the startup and generation unit tests, the no-client-`SetEnv` runtime
+assertion, and the real editor task proof when changing proxy behavior. Keep
+core validation and infrastructure assertions in runtime/matrix.
 
-The current server `Include` requires OpenSSH 8.2; server `SetEnv` requires
-7.8. Removing `Include` eliminates its additional floor, but does not establish
-that the complete wrapper works on every 7.8 server. Check required features
-during the build and distinguish capability minima from versions actually
-tested. Do not treat placement of an included file as a security boundary:
-some SSH directives accumulate entries rather than using only the first value.
+The server requires `SetEnv` support (introduced in OpenSSH 7.8), checked during
+wrapper build. No server `Include` directive is needed. `supported-versions.md`
+separates required features from versions actually tested; a feature minimum
+alone does not establish a fully tested wrapper floor.

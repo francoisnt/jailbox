@@ -80,7 +80,7 @@ with_valid_launch_state() {
     state_dir=$(mktemp -d)
     LAUNCH_STATE_DIRS+=("$state_dir")
     JAILBOX_IMAGE="jailbox-test-image"
-    declare -gA NETWORK_STATE=([selected_network]="jailbox-test-network")
+    declare -gA NETWORK_STATE=([selected_network]="jailbox-test-network" [proxy_url]="")
     ROOTFS_FLAG=(--read-only)
     SSHD_RUNTIME_DIR="$state_dir/sshd"
     SSH_GENERATION_DIR="$state_dir/generation"
@@ -181,14 +181,18 @@ test_resource_limit_flags() {
     assert_argv_line "daemon state uses managed-user tmpfs" "$argv_file" \
         "type=tmpfs,destination=/run,tmpfs-size=64m,tmpfs-mode=0700,U=true"
     assert_argv_line "creation records its container ID" "$argv_file" "$SSH_GENERATION_DIR/container-id"
+    assert_argv_line "host proxy inheritance is disabled" "$argv_file" '--http-proxy=false'
+    assert_argv_line "unfiltered startup receives an explicit empty proxy" "$argv_file" 'JAILBOX_SSH_PROXY_URL='
     assert_not_contains "client files are not mounted" "$argv_file" "$KEY_FILE"
     assert_argv_line "container carries the configuration digest label" "$argv_file" \
         "$CONFIG_DIGEST_LABEL=$TEST_CONFIG_DIGEST"
 
     MEMORY_LIMIT="1.5g"
+    NETWORK_STATE[proxy_url]=http://10.240.32.2:8888
     CPU_LIMIT="0.5"
     PIDS_LIMIT="1024"
     run_launch_with_stub_podman "$stub_dir" "$argv_file"
+    assert_argv_line "filtered startup receives the live endpoint" "$argv_file" 'JAILBOX_SSH_PROXY_URL=http://10.240.32.2:8888'
     assert_argv_line "configured memory value passed verbatim" "$argv_file" "--memory=1.5g"
     assert_argv_line "configured cpu value passed verbatim" "$argv_file" "--cpus=0.5"
     assert_argv_line "configured pids value passed verbatim" "$argv_file" "--pids-limit=1024"

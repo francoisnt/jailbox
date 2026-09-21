@@ -31,8 +31,9 @@ a platform or complete gate has passed. Run results belong in the handoff.
 `e2e/headless.sh` retains core assertions for SSH, mounts, proxy enforcement,
 resource reuse and cleanup. A copy of the generated SSH configuration with
 client `SetEnv` removed checks server delivery of all six proxy variables;
-`unit/ssh-generation.sh` checks publication and refusal of damaged or stale
-server session configuration. The real editor task remains the proof that
+`unit/ssh-generation.sh` checks refusal of missing or inconsistent container
+proxy input, and `unit/ssh-session.sh` checks startup validation and failure
+propagation. The real editor task remains the proof that
 these variables reach editor-launched tools.
 
 The filtered bare launch explicitly selects Codium
@@ -85,3 +86,6 @@ fix. That run exercised the effective-settings API read and editor-task proxy
 inheritance for its selected editor. It does not establish results for the other
 editor's CI job. The user also confirmed passing editor tests after the
 fixture-review changes, closing the pending local editor rerun.
+The later migration from a mounted SSH session file to container environment
+and server startup options still requires real runtime, matrix, and editor
+verification; the earlier editor passes do not establish that migration's result.

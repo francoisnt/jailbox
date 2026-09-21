@@ -27,7 +27,8 @@ its reach into your machine.
 - **Linux or macOS** with **Podman** (rootless preferred)
 - **Bash 4.4 or newer** (`brew install bash` on macOS)
 - `podman`, `ssh`, `ssh-keygen`, and either `sha256sum` or `shasum` (project
-  identity is a SHA-256 hash of the project path)
+  identity is a SHA-256 hash of the project path). Filtered launches require
+  an SSH client with `SetEnv` support (OpenSSH 7.8+).
 - VS Code or VSCodium with the **Remote - SSH** extension (for the editor
   workflow)
 - A project with a `Containerfile`/`Dockerfile` — or any public image name
@@ -246,9 +247,11 @@ share of it, and `stop` removes SSH credentials while retaining unrelated state.
 Each development-container object owns one SSH generation, prepared on the host
 before creation. Its client private key, pinned server identity, and client
 configuration stay host-only under the project's `ssh-generation/` directory.
-Server keys, authorized keys, and SSH session proxy settings enter the container
-through a read-only mount. The SSH server supplies proxy variables even when an
-editor's SSH client does not forward them. The keep-id user mapping preserves
+Only server keys and authorized keys enter the container through a read-only
+mount. Jailbox passes the proxy address through the container environment;
+startup validates it and configures SSH to supply session proxy variables even
+when an editor's SSH client does not forward them. Reuse validates the container's
+proxy address against the current policy. The keep-id user mapping preserves
 strict ownership; the authorized-keys path and its parents are not group- or
 other-writable. Mutable daemon state
 lives separately on a private, managed-user-owned `/run` tmpfs. Startup validates
@@ -715,6 +718,9 @@ jailbox follows a clean layered approach:
   (system-wide) so they are available to the `jailbox` user.
 - Include `bash` (preferred) or a working `/bin/sh`.
 - Provide a supported package manager (`apt-get`, `apk`, `dnf`, or `yum`).
+- The installed OpenSSH server must support `SetEnv` (introduced in OpenSSH
+  7.8). Wrapper builds check this feature and report an error if unavailable.
+  Proxy delivery does not require the newer server `Include` directive.
 
 If your final stage is distroless or production-only, use `DEV_TARGET_STAGE`
 to target a proper development stage.

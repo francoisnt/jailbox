@@ -428,6 +428,8 @@ start_jailbox_container() {
     podman run -d \
         --name "$CONTAINER_NAME" \
         --cidfile "$SSH_GENERATION_DIR/container-id" \
+        --http-proxy=false \
+        --env "JAILBOX_SSH_PROXY_URL=${NETWORK_STATE[proxy_url]}" \
         "${CONFIG_DIGEST_LABEL_ARGS[@]}" \
         --userns=keep-id \
         --network "${NETWORK_STATE[selected_network]}" \

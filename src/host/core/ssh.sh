@@ -114,7 +114,6 @@ create_ssh_generation() (
     chmod 644 "$stage/key.pub" "$stage/server/ssh_host_ed25519_key.pub" || exit 1
     printf '[localhost]:%s %s\n' "$LOCAL_PORT" "$(cat "$stage/server/ssh_host_ed25519_key.pub")" > "$stage/known_hosts" || exit 1
     write_ssh_host_block > "$stage/ssh_config" || exit 1
-    write_sshd_session_config > "$stage/server/session.conf" || exit 1
     validate_ssh_generation "$stage" || exit 1
     mv -- "$stage" "$SSH_GENERATION_DIR" || exit 1
 )
@@ -168,13 +167,13 @@ validate_ssh_pair() {
 # Expected session configuration comes from validated policy and the live
 # network. No file is sourced, repaired, or passed to ssh before comparison.
 validate_ssh_generation() {
-    local root="${1:-$SSH_GENERATION_DIR}" path mode public expected_config expected_session
+    local root="${1:-$SSH_GENERATION_DIR}" path mode public expected_config
     assert_ssh_state_initialized
     validate_ssh_state_path || return 1
     for path in "$SSH_DIR" "$root" "$root/server"; do
         validate_ssh_file "$path" 700 directory || { ssh_state_error 'has unsafe directory metadata'; return 1; }
     done
-    for path in key key.pub known_hosts ssh_config server/authorized_keys server/session.conf \
+    for path in key key.pub known_hosts ssh_config server/authorized_keys \
         server/ssh_host_ed25519_key server/ssh_host_ed25519_key.pub; do
         mode=600
         case "$path" in *.pub) mode=644 ;; esac
@@ -182,12 +181,10 @@ validate_ssh_generation() {
     done
     public=$(cat "$root/server/ssh_host_ed25519_key.pub") || { ssh_state_error 'could not read server public key'; return 1; }
     expected_config=$(write_ssh_host_block && printf '.') || { ssh_state_error 'could not render expected client configuration'; return 1; }
-    expected_session=$(write_sshd_session_config && printf '.') || { ssh_state_error 'could not render expected session configuration'; return 1; }
     if ! { validate_ssh_pair "$root/key" && validate_ssh_pair "$root/server/ssh_host_ed25519_key" &&
         cmp -s "$root/key.pub" "$root/server/authorized_keys" &&
         cmp -s "$root/known_hosts" <(printf '[localhost]:%s %s\n' "$LOCAL_PORT" "$public") &&
-        cmp -s "$root/ssh_config" <(printf '%s' "${expected_config%.}") &&
-        cmp -s "$root/server/session.conf" <(printf '%s' "${expected_session%.}"); }; then
+        cmp -s "$root/ssh_config" <(printf '%s' "${expected_config%.}"); }; then
         ssh_state_error 'has inconsistent keys, pin, or SSH configuration'
         return 1
     fi
@@ -234,6 +231,21 @@ validate_ssh_container_mount() {
         ssh_state_error 'mount inspection failed'; return 1;
     }
     [ "$result" = ok ] || { ssh_state_error 'has unsafe authentication mounts'; return 1; }
+    validate_ssh_session_environment
+}
+
+# Compare inside the engine: arbitrary image environment values never enter
+# a host-side line parser. Exactly one matching delivery variable is required.
+validate_ssh_session_environment() {
+    local template result expected
+    expected=$(ssh_inspect_quote "JAILBOX_SSH_PROXY_URL=${NETWORK_STATE[proxy_url]}") || return 1
+    template='{{range .Config.Env}}{{if ge (len .) 22}}{{if eq (slice . 0 22) "JAILBOX_SSH_PROXY_URL="}}{{if eq . '
+    template+="$expected"
+    template+='}}ok{{else}}invalid{{end}}{{end}}{{end}}{{end}}'
+    result=$(podman container inspect "$CONTAINER_NAME" --format "$template") || {
+        ssh_state_error 'session environment inspection failed'; return 1;
+    }
+    [ "$result" = ok ] || { ssh_state_error 'has inconsistent session environment'; return 1; }
 }
 
 validate_ssh_resume() {
@@ -256,14 +268,6 @@ ssh_config_quote() {
     value="${value//\\/\\\\}"
     value="${value//\"/\\\"}"
     printf '"%s"' "$value"
-}
-
-# Server-owned session defaults also reach clients whose SSH libraries ignore
-# client SetEnv directives, including VSCodium's Open Remote SSH. The immutable
-# generation binds these settings to the same live network as the client file.
-write_sshd_session_config() {
-    printf '# jailbox SSH session environment\n' || return 1
-    write_ssh_setenv ''
 }
 
 write_ssh_host_block() {
