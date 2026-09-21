@@ -65,7 +65,7 @@ jailbox decides which operations are permissible and with what settings.
 An orchestrator is another caller of the same public commands. A first-party
 orchestrator is planned, so the machine interface has a concrete consumer.
 
-| Owner | Responsibilities | Intended implementation location |
+| Owner | Responsibilities | Implementation location |
 |---|---|---|
 | Frontend | Parse files; select and check the editor; compose policy; obtain connection records; create isolated editor settings; launch the editor; create initial config | `src/host/frontend/` |
 | Core | Validate environment policy; identify resources; build/select images; enforce lifecycle, mounts, network, SSH, and attachment rules | `src/host/core/` |
@@ -208,7 +208,7 @@ All unstamped source builds report `dev`; the digest does not distinguish their
 individual source revisions.
 
 For a concrete example, suppose a healthy sandbox was launched from a file
-allowing `example.com` with Codium selected. In the completed frontend design:
+allowing `example.com` with Codium selected. The frontend applies these rules:
 
 | Next action | Expected consequence |
 |---|---|
@@ -417,7 +417,9 @@ prove that mount while still missing an editor-specific startup failure.
 
 The editor gate focuses on editor integration: opening the project, applying
 isolated settings, bootstrapping through the configured proxy, and reopening
-sessions. Runtime and matrix verify core SSH, networking, proxy enforcement,
+or resuming sessions through the public frontend. A remote editor task produces
+the proxy-inheritance proof; a direct SSH probe cannot substitute for it.
+The proof extension also reads effective settings through the editor API. Runtime and matrix verify core SSH, networking, proxy enforcement,
 and sandbox security. Editor tests rely on core readiness checks instead of
 repeating those assertions. An SSH or network regression can still break an
 editor test because the editor depends on that infrastructure.
@@ -458,7 +460,7 @@ every instruction, internal filesystem write, or possible race.
 Frontend tests separately prove composition, child-command ordering, failure
 propagation, editor selection, connection parsing, and the private-core boundary.
 Bare launch and `--no-editor` delegate lifecycle work to `up`; they do not become
-additional lifecycle matrix commands. Once migrated, the real editor gate also
+additional lifecycle matrix commands. The real editor gate also
 proves that the public machine interface is sufficient for a working consumer.
 
 Worker parallelism changes scheduling, not coverage. Each matrix worker owns
@@ -471,6 +473,8 @@ run relevant cases under both `0022` and `0002` umasks.
 
 ### Where to follow the evidence
 
+- [Frontend contract evidence](tests/frontend-verification.md), including
+  reused portable coverage and the real runtime/editor integration cases.
 - [Gate runner](tests/run) and [contributor test guide](CONTRIBUTING.md#linting-and-tests).
 - [Lifecycle contracts](tests/lib/lifecycle-contracts.sh),
   [constructed cases](tests/lib/lifecycle-matrix.sh), and
@@ -480,8 +484,8 @@ run relevant cases under both `0022` and `0002` umasks.
   [real editor workflow](tests/e2e/editor-smoke.sh).
 - [Digest tests](tests/unit/config-digest.sh),
   [environment parsing](tests/unit/environment-config.sh),
-  [file parsing](tests/unit/config-parser.sh), and
-  [settings publication](tests/unit/editor-settings.sh).
+  [file parsing](tests/unit/frontend-file-policy.sh), and
+  [settings publication](tests/unit/frontend-settings.sh).
 
 ## 9. Installation, versioning, and release
 

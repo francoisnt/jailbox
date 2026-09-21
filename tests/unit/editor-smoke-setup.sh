@@ -81,3 +81,44 @@ if activate_proof_extension "$tmp/project" test-host; then exit 1; fi
 [[ "$(cat "$SMOKE_TRACE")" = editor ]]
 printf 'PASS: reopened editor retains test trust policy and refuses launch failures\n'
 printf 'PASS: editor smoke setup ordering, failure propagation, and minimal host policy\n'
+
+# Later launches keep the test-only trust flag without reseeding through stale
+# machine policy. This is required when a workflow changes effective hosts.
+: > "$SMOKE_TRACE"
+unset SMOKE_EDITOR_STATUS
+JAILBOX_TEST_SEED_SETTINGS=0 bash "$wrapper" --folder-uri switched
+[[ $(cat "$SMOKE_TRACE") == editor ]]
+
+# Reopen/resume clears all previous proof before invoking the public frontend;
+# no stale task result can establish a successful new editor session.
+JAILBOX_DIR=$ROOT
+# shellcheck source=tests/lib/editor/workflows.sh
+source "$ROOT/tests/lib/editor/workflows.sh"
+PROOF_FILE=proof EXT_ACTIVATION_MARKER=activated EXT_TASK_RESULT=task-result
+cleanup_editor_workspace() { printf 'close\n' >> "$SMOKE_TRACE"; }
+podman() { [[ $* == 'stop test-host' ]]; printf 'stop\n' >> "$SMOKE_TRACE"; }
+editor_public_launch() {
+    [[ ! -e "$1/$PROOF_FILE" && ! -e "$1/$EXT_ACTIVATION_MARKER" && ! -e "$1/$EXT_TASK_RESULT" && ! -e "$1/.jailbox-editor-settings.json" ]]
+    printf 'public-launch\n' >> "$SMOKE_TRACE"
+    return "${SMOKE_LAUNCH_STATUS:-0}"
+}
+wait_for_task_result() { printf 'task\n' >> "$SMOKE_TRACE"; }
+validate_task_result() { printf 'validate-task\n' >> "$SMOKE_TRACE"; }
+validate_proof() { printf 'validate-proof\n' >> "$SMOKE_TRACE"; }
+pass() { :; }
+for mode in reopen resume; do
+    for artifact in "$PROOF_FILE" "$EXT_ACTIVATION_MARKER" "$EXT_TASK_RESULT" .jailbox-editor-settings.json; do
+        touch "$tmp/project/$artifact"
+    done
+    : > "$SMOKE_TRACE"
+    editor_reopen "$tmp/project" egress test-host "$mode"
+    expected=close
+    [[ $mode != resume ]] || expected+=$'\nstop'
+    expected+=$'\npublic-launch\nready\ntask\nvalidate-task\nvalidate-proof'
+    [[ $(cat "$SMOKE_TRACE") == "$expected" ]]
+done
+: > "$SMOKE_TRACE"
+export SMOKE_LAUNCH_STATUS=25
+if editor_reopen "$tmp/project" egress test-host reopen; then exit 1; fi
+[[ $(cat "$SMOKE_TRACE") == $'close\npublic-launch' ]]
+printf 'PASS: public reopen/resume requires fresh task proof and propagates launch failure\n'

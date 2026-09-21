@@ -164,8 +164,10 @@ Bare `jailbox` launches the sandbox from `jailbox.conf` and opens the configured
 editor. `jailbox --no-editor` uses the same file workflow without editor discovery,
 bootstrap hosts, or editor launch. `jailbox up` launches using only
 `JAILBOX_CONFIG_*` environment configuration. Bare launch opens the editor after
-successful creation, resume, or reuse. No launch automatically replaces an
-incompatible sandbox.
+successful creation, resume, or reuse. It composes one environment and invokes
+public `up` and then `connection-info` child processes, just as an external
+orchestrator would. A failure from either command prevents editor launch. No
+launch automatically replaces an incompatible sandbox.
 
 Before changing sandbox state, launch validates the complete resource inventory,
 stored home policy, SSH generation, mounts, hardening, network attachments, and
@@ -458,7 +460,8 @@ protected launch inputs. Without `DEV_IMAGE`, a Containerfile and accessible
 build context are required. Success certifies only configuration and local
 inputs, not image contents, build success, port availability, editor readiness,
 or sandbox health. It requires no Podman, SSH, editor, or project identity hash
-and writes no state. `--config` is currently rejected for both commands.
+and writes no state. `jailbox --config PATH validate` explicitly validates file
+policy using headless composition; `connection-info` rejects `--config`.
 
 `jailbox ssh-config` ignores configuration and needs neither Podman nor SSH.
 It reports the identity-derived path and alias and a safely quoted SSH

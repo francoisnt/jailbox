@@ -3,6 +3,9 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 BASH_BIN=$(command -v bash)
 tmp=$(mktemp -d)
+# macOS /var and a caller-provided TMPDIR may traverse symlinks. Match the
+# physical project identity used by the public CLI.
+tmp=$(cd "$tmp" && pwd -P)
 trap 'rm -rf -- "$tmp"' EXIT
 mkdir -p "$tmp/project" "$tmp/bin"
 for tool in bash dirname basename tr cut sed; do ln -s "$(command -v "$tool")" "$tmp/bin/$tool"; done

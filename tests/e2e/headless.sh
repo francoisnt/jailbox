@@ -584,6 +584,9 @@ EOF
         fail "repeated stop succeeds"
     fi
 
+    if [[ "$stage" == egress ]]; then
+        printf 'DEV_IMAGE=%s\nEDITOR=codium\nEGRESS_ALLOW=example.com\nREADONLY_PATHS=jailbox.conf,config/runtime.conf\n' "$dev_image" > "$project_dir/config/runtime.conf"
+    fi
     # A bare launch after the explicit stop restores the positive editor-stub
     # coverage and proves that editor discovery changes only filtered policy.
     if (
@@ -608,12 +611,17 @@ EOF
         fail "bare launch writes editor SSH settings"
     fi
     if [[ "$stage" == "egress" ]]; then
-        if grep -Fxq '^api\.ipify\.org$' "$filter_path" &&
+        if grep -Fxq '^example\.com$' "$filter_path" &&
             grep -Fxq '^github\.com$' "$filter_path" &&
             grep -Fxq '^githubusercontent\.com$' "$filter_path"; then
             pass "bare VSCodium launch adds editor bootstrap hosts"
         else
             fail "bare VSCodium launch adds editor bootstrap hosts"
+        fi
+        if bash "$JAILBOX_DIR/tests/lib/frontend-attachment.sh" "$JAILBOX_DIR" "$project_dir" "$ctr" "$log_dir/$stage.frontend"; then
+            pass 'filtered editor launch supports public exec and shell'
+        else
+            fail 'filtered editor launch supports public exec and shell'
         fi
     fi
 

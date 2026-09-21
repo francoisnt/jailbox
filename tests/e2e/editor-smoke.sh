@@ -3,8 +3,7 @@
 #
 # For each stage: creates a temporary VS Code/VSCodium workspace fixture,
 # launches the workspace through jailbox, waits for an editor window to attach
-# to the Remote SSH server, runs the validation probe through the generated
-# SSH target, and verifies the proof file from the host. Then closes the
+# to the Remote SSH server. Then closes the
 # bootstrap editor, installs the proof extension (fixtures/proof-extension/)
 # into the remote server, and opens a fresh validation window. It verifies
 # the remote extension host activates the extension and executes a shell
@@ -28,6 +27,7 @@
 #        JAILBOX_EDITOR_CACHE_FILL_TIMEOUT seconds for a cold cache fill (default: 300)
 #        JAILBOX_EDITOR_COLD_BOOTSTRAP=1 bypasses the shared test cache
 #        JAILBOX_KEEP_FAILED=1 keeps failed temp projects/containers for diagnosis
+# shellcheck disable=SC2030,SC2031 # Fixture subprocesses each set their own environment.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +42,8 @@ source "$JAILBOX_DIR/src/host/core/project-id.sh"
 source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 # shellcheck source=tests/lib/resource-ledger.sh
 source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
+# shellcheck source=tests/lib/editor/workflows.sh
+source "$JAILBOX_DIR/tests/lib/editor/workflows.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
 VSCODE_STAGES=(debian fedora egress)
@@ -457,10 +459,8 @@ EOF
     cp "$SCRIPT_DIR/editor-validate.sh" "$project_dir/.vscode/jailbox-validate.sh"
     chmod +x "$project_dir/.vscode/jailbox-validate.sh"
 
-    # Executed by the proof extension via the vscode.tasks API; no
-    # runOn:folderOpen, so nothing races the editor's task discovery.
-    # Whether the editor discovers this file is diagnostic-only — the
-    # extension defines an equivalent task itself if discovery times out.
+    # Run on folder open and through the proof extension, which records the
+    # actual task exit status. Neither path uses a direct SSH probe.
     cat > "$project_dir/.vscode/tasks.json" <<EOF
 {
   "version": "2.0.0",
@@ -471,6 +471,7 @@ EOF
       "command": "bash .vscode/jailbox-validate.sh",
       "options": { "cwd": "\${workspaceFolder}" },
       "group": { "kind": "build", "isDefault": true },
+      "runOptions": { "runOn": "folderOpen" },
       "problemMatcher": []
     }
   ]
@@ -592,16 +593,6 @@ wait_for_remote_editor_ready() {
     done
 
     return 1
-}
-
-run_remote_validation_probe() {
-    local project_dir="$1"
-    local ctr="$2"
-    local ssh_cfg
-
-    ssh_cfg=$(jailbox_ssh_config "$project_dir")
-    ssh -F "$ssh_cfg" -o ConnectTimeout=3 "$ctr" \
-        'cd /home/jailbox/project && bash .vscode/jailbox-validate.sh'
 }
 
 build_proof_vsix() {
@@ -730,13 +721,13 @@ validate_proof() {
     fi
 
     assert_proof_contains "$proof_path" "run_id=$run_id" "proof file belongs to this test run" || rc=1
-    assert_proof_contains "$proof_path" "whoami=jailbox" "probe ran as jailbox user" || rc=1
-    assert_proof_contains "$proof_path" "authorized_keys=present" "sshd authorized_keys visible in container" || rc=1
     assert_proof_contains "$proof_path" "workspace_writable=yes" "remote workspace is writable" || rc=1
     assert_proof_contains "$proof_path" "pwd=/home/jailbox/project" "probe cwd is the mounted remote workspace" || rc=1
 
     if [[ "$stage" == "egress" ]]; then
-        assert_proof_contains "$proof_path" "proxy_configured=yes" "proxy env visible when EGRESS_ALLOW is configured" || rc=1
+        assert_proof_contains "$proof_path" "proxy_configured=yes" "editor task inherits SSH proxy configuration" || rc=1
+    else
+        assert_proof_contains "$proof_path" "proxy_configured=no" "unfiltered editor task has no proxy configuration" || rc=1
     fi
 
     if [[ "$rc" -ne 0 ]]; then
@@ -903,7 +894,7 @@ run_stage() {
     local stage="$1"
     local idx="$2"
     local total="$3"
-    local proof_path ready_timeout run_id rc
+    local ready_timeout run_id rc
 
     # Not declared local: the EXIT trap fires after this function returns, at
     # which point local variables are out of scope.
@@ -923,10 +914,15 @@ run_stage() {
     # Before anything can create them, and outside the fixture directory.
     ledger_record_project_resources "$project_dir" || die "could not record this stage's resources"
     ctr=$(jailbox_container_name "$project_dir")
-    proof_path="$project_dir/$PROOF_FILE"
     run_id="$(date +%s)-$$-$stage"
 
     write_fixture "$project_dir" "$stage" "$run_id"
+    if [[ "$stage" == egress ]]; then
+        if ! occupy_editor_subnet "$project_dir" "$ctr"; then
+            fail 'could not establish editor collision-fallback fixture'
+            return 1
+        fi
+    fi
 
     if ! seed_editor_server_cache "$project_dir" "$stage"; then
         fail "editor server cache prepared"
@@ -988,29 +984,6 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
-        echo "  Running validation probe through generated SSH target..."
-        if run_remote_validation_probe "$project_dir" "$ctr"; then
-            pass "remote validation probe completed"
-        else
-            fail "remote validation probe completed"
-            rc=1
-        fi
-    fi
-
-    if [[ "$rc" -eq 0 ]]; then
-        if [[ -f "$proof_path" ]]; then
-            pass "proof file was created by remote validation probe"
-        else
-            fail "proof file was created by remote validation probe"
-            rc=1
-        fi
-    fi
-
-    if [[ "$rc" -eq 0 ]]; then
-        validate_proof "$project_dir" "$stage" "$run_id" || rc=1
-    fi
-
-    if [[ "$rc" -eq 0 ]]; then
         echo "  Closing bootstrap editor before installing the proof extension..."
         cleanup_editor_workspace "$project_dir" "$ctr"
         echo "  Installing proof extension into remote editor server..."
@@ -1044,6 +1017,20 @@ run_stage() {
 
     if [[ "$rc" -eq 0 ]]; then
         validate_task_result "$project_dir" "$run_id" || rc=1
+        validate_proof "$project_dir" "$stage" "$run_id" || rc=1
+        if verify_editor_settings "$project_dir" "$stage"; then
+            pass 'real editor applies isolated settings at the reported endpoint'
+        else
+            fail 'real editor applies isolated settings at the reported endpoint'
+            rc=1
+        fi
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+        if ! verify_editor_workflows "$project_dir" "$stage" "$ctr"; then
+            fail 'public frontend reopen, resume, and policy switches'
+            rc=1
+        fi
     fi
 
     if [[ "$rc" -ne 0 ]]; then

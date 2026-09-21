@@ -170,7 +170,12 @@ export FRONTEND_TEST_STATUS=43
 status=0
 validate_file_config "$TMP/core" "$project" "$project/jailbox.conf" > "$TMP/out" 2> "$TMP/notice" || status=$?
 [[ $status == 43 && ! -s "$TMP/out" ]]
+export FRONTEND_TEST_STDOUT='Configuration and local launch inputs are valid'
+status=0
+validate_file_config "$TMP/core" "$project" "$project/jailbox.conf" > "$TMP/out" 2> "$TMP/notice" || status=$?
+[[ $status == 43 && $(cat "$TMP/out") == "$FRONTEND_TEST_STDOUT" ]]
+unset FRONTEND_TEST_STDOUT
 printf 'DEV_IMAGE=bad value\n' > "$project/jailbox.conf"
 reject 'invalid config' validate_file_config "$TMP/core" "$project" "$project/jailbox.conf"
-[[ $(wc -l < "$TMP/calls") == 3 ]]
+[[ $(wc -l < "$TMP/calls") == 4 ]]
 printf 'PASS: prepared frontend file grammar, trust, policy, and validation\n'
