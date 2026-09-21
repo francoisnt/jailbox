@@ -110,10 +110,12 @@ reference_filesystem "$tmp/home" > "$tmp/expected"
 cmp "$tmp/expected" "$tmp/actual"
 # Failure of either walk stops the combined namespace command. The wrappers
 # target actual child processes, where conditional-call errexit differs.
+SNAPSHOT_REAL_FIND=$(command -v find)
+export SNAPSHOT_REAL_FIND
 cat > "$tmp/bin/find" <<'STUB'
 #!/bin/bash
 if [[ "$PWD" = "$FAIL_ROOT" ]]; then exit 42; fi
-exec /usr/bin/find "$@"
+exec "$SNAPSHOT_REAL_FIND" "$@"
 STUB
 chmod 755 "$tmp/bin/find"
 for FAIL_ROOT in "$XDG_STATE_HOME" "$tmp/home"; do

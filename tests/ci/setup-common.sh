@@ -44,6 +44,7 @@ parse_setup_args() {
 verify_portable_tools() {
     python3 --version
     realpath --version
+    find . --version
     shellcheck --version
 }
 

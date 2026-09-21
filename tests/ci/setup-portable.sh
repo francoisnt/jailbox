@@ -17,9 +17,10 @@ install_portable_tools() {
                 echo "Error: Homebrew is required to install portable test dependencies" >&2
                 return 1
             }
-            HOMEBREW_NO_AUTO_UPDATE=1 brew install bash coreutils shellcheck python
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install bash coreutils findutils shellcheck python
             prepend_path "$(brew --prefix bash)/bin"
             prepend_path "$(brew --prefix coreutils)/libexec/gnubin"
+            prepend_path "$(brew --prefix findutils)/libexec/gnubin"
             command -v bash
             bash --version | head -1
             bash -c '(( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) ))' || {

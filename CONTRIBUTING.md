@@ -71,6 +71,10 @@ macOS, install it with `brew install bash`. The `jailbox` entrypoint remains
 Bash 3.2-parseable through its version guard, and `src/install.sh` remains Bash
 3.2-compatible.
 
+The macOS portable gate also needs GNU coreutils and findutils. Run
+`bash tests/ci/setup-portable.sh` to install the test dependencies; for local
+runs, put their Homebrew `libexec/gnubin` directories on `PATH`.
+
 All four gates require Python 3: portable, runtime, and matrix use it for
 bounded pseudoterminal tests, and editor uses it to package the proof extension.
 The CI setup scripts install it; jailbox itself does not require Python.
