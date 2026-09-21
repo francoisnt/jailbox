@@ -5,23 +5,36 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 BASH_BIN=$(command -v bash)
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
+tmp=$(cd "$tmp" && pwd -P)
 mkdir -p "$tmp/project" "$tmp/bin"
 for tool in bash dirname basename realpath; do
     ln -s "$(command -v "$tool")" "$tmp/bin/$tool"
 done
 export XDG_STATE_HOME="$tmp/state"
-cd "$tmp/project"
-fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+# Exercise the logical/physical path difference present in macOS temp paths.
+ln -s project "$tmp/project-alias"
+cd "$tmp/project-alias"
+fail() {
+    local stream
+    printf 'FAIL: %s\n' "$*" >&2
+    for stream in out err; do
+        if [[ -s "$tmp/$stream" ]]; then
+            printf 'Captured %s:\n' "$stream" >&2
+            cat "$tmp/$stream" >&2
+        fi
+    done
+    exit 1
+}
 cli() { PATH="$tmp/bin" "$BASH_BIN" "$ROOT/src/jailbox" "$@"; }
 check() {
-    local expectation="$1" result=0
+    local expectation="$1" result=0 caller_line=${BASH_LINENO[0]}
     shift
     cli "$@" > "$tmp/out" 2> "$tmp/err" || result=$?
     if [[ "$expectation" = valid ]]; then
-        [[ "$result" = 0 ]] || { cat "$tmp/err"; fail 'valid configuration rejected'; }
+        [[ "$result" = 0 ]] || fail "valid configuration rejected (line $caller_line, exit $result)"
         grep -q 'Configuration and local launch inputs' "$tmp/out" || fail 'success scope missing'
     else
-        [[ "$result" != 0 && ! -s "$tmp/out" && -s "$tmp/err" ]] || fail 'invalid configuration succeeded or printed success'
+        [[ "$result" != 0 && ! -s "$tmp/out" && -s "$tmp/err" ]] || fail "invalid configuration succeeded or printed success (line $caller_line, exit $result)"
     fi
     [[ ! -e "$XDG_STATE_HOME" ]] || fail 'validation created runtime state'
 }
@@ -56,7 +69,7 @@ check valid validate
 # A required producer failure must not become a successful local check.
 export VALIDATE_REALPATH VALIDATE_PROJECT
 VALIDATE_REALPATH=$(command -v realpath)
-VALIDATE_PROJECT=$PWD
+VALIDATE_PROJECT=$(pwd -P)
 rm "$tmp/bin/realpath"
 # Fail only the containment check, after successful file canonicalization.
 # Plausible output must not hide the producer's nonzero status.
