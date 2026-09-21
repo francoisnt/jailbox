@@ -5,8 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# shellcheck source=host/core/ssh.sh
-source "$JAILBOX_DIR/host/core/ssh.sh"
+# shellcheck source=src/host/core/ssh.sh
+source "$JAILBOX_DIR/src/host/core/ssh.sh"
 
 PASSED=0
 FAILED=0

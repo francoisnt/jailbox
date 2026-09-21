@@ -5,4 +5,4 @@ ROOT="$1"
 # shellcheck source=tests/lib/resource-ledger.sh
 source "$ROOT/tests/lib/resource-ledger.sh"
 LEDGER_FILE="$LIFECYCLE_POOL_LEDGER" ledger_record_owner "$$" || exit 1
-exec "$ROOT/jailbox" shell
+exec "$ROOT/src/jailbox" shell

@@ -5,7 +5,7 @@ import re
 import shlex
 import sys
 
-root = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path(__file__).resolve().parent.parent
+root = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path(__file__).resolve().parent.parent / 'src'
 
 def code(path):
     return '\n'.join(line for line in path.read_text().splitlines()
@@ -42,7 +42,7 @@ def written_state(text):
 
 core = '\n'.join(code(p) for p in (root / 'host/core').rglob('*.sh'))
 files = sorted((root / 'host/frontend').rglob('*.sh'))
-public = code(root / 'host/public-api.sh')
+public = code(root / 'public.sh') + '\n' + code(root / 'host/api-support.sh') + '\n' + code(root / 'host/cli.sh')
 # These two names deliberately have independent implementations in each layer.
 # New frontend declarations must not silently exempt additional core helpers.
 private_functions = functions(core) - functions(public) - {'die', 'run_validate'}

@@ -17,16 +17,16 @@ them as speculative productization or complexity without a consumer.
 
 ## Repository map
 
-- `jailbox`: host CLI entrypoint and command dispatch.
-- `host/`: host-side orchestration modules sourced by `jailbox`.
-- `container/`: wrapper/proxy image files and container-side scripts.
+- `src/jailbox`: host CLI entrypoint and command dispatch.
+- `src/host/`: host-side orchestration modules sourced by `jailbox`.
+- `src/container/`: wrapper/proxy image files and container-side scripts.
 - `scripts/`: repository, release, and generated-file tooling.
 - `tests/`: unit, distribution, runtime, and editor tests.
 - `.github/workflows/test-gates.yml`: reusable definition of the four CI gates.
-- `host/public-api.sh`: canonical public configuration keys and CLI flags.
+- `src/public.sh`: canonical public configuration keys and CLI flags.
 
 Commands, flags, and configuration-key membership must come from
-`host/public-api.sh`. Derive consuming lists from those declarations. Where a
+`src/public.sh`. Derive consuming lists from those declarations. Where a
 consumer needs per-member behavior or metadata, validate that its mapping covers
 every applicable declaration exactly; missing mappings must fail explicitly.
 Keep regression tests proving that new declarations propagate or fail for a
@@ -42,13 +42,23 @@ Derive lifecycle test membership directly from that public category.
 Lifecycle commands also require validated test contracts and fault scenarios
 in `tests/lib/lifecycle-contracts.sh` before the matrix schedules them.
 
-Keep host orchestration in `host/`, container behavior in `container/`,
+Keep host orchestration in `src/host/`, container behavior in `src/container/`,
 maintenance tooling in `scripts/`, and test code in `tests/`.
-Frontend implementation lives in `host/frontend/`, machine implementation in
-`host/core/`, and shared public declarations and CLI syntax in
-`host/public-api.sh`. The `jailbox` entrypoint selects a layer before loading
+Frontend implementation lives in `src/host/frontend/`, machine implementation in
+`src/host/core/`. App-wide declarations live in `src/public.sh`, which
+contains data only: no function definitions, initialization calls, or runtime
+configuration mutation. Shared host validation and lookups live in
+`src/host/api-support.sh`; shared CLI parsing, help, and dispatch mappings live
+in `src/host/cli.sh`. Consumers explicitly initialize and validate the declarations.
+The `src/jailbox` entrypoint selects a layer before loading
 its implementation. Frontend code invokes core only through public CLI child
 processes; it never sources core modules or accesses private core state.
+
+Runtime sources live under `src/`; tests, maintenance tools, plans, documentation,
+and the installer remain at the repository root. Packaging copies `src/` contents
+to the bundle root and adds `README.md` and `install.sh`. Checkout and installed
+paths differ: source callers use `src/jailbox`, while installed runtime paths
+remain relative to the executable. Keep both layouts covered by tests.
 
 ## Git and release safety
 
@@ -86,9 +96,9 @@ processes; it never sources core modules or accesses private core state.
 
 ## Shell compatibility and style
 
-- Use Bash for `jailbox`, `host/`, `scripts/`, and tests. Preserve
+- Use Bash for `src/jailbox`, `src/host/`, `scripts/`, and tests. Preserve
   `set -euo pipefail` in executable Bash scripts.
-- Host modules and the portable gate require Bash 4.4 or newer. The `jailbox`
+- Host modules and the portable gate require Bash 4.4 or newer. The `src/jailbox`
   entrypoint before its version guard must remain parseable by macOS Bash 3.2,
   and `install.sh` must remain compatible with Bash 3.2.
 - In Bash 4.4-or-newer code, expand possibly empty arrays normally with
@@ -96,8 +106,8 @@ processes; it never sources core modules or accesses private core state.
   `install.sh` and any code explicitly required to support Bash 3.2. For an
   array whose valid elements cannot be empty, test it with `${array[*]-}`
   instead of `${#array[@]}`.
-- `container/setup.sh` and `container/runtime/bin/jailbox-start` are POSIX `sh`; do not add
-  Bash syntax to them. `container/runtime/bin/jailbox-manage-proxy` is Bash.
+- `src/container/setup.sh` and `src/container/runtime/bin/jailbox-start` are POSIX `sh`; do not add
+  Bash syntax to them. `src/container/runtime/bin/jailbox-manage-proxy` is Bash.
 - Quote expansions, use explicit error handling, and avoid evaluating project
   configuration as shell code.
 - Validate configuration-derived and other untrusted associative-array
@@ -105,11 +115,11 @@ processes; it never sources core modules or accesses private core state.
   context where Bash may expand it more than once.
 - Keep functions focused and follow the existing formatting and naming style.
 - Keep substantive embedded programs in ordinary source files: container
-  programs in `container/`, test machinery in `tests/lib/`, simulated behavior
+  programs in `src/container/`, test machinery in `tests/lib/`, simulated behavior
   in `tests/fixtures/`, and Python helpers in `.py` files. Group related test
   helpers by subsystem and related fixtures by scenario; keep single-file
-  fixtures flat. Host-streamed container checks belong in `container/checks/`;
-  installed container dependencies belong in `container/runtime/`, mirroring
+  fixtures flat. Host-streamed container checks belong in `src/container/checks/`;
+  installed container dependencies belong in `src/container/runtime/`, mirroring
   their paths beneath `/usr/local` (`bin/` programs and `lib/` data). Setup
   installs that tree with directory-based permissions. Pass inputs as arguments,
   environment variables, or stdin instead of interpolating data into code.
@@ -118,10 +128,10 @@ processes; it never sources core modules or accesses private core state.
   Include extracted programs in the applicable lint, syntax, packaging, and
   runtime checks, preserving stdin, exit status, cleanup, and cache behavior.
 - Declare mutable host state in the module that owns its lifecycle. Keep shared
-  project/resource identity in `host/core/common.sh`, image state in
-  `host/core/dev-image.sh`, SSH state in `host/core/ssh.sh`, editor state in
-  `host/frontend/editor.sh`, network state in `host/core/network.sh`, and mount/runtime state
-  in `host/core/container-runtime.sh`.
+  project/resource identity in `src/host/core/common.sh`, image state in
+  `src/host/core/dev-image.sh`, SSH state in `src/host/core/ssh.sh`, editor state in
+  `src/host/frontend/editor.sh`, network state in `src/host/core/network.sh`, and mount/runtime state
+  in `src/host/core/container-runtime.sh`.
 - Check critical prerequisites and mutations explicitly; `set -e` alone is not
   a failure contract. Before calling a function through `if`, `!`, `&&`, or
   `||`, check its callees too: that context can suppress errexit throughout the
@@ -247,11 +257,11 @@ new test scripts cannot silently escape ShellCheck.
   workflows should pass inputs instead of duplicating test jobs.
 - Run `scripts/gen-tested-matrix.sh --check` after changing tested versions or
   matrix inputs; the portable gate also performs this check.
-- Changes to `host/public-api.sh` affect release-version selection. Review the
+- Changes to `src/public.sh` affect release-version selection. Review the
   generated public API diff and documentation when changing config keys or CLI
   flags.
 
-When `.github/workflows`, the `jailbox` entrypoint, or another protected path
+When `.github/workflows`, the `src/jailbox` entrypoint, or another protected path
 is mounted read-only, do not bypass that protection. Write the replacement
 beside the original in the repository as `<original-name>.new`, matching the
 original's mode, and tell the user to rename it over the original; the user

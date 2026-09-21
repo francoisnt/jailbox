@@ -1,6 +1,6 @@
 # Network setup and optional tinyproxy egress sidecar.
 
-# shellcheck source=host/core/project-id.sh
+# shellcheck source=src/host/core/project-id.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
 
 declare -A NETWORK_STATE=(

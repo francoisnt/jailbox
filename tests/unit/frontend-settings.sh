@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=host/frontend/settings.sh
-source "$ROOT/host/frontend/settings.sh"
+# shellcheck source=src/host/frontend/settings.sh
+source "$ROOT/src/host/frontend/settings.sh"
 # shellcheck source=tests/lib/file-publication.sh
 source "$ROOT/tests/lib/file-publication.sh"
 TMP=$(mktemp -d)

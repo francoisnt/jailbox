@@ -12,7 +12,7 @@ done
 export XDG_STATE_HOME="$tmp/state"
 cd "$tmp/project"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-cli() { PATH="$tmp/bin" "$BASH_BIN" "$ROOT/jailbox" "$@"; }
+cli() { PATH="$tmp/bin" "$BASH_BIN" "$ROOT/src/jailbox" "$@"; }
 check() {
     local expectation="$1" result=0
     shift

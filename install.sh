@@ -36,6 +36,8 @@ LINK_PATH="$BIN_DIR/$APP_NAME"
 
 REQUIRED_PATHS=(
     "jailbox"
+    "host/api-support.sh"
+    "host/cli.sh"
     "host/core/common.sh"
     "host/core/config-digest.sh"
     "host/core/container-runtime.sh"
@@ -46,6 +48,7 @@ REQUIRED_PATHS=(
     "host/core/network.sh"
     "host/core/preflight.sh"
     "host/core/project-id.sh"
+    "host/core/schema.sh"
     "host/core/ssh.sh"
     "host/core/validation.sh"
     "host/core/version.sh"
@@ -55,7 +58,7 @@ REQUIRED_PATHS=(
     "host/frontend/file-policy.sh"
     "host/frontend/init.sh"
     "host/frontend/settings.sh"
-    "host/public-api.sh"
+    "public.sh"
     "container/setup.sh"
     "container/runtime/bin/jailbox-manage-proxy"
     "container/runtime/bin/jailbox-start"
@@ -64,14 +67,11 @@ REQUIRED_PATHS=(
     "container/tinyproxy/tinyproxy.conf"
 )
 
-INSTALL_PATHS=(
-    "VERSION"
-    "jailbox"
-    "host"
-    "container"
-    "README.md"
-    "install.sh"
-)
+# Checkout sources live under src; release and installed bundles are flat.
+RUNTIME_SOURCE_DIR="$SOURCE_DIR"
+if [ -d "$SOURCE_DIR/src" ]; then
+    RUNTIME_SOURCE_DIR="$SOURCE_DIR/src"
+fi
 
 usage() {
     cat <<EOF_USAGE
@@ -125,7 +125,7 @@ installer_bundle_is_available() {
     local path
 
     for path in "${REQUIRED_PATHS[@]}"; do
-        [ -e "$SOURCE_DIR/$path" ] || return 1
+        [ -e "$RUNTIME_SOURCE_DIR/$path" ] || return 1
     done
 }
 
@@ -180,7 +180,7 @@ validate_source_tree() {
     local path
 
     for path in "${REQUIRED_PATHS[@]}"; do
-        [ -e "$SOURCE_DIR/$path" ] || die "installer bundle is missing required path: $path"
+        [ -e "$RUNTIME_SOURCE_DIR/$path" ] || die "installer bundle is missing required path: $path"
     done
 }
 
@@ -223,8 +223,9 @@ copy_bundle() {
     local tmp_dir path script
 
     tmp_dir="$1"
-    for path in "${INSTALL_PATHS[@]}"; do
-        [ -e "$SOURCE_DIR/$path" ] && cp -R "$SOURCE_DIR/$path" "$tmp_dir/"
+    cp -R "$RUNTIME_SOURCE_DIR/." "$tmp_dir/"
+    for path in README.md install.sh; do
+        cp "$SOURCE_DIR/$path" "$tmp_dir/"
     done
 
     chmod 755 "$tmp_dir/jailbox"

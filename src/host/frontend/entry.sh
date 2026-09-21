@@ -1,11 +1,11 @@
 # File-driven public workflows; all machine work runs in child processes.
-# shellcheck source=host/frontend/file-policy.sh
+# shellcheck source=src/host/frontend/file-policy.sh
 source "$SCRIPT_DIR/host/frontend/file-policy.sh"
-# shellcheck source=host/frontend/init.sh
+# shellcheck source=src/host/frontend/init.sh
 source "$SCRIPT_DIR/host/frontend/init.sh"
 
 run_launch() {
-    # shellcheck source=host/frontend/editor.sh
+    # shellcheck source=src/host/frontend/editor.sh
     source "$SCRIPT_DIR/host/frontend/editor.sh"
     launch_file_editor "$SCRIPT_DIR/jailbox" "$PROJECT_DIR" "$CONFIG_PATH_ARG"
 }

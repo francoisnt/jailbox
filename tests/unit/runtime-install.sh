@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-sed -n '/^install_runtime_tree()/,/^)/p' "$ROOT/container/setup.sh" > "$tmp/install.sh"
+sed -n '/^install_runtime_tree()/,/^)/p' "$ROOT/src/container/setup.sh" > "$tmp/install.sh"
 cat >> "$tmp/install.sh" <<'CALLS'
 install_runtime_tree "$1/bin" "$2/bin" 0755 || exit 1
 install_runtime_tree "$1/lib" "$2/lib" 0644 || exit 1
@@ -16,7 +16,7 @@ for mask in 0022 0002 0077; do
     source_dir="$tmp/source-$mask"
     destination="$tmp/destination-$mask"
     mkdir -p "$source_dir" "$destination/bin" "$destination/lib"
-    cp -R "$ROOT/container/runtime/." "$source_dir/"
+    cp -R "$ROOT/src/container/runtime/." "$source_dir/"
     mkdir -p "$source_dir/lib/jailbox/future" "$source_dir/lib/jailbox/new"
     mkdir -p "$destination/lib/jailbox/future"
     chmod 0700 "$destination/lib/jailbox" "$destination/lib/jailbox/future"

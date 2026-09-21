@@ -49,12 +49,12 @@ printf 'PASS: headless fixtures reject unavailable and claimed ports with bounde
 (
     # shellcheck disable=SC1090
     source <(sed -n '/^assert_status() {/,/^}/p' "$ROOT/tests/e2e/headless.sh")
-    mkdir -p "$fixture/cli" "$fixture/project" "$fixture/logs/debian.status" "$fixture/logs/alpine.status"
-    cat > "$fixture/cli/jailbox" <<'CLI'
+    mkdir -p "$fixture/cli/src" "$fixture/project" "$fixture/logs/debian.status" "$fixture/logs/alpine.status"
+    cat > "$fixture/cli/src/jailbox" <<'CLI'
 #!/bin/bash
 printf 'absent\n'
 CLI
-    chmod 755 "$fixture/cli/jailbox"
+    chmod 755 "$fixture/cli/src/jailbox"
     # shellcheck disable=SC2034 # Used by the extracted assert_status.
     JAILBOX_DIR="$fixture/cli"
     # shellcheck disable=SC2329 # Called by the extracted assert_status.

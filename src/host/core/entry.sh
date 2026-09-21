@@ -1,24 +1,24 @@
 # Core command initialization and lifecycle dispatch.
-apply_config_defaults
-# shellcheck source=host/core/common.sh
+# shellcheck source=src/host/core/common.sh
 source "$SCRIPT_DIR/host/core/common.sh"
-# shellcheck source=host/core/preflight.sh
+apply_config_defaults
+# shellcheck source=src/host/core/preflight.sh
 source "$SCRIPT_DIR/host/core/preflight.sh"
-# shellcheck source=host/core/dev-image.sh
+# shellcheck source=src/host/core/dev-image.sh
 source "$SCRIPT_DIR/host/core/dev-image.sh"
-# shellcheck source=host/core/ssh.sh
+# shellcheck source=src/host/core/ssh.sh
 source "$SCRIPT_DIR/host/core/ssh.sh"
-# shellcheck source=host/core/network.sh
+# shellcheck source=src/host/core/network.sh
 source "$SCRIPT_DIR/host/core/network.sh"
-# shellcheck source=host/core/downloader-proxy.sh
+# shellcheck source=src/host/core/downloader-proxy.sh
 source "$SCRIPT_DIR/host/core/downloader-proxy.sh"
-# shellcheck source=host/core/container-runtime.sh
+# shellcheck source=src/host/core/container-runtime.sh
 source "$SCRIPT_DIR/host/core/container-runtime.sh"
-# shellcheck source=host/core/validation.sh
+# shellcheck source=src/host/core/validation.sh
 source "$SCRIPT_DIR/host/core/validation.sh"
-# shellcheck source=host/core/config-digest.sh
+# shellcheck source=src/host/core/config-digest.sh
 source "$SCRIPT_DIR/host/core/config-digest.sh"
-# shellcheck source=host/core/exec.sh
+# shellcheck source=src/host/core/exec.sh
 source "$SCRIPT_DIR/host/core/exec.sh"
 
 bring_up_sandbox() {

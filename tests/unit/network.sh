@@ -9,8 +9,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # no top-level executable code. Keep that true for this unit test; accidentally
 # calling configure_network or related functions here would invoke podman, which
 # is intentionally unavailable in the unit-test environment.
-# shellcheck source=host/core/network.sh
-source "$JAILBOX_DIR/host/core/network.sh"
+# shellcheck source=src/host/core/network.sh
+source "$JAILBOX_DIR/src/host/core/network.sh"
 
 PASSED=0
 FAILED=0
@@ -115,7 +115,7 @@ test_render_tinyproxy_conf() {
 
     d=$(mktemp -d)
     conf="$d/tinyproxy.conf"
-    SCRIPT_DIR="$JAILBOX_DIR"
+    SCRIPT_DIR="$JAILBOX_DIR/src"
     render_tinyproxy_conf "$conf" "10.240.57.0/24"
 
     assert_contains_line "tinyproxy conf: client ACL rendered" "$conf" "Allow 10.240.57.0/24"
@@ -231,12 +231,12 @@ test_effective_egress_allowlist_array_output() {
 # Exercise the real file comparison and metadata checks with only engine
 # inspection stubbed. Equivalent policy must not rewrite the live files.
 test_proxy_policy_equivalence() (
-    source "$JAILBOX_DIR/host/core/ssh.sh"
-    source "$JAILBOX_DIR/host/core/container-runtime.sh"
+    source "$JAILBOX_DIR/src/host/core/ssh.sh"
+    source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
     local fixture editor expected before actual=()
     fixture=$(mktemp -d)
     trap 'rm -rf "$fixture"' EXIT
-    SCRIPT_DIR=$JAILBOX_DIR
+    SCRIPT_DIR=$JAILBOX_DIR/src
     # shellcheck disable=SC2030 # This fixture owns isolated network state.
     NETWORK_NAME=test-net PROXY_NAME=test-proxy UP_CONVERGING=false
     NETWORK_STATE[filter_file]=$fixture/filter
@@ -329,7 +329,7 @@ test_initialize_network_state_clears_outputs() {
 
 main() {
     (
-        source "$JAILBOX_DIR/host/core/container-runtime.sh"
+        source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
         fixture=$(mktemp -d)
         trap 'rm -rf "$fixture"' EXIT
         die() { echo "$*" >&2; exit 1; }
@@ -341,7 +341,7 @@ main() {
         NETWORK_NAME=test-net PROXY_NAME=test-proxy PROXY_IMAGE=test-image
         PROJECT_HASH=abcdef123456 UP_PROXY_STATE=absent
         SSH_DIR=$fixture/state
-        SCRIPT_DIR=$JAILBOX_DIR
+        SCRIPT_DIR=$JAILBOX_DIR/src
         podman() {
             printf '%s\n' "$*" >> "$fixture/calls"
             case "$fault:$*" in

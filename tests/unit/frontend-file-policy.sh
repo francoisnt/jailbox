@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=host/frontend/file-policy.sh
-source "$ROOT/host/frontend/file-policy.sh"
-# shellcheck source=host/frontend/init.sh
-source "$ROOT/host/frontend/init.sh"
+# shellcheck source=src/host/frontend/file-policy.sh
+source "$ROOT/src/host/frontend/file-policy.sh"
+# shellcheck source=src/host/frontend/init.sh
+source "$ROOT/src/host/frontend/init.sh"
 TMP=$(mktemp -d)
 TMP=$(cd "$TMP" && pwd -P)
 trap 'rm -rf -- "$TMP"' EXIT

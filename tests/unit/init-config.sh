@@ -8,12 +8,12 @@ mkdir "$tmp/bin" "$tmp/project"
 for tool in bash dirname readlink realpath mktemp ln rm cat; do
     ln -s "$(command -v "$tool")" "$tmp/bin/$tool"
 done
-(cd "$tmp/project" && PATH="$tmp/bin" "$ROOT/jailbox" init)
+(cd "$tmp/project" && PATH="$tmp/bin" "$ROOT/src/jailbox" init)
 grep -Fxq READONLY_PATHS= "$tmp/project/jailbox.conf"
 cp "$tmp/project/jailbox.conf" "$tmp/original"
-if (cd "$tmp/project" && "$ROOT/jailbox" init); then exit 1; fi
+if (cd "$tmp/project" && "$ROOT/src/jailbox" init); then exit 1; fi
 cmp "$tmp/original" "$tmp/project/jailbox.conf"
 rm "$tmp/project/jailbox.conf"
-if (cd "$tmp/project" && "$ROOT/jailbox" --config elsewhere init); then exit 1; fi
+if (cd "$tmp/project" && "$ROOT/src/jailbox" --config elsewhere init); then exit 1; fi
 [[ ! -e "$tmp/project/jailbox.conf" ]]
 printf 'PASS: public init needs no runtime tools, preserves existing files, and rejects selection\n'

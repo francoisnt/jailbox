@@ -35,7 +35,7 @@ lifecycle_setup() {
     ACTIVE_PID=""
     git -C "$PROJECT" init -q
     # shellcheck disable=SC2016 # Positional arguments belong to the child shell.
-    test_log_capture "$LOG/init" bash -c 'cd "$1" && "$2" init' _ "$PROJECT" "$ROOT/jailbox"
+    test_log_capture "$LOG/init" bash -c 'cd "$1" && "$2" init' _ "$PROJECT" "$ROOT/src/jailbox"
     chmod 755 "$PROJECT"
     chmod 644 "$PROJECT/jailbox.conf"
     # Remove inherited launch policy: fixtures specify their entire policy.
@@ -52,7 +52,7 @@ cli_exec() {
     # it can reap the separately isolated CLI process group.
     LEDGER_FILE="$LIFECYCLE_POOL_LEDGER" ledger_record_owner "$BASHPID" || exit 1
     cd "$PROJECT" || exit 1
-    exec setsid env PATH="$FIXTURE/bin:$PATH" "$ROOT/jailbox" "$@"
+    exec setsid env PATH="$FIXTURE/bin:$PATH" "$ROOT/src/jailbox" "$@"
 }
 
 matrix_case_begin() {

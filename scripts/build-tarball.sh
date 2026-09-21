@@ -5,14 +5,7 @@ APP_NAME="jailbox"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 
-RELEASE_PATHS=(
-    "jailbox"
-    "install.sh"
-    "README.md"
-    "scripts"
-    "host"
-    "container"
-)
+RELEASE_PATHS=(install.sh README.md)
 
 usage() {
     cat <<EOF_USAGE
@@ -41,7 +34,8 @@ sha256() {
 version="${1:-}"
 [ -n "$version" ] || { usage >&2; exit 2; }
 [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || die "invalid version '$version'"
-[[ ! -e "$ROOT_DIR/VERSION" && ! -L "$ROOT_DIR/VERSION" ]] || \
+[[ ! -e "$ROOT_DIR/VERSION" && ! -L "$ROOT_DIR/VERSION" &&
+   ! -e "$ROOT_DIR/src/VERSION" && ! -L "$ROOT_DIR/src/VERSION" ]] || \
     die "refusing to package an existing VERSION stamp"
 
 release_name="$APP_NAME-$version"
@@ -50,17 +44,18 @@ tarball="$DIST_DIR/$release_name.tar.gz"
 latest_tarball="$DIST_DIR/$APP_NAME-latest.tar.gz"
 checksums_file="$DIST_DIR/SHA256SUMS"
 
-for script in "$ROOT_DIR/install.sh" "$ROOT_DIR/jailbox"; do
+for script in "$ROOT_DIR/install.sh" "$ROOT_DIR/src/jailbox" "$ROOT_DIR/src/public.sh"; do
     bash -n "$script" || die "invalid shell syntax: $script"
 done
 while IFS= read -r script; do
     bash -n "$script" || die "invalid shell syntax: $script"
-done < <(find "$ROOT_DIR/host" "$ROOT_DIR/scripts" -type f -name '*.sh' -print)
+done < <(find "$ROOT_DIR/src/host" "$ROOT_DIR/scripts" -type f -name '*.sh' -print)
 source "$ROOT_DIR/scripts/lib/container-shells.sh"
-check_container_syntax "$ROOT_DIR" || die 'invalid container shell source'
+check_container_syntax "$ROOT_DIR/src" || die 'invalid container shell source'
 
 rm -rf "$stage_dir" "$tarball" "$latest_tarball" "$checksums_file"
 mkdir -p "$stage_dir"
+cp -R "$ROOT_DIR/src/." "$stage_dir/"
 
 for path in "${RELEASE_PATHS[@]}"; do
     [ -e "$ROOT_DIR/$path" ] || die "missing release path: $path"

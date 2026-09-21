@@ -31,8 +31,8 @@ new_project() {
     FAKE_PODMAN_STATE="$PROJECT/.podman-state"
     mkdir -p "$FAKE_PODMAN_STATE"
     export FAKE_PODMAN_STATE
-    PREFIX=$(source "$JAILBOX_DIR/host/core/project-id.sh" && jailbox_resource_prefix_for_path "$PROJECT")
-    STATE_DIR="$FIXTURE/xdg-state/jailbox/projects/$(source "$JAILBOX_DIR/host/core/project-id.sh" && jailbox_project_hash_for_path "$PROJECT")"
+    PREFIX=$(source "$JAILBOX_DIR/src/host/core/project-id.sh" && jailbox_resource_prefix_for_path "$PROJECT")
+    STATE_DIR="$FIXTURE/xdg-state/jailbox/projects/$(source "$JAILBOX_DIR/src/host/core/project-id.sh" && jailbox_project_hash_for_path "$PROJECT")"
 }
 
 # Declare a resource in the fake Podman state: kind, name, optional label
@@ -56,7 +56,7 @@ run_jailbox() {
     (
         cd "$project" || exit 1
         XDG_STATE_HOME="$FIXTURE/xdg-state" PATH="$FIXTURE/bin:$PATH" \
-            "$JAILBOX_DIR/jailbox" "$@"
+            "$JAILBOX_DIR/src/jailbox" "$@"
     ) 2>&1
 }
 
@@ -232,7 +232,7 @@ test_stop_requires_podman_only() {
     project="$PROJECT"
     declare_resource container "$PREFIX"
     output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-        "$JAILBOX_DIR/jailbox" stop) 2>&1 || true)
+        "$JAILBOX_DIR/src/jailbox" stop) 2>&1 || true)
     if ! resource_present container "$PREFIX"; then
         pass "stop succeeds without SSH tooling, realpath, cksum, or an editor"
     else
@@ -241,7 +241,7 @@ test_stop_requires_podman_only() {
 
     rm "$restricted/podman"
     output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-        "$JAILBOX_DIR/jailbox" stop) 2>&1 || true)
+        "$JAILBOX_DIR/src/jailbox" stop) 2>&1 || true)
     case "$output" in
         *"required command not found: podman"*) pass "stop still requires podman" ;;
         *) fail "stop still requires podman (got: $output)" ;;
@@ -442,7 +442,7 @@ test_launch_reports_missing_podman_first() {
     new_project
     project="$PROJECT"
     output=$( (cd "$project" && PATH="$restricted" \
-        XDG_STATE_HOME="$FIXTURE/xdg-state" "$JAILBOX_DIR/jailbox" up) 2>&1 || true)
+        XDG_STATE_HOME="$FIXTURE/xdg-state" "$JAILBOX_DIR/src/jailbox" up) 2>&1 || true)
     case "$output" in
         *"required command not found: podman"*)
             pass "machine up reports missing podman before probing container names"
@@ -475,7 +475,7 @@ test_cksum_is_required_only_by_launch() {
     project="$PROJECT"
     for command in stop status ssh-config --clean; do
         if output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-            "$JAILBOX_DIR/jailbox" "$command") 2>&1); then
+            "$JAILBOX_DIR/src/jailbox" "$command") 2>&1); then
             pass "$command succeeds without cksum"
         else
             fail "$command succeeds without cksum (got: $output)"
@@ -485,14 +485,14 @@ test_cksum_is_required_only_by_launch() {
     # In a source checkout --uninstall stops at the install-copy check; reaching
     # that message proves it required neither Podman nor a hash tool.
     output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-        "$JAILBOX_DIR/jailbox" --uninstall) 2>&1 || true)
+        "$JAILBOX_DIR/src/jailbox" --uninstall) 2>&1 || true)
     case "$output" in
         *"not an installed copy"*) pass "--uninstall reaches the installer without cksum" ;;
         *) fail "--uninstall reaches the installer without cksum (got: $output)" ;;
     esac
 
     output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-        "$JAILBOX_DIR/jailbox" up) 2>&1 || true)
+        "$JAILBOX_DIR/src/jailbox" up) 2>&1 || true)
     case "$output" in
         *"required command not found: cksum"*)
             pass "machine up still requires cksum before building the wrapper image"
@@ -517,7 +517,7 @@ test_uninstall_needs_no_podman_or_hash_tool() {
     printf 'NOT A CONFIG\n' > "$project/jailbox.conf"
 
     output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-        "$JAILBOX_DIR/jailbox" --uninstall) 2>&1 || true)
+        "$JAILBOX_DIR/src/jailbox" --uninstall) 2>&1 || true)
     case "$output" in
         *"not an installed copy"*)
             pass "--uninstall runs without podman, a hash tool, or a valid config"
@@ -626,7 +626,7 @@ test_identity_requires_a_sha256_tool() {
         printf 'key\n' > "$STATE_DIR/key"
 
         output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-            "$JAILBOX_DIR/jailbox" $command) 2>&1 || true)
+            "$JAILBOX_DIR/src/jailbox" $command) 2>&1 || true)
         case "$output" in
             *"sha256sum or shasum"*)
                 pass "${command:-launch} names both SHA-256 alternatives when neither is installed"
@@ -665,7 +665,7 @@ test_identity_is_stable_across_path_spellings() {
                 symlinked) cd "$link" ;;
             esac || exit 1
             XDG_STATE_HOME="$FIXTURE/xdg-state" PATH="$FIXTURE/bin:$PATH" \
-                "$JAILBOX_DIR/jailbox" stop
+                "$JAILBOX_DIR/src/jailbox" stop
         ) 2>&1 ) || true
         if ! resource_present container "$PREFIX"; then
             pass "the $spelling spelling derives the same container name"
@@ -693,7 +693,7 @@ test_both_sha256_tools_produce_the_same_identity() {
         declare_resource container "$PREFIX"
 
         output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-            "$JAILBOX_DIR/jailbox" stop) 2>&1 || true)
+            "$JAILBOX_DIR/src/jailbox" stop) 2>&1 || true)
         if ! resource_present container "$PREFIX"; then
             pass "$tool alone derives the shared project identity"
         else
@@ -703,14 +703,14 @@ test_both_sha256_tools_produce_the_same_identity() {
 }
 
 test_launch_runs_without_replace() {
-    if grep -Fq -- '--replace' "$JAILBOX_DIR/host/core/container-runtime.sh" ||
-        grep -Fq -- '--replace' "$JAILBOX_DIR/host/core/network.sh"; then
+    if grep -Fq -- '--replace' "$JAILBOX_DIR/src/host/core/container-runtime.sh" ||
+        grep -Fq -- '--replace' "$JAILBOX_DIR/src/host/core/network.sh"; then
         fail "development and proxy runs do not use --replace"
     else
         pass "development and proxy runs do not use --replace"
     fi
-    if grep -Fq 'Replacing existing' "$JAILBOX_DIR/host/core/container-runtime.sh" ||
-        grep -Fq 'Replacing existing' "$JAILBOX_DIR/host/core/network.sh"; then
+    if grep -Fq 'Replacing existing' "$JAILBOX_DIR/src/host/core/container-runtime.sh" ||
+        grep -Fq 'Replacing existing' "$JAILBOX_DIR/src/host/core/network.sh"; then
         fail "dead replacement notices are removed"
     else
         pass "dead replacement notices are removed"
@@ -843,11 +843,14 @@ run_home_function() (
     # Exercise creation/reuse at the owning layer, without a complete fake
     # image build/SSH stack. The CLI refusal cases above test dispatch wiring.
     # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/host/public-api.sh"
+    source "$JAILBOX_DIR/src/public.sh"
+    # shellcheck source=src/host/api-support.sh
+    source "$JAILBOX_DIR/src/host/api-support.sh"
+    initialize_public_api_lookups
     # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/host/core/common.sh"
+    source "$JAILBOX_DIR/src/host/core/common.sh"
     # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/host/core/container-runtime.sh"
+    source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
     apply_config_defaults
     PROJECT_DIR="$PROJECT"
     initialize_project_names
@@ -860,7 +863,7 @@ test_home_creation_and_generation() {
     local mode before output status
 
     (
-        source "$JAILBOX_DIR/host/core/container-runtime.sh"
+        source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
         VOLUME_NAME=test-home EPHEMERAL_HOME=false
         resolve_present_resources() { local -n result=$1; result=(); }
         for fault in create inspect chown; do

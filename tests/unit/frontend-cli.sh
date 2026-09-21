@@ -41,7 +41,7 @@ export JAILBOX_CONFIG_EGRESS_ALLOW_4=vo.msecnd.net
 launch connection-info > "$FIXTURE/records"
 export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
 # shellcheck disable=SC2016 # The decoder expands its fixture directory.
-sed 's|^cd /home/jailbox/project |cd "$CONVERGENCE_ENGINE" |' "$ROOT/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+sed 's|^cd /home/jailbox/project |cd "$CONVERGENCE_ENGINE" |' "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
 # shellcheck disable=SC2016 # Literal argv must survive shell syntax unchanged.
 args=('' 'space here' '"quoted"' '$literal' $'line\nend')
 printf '%s\0' "${args[@]}" > "$FIXTURE/expected"
@@ -50,7 +50,7 @@ cmp "$FIXTURE/expected" "$FIXTURE/actual"
 printf 'binary\0stdin\377\n' > "$FIXTURE/input"
 launch exec cat < "$FIXTURE/input" > "$FIXTURE/actual"
 cmp "$FIXTURE/input" "$FIXTURE/actual"
-python3 "$ROOT/tests/lib/shell-terminal.py" --cwd "$FIXTURE/project" --output "$FIXTURE/shell" -- "$ROOT/jailbox" shell
+python3 "$ROOT/tests/lib/shell-terminal.py" --cwd "$FIXTURE/project" --output "$FIXTURE/shell" -- "$ROOT/src/jailbox" shell
 # Include editor hosts explicitly, reorder and repeat: both paths now agree.
 printf 'DEV_IMAGE=localhost/convergence\nEDITOR=code\nEGRESS_ALLOW=vo.msecnd.net,example.com,main.vscode-cdn.net,update.code.visualstudio.com,vscode.download.prss.microsoft.com,example.com\n' > "$FIXTURE/project/jailbox.conf"
 : > "$CONVERGENCE_LOG"
@@ -65,7 +65,7 @@ for command in connection-info exec; do
     if launch "$command" "${args[@]}" > "$FIXTURE/out" 2> "$FIXTURE/error"; then fail 'changed policy attached'; fi
     grep -q 'jailbox stop' "$FIXTURE/error"
 done
-python3 "$ROOT/tests/lib/shell-terminal.py" --cwd "$FIXTURE/project" --output "$FIXTURE/shell" --expect refuse -- "$ROOT/jailbox" shell
+python3 "$ROOT/tests/lib/shell-terminal.py" --cwd "$FIXTURE/project" --output "$FIXTURE/shell" --expect refuse -- "$ROOT/src/jailbox" shell
 assert_no_mutation
 # File change refuses before editor launch; the frontend never repairs state.
 printf 'DEV_IMAGE=localhost/convergence\nEDITOR=code\nEGRESS_ALLOW=changed.example.com\n' > "$FIXTURE/project/jailbox.conf"

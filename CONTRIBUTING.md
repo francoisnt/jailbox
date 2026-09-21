@@ -8,30 +8,28 @@ glossary. The guide marks frontend behavior that is still planned.
 
 ```text
 .
-├── jailbox                  # Host-side CLI entrypoint
-├── host/                    # Host orchestration modules sourced by jailbox
-├── container/               # Files copied into wrapper/proxy images
-│   ├── Containerfile.wrapper
-│   ├── setup.sh             # Wrapper image setup script
-│   ├── runtime/             # Installed beneath /usr/local by setup.sh
-│   │   ├── bin/             # Executable programs, including jailbox-start
-│   │   └── lib/jailbox/     # Runtime library data
-│   ├── checks/              # Host-streamed checks, not installed in images
-│   └── tinyproxy/
+├── src/
+│   ├── jailbox              # Host CLI entrypoint
+│   ├── public.sh            # App-wide declarations only
+│   ├── host/                # Shared CLI/API helpers, frontend/, and core/
+│   └── container/           # Files copied into wrapper/proxy images
 ├── scripts/                 # Repository tooling (lint, release, tarball)
 ├── tests/                   # Unit, integration, and e2e tests
 ├── install.sh               # Installer for the jailbox bundle
 └── README.md
 ```
 
-The `host/` tree runs on the developer machine. The `container/` tree is
+Run the checkout CLI as `src/jailbox`. Releases flatten `src/` into the bundle
+root and add `README.md` and `install.sh`; maintenance scripts and tests do not ship.
+
+The `src/host/` tree runs on the developer machine. The `src/container/` tree is
 copied into images or executed inside containers. Repository maintenance
 commands stay under `scripts/`, and test suites stay under `tests/`.
-Add installed wrapper helpers to `container/runtime/bin/` and library data to
-`container/runtime/lib/jailbox/`. Setup discovers files recursively, installing
+Add installed wrapper helpers to `src/container/runtime/bin/` and library data to
+`src/container/runtime/lib/jailbox/`. Setup discovers files recursively, installing
 programs as 0755 and library files as 0644; no Containerfile entry is needed.
 
-`host/public-api.sh` declares the public config keys and CLI flags; changes
+`src/public.sh` declares the public config keys and CLI flags; changes
 to it drive release version suggestions (see `scripts/release.sh --help`).
 Help, parsing, configuration assignment, digest membership, and lifecycle command
 selection derive their lists from these declarations. Command handlers, option

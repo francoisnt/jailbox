@@ -268,10 +268,10 @@ run_case() {
     fi
     # Model runtime inputs copied by a restrictive installer. Startup and the
     # unprivileged runtime checks must still be able to read installed helpers.
-    wrapper_context="$JAILBOX_DIR/container"
+    wrapper_context="$JAILBOX_DIR/src/container"
     if [[ "$stage" = debian ]]; then
         build_context=$(mktemp -d) || return 1
-        cp -R "$JAILBOX_DIR/container/." "$build_context/" || return 1
+        cp -R "$JAILBOX_DIR/src/container/." "$build_context/" || return 1
         find "$build_context/runtime" -type d -exec chmod 0700 {} + || return 1
         find "$build_context/runtime" -type f -exec chmod 0600 {} + || return 1
         wrapper_context="$build_context"
@@ -279,7 +279,7 @@ run_case() {
     # Build jailbox wrapper
     if ! test_log_capture "$build_log" podman build \
             -t "$wrapper_image" \
-            -f "$JAILBOX_DIR/container/Containerfile.wrapper" \
+            -f "$JAILBOX_DIR/src/container/Containerfile.wrapper" \
             --pull=never \
             --build-arg "DEV_IMAGE=${test_image_id}" \
             --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(wrapper_install_cache_bust)" \
@@ -366,9 +366,9 @@ run_case() {
 
 wrapper_install_cache_bust() (
     # Preparation and the CLI must identify the same wrapper build inputs.
-    SCRIPT_DIR=$JAILBOX_DIR
-    # shellcheck source=host/core/dev-image.sh
-    source "$JAILBOX_DIR/host/core/dev-image.sh"
+    SCRIPT_DIR=$JAILBOX_DIR/src
+    # shellcheck source=src/host/core/dev-image.sh
+    source "$JAILBOX_DIR/src/host/core/dev-image.sh"
     jailbox_install_cache_bust
 )
 

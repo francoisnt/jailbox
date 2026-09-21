@@ -40,14 +40,14 @@ section() {
 syntax_check() {
     local script
     section "syntax"
-    for script in jailbox install.sh tests/run; do
+    for script in src/jailbox src/public.sh install.sh tests/run; do
         bash -n "$script" || return 1
     done
     while IFS= read -r script; do
         bash -n "$script" || return 1
-    done < <(find host scripts tests -type f -name '*.sh' -print | sort)
+    done < <(find src/host scripts tests -type f -name '*.sh' -print | sort)
     source scripts/lib/container-shells.sh
-    check_container_syntax . || return 1
+    check_container_syntax src || return 1
 }
 
 reject_macos_system_bash() {
@@ -56,7 +56,7 @@ reject_macos_system_bash() {
     [[ "$(uname -s)" == "Darwin" ]] || return 0
 
     set +e
-    output="$(/bin/bash jailbox --help 2>&1)"
+    output="$(/bin/bash src/jailbox --help 2>&1)"
     status="$?"
     set -e
 
@@ -73,7 +73,8 @@ build_release_tarball() {
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/runtime/bin/jailbox-exec-argv
     cmp -s dist/jailbox-v9.9.9.tar.gz dist/jailbox-latest.tar.gz
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/install.sh
-    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/scripts/lib/public-api-values.awk
+    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/public.sh
+    if tar -tzf dist/jailbox-latest.tar.gz | grep -Eq "^jailbox-v9.9.9/(src|scripts|tests|plans)/"; then return 1; fi
 }
 
 smoke_install_update_uninstall() {

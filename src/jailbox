@@ -45,8 +45,13 @@ SCRIPT_DIR="$(resolve_script_path)"
 PROJECT_DIR=$(pwd -P)
 CONFIG_PATH_ARG=""
 
-# shellcheck source=host/public-api.sh
-source "$SCRIPT_DIR/host/public-api.sh"
+# shellcheck source=src/public.sh
+source "$SCRIPT_DIR/public.sh"
+# shellcheck source=src/host/api-support.sh
+source "$SCRIPT_DIR/host/api-support.sh"
+initialize_public_api_lookups
+# shellcheck source=src/host/cli.sh
+source "$SCRIPT_DIR/host/cli.sh"
 
 run_uninstall() {
     # Delegate to the installer copy shipped inside this install, so the
@@ -82,19 +87,26 @@ main() {
     esac
     case "${1:-}" in
         ''|--no-editor|init)
-            # shellcheck source=host/frontend/entry.sh
+            # shellcheck source=src/host/frontend/entry.sh
             source "$SCRIPT_DIR/host/frontend/entry.sh"
             ;;
         validate)
             if [[ -n "$CONFIG_PATH_ARG" ]]; then
+                # shellcheck source=src/host/frontend/entry.sh
                 source "$SCRIPT_DIR/host/frontend/entry.sh"
             else
-                # shellcheck source=host/core/entry.sh
+                # shellcheck source=src/host/core/entry.sh
                 source "$SCRIPT_DIR/host/core/entry.sh"
             fi
             ;;
-        --help|--uninstall|config-schema) ;;
-        *) source "$SCRIPT_DIR/host/core/entry.sh" ;;
+        config-schema)
+            # shellcheck source=src/host/core/schema.sh
+            source "$SCRIPT_DIR/host/core/schema.sh"
+            ;;
+        --help|--uninstall) ;;
+        *)
+            # shellcheck source=src/host/core/entry.sh
+            source "$SCRIPT_DIR/host/core/entry.sh" ;;
     esac
     if [[ -z "${1:-}" ]]; then
         run_launch

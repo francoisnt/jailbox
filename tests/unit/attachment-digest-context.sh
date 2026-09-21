@@ -1,12 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=host/public-api.sh
-source "$ROOT/host/public-api.sh"
-# shellcheck source=host/core/common.sh
-source "$ROOT/host/core/common.sh"
-# shellcheck source=host/core/config-digest.sh
-source "$ROOT/host/core/config-digest.sh"
+# shellcheck source=src/public.sh
+source "$ROOT/src/public.sh"
+# shellcheck source=src/host/api-support.sh
+source "$ROOT/src/host/api-support.sh"
+initialize_public_api_lookups
+# shellcheck source=src/host/core/common.sh
+source "$ROOT/src/host/core/common.sh"
+# shellcheck source=src/host/core/config-digest.sh
+source "$ROOT/src/host/core/config-digest.sh"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 while IFS= read -r name; do unset "$name"; done < <(environment_config_names)
 context=$(print_attachment_digest_context)

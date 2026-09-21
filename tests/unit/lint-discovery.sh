@@ -5,48 +5,48 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-mkdir -p "$tmp/scripts/lib" "$tmp/tests" "$tmp/container/checks" "$tmp/container/runtime/bin" "$tmp/host/frontend" "$tmp/host/core"
+mkdir -p "$tmp/scripts/lib" "$tmp/tests" "$tmp/src/container/checks" "$tmp/src/container/runtime/bin" "$tmp/src/host/frontend" "$tmp/src/host/core"
 cp "$ROOT/scripts/lint.sh" "$tmp/scripts/"
 cp "$ROOT/scripts/build-tarball.sh" "$tmp/scripts/"
 cp "$ROOT/scripts/lib/container-shells.sh" "$tmp/scripts/lib/"
 # shellcheck source=scripts/lib/container-shells.sh
 source "$ROOT/scripts/lib/container-shells.sh"
-for script in jailbox install.sh tests/run; do
+for script in src/jailbox src/public.sh install.sh tests/run; do
     printf '#!/bin/bash\ntrue\n' > "$tmp/$script"
 done
 # New modules in either layer must be linted before they are even sourced.
 for layer in core frontend; do
     # shellcheck disable=SC2016 # Deliberately invalid fixture source.
-    printf '#!/bin/bash\nvalue="two words"\necho $value\n' > "$tmp/host/$layer/future.sh"
+    printf '#!/bin/bash\nvalue="two words"\necho $value\n' > "$tmp/src/host/$layer/future.sh"
     if bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1; then fail "missed $layer module"; fi
     grep -Fq "host/$layer/future.sh" "$tmp/output"
     grep -Fq SC2086 "$tmp/output"
-    rm "$tmp/host/$layer/future.sh"
+    rm "$tmp/src/host/$layer/future.sh"
 done
 for name in future.sh extensionless; do
     # shellcheck disable=SC2016 # Deliberately invalid source for the lint fixture.
-    printf '#!/bin/bash\nvalue="two words"\necho $value\n' > "$tmp/container/checks/$name"
+    printf '#!/bin/bash\nvalue="two words"\necho $value\n' > "$tmp/src/container/checks/$name"
     if bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1; then fail "missed $name"; fi
     grep -Fq "container/checks/$name" "$tmp/output"
     grep -Fq SC2086 "$tmp/output"
-    rm "$tmp/container/checks/$name"
+    rm "$tmp/src/container/checks/$name"
 done
-printf '#!/bin/sh\nvalues=(one two)\n' > "$tmp/container/checks/portable.sh"
+printf '#!/bin/sh\nvalues=(one two)\n' > "$tmp/src/container/checks/portable.sh"
 if bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1; then fail 'POSIX script checked as Bash'; fi
 grep -Fq SC3030 "$tmp/output"
-printf '#!/bin/sh\ntrue\n' > "$tmp/container/checks/portable.sh"
+printf '#!/bin/sh\ntrue\n' > "$tmp/src/container/checks/portable.sh"
 bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1
-printf 'true\n' > "$tmp/container/checks/missing-shell.sh"
+printf 'true\n' > "$tmp/src/container/checks/missing-shell.sh"
 if bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1; then fail 'missing interpreter escaped lint'; fi
 grep -Fq 'unsupported shell shebang' "$tmp/output"
-rm "$tmp/container/checks/missing-shell.sh"
+rm "$tmp/src/container/checks/missing-shell.sh"
 
 # Runtime programs cannot evade either consumer by omitting the .sh suffix.
 for contents in '' 'true' '#!/usr/bin/unsupported'; do
-    printf '%s' "$contents" > "$tmp/container/runtime/bin/future"
+    printf '%s' "$contents" > "$tmp/src/container/runtime/bin/future"
     if bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1; then fail 'runtime interpreter escaped lint'; fi
     grep -Fq 'unsupported shell shebang' "$tmp/output"
-    if check_container_syntax "$tmp" > "$tmp/output" 2>&1; then fail 'runtime interpreter escaped syntax check'; fi
+    if check_container_syntax "$tmp/src" > "$tmp/output" 2>&1; then fail 'runtime interpreter escaped syntax check'; fi
     grep -Fq 'unsupported shell shebang' "$tmp/output"
     if bash "$tmp/scripts/build-tarball.sh" v9.9.9 > "$tmp/output" 2>&1; then fail 'runtime interpreter escaped packaging'; fi
     grep -Fq 'unsupported shell shebang' "$tmp/output"
@@ -55,16 +55,16 @@ done
 
 # A valid shebang without a trailing newline must still select its dialect.
 for shell in bash sh; do
-    printf '#!/bin/%s' "$shell" > "$tmp/container/runtime/bin/future"
+    printf '#!/bin/%s' "$shell" > "$tmp/src/container/runtime/bin/future"
     bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1
-    check_container_syntax "$tmp"
+    check_container_syntax "$tmp/src"
     case "$shell" in
-        bash) [[ " ${container_bash[*]} " = *" $tmp/container/runtime/bin/future "* ]] ;;
-        sh) [[ " ${container_sh[*]} " = *" $tmp/container/runtime/bin/future "* ]] ;;
+        bash) [[ " ${container_bash[*]} " = *" $tmp/src/container/runtime/bin/future "* ]] ;;
+        sh) [[ " ${container_sh[*]} " = *" $tmp/src/container/runtime/bin/future "* ]] ;;
     esac
     # Invalid extensionless programs must stop packaging before any artifacts.
-    printf '#!/bin/%s\nif\n' "$shell" > "$tmp/container/runtime/bin/future"
-    if check_container_syntax "$tmp" > "$tmp/output" 2>&1; then fail 'broken runtime syntax accepted'; fi
+    printf '#!/bin/%s\nif\n' "$shell" > "$tmp/src/container/runtime/bin/future"
+    if check_container_syntax "$tmp/src" > "$tmp/output" 2>&1; then fail 'broken runtime syntax accepted'; fi
     if bash "$tmp/scripts/build-tarball.sh" v9.9.9 > "$tmp/output" 2>&1; then fail 'broken runtime program packaged'; fi
     grep -Fq 'container/runtime/bin/future' "$tmp/output"
     grep -Fq 'invalid container shell source' "$tmp/output"

@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MANAGE_PROXY="$JAILBOX_DIR/container/runtime/bin/jailbox-manage-proxy"
+MANAGE_PROXY="$JAILBOX_DIR/src/container/runtime/bin/jailbox-manage-proxy"
 
 PASSED=0
 FAILED=0

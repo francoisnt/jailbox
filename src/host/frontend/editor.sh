@@ -1,9 +1,9 @@
 # shellcheck disable=SC2030,SC2031 # Cleanup reads locals in the owning subshell.
 # Editor client. The caller loads file-policy.sh.
 EDITOR_MODULE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=host/frontend/connection.sh
+# shellcheck source=src/host/frontend/connection.sh
 source "$EDITOR_MODULE_DIR/connection.sh"
-# shellcheck source=host/frontend/settings.sh
+# shellcheck source=src/host/frontend/settings.sh
 source "$EDITOR_MODULE_DIR/settings.sh"
 
 EDITOR_NAME=""

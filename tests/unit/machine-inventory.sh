@@ -7,8 +7,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 mkdir -p "$tmp/project" "$tmp/home" "$tmp/bin" "$tmp/source"
-cp "$ROOT/jailbox" "$tmp/source/jailbox"
-cp -R "$ROOT/host" "$tmp/source/host"
+cp "$ROOT/src/jailbox" "$tmp/source/jailbox"
+cp -R "$ROOT/src/host" "$tmp/source/host"
+cp "$ROOT/src/public.sh" "$tmp/source/public.sh"
 for tool in bash dirname basename tr cut sed cat; do
     ln -s "$(command -v "$tool")" "$tmp/bin/$tool"
 done
@@ -44,32 +45,31 @@ done
 
 # Newly declared members flow through the real dispatcher, with every required
 # per-key mapping supplied. No renderer list is updated.
-cat >> "$tmp/source/host/public-api.sh" <<'API'
+cat >> "$tmp/source/public.sh" <<'API'
 CONFIG_SCALAR_KEYS+=(SAMPLE_SCALAR)
 CONFIG_ARRAY_KEYS+=(SAMPLE_ARRAY)
 CONFIG_DEFAULTS+=('SAMPLE_SCALAR=' 'SAMPLE_ARRAY=')
-initialize_public_api_lookups
 API
 printf '\nDIGEST_ARRAY_MODES[SAMPLE_ARRAY]=ordered\n' >> "$tmp/source/host/core/config-digest.sh"
 extended=${schema/$'EGRESS_ALLOW\tarray'/$'SAMPLE_SCALAR\tscalar\nEGRESS_ALLOW\tarray'}
 success "$extended"$'\nSAMPLE_ARRAY\tarray' cli config-schema
-cp "$ROOT/host/core/config-digest.sh" "$tmp/source/host/core/config-digest.sh"
+cp "$ROOT/src/host/core/config-digest.sh" "$tmp/source/host/core/config-digest.sh"
 for declaration in \
     'CONFIG_ARRAY_KEYS+=(DEV_IMAGE)' \
     'CONFIG_SCALAR_KEYS+=(DEV_IMAGE)' \
     'CONFIG_SCALAR_KEYS+=(invalid)' \
     'CONFIG_ARRAY_KEYS+=(MISSING_DEFAULT)' \
     'CONFIG_ARRAY_KEYS+=(READONLY_PATHS_0)'; do
-    cp "$ROOT/host/public-api.sh" "$tmp/source/host/public-api.sh"
-    printf '\n%s\ninitialize_public_api_lookups\n' "$declaration" >> "$tmp/source/host/public-api.sh"
+    cp "$ROOT/src/public.sh" "$tmp/source/public.sh"
+    printf '\n%s\n' "$declaration" >> "$tmp/source/public.sh"
     failure cli config-schema
 done
-cp "$ROOT/host/public-api.sh" "$tmp/source/host/public-api.sh"
+cp "$ROOT/src/public.sh" "$tmp/source/public.sh"
 
 # Derive expected names using the existing identity contract, then assert that
 # the stub sees precisely these resources, never images, labels, or SSH state.
-# shellcheck source=host/core/project-id.sh
-source "$ROOT/host/core/project-id.sh"
+# shellcheck source=src/host/core/project-id.sh
+source "$ROOT/src/host/core/project-id.sh"
 export TEST_PREFIX
 TEST_PREFIX=$(jailbox_resource_prefix_for_path "$(pwd -P)")
 export TEST_CALLS="$tmp/calls" TEST_PRESENT='' TEST_RUNNING=false TEST_FAULT='' TEST_PARTIAL=''

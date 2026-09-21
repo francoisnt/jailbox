@@ -1,8 +1,8 @@
 # Common helpers and configuration loading.
 
-# shellcheck source=host/core/project-id.sh
+# shellcheck source=src/host/core/project-id.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
-# shellcheck source=host/core/version.sh
+# shellcheck source=src/host/core/version.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/version.sh"
 
 PROJECT_HASH=""
@@ -390,4 +390,29 @@ initialize_runtime_ids() {
     offset=$(jailbox_project_hash_port_offset "$PROJECT_HASH") || exit 1
     LOCAL_PORT=$(( 49152 + offset ))
     MY_UID=$(id -u)
+}
+
+# Apply declared machine defaults to core-owned configuration.
+set_config_array() {
+    is_config_array_key "$1" || public_api_error "unknown array key '$1'"
+    # shellcheck disable=SC2178 # Nameref to the validated array, not a scalar.
+    local -n config_array_target="$1"
+    shift
+    # shellcheck disable=SC2034 # Assignment through a validated nameref.
+    config_array_target=("$@")
+}
+
+apply_config_defaults() {
+    local entry key value
+
+    validate_public_api_declaration
+    for entry in "${CONFIG_DEFAULTS[@]}"; do
+        key="${entry%%=*}"
+        value="${entry#*=}"
+        if is_config_array_key "$key"; then
+            set_config_array "$key"
+        else
+            printf -v "$key" '%s' "$value"
+        fi
+    done
 }

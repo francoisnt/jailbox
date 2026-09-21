@@ -4,14 +4,29 @@
 # shellcheck disable=SC2030,SC2031 # Mutations intentionally stay in subshells.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=host/public-api.sh
-source "$ROOT/host/public-api.sh"
-# shellcheck source=host/core/common.sh
-source "$ROOT/host/core/common.sh"
-# shellcheck source=host/core/preflight.sh
-source "$ROOT/host/core/preflight.sh"
-# shellcheck source=host/core/config-digest.sh
-source "$ROOT/host/core/config-digest.sh"
+# Sourcing the public contract declares data without loading implementation
+# functions or changing runtime configuration and parsed option state.
+(
+    before=$(declare -F)
+    DEV_IMAGE=untouched CONFIG_PATH_ARG=untouched
+    # shellcheck source=src/public.sh
+    source "$ROOT/src/public.sh"
+    [[ $(declare -F) = "$before" && "$DEV_IMAGE" = untouched && "$CONFIG_PATH_ARG" = untouched ]]
+    [[ ! -v CONFIG_SCALAR_KEY_SET ]]
+)
+# shellcheck source=src/public.sh
+source "$ROOT/src/public.sh"
+# shellcheck source=src/host/api-support.sh
+source "$ROOT/src/host/api-support.sh"
+initialize_public_api_lookups
+# shellcheck source=src/host/cli.sh
+source "$ROOT/src/host/cli.sh"
+# shellcheck source=src/host/core/common.sh
+source "$ROOT/src/host/core/common.sh"
+# shellcheck source=src/host/core/preflight.sh
+source "$ROOT/src/host/core/preflight.sh"
+# shellcheck source=src/host/core/config-digest.sh
+source "$ROOT/src/host/core/config-digest.sh"
 # shellcheck source=tests/lib/lifecycle-matrix.sh
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh
@@ -159,30 +174,29 @@ printf 'PASS: public API additions propagate and incomplete mappings fail\n'
 # Exercise the actual dispatcher with an added harmless early command. Its
 # registration must be sufficient; no case statement in the entrypoint changes.
 mkdir "$tmp/cli"
-cp "$ROOT/jailbox" "$tmp/cli/jailbox"
-cp -R "$ROOT/host" "$tmp/cli/host"
-cat >> "$tmp/cli/host/public-api.sh" <<'API'
+cp "$ROOT/src/jailbox" "$tmp/cli/jailbox"
+cp -R "$ROOT/src/host" "$tmp/cli/host"
+cp "$ROOT/src/public.sh" "$tmp/cli/public.sh"
+cat >> "$tmp/cli/public.sh" <<'API'
 CLI_OTHER_COMMANDS+=(sample)
 CLI_HELP+=("sample=Sample command")
-initialize_public_api_lookups
 API
 expect_failure "command handlers: missing mapping 'sample'" bash "$tmp/cli/jailbox" --help
-printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='missing_handler'" >> "$tmp/cli/host/public-api.sh"
+printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='missing_handler'" >> "$tmp/cli/host/cli.sh"
 expect_failure "missing command handler 'missing_handler'" bash "$tmp/cli/jailbox" sample
-printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='usage'" >> "$tmp/cli/host/public-api.sh"
+printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='usage'" >> "$tmp/cli/host/cli.sh"
 bash "$tmp/cli/jailbox" sample > "$tmp/dispatched"
 grep -Fq 'Sample command' "$tmp/dispatched"
 # A new value option also propagates to parsing through its declared target.
-cat >> "$tmp/cli/host/public-api.sh" <<'API'
+cat >> "$tmp/cli/public.sh" <<'API'
 CLI_FLAGS_WITH_VALUES+=(--sample2)
 CLI_HELP+=("--sample2=Sample value")
 CLI_VALUE_NAMES[--sample2]=VALUE
-initialize_public_api_lookups
 API
 # shellcheck disable=SC2016 # Function body is evaluated by the copied CLI.
 printf '%s\n' 'CLI_OPTION_TARGETS[--sample2]=SAMPLE_VALUE' \
     "CLI_COMMAND_HANDLERS[sample]='sample_value'" \
-    'sample_value() { printf "%s\n" "$SAMPLE_VALUE"; }' >> "$tmp/cli/host/public-api.sh"
+    'sample_value() { printf "%s\n" "$SAMPLE_VALUE"; }' >> "$tmp/cli/host/cli.sh"
 [[ $(bash "$tmp/cli/jailbox" --sample2 'value with spaces' sample) = 'value with spaces' ]]
 for token in "${CLI_FLAGS_WITH_VALUES[@]}" "${CLI_FLAGS_WITHOUT_VALUES[@]}" --sample2; do
     [[ "$token" = -* ]] || continue

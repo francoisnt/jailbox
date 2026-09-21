@@ -36,8 +36,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$JAILBOX_DIR/tests/lib/logging.sh"
 test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
 
-# shellcheck source=host/core/project-id.sh
-source "$JAILBOX_DIR/host/core/project-id.sh"
+# shellcheck source=src/host/core/project-id.sh
+source "$JAILBOX_DIR/src/host/core/project-id.sh"
 # shellcheck source=tests/lib/run-meta.sh
 source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 # shellcheck source=tests/lib/resource-ledger.sh
@@ -876,7 +876,7 @@ cleanup_stage() {
     if [[ -n "$project_dir" ]]; then
         if (
             cd "$project_dir"
-            "$JAILBOX_DIR/jailbox" --clean 2>/dev/null
+            "$JAILBOX_DIR/src/jailbox" --clean 2>/dev/null
         ); then
             :
         fi
@@ -942,7 +942,7 @@ run_stage() {
         for config_name in "${!JAILBOX_CONFIG_@}"; do
             unset "$config_name"
         done
-        export JAILBOX_TEST_EDITOR_REAL JAILBOX_TEST_CLI="$JAILBOX_DIR/jailbox"
+        export JAILBOX_TEST_EDITOR_REAL JAILBOX_TEST_CLI="$JAILBOX_DIR/src/jailbox"
         JAILBOX_TEST_EDITOR_REAL=$(editor_bin) || exit $?
         export JAILBOX_CONFIG_DEV_IMAGE
         JAILBOX_CONFIG_DEV_IMAGE=$(stage_test_image "$stage") || exit $?
@@ -963,7 +963,7 @@ run_stage() {
         cp "$JAILBOX_DIR/tests/fixtures/editor-smoke/editor.sh" \
             "$project_dir/.vscode/test-editor-bin/${JAILBOX_TEST_EDITOR_REAL##*/}" || exit $?
         chmod 755 "$project_dir/.vscode/test-editor-bin/${JAILBOX_TEST_EDITOR_REAL##*/}" || exit $?
-        PATH="$project_dir/.vscode/test-editor-bin:$PATH" "$JAILBOX_DIR/jailbox"
+        PATH="$project_dir/.vscode/test-editor-bin:$PATH" "$JAILBOX_DIR/src/jailbox"
     ) 2>&1; then
         pass "jailbox launched editor workspace"
         editor_opened=1

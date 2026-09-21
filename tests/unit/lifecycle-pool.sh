@@ -182,7 +182,7 @@ pass
 
 TEST_CASE='the coordinator consolidates complete coverage and cleans every worker'
 tree="$TEST_ROOT/coordinator"
-mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/host" "$tree/bin"
+mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/src/host" "$tree/bin"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
 cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts,fixture-ports}.sh "$tree/tests/lib/"
 cp -R "$ROOT/tests/lib/lifecycle" "$tree/tests/lib/"
@@ -194,9 +194,10 @@ printf '32768 60999\n' > "$tree/proc/sys/net/ipv4/ip_local_port_range"
 : > "$tree/proc/net/tcp6"
 sed "s|/proc}|$tree/proc}|" "$ROOT/tests/lib/fixture-ports.sh" > "$tree/tests/lib/fixture-ports.sh"
 grep -Fq "$tree/proc}" "$tree/tests/lib/fixture-ports.sh"
-mkdir -p "$tree/host/core"
-cp "$ROOT/host/public-api.sh" "$tree/host/"
-cp "$ROOT/host/core/project-id.sh" "$tree/host/core/"
+mkdir -p "$tree/src/host/core"
+cp "$ROOT/src/public.sh" "$tree/src/"
+cp "$ROOT/src/host/api-support.sh" "$tree/src/host/"
+cp "$ROOT/src/host/core/project-id.sh" "$tree/src/host/core/"
 cp "$ROOT/tests/fixtures/lifecycle-pool/podman.sh" "$tree/bin/podman"
 chmod 755 "$tree/bin/podman"
 # This fixture exercises coordination and ownership, not Linux process-group
@@ -316,13 +317,13 @@ export LIFECYCLE_POOL_LEDGER="$LEDGER_FILE"
 ledger_begin_run worker-test
 FIXTURE="$TEST_ROOT/cli-fixture"
 PROJECT="$FIXTURE/project"
-mkdir -p "$PROJECT" "$FIXTURE/bin" "$TEST_ROOT/toolroot"
-cat > "$TEST_ROOT/toolroot/jailbox" <<'CLI'
+mkdir -p "$PROJECT" "$FIXTURE/bin" "$TEST_ROOT/toolroot/src"
+cat > "$TEST_ROOT/toolroot/src/jailbox" <<'CLI'
 #!/bin/bash
 set -euo pipefail
 grep -Eq "^owner $$ " "$LIFECYCLE_POOL_LEDGER"
 CLI
-chmod 755 "$TEST_ROOT/toolroot/jailbox"
+chmod 755 "$TEST_ROOT/toolroot/src/jailbox"
 ROOT="$TEST_ROOT/toolroot"
 PATH="$tree/bin:$PATH" cli up
 grep '^owner ' "$LIFECYCLE_POOL_LEDGER" > "$TEST_ROOT/pool-owner"

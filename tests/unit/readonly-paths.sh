@@ -3,15 +3,18 @@ set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/public-api.sh"
+source "$JAILBOX_DIR/src/public.sh"
+# shellcheck source=src/host/api-support.sh
+source "$JAILBOX_DIR/src/host/api-support.sh"
+initialize_public_api_lookups
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/common.sh"
+source "$JAILBOX_DIR/src/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/dev-image.sh"
+source "$JAILBOX_DIR/src/host/core/dev-image.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/container-runtime.sh"
+source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/validation.sh"
+source "$JAILBOX_DIR/src/host/core/validation.sh"
 REMOTE_PATH=/home/jailbox/project
 PASSED=0
 FAILED=0
@@ -98,7 +101,7 @@ test_anchor_and_empty_regression() {
     EFFECTIVE_READONLY_PATHS=()
     output_file=$(mktemp)
     (
-        SCRIPT_DIR=$JAILBOX_DIR
+        SCRIPT_DIR=$JAILBOX_DIR/src
         validation_ssh() { printf "%s\n" "$*" > "$output_file"; cat >/dev/null; printf 'ok\n'; }
         check_readonly_mounts
     )

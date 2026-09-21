@@ -94,7 +94,7 @@ check_block() {
     fi
 
     local tinyproxy_from
-    tinyproxy_from="$(awk '/^FROM /{print $2; exit}' "$JAILBOX_DIR/container/tinyproxy/Containerfile")"
+    tinyproxy_from="$(awk '/^FROM /{print $2; exit}' "$JAILBOX_DIR/src/container/tinyproxy/Containerfile")"
     if [[ "$tinyproxy_from" != "$BASE_IMAGE_ALPINE" ]]; then
         echo "container/tinyproxy/Containerfile FROM ($tinyproxy_from) != BASE_IMAGE_ALPINE ($BASE_IMAGE_ALPINE)" >&2
         failed=1

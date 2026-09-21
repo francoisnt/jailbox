@@ -1,6 +1,9 @@
 #!/bin/bash
-# shellcheck source=host/public-api.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/host/public-api.sh"
+# shellcheck source=src/public.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/src/public.sh"
+# shellcheck source=src/host/api-support.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/src/host/api-support.sh"
+initialize_public_api_lookups
 
 # Contracts select explicit state/recovery assertions and independent required
 # operations. Sharing a contract is a claim of equivalent lifecycle behavior.

@@ -8,7 +8,7 @@ source "$ROOT/tests/lib/convergence-fixture.sh"
 export CONVERGENCE_SSH_LOG="$FIXTURE/ssh-calls"
 ATTACH_PYTHON=$(command -v python3)
 export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
-sed "s|^cd /home/jailbox/project |cd \"\$CONVERGENCE_ENGINE\" |" "$ROOT/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+sed "s|^cd /home/jailbox/project |cd \"\$CONVERGENCE_ENGINE\" |" "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
 printf 'attachment\0input\377\n' > "$FIXTURE/exec-input"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 observe() {
@@ -38,7 +38,7 @@ observe() {
         grep -q "$diagnostic" "$FIXTURE/exec-diagnostic" || fail 'exec lost refusal diagnostic'
     fi
     CONVERGENCE_DRAIN_STDIN=true "$ATTACH_PYTHON" "$ROOT/tests/lib/shell-terminal.py" \
-        --cwd "$FIXTURE/project" --output "$FIXTURE/shell" --expect "$expected" -- "$ROOT/jailbox" shell || {
+        --cwd "$FIXTURE/project" --output "$FIXTURE/shell" --expect "$expected" -- "$ROOT/src/jailbox" shell || {
         cat "$FIXTURE/shell.stderr"; fail 'shell attachment decision failed';
     }
     [[ "$before" = "$(snapshot)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'shell mutated resources'
@@ -161,8 +161,8 @@ CONVERGENCE_SESSION_RESULT=project-write observe refuse 'correct host project ow
 if grep -q 'jailbox stop\|jailbox --clean' "$FIXTURE/diagnostic"; then fail 'host permission failure recommends destructive recovery'; fi
 # Missing local payloads require installation repair, not sandbox replacement.
 if (
-    source "$ROOT/host/core/common.sh"
-    source "$ROOT/host/core/validation.sh"
+    source "$ROOT/src/host/core/common.sh"
+    source "$ROOT/src/host/core/validation.sh"
     SCRIPT_DIR="$FIXTURE/missing-installation"
     UP_CONVERGING=false
     EFFECTIVE_READONLY_PATHS=()
@@ -192,7 +192,7 @@ launch stop >/dev/null
 export JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com
 proxy=http://10.240.57.2:8888
 expect_success
-ATTACH_FAIL_READ="$ROOT/container/tinyproxy/tinyproxy.conf" observe refuse 'could not read or render'
+ATTACH_FAIL_READ="$ROOT/src/container/tinyproxy/tinyproxy.conf" observe refuse 'could not read or render'
 printf 'PASS: failed required readers cannot publish plausible connection records\n'
 
 observe allow
@@ -206,7 +206,7 @@ PATH="$FIXTURE/attach-only" launch connection-info > "$FIXTURE/records" 2> "$FIX
 cmp "$FIXTURE/full-path-records" "$FIXTURE/records"
 printf 'PASS: healthy attachment needs no cksum, Base64, or editor\n'
 PATH="$FIXTURE/attach-only" "$ATTACH_PYTHON" "$ROOT/tests/lib/shell-terminal.py" \
-    --cwd "$FIXTURE/project" --output "$FIXTURE/shell-tools" -- "$ROOT/jailbox" shell || {
+    --cwd "$FIXTURE/project" --output "$FIXTURE/shell-tools" -- "$ROOT/src/jailbox" shell || {
     cat "$FIXTURE/shell-tools.stderr"; fail 'shell added a build, encoding, or editor dependency';
 }
 for tool in base64 mktemp rm; do

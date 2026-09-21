@@ -114,8 +114,8 @@ assert_probe_hardening() {
     local interfaces capabilities
 
     interfaces=$(
-        # shellcheck source=host/core/dev-image.sh
-        source "$JAILBOX_DIR/host/core/dev-image.sh"
+        # shellcheck source=src/host/core/dev-image.sh
+        source "$JAILBOX_DIR/src/host/core/dev-image.sh"
         podman_probe "$image" /bin/sh -c 'ls /sys/class/net' 2>/dev/null || true
     )
     if [ "$interfaces" = "lo" ]; then
@@ -125,8 +125,8 @@ assert_probe_hardening() {
     fi
 
     capabilities=$(
-        # shellcheck source=host/core/dev-image.sh
-        source "$JAILBOX_DIR/host/core/dev-image.sh"
+        # shellcheck source=src/host/core/dev-image.sh
+        source "$JAILBOX_DIR/src/host/core/dev-image.sh"
         podman_probe "$image" /bin/sh -c 'grep ^CapEff: /proc/self/status' 2>/dev/null || true
     )
     case "$capabilities" in
@@ -147,10 +147,10 @@ assert_readonly_mount_validation() {
     local config="$1" project_dir="$2"
     local output before_hash after_hash before_stat after_stat status
     # Host validation resolves its shipped payload relative to the CLI root.
-    local SCRIPT_DIR="$JAILBOX_DIR"
+    local SCRIPT_DIR="$JAILBOX_DIR/src"
 
-    # shellcheck source=host/core/validation.sh
-    source "$JAILBOX_DIR/host/core/validation.sh"
+    # shellcheck source=src/host/core/validation.sh
+    source "$JAILBOX_DIR/src/host/core/validation.sh"
     refuse_sandbox() { echo "$*" >&2; exit 1; }
 
     # Globals consumed by check_readonly_mounts. CONTAINER_NAME doubles as

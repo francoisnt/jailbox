@@ -20,8 +20,10 @@ The [README](README.md) remains the command and configuration reference, and
 ## 1. Current behavior
 
 The machine commands and editor frontend are separate layers. Machine modules
-live in `host/core/`, frontend modules in `host/frontend/`, and shared public
-interface declarations and CLI syntax in `host/public-api.sh`.
+live in `src/host/core/`, frontend modules in `src/host/frontend/`, and shared public
+interface declarations in `src/public.sh`. Shared CLI implementation and
+declaration helpers live directly under `src/host/`. The declarations file
+contains data only; each consumer explicitly initializes its lookups.
 
 Bare launch uses file policy and invokes public `up` and `connection-info` child
 processes. `--no-editor` provides the file-driven headless workflow;
@@ -34,6 +36,10 @@ Inherited editor variables do not override file selection. Preflight checks the
 selected executable and Remote SSH extension before lifecycle calls. Editor
 settings contain the connection endpoint and optional HTTP proxy; SSH supplies
 remote session proxy environment variables.
+
+Runtime sources live under `src/`. Packaging flattens that directory into the
+bundle root and adds `README.md` and `install.sh`; repository tooling stays outside
+the bundle. Source execution uses `src/jailbox`, while installed paths stay unchanged.
 
 This is one repository, one installed `jailbox` executable, and one release.
 The frontend/core boundary is a division of responsibilities inside that product.
@@ -61,10 +67,10 @@ orchestrator is planned, so the machine interface has a concrete consumer.
 
 | Owner | Responsibilities | Intended implementation location |
 |---|---|---|
-| Frontend | Parse files; select and check the editor; compose policy; obtain connection records; create isolated editor settings; launch the editor; create initial config | `host/frontend/` |
-| Core | Validate environment policy; identify resources; build/select images; enforce lifecycle, mounts, network, SSH, and attachment rules | `host/core/` |
-| Shared public declarations | Configuration keys, defaults, command membership, and help metadata | `host/public-api.sh` |
-| Container programs | Install wrapper dependencies, start SSH, perform streamed checks, support remote execution | `container/` |
+| Frontend | Parse files; select and check the editor; compose policy; obtain connection records; create isolated editor settings; launch the editor; create initial config | `src/host/frontend/` |
+| Core | Validate environment policy; identify resources; build/select images; enforce lifecycle, mounts, network, SSH, and attachment rules | `src/host/core/` |
+| Shared public declarations | Configuration keys, defaults, command membership, and help metadata | `src/public.sh` |
+| Container programs | Install wrapper dependencies, start SSH, perform streamed checks, support remote execution | `src/container/` |
 | Maintenance and tests | Package releases, check declarations, construct fixtures, verify behavior | `scripts/` and `tests/` |
 
 The frontend may know the public configuration keys. It must not inspect Podman,

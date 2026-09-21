@@ -13,15 +13,18 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/public-api.sh"
+source "$JAILBOX_DIR/src/public.sh"
+# shellcheck source=src/host/api-support.sh
+source "$JAILBOX_DIR/src/host/api-support.sh"
+initialize_public_api_lookups
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/common.sh"
+source "$JAILBOX_DIR/src/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/dev-image.sh"
+source "$JAILBOX_DIR/src/host/core/dev-image.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/container-runtime.sh"
+source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/config-digest.sh"
+source "$JAILBOX_DIR/src/host/core/config-digest.sh"
 
 FIXTURE=$(mktemp -d)
 FIXTURE=$(cd "$FIXTURE" && pwd -P)
@@ -80,12 +83,11 @@ run_digest() {
 
     (
         PROJECT_DIR="$dir"
-        SCRIPT_DIR="$JAILBOX_DIR"
+        SCRIPT_DIR="$JAILBOX_DIR/src"
         TEST_VERSION="$TEST_VERSION_DEFAULT"
         apply_config_defaults
         initialize_config_digest_state
-        CONFIG_PATH_ARG=""
-        DEV_IMAGE="" DEV_CONTAINERFILE=""
+            DEV_IMAGE="" DEV_CONTAINERFILE=""
         SELECTED_DEV_CONTAINERFILE=""
         SELECTED_DEV_CONTAINERFILE_INPUT=""
         # shellcheck disable=SC2317,SC2329 # Called indirectly by the digest stream.
@@ -226,12 +228,16 @@ assert_ne "a development build differs from a stamped release" \
 
 # An unstamped source checkout and an install made from it share the 'dev'
 # token, so identical remaining inputs produce one digest from either copy.
-cp -R "$JAILBOX_DIR/host" "$FIXTURE/installed-host"
+cp -R "$JAILBOX_DIR/src/host" "$FIXTURE/installed-host"
+cp "$JAILBOX_DIR/src/public.sh" "$FIXTURE/public.sh"
 installed_digest=$(
     PROJECT_DIR="$VECTOR_DIR"
     SCRIPT_DIR="$FIXTURE"
     # shellcheck disable=SC1091
-    source "$FIXTURE/installed-host/public-api.sh"
+    source "$FIXTURE/public.sh"
+    # shellcheck disable=SC1091
+    source "$FIXTURE/installed-host/api-support.sh"
+    initialize_public_api_lookups
     # shellcheck disable=SC1091
     source "$FIXTURE/installed-host/core/common.sh"
     # shellcheck disable=SC1091
@@ -239,7 +245,6 @@ installed_digest=$(
     # shellcheck disable=SC1091
     source "$FIXTURE/installed-host/core/config-digest.sh"
     apply_config_defaults
-    CONFIG_PATH_ARG=""
     export JAILBOX_CONFIG_DEV_IMAGE=img
     load_environment_config "" >/dev/null
     config_digest_value launch
@@ -586,7 +591,7 @@ assert_gate_refuses "every incompatible member is named" "$state" \
 
 echo ""
 (
-    SCRIPT_DIR="$FIXTURE/image-[inputs]"
+    SCRIPT_DIR="$FIXTURE/image-[inputs]/src"
     mkdir -p "$SCRIPT_DIR/container/tinyproxy" "$SCRIPT_DIR/container/checks"
     printf 'setup\n' > "$SCRIPT_DIR/container/setup.sh"
     printf 'proxy\n' > "$SCRIPT_DIR/container/tinyproxy/Containerfile"
@@ -615,11 +620,11 @@ echo ""
     printf 'changed proxy\n' >> "$SCRIPT_DIR/container/tinyproxy/Containerfile"
     [[ $(jailbox_install_cache_bust) != "$after" ]]
     mkdir -p "$SCRIPT_DIR/host/core"
-    cp "$JAILBOX_DIR/host/core/dev-image.sh" "$SCRIPT_DIR/host/core/"
+    cp "$JAILBOX_DIR/src/host/core/dev-image.sh" "$SCRIPT_DIR/host/core/"
     sed -n '/^wrapper_install_cache_bust()/,/^)/p' "$JAILBOX_DIR/tests/integration/wrapper-images.sh" > "$FIXTURE/wrapper-cache.sh"
     # shellcheck disable=SC1091 # Extract the real preparation helper, not main.
     source "$FIXTURE/wrapper-cache.sh"
-    [[ $(JAILBOX_DIR=$SCRIPT_DIR wrapper_install_cache_bust) = "$(jailbox_install_cache_bust)" ]]
+    [[ $(JAILBOX_DIR=${SCRIPT_DIR%/src} wrapper_install_cache_bust) = "$(jailbox_install_cache_bust)" ]]
 )
 pass 'image cache tracks image inputs without depending on streamed validation'
 echo "Configuration digest: $PASSED passed, $FAILED failed"

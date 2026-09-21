@@ -2,11 +2,11 @@
 # Batched checks retain each refusal and reject malformed/failed producers.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-SCRIPT_DIR=$ROOT
-# shellcheck source=host/core/container-runtime.sh
-source "$ROOT/host/core/container-runtime.sh"
-# shellcheck source=host/core/validation.sh
-source "$ROOT/host/core/validation.sh"
+SCRIPT_DIR=$ROOT/src
+# shellcheck source=src/host/core/container-runtime.sh
+source "$ROOT/src/host/core/container-runtime.sh"
+# shellcheck source=src/host/core/validation.sh
+source "$ROOT/src/host/core/validation.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
@@ -43,7 +43,7 @@ producer_status=0
 reply=$'ok\n'
 validate_running_development
 [[ $(wc -l < "$tmp/ssh-calls") = 1 ]] || fail 'session checks did not use one SSH call'
-cmp "$ROOT/container/checks/validate-session.sh" "$tmp/payload"
+cmp "$ROOT/src/container/checks/validate-session.sh" "$tmp/payload"
 for token in authorized-keys project-write sockets hardening proxy-env direct-route mount:0 mount:1 mount:2 'mount:999999999999999999999999' garbage; do
     reply="$token"$'\n'
     if (validate_running_development) > "$tmp/out" 2>&1; then fail "accepted remote failure $token"; fi
@@ -85,7 +85,7 @@ done
     pass() { printf '%s\n' "$*" >> "$tmp/runtime-passes"; }
     ssh() {
         cat > "$tmp/runtime-payload" || return 1
-        cmp "$ROOT/container/checks/validate-session.sh" "$tmp/runtime-payload" || return 1
+        cmp "$ROOT/src/container/checks/validate-session.sh" "$tmp/runtime-payload" || return 1
         case "$*" in
             *Dockerfile*) printf 'mount:3\n' ;;
             *.github/workflows*) printf 'mount:1\n' ;;
@@ -105,14 +105,14 @@ chmod 700 "$tmp/project"
 printf key > "$tmp/authorized"
 chmod 600 "$tmp/authorized"
 sed -e "s@/run/jailbox-sshd/authorized_keys@$tmp/authorized@g" \
-    -e "s@/usr/local/lib/jailbox/@$ROOT/container/runtime/lib/jailbox/@g" \
+    -e "s@/usr/local/lib/jailbox/@$ROOT/src/container/runtime/lib/jailbox/@g" \
     -e "s@/var/run/docker.sock@$tmp/docker.sock@g" \
     -e "s@/run/podman/podman.sock@$tmp/podman.sock@g" \
     -e "s@/proc/self/mountinfo@$tmp/mountinfo@g" \
     -e "s@/proc/1/status@$tmp/process@g" \
     -e "s@/proc/net/ipv6_route@$tmp/ipv6@g" \
     -e "s@/proc/net/route@$tmp/route@g" \
-    "$ROOT/container/checks/validate-session.sh" > "$tmp/remote"
+    "$ROOT/src/container/checks/validate-session.sh" > "$tmp/remote"
 paths=(/ '/project with spaces/policy' $'/literal\\path\nnext')
 mounts() {
     local path encoded

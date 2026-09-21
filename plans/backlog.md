@@ -449,7 +449,7 @@ and never touches anything outside `testlog/`.
 
 Consider a Bash completion script for the command and flag set, installed and
 removed by `install.sh`. Reassess after the 03.2 command surface lands, and
-generate the completion list from `host/public-api.sh` rather than
+generate the completion list from `src/public.sh` rather than
 duplicating it.
 
 ### README terminal recording

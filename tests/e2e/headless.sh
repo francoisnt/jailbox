@@ -25,8 +25,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$JAILBOX_DIR/tests/lib/logging.sh"
 test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
 
-# shellcheck source=host/core/project-id.sh
-source "$JAILBOX_DIR/host/core/project-id.sh"
+# shellcheck source=src/host/core/project-id.sh
+source "$JAILBOX_DIR/src/host/core/project-id.sh"
 # shellcheck source=versions.env
 source "$JAILBOX_DIR/versions.env"
 # shellcheck source=tests/lib/run-meta.sh
@@ -262,7 +262,7 @@ headless_fixture() {
 cleanup_e2e_stage() {
     echo "$PASSED $FAILED" > "$stage_counts_file"
     if [[ -n "$project_dir" ]]; then
-        (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --clean 2>/dev/null || true)
+        (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --clean 2>/dev/null || true)
         rm -rf "$project_dir"
     fi
 }
@@ -326,7 +326,7 @@ EOF
     # Launch requires the default policy anchor even when it selects another
     # config. Create it with the real command so this gate covers the
     # init -> launch flow rather than a hand-written fixture file.
-    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" init) >/dev/null; then
+    if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" init) >/dev/null; then
         pass "init creates the default policy anchor"
     else
         fail "init could not create the default policy anchor"
@@ -339,7 +339,7 @@ EOF
     if (
         cd "$project_dir"
         JAILBOX_E2E_REJECT_EDITOR=1 PATH="$stub_dir:$PATH" \
-            "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor
+            "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor
     ) 2>&1; then
         pass "up pipeline (build → start → SSH wait → validation)"
     else
@@ -488,7 +488,7 @@ EOF
         printf 'ENV REBUILD_TEST=changed\n' >> "$project_dir/Containerfile"
         printf 'changed\n' > "$project_dir/rebuild-payload"
     fi
-    if relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor) 2>&1); then
+    if relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor) 2>&1); then
         pass "running up reuses the sandbox"
     else
         fail "running up failed: $relaunch_output"
@@ -501,7 +501,7 @@ EOF
     fi
     podman stop "$ctr" >/dev/null
     assert_status "$project_dir" stopped
-    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor); then
+    if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor); then
         pass "up resumes the stopped generation"
     else
         fail "up could not resume the stopped generation"
@@ -512,14 +512,14 @@ EOF
     assert_ssh "$ssh_cfg" "$ctr" "reuse and resume preserve home content" 'test "$(cat "$HOME/retention-marker")" = retained'
     if [[ "$stage" == egress ]]; then
         podman stop "${ctr}-proxy" >/dev/null
-        if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor); then
+        if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor); then
             pass "up starts a stopped proxy beneath a running development container"
         else
             fail "mixed-state proxy resume failed"
             report_proxy_connectivity "$ssh_cfg" "$ctr"
         fi
         podman rm -f "${ctr}-proxy" >/dev/null
-        if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor); then
+        if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor); then
             pass "up creates a missing proxy on surviving networks"
         else
             fail "partial proxy convergence failed"
@@ -530,7 +530,7 @@ EOF
         digest=$(podman container inspect "$ctr" --format '{{index .Config.Labels "jailbox.config-digest"}}')
         for malformed in '' invalid "$digest"$'\n'; do
             podman network create --label "jailbox.config-digest=$malformed" "${ctr}-net" >/dev/null
-            if relaunch_output=$(cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor 2>&1); then
+            if relaunch_output=$(cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor 2>&1); then
                 fail 'malformed digest on an out-of-mode network must refuse'
             elif [[ "$relaunch_output" == *'configuration digest'* || "$relaunch_output" == *'digest label'* ]]; then
                 pass 'complete-inventory digest gate rejects malformed metadata'
@@ -542,7 +542,7 @@ EOF
         done
     fi
 
-    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
+    if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" stop) >/dev/null 2>&1; then
         pass "stop removes the running sandbox"
     else
         fail "stop removes the running sandbox"
@@ -578,7 +578,7 @@ EOF
     else
         fail "stop removes the project network"
     fi
-    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
+    if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" stop) >/dev/null 2>&1; then
         pass "repeated stop succeeds"
     else
         fail "repeated stop succeeds"
@@ -588,7 +588,7 @@ EOF
     # coverage and proves that editor discovery changes only filtered policy.
     if (
         cd "$project_dir"
-        PATH="$stub_dir:$PATH" "$JAILBOX_DIR/jailbox" --config config/runtime.conf
+        PATH="$stub_dir:$PATH" "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf
     ) 2>&1; then
         pass "bare launch completes through the editor stub"
     else
@@ -618,14 +618,14 @@ EOF
     fi
 
     container_id=$(podman container inspect "$ctr" --format '{{.Id}}')
-    if (cd "$project_dir" && PATH="$stub_dir:$PATH" "$JAILBOX_DIR/jailbox" --config config/runtime.conf); then
+    if (cd "$project_dir" && PATH="$stub_dir:$PATH" "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf); then
         pass 'bare running reuse opens the editor after convergence'
     else
         fail 'bare running reuse failed'
     fi
     assert_eq 'bare reuse preserves container identity' "$container_id" "$(podman container inspect "$ctr" --format '{{.Id}}')"
 
-    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1; then
+    if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" stop) >/dev/null 2>&1; then
         pass "stop removes the bare-launch sandbox"
     else
         fail "stop removes the bare-launch sandbox"
@@ -654,7 +654,7 @@ assert_home_lifecycle() {
 
     # Constructed home metadata and recovery now run in the shared lifecycle
     # matrix. Keep generation resume coverage across wrapper distributions.
-    (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
+    (cd "$project" && "$JAILBOX_DIR/src/jailbox" --clean) >/dev/null 2>&1 || {
         fail "clean before ephemeral launch"; return 1;
     }
     assert_status "$project" absent
@@ -664,7 +664,7 @@ assert_home_lifecycle() {
     # change that would force another full wrapper package installation.
     printf 'FROM %s\n' "$dev_image" > "$project/Containerfile.home"
     if (cd "$project" && JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile.home \
-        JAILBOX_CONFIG_EPHEMERAL_HOME=true "$JAILBOX_DIR/jailbox" up); then
+        JAILBOX_CONFIG_EPHEMERAL_HOME=true "$JAILBOX_DIR/src/jailbox" up); then
         if [ "$(podman volume inspect "$home" --format '{{index .Labels "jailbox.ephemeral-home"}}')" = true ]; then
             pass "launch records effective ephemeral retention"
         else
@@ -677,7 +677,7 @@ assert_home_lifecycle() {
         ssh -F "$ssh_config" "$prefix" 'printf retained > "$HOME/ephemeral-marker"'
         podman stop "$prefix" >/dev/null
         if (cd "$project" && JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile.home \
-            JAILBOX_CONFIG_EPHEMERAL_HOME=true "$JAILBOX_DIR/jailbox" up); then
+            JAILBOX_CONFIG_EPHEMERAL_HOME=true "$JAILBOX_DIR/src/jailbox" up); then
             pass 'up resumes an ephemeral generation'
         else
             fail 'ephemeral resume failed'
@@ -686,7 +686,7 @@ assert_home_lifecycle() {
             "$(find "$(dirname "$ssh_config")" -type f -exec cksum {} + | sort)"
         # shellcheck disable=SC2016
         assert_ssh "$ssh_config" "$prefix" 'ephemeral home survives resume' 'test "$(cat "$HOME/ephemeral-marker")" = retained'
-        (cd "$project" && "$JAILBOX_DIR/jailbox" stop) >/dev/null 2>&1 || {
+        (cd "$project" && "$JAILBOX_DIR/src/jailbox" stop) >/dev/null 2>&1 || {
             fail "stop ephemeral generation"; return 1;
         }
         if ! podman volume exists "$home"; then
@@ -698,7 +698,7 @@ assert_home_lifecycle() {
     else
         fail "ephemeral generation launch"
     fi
-    (cd "$project" && "$JAILBOX_DIR/jailbox" --clean) >/dev/null 2>&1 || {
+    (cd "$project" && "$JAILBOX_DIR/src/jailbox" --clean) >/dev/null 2>&1 || {
         fail "clean derived dev image and wrapper"; return 1;
     }
     assert_status "$project" absent
@@ -723,7 +723,7 @@ assert_status() {
     status_observation=$((status_observation + 1))
     output="$status_artifact_dir/$status_observation-$expected"
     printf '%s\n' "$expected" > "$output.expected" || return 1
-    if (cd "$project" && "$JAILBOX_DIR/jailbox" status) > "$output.stdout" 2> "$output.stderr" &&
+    if (cd "$project" && "$JAILBOX_DIR/src/jailbox" status) > "$output.stdout" 2> "$output.stderr" &&
         cmp -s "$output.expected" "$output.stdout"; then
         pass "status reports $expected with exact framing"
     else

@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/source" "$tmp/project" "$tmp/bin"
-cp -R "$ROOT/jailbox" "$ROOT/host" "$ROOT/container" "$ROOT/scripts" \
+cp -R "$ROOT/src" "$ROOT/scripts" \
     "$ROOT/install.sh" "$ROOT/README.md" "$tmp/source/"
 cat > "$tmp/bin/podman" <<'STUB'
 #!/bin/bash
@@ -17,38 +17,43 @@ export PATH="$tmp/bin:$PATH"
 printf 'invalid configuration $(touch should-not-exist)\n' > "$tmp/project/jailbox.conf"
 cd "$tmp/project"
 export JAILBOX_CONFIG_UNDECLARED=invalid
-bash "$tmp/source/jailbox" --version > "$tmp/out" 2> "$tmp/err"
+bash "$tmp/source/src/jailbox" --version > "$tmp/out" 2> "$tmp/err"
 printf 'jailbox dev\n' > "$tmp/expected"
 cmp "$tmp/expected" "$tmp/out"
 [[ ! -s "$tmp/err" && ! -e should-not-exist ]]
-if bash "$tmp/source/jailbox" --version extra > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+if bash "$tmp/source/src/jailbox" --version extra > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 [[ ! -s "$tmp/out" ]]
 
 for value in '' 'garbage' '1.2.3' $'1.2.3\n\n' $'01.2.3\n' $'1.2.3\r\n' $'1.2.3\nother\n'; do
-    printf '%s' "$value" > "$tmp/source/VERSION"
-    if bash "$tmp/source/jailbox" --version > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+    printf '%s' "$value" > "$tmp/source/src/VERSION"
+    if bash "$tmp/source/src/jailbox" --version > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
     [[ ! -s "$tmp/out" && -s "$tmp/err" ]]
 done
-printf '1.2.3\0\n' > "$tmp/source/VERSION"
-if bash "$tmp/source/jailbox" --version > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+printf '1.2.3\0\n' > "$tmp/source/src/VERSION"
+if bash "$tmp/source/src/jailbox" --version > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 [[ ! -s "$tmp/out" && -s "$tmp/err" ]]
-printf '1.2.3\n' > "$tmp/source/VERSION"
-[[ $(bash "$tmp/source/jailbox" --version) == 'jailbox 1.2.3' ]]
+printf '1.2.3\n' > "$tmp/source/src/VERSION"
+[[ $(bash "$tmp/source/src/jailbox" --version) == 'jailbox 1.2.3' ]]
 if bash "$tmp/source/scripts/build-tarball.sh" v1.2.4 > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 grep -q 'existing VERSION stamp' "$tmp/err"
-rm "$tmp/source/VERSION"
-ln -s /missing-stamp "$tmp/source/VERSION"
-if bash "$tmp/source/jailbox" --version > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+rm "$tmp/source/src/VERSION"
+ln -s /missing-stamp "$tmp/source/src/VERSION"
+if bash "$tmp/source/src/jailbox" --version > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 [[ ! -s "$tmp/out" && -s "$tmp/err" ]]
 if bash "$tmp/source/scripts/build-tarball.sh" v1.2.4 > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
-rm "$tmp/source/VERSION"
+rm "$tmp/source/src/VERSION"
 
+# A new runtime module ships automatically; repository-only files do not.
+printf '#!/bin/bash\ntrue\n' > "$tmp/source/src/host/future.sh"
 bash "$tmp/source/scripts/build-tarball.sh" v1.2.3 > /dev/null
-[[ ! -e "$tmp/source/VERSION" ]]
+[[ ! -e "$tmp/source/src/VERSION" ]]
 dist="$tmp/source/dist"
 mkdir "$tmp/extracted"
 tar -xzf "$dist/jailbox-v1.2.3.tar.gz" -C "$tmp/extracted"
 tree="$tmp/extracted/jailbox-v1.2.3"
+cmp "$tmp/source/src/host/future.sh" "$tree/host/future.sh"
+[[ ! -e "$tree/src" && ! -e "$tree/scripts" && ! -e "$tree/tests" ]]
+[[ -f "$tree/public.sh" ]]
 
 repack() {
     (cd "$tmp/extracted" && tar -czf "$dist/jailbox-v1.2.3.tar.gz" jailbox-v1.2.3)
@@ -78,7 +83,7 @@ for body in "printf 'jailbox 1.2.4\\n'" "printf 'jailbox 1.2.3\\n\\n'" "printf '
     printf '#!/bin/bash\n%s\n' "$body" > "$tree/jailbox"
     reject_artifact
 done
-cp "$ROOT/jailbox" "$tree/jailbox"
+cp "$ROOT/src/jailbox" "$tree/jailbox"
 repack
 bash "$ROOT/scripts/validate-release.sh" v1.2.3 "$dist"
 printf 'bad\n' > "$dist/SHA256SUMS"

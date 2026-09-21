@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 # shellcheck disable=SC1091
-source "$GENERATION_REPO/host/core/common.sh"
+source "$GENERATION_REPO/src/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$GENERATION_REPO/host/core/ssh.sh"
+source "$GENERATION_REPO/src/host/core/ssh.sh"
 # shellcheck disable=SC1091
-source "$GENERATION_REPO/host/core/container-runtime.sh"
+source "$GENERATION_REPO/src/host/core/container-runtime.sh"
 # shellcheck disable=SC1091
 source "$GENERATION_FIXTURE/launch-function"
 die() { echo "$*" >&2; exit 1; }

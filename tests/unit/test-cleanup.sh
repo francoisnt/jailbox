@@ -7,11 +7,14 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/public-api.sh"
+source "$JAILBOX_DIR/src/public.sh"
+# shellcheck source=src/host/api-support.sh
+source "$JAILBOX_DIR/src/host/api-support.sh"
+initialize_public_api_lookups
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/common.sh"
+source "$JAILBOX_DIR/src/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/config-digest.sh"
+source "$JAILBOX_DIR/src/host/core/config-digest.sh"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
 

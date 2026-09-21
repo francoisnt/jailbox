@@ -2,16 +2,16 @@
 # Exercise host callers with real payloads across simulated transport boundaries.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=host/core/ssh.sh
-source "$ROOT/host/core/ssh.sh"
-# shellcheck source=host/core/validation.sh
-source "$ROOT/host/core/validation.sh"
+# shellcheck source=src/host/core/ssh.sh
+source "$ROOT/src/host/core/ssh.sh"
+# shellcheck source=src/host/core/validation.sh
+source "$ROOT/src/host/core/validation.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
 refuse_sandbox() { die "$@"; }
-SCRIPT_DIR=$ROOT
+SCRIPT_DIR=$ROOT/src
 UP_CONVERGING=false
 EGRESS_ALLOW=(example.com)
 NETWORK_NAME=fixture-net

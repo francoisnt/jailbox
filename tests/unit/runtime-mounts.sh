@@ -5,15 +5,18 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/public-api.sh"
+source "$JAILBOX_DIR/src/public.sh"
+# shellcheck source=src/host/api-support.sh
+source "$JAILBOX_DIR/src/host/api-support.sh"
+initialize_public_api_lookups
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/common.sh"
+source "$JAILBOX_DIR/src/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/ssh.sh"
+source "$JAILBOX_DIR/src/host/core/ssh.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/container-runtime.sh"
+source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/core/config-digest.sh"
+source "$JAILBOX_DIR/src/host/core/config-digest.sh"
 
 PASSED=0
 FAILED=0
