@@ -84,6 +84,10 @@ tests/run matrix     # Full lifecycle state and interruption matrix (Linux + Pod
 tests/run editor     # Real Remote SSH editor behavior (Podman + GUI/xvfb)
 ```
 
+For a specific editor, run `JAILBOX_EDITOR=code tests/run editor` or use
+`codium`. This is a test-harness selector: fixtures write the chosen editor to
+file `EDITOR`. Product launches never use `JAILBOX_EDITOR` as an override.
+
 The four gates are independent, self-contained quality gates. Naming no gate
 runs all four in order and stops at the first failing suite; it checks every
 gate's prerequisites before the first suite, so a missing Podman or editor

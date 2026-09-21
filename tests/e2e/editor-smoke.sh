@@ -36,8 +36,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$JAILBOX_DIR/tests/lib/logging.sh"
 test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
 
-# shellcheck source=host/project-id.sh
-source "$JAILBOX_DIR/host/project-id.sh"
+# shellcheck source=host/core/project-id.sh
+source "$JAILBOX_DIR/host/core/project-id.sh"
 # shellcheck source=tests/lib/run-meta.sh
 source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 # shellcheck source=tests/lib/resource-ledger.sh
@@ -443,6 +443,7 @@ write_fixture() {
     mkdir -p "$project_dir/.vscode"
     cat > "$project_dir/jailbox.conf" <<EOF
 DEV_IMAGE=${dev_image}
+EDITOR=$(basename "$(editor_bin)")
 EOF
     if [[ "$stage" == "egress" ]]; then
         printf 'EGRESS_ALLOW=api.ipify.org\n' >> "$project_dir/jailbox.conf"
@@ -636,8 +637,10 @@ activate_proof_extension() {
     user_data=$(jailbox_editor_user_data "$project_dir")
     marker="$project_dir/$EXT_ACTIVATION_MARKER"
     baseline=$(snapshot_remote_editor_connections "$project_dir" "$ctr") || return 1
+    # The initial-launch wrapper's trust flag does not persist across processes.
     "$bin" --user-data-dir "$user_data" \
         --new-window \
+        --disable-workspace-trust \
         --remote "ssh-remote+$ctr" \
         /home/jailbox/project >/dev/null 2>&1 || return 1
     echo "  Waiting up to ${EDITOR_TIMEOUT}s for the fresh window to attach..."
@@ -934,7 +937,33 @@ run_stage() {
 
     if (
         cd "$project_dir"
-        JAILBOX_EDITOR_SMOKE_TEST_SETTINGS=1 "$JAILBOX_DIR/jailbox"
+        # The wrapper seeds remote preferences after frontend up. Its public
+        # exec must agree with the policy composed from the minimal fixture.
+        for config_name in "${!JAILBOX_CONFIG_@}"; do
+            unset "$config_name"
+        done
+        export JAILBOX_TEST_EDITOR_REAL JAILBOX_TEST_CLI="$JAILBOX_DIR/jailbox"
+        JAILBOX_TEST_EDITOR_REAL=$(editor_bin) || exit $?
+        export JAILBOX_CONFIG_DEV_IMAGE
+        JAILBOX_CONFIG_DEV_IMAGE=$(stage_test_image "$stage") || exit $?
+        export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
+        if [[ "$stage" = egress ]]; then
+            export JAILBOX_CONFIG_EGRESS_ALLOW_0=api.ipify.org
+            if [[ "${JAILBOX_TEST_EDITOR_REAL##*/}" = codium ]]; then
+                export JAILBOX_CONFIG_EGRESS_ALLOW_1=github.com
+                export JAILBOX_CONFIG_EGRESS_ALLOW_2=githubusercontent.com
+            else
+                export JAILBOX_CONFIG_EGRESS_ALLOW_1=update.code.visualstudio.com
+                export JAILBOX_CONFIG_EGRESS_ALLOW_2=vscode.download.prss.microsoft.com
+                export JAILBOX_CONFIG_EGRESS_ALLOW_3=main.vscode-cdn.net
+                export JAILBOX_CONFIG_EGRESS_ALLOW_4=vo.msecnd.net
+            fi
+        fi
+        mkdir -p "$project_dir/.vscode/test-editor-bin" || exit $?
+        cp "$JAILBOX_DIR/tests/fixtures/editor-smoke/editor.sh" \
+            "$project_dir/.vscode/test-editor-bin/${JAILBOX_TEST_EDITOR_REAL##*/}" || exit $?
+        chmod 755 "$project_dir/.vscode/test-editor-bin/${JAILBOX_TEST_EDITOR_REAL##*/}" || exit $?
+        PATH="$project_dir/.vscode/test-editor-bin:$PATH" "$JAILBOX_DIR/jailbox"
     ) 2>&1; then
         pass "jailbox launched editor workspace"
         editor_opened=1

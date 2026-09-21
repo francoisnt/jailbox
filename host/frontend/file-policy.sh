@@ -1,4 +1,4 @@
-# Prepared file frontend. Public dispatch is activated in the cutover step.
+# File parsing and composition for public frontend workflows.
 # This module depends only on shared public declarations, never core state.
 # shellcheck source=host/public-api.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/public-api.sh"

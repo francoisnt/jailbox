@@ -3,10 +3,10 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 SCRIPT_DIR=$ROOT
-# shellcheck source=host/container-runtime.sh
-source "$ROOT/host/container-runtime.sh"
-# shellcheck source=host/validation.sh
-source "$ROOT/host/validation.sh"
+# shellcheck source=host/core/container-runtime.sh
+source "$ROOT/host/core/container-runtime.sh"
+# shellcheck source=host/core/validation.sh
+source "$ROOT/host/core/validation.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }

@@ -1,3 +1,4 @@
+# shellcheck disable=SC2030,SC2031 # Cleanup reads locals in the owning subshell.
 # JSON for the generated, string-only editor settings object. Keep this small
 # schema local; unrelated editor settings are not a frontend input contract.
 

@@ -83,7 +83,6 @@ validate_local_build_inputs() {
 }
 
 run_validate() {
-    [ -z "$CONFIG_PATH_ARG" ] || die '--config cannot be used with validate; use JAILBOX_CONFIG_* environment configuration'
     require_command realpath
     load_environment_config || return 1
     validate_configured_readonly_paths || return 1
@@ -102,7 +101,7 @@ select_dev_containerfile_for_launch() {
     discover_dev_containerfile || status=$?
     case "$status" in
         0) return 0 ;;
-        1) die "no Containerfile found. Set DEV_IMAGE or DEV_CONTAINERFILE in jailbox.conf, or add a Containerfile to the project root." ;;
+        1) die "no Containerfile found. Configure DEV_IMAGE or DEV_CONTAINERFILE, or add a Containerfile to the project root." ;;
         2) die "configured Containerfile does not exist: $DEV_CONTAINERFILE" ;;
         *) return "$status" ;;
     esac
@@ -176,18 +175,6 @@ validate_dev_image() {
     echo "  Package manager: $PKG_MANAGER"
 }
 
-warn_if_alpine_dev_image_with_vscode() {
-    local os_release
-
-    [ "$(basename "$EDITOR_BIN")" = "code" ] || return 0
-
-    os_release=$(podman_probe "$PROJECT_DEV_IMAGE" "$USABLE_SHELL" -c 'cat /etc/os-release' 2>/dev/null || true)
-    if printf '%s\n' "$os_release" | grep -Eq '^ID="?alpine"?$'; then
-        echo "⚠️  VS Code Remote SSH does not support Alpine SSH hosts."
-        echo "   This dev image appears to be Alpine-based; set EDITOR=codium in jailbox.conf."
-    fi
-}
-
 build_jailbox_image() {
     local install_cache_bust
 
@@ -226,7 +213,7 @@ build_jailbox_image() {
         echo "Common causes:"
         echo "  - The selected stage is a production or distroless stage"
         echo "  - The wrapper prerequisites cannot be installed in this image"
-        echo "Fix: verify DEV_TARGET_STAGE in jailbox.conf or use a supported development image."
+        echo "Fix: check the selected development target stage (DEV_TARGET_STAGE) or use a supported development image."
         exit 1
     fi
 }

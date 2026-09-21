@@ -1,3 +1,4 @@
+# shellcheck disable=SC2030,SC2031 # Cleanup reads locals in the owning subshell.
 # Local initialization, independent of core identity and sandbox inventory.
 # file-policy.sh supplies frontend diagnostics and trusted-path checks.
 

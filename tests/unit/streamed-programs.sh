@@ -2,12 +2,10 @@
 # Exercise host callers with real payloads across simulated transport boundaries.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=host/ssh.sh
-source "$ROOT/host/ssh.sh"
-# shellcheck source=host/validation.sh
-source "$ROOT/host/validation.sh"
-# shellcheck source=host/editor.sh
-source "$ROOT/host/editor.sh"
+# shellcheck source=host/core/ssh.sh
+source "$ROOT/host/core/ssh.sh"
+# shellcheck source=host/core/validation.sh
+source "$ROOT/host/core/validation.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
@@ -67,24 +65,4 @@ for scenario in bad-route transport missing directory; do
     esac
 done
 
-# The settings helper receives JSON on stdin; script transport must not replace it.
-SSH_CONFIG="$tmp/ssh config"
-CONTAINER_NAME=fixture
-JAILBOX_EDITOR_SMOKE_TEST_SETTINGS=1
-ssh_transport_status=0
-mkdir -m 700 "$tmp/home"
-ssh() {
-    [[ "$1" = -F && "$2" = "$SSH_CONFIG" && "$3" = "$CONTAINER_NAME" &&
-       "$4" = /usr/local/bin/jailbox-write-editor-settings ]] || return 98
-    HOME="$tmp/home" bash "$ROOT/container/runtime/bin/jailbox-write-editor-settings" || return $?
-    return "$ssh_transport_status"
-}
-editor_smoke_settings_json_object > "$tmp/expected"
-write_remote_editor_smoke_settings
-cmp "$tmp/expected" "$tmp/home/.vscode-server/data/Machine/settings.json"
-cmp "$tmp/expected" "$tmp/home/.vscodium-server/data/Machine/settings.json"
-ssh_transport_status=42
-result=0
-write_remote_editor_smoke_settings || result=$?
-[[ "$result" = 42 ]] || fail 'editor settings lost transport failure status'
-printf 'PASS: streamed validation and editor settings preserve stdin, refusal sequencing, and transport status\n'
+printf 'PASS: streamed validation preserves refusal sequencing and transport status\n'

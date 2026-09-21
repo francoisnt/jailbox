@@ -21,7 +21,6 @@ bash "$tmp/source/jailbox" --version > "$tmp/out" 2> "$tmp/err"
 printf 'jailbox dev\n' > "$tmp/expected"
 cmp "$tmp/expected" "$tmp/out"
 [[ ! -s "$tmp/err" && ! -e should-not-exist ]]
-[[ $(bash "$tmp/source/jailbox" --config /missing --version) == 'jailbox dev' ]]
 if bash "$tmp/source/jailbox" --version extra > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 [[ ! -s "$tmp/out" ]]
 

@@ -74,3 +74,39 @@ CLI
     [[ -z $(find "$stub_dir" -type f) ]] || fail 'status artifacts entered the stub directory'
 )
 printf 'PASS: headless status artifacts retain each stage and observation outside PATH\n'
+
+# Use the runtime harness's actual stubs for preflight and launch. Inventory
+# must work before a profile exists, while the headless guard rejects both.
+(
+    # shellcheck disable=SC1090
+    source <(sed -n '/^setup_stub_editor() {/,/^}/p' "$ROOT/tests/e2e/headless.sh")
+    # shellcheck disable=SC2034 # Consumed by the extracted setup function.
+    JAILBOX_DIR="$ROOT"
+    setup_stub_editor
+    export JAILBOX_E2E_PROJECT="$fixture/project" JAILBOX_E2E_REJECT_EDITOR=0
+    for editor in codium code; do
+        case "$editor" in
+            codium) expected=jeanp413.open-remote-ssh ;;
+            code) expected=ms-vscode-remote.remote-ssh ;;
+        esac
+        [[ $("$stub_dir/$editor" --extensions-dir "$fixture/extensions" --list-extensions) = "$expected" ]]
+        if JAILBOX_E2E_REJECT_EDITOR=1 "$stub_dir/$editor" \
+            --extensions-dir "$fixture/extensions" --list-extensions > "$fixture/output" 2>&1; then
+            fail 'headless guard allowed editor discovery'
+        fi
+        if "$stub_dir/$editor" --user-data-dir "$fixture/profile" --remote ssh-remote+test > "$fixture/output" 2>&1; then
+            fail 'stub accepted missing profile settings'
+        fi
+    done
+    mkdir -p "$fixture/profile/User"
+    printf '{"remote.SSH.configFile":"/test/ssh_config"}\n' > "$fixture/profile/User/settings.json"
+    for editor in codium code; do
+        "$stub_dir/$editor" --extensions-dir "$fixture/extensions" \
+            --user-data-dir "$fixture/profile" --remote ssh-remote+test /home/jailbox/project
+        if JAILBOX_E2E_REJECT_EDITOR=1 "$stub_dir/$editor" \
+            --user-data-dir "$fixture/profile" --remote ssh-remote+test > "$fixture/output" 2>&1; then
+            fail 'headless guard allowed editor launch'
+        fi
+    done
+)
+printf 'PASS: runtime editor stubs support preflight, validate launch, and preserve headless refusal\n'

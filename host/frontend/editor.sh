@@ -1,5 +1,5 @@
-# Prepared editor client. The caller loads file-policy.sh; public activation
-# and removal of the legacy editor owner belong to the cutover.
+# shellcheck disable=SC2030,SC2031 # Cleanup reads locals in the owning subshell.
+# Editor client. The caller loads file-policy.sh.
 EDITOR_MODULE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=host/frontend/connection.sh
 source "$EDITOR_MODULE_DIR/connection.sh"
@@ -11,8 +11,24 @@ EDITOR_BIN=""
 EDITOR_EXTENSIONS_DIR=""
 EDITOR_BOOTSTRAP_HOSTS=()
 
+warn_low_inotify_watch_limit() {
+    local limit_file limit recommended
+
+    recommended=524288
+    limit_file="${JAILBOX_INOTIFY_MAX_USER_WATCHES_FILE:-/proc/sys/fs/inotify/max_user_watches}"
+    [ -r "$limit_file" ] || return 0
+
+    limit=$(cat "$limit_file" 2>/dev/null || true)
+    [[ "$limit" =~ ^[0-9]+$ ]] || return 0
+    [ "$limit" -ge "$recommended" ] && return 0
+
+    echo "⚠️  fs.inotify.max_user_watches is $limit; VSCodium/VS Code Remote SSH may be unable to watch workspace file changes." >&2
+    echo "   Fix on the Linux host: echo 'fs.inotify.max_user_watches=$recommended' | sudo tee /etc/sysctl.d/60-jailbox-inotify.conf && sudo sysctl --system" >&2
+}
+
 editor_preflight() {
     local requested=${FRONTEND_VALUES[EDITOR]-} selection inventory extension line found=0
+    local state_home=${XDG_STATE_HOME:-${HOME:-}/.local/state}
     local -a errors=()
     EDITOR_NAME=""
     EDITOR_BIN=""
@@ -50,6 +66,9 @@ editor_preflight() {
     if [[ "${HOME:-}" != /* ]] || ! valid_settings_text "${HOME:-}"; then
         errors+=('profile home must be an absolute, control-free UTF-8 path')
     fi
+    if [[ "$state_home" != /* ]] || ! valid_settings_text "$state_home"; then
+        errors+=('profile state home must be an absolute, control-free UTF-8 path')
+    fi
     if [[ -z "$EDITOR_BIN" ]]; then
         errors+=("missing executable $EDITOR_NAME; cannot check required extension $extension")
     elif ! inventory=$("$EDITOR_BIN" --extensions-dir "$EDITOR_EXTENSIONS_DIR" --list-extensions); then
@@ -68,13 +87,14 @@ editor_preflight() {
 }
 
 launch_editor_remote() {
-    local profile settings
+    local profile settings state_home=${XDG_STATE_HOME:-$HOME/.local/state}
     [[ -n "$EDITOR_BIN" && -n "${EDITOR_CONNECTION[project_id]-}" ]] || return 1
     if [[ "$HOME" != /* ]] || ! valid_settings_text "$HOME"; then
         printf 'Error: invalid editor profile home\n' >&2
         return 1
     fi
-    profile=$HOME/.local/state/jailbox/editor-profiles/${EDITOR_CONNECTION[project_id]}
+    [[ "$state_home" = /* ]] && valid_settings_text "$state_home" || return 1
+    profile=$state_home/jailbox/editor-profiles/${EDITOR_CONNECTION[project_id]}
     settings=$profile/User/settings.json
     write_editor_settings "$settings" || { printf 'Error: could not publish editor settings\n' >&2; return 1; }
     "$EDITOR_BIN" --extensions-dir "$EDITOR_EXTENSIONS_DIR" --user-data-dir "$profile" \
@@ -90,9 +110,7 @@ cleanup_connection_output() {
     exit "$status"
 }
 
-# Exercise the complete prepared composition through the public child boundary.
-# No dispatch hooks are added until the cutover. The subshell owns its staging
-# and editor state without changing the caller's traps or configuration.
+# The subshell owns staging and editor state without changing caller traps.
 launch_file_editor() (
     local executable=$1 project=$2 selected=${3:-} connection_file=""
     trap cleanup_connection_output EXIT
@@ -101,6 +119,7 @@ launch_file_editor() (
     trap 'exit 129' HUP
     load_file_policy "$project" "$selected" || return $?
     editor_preflight || return $?
+    warn_low_inotify_watch_limit
     compose_machine_environment "${EDITOR_BOOTSTRAP_HOSTS[@]}" || return $?
     run_core_command "$executable" up || return $?
     connection_file=$(mktemp "${TMPDIR:-/tmp}/jailbox-connection.XXXXXX") || return 1

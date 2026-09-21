@@ -15,13 +15,13 @@ JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/public-api.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/common.sh"
+source "$JAILBOX_DIR/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/dev-image.sh"
+source "$JAILBOX_DIR/host/core/dev-image.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/container-runtime.sh"
+source "$JAILBOX_DIR/host/core/container-runtime.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/config-digest.sh"
+source "$JAILBOX_DIR/host/core/config-digest.sh"
 
 FIXTURE=$(mktemp -d)
 FIXTURE=$(cd "$FIXTURE" && pwd -P)
@@ -93,7 +93,7 @@ run_digest() {
         for assignment in "$@"; do
             export "${assignment?}"
         done
-        load_effective_config "" >/dev/null
+        load_environment_config "" >/dev/null
         "$emitter" "$mode"
     )
 }
@@ -233,15 +233,15 @@ installed_digest=$(
     # shellcheck disable=SC1091
     source "$FIXTURE/installed-host/public-api.sh"
     # shellcheck disable=SC1091
-    source "$FIXTURE/installed-host/common.sh"
+    source "$FIXTURE/installed-host/core/common.sh"
     # shellcheck disable=SC1091
-    source "$FIXTURE/installed-host/dev-image.sh"
+    source "$FIXTURE/installed-host/core/dev-image.sh"
     # shellcheck disable=SC1091
-    source "$FIXTURE/installed-host/config-digest.sh"
+    source "$FIXTURE/installed-host/core/config-digest.sh"
     apply_config_defaults
     CONFIG_PATH_ARG=""
     export JAILBOX_CONFIG_DEV_IMAGE=img
-    load_effective_config "" >/dev/null
+    load_environment_config "" >/dev/null
     config_digest_value launch
 )
 assert_eq "an unstamped install matches its unstamped source checkout" \
@@ -614,8 +614,8 @@ echo ""
     [[ $(jailbox_install_cache_bust) != "$before" ]]
     printf 'changed proxy\n' >> "$SCRIPT_DIR/container/tinyproxy/Containerfile"
     [[ $(jailbox_install_cache_bust) != "$after" ]]
-    mkdir "$SCRIPT_DIR/host"
-    cp "$JAILBOX_DIR/host/dev-image.sh" "$SCRIPT_DIR/host/"
+    mkdir -p "$SCRIPT_DIR/host/core"
+    cp "$JAILBOX_DIR/host/core/dev-image.sh" "$SCRIPT_DIR/host/core/"
     sed -n '/^wrapper_install_cache_bust()/,/^)/p' "$JAILBOX_DIR/tests/integration/wrapper-images.sh" > "$FIXTURE/wrapper-cache.sh"
     # shellcheck disable=SC1091 # Extract the real preparation helper, not main.
     source "$FIXTURE/wrapper-cache.sh"

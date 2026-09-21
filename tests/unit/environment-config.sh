@@ -13,7 +13,7 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/public-api.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/common.sh"
+source "$JAILBOX_DIR/host/core/common.sh"
 
 PASSED=0
 FAILED=0
@@ -28,7 +28,7 @@ fixture_dir() {
     (cd "$dir" && pwd -P)
 }
 
-# Run load_effective_config in a subshell with the given exported
+# Run load_environment_config in a subshell with the given exported
 # NAME=VALUE assignments, then eval the check expression there. The
 # subshell keeps exported test variables and loaded values isolated.
 assert_env_config() {
@@ -40,11 +40,10 @@ assert_env_config() {
     if (
         PROJECT_DIR="$dir"
         apply_config_defaults
-        CONFIG_PATH_ARG=""
         for assignment in "$@"; do
             export "${assignment?}"
         done
-        load_effective_config >/dev/null 2>&1
+        load_environment_config >/dev/null 2>&1
         eval "$check"
     ); then
         pass "$name"
@@ -54,7 +53,7 @@ assert_env_config() {
     rm -rf "$dir"
 }
 
-# Expect load_effective_config to fail with a diagnostic containing every
+# Expect load_environment_config to fail with a diagnostic containing every
 # given substring (typically the offending variable names).
 assert_env_rejects() {
     local name="$1"
@@ -72,11 +71,10 @@ assert_env_rejects() {
         (
             PROJECT_DIR="$dir"
             apply_config_defaults
-            CONFIG_PATH_ARG=""
             for assignment in "$@"; do
                 export "${assignment?}"
             done
-            load_effective_config
+            load_environment_config
         ) 2>&1 >/dev/null
     ) || status=$?
     rm -rf "$dir"
@@ -145,9 +143,8 @@ test_declaration_driven_scalars() {
         CONFIG_DEFAULTS+=("SYNTHETIC_LIMIT=fallback")
         initialize_public_api_lookups
         apply_config_defaults
-        CONFIG_PATH_ARG=""
         export JAILBOX_CONFIG_DEV_TARGET_STAGE=dev
-        load_effective_config >/dev/null 2>&1
+        load_environment_config >/dev/null 2>&1
         [ "$SYNTHETIC_LIMIT" = fallback ]
     ); then
         pass "declared key receives its default without key-specific code"
@@ -160,9 +157,8 @@ test_declaration_driven_scalars() {
         CONFIG_DEFAULTS+=("SYNTHETIC_LIMIT=fallback")
         initialize_public_api_lookups
         apply_config_defaults
-        CONFIG_PATH_ARG=""
         export JAILBOX_CONFIG_SYNTHETIC_LIMIT=custom
-        load_effective_config >/dev/null 2>&1
+        load_environment_config >/dev/null 2>&1
         [ "$SYNTHETIC_LIMIT" = custom ]
     ); then
         pass "environment value reaches a declared key without key-specific code"
@@ -176,13 +172,12 @@ test_declaration_driven_scalars() {
         CONFIG_DEFAULTS+=("SYNTHETIC_LIMIT=fallback")
         initialize_public_api_lookups
         apply_config_defaults
-        CONFIG_PATH_ARG=""
-        load_effective_config >/dev/null 2>&1
-        [ "$SYNTHETIC_LIMIT" = fromfile ]
+        load_environment_config >/dev/null 2>&1
+        [ "$SYNTHETIC_LIMIT" = fallback ]
     ); then
-        pass "file adapter value reaches a declared key without key-specific code"
+        pass "machine defaults ignore file values for newly declared keys"
     else
-        fail "file adapter value reaches a declared key without key-specific code"
+        fail "machine defaults ignore file values for newly declared keys"
     fi
     rm -rf "$dir"
 }
@@ -198,12 +193,11 @@ test_many_member_array() {
     if (
         PROJECT_DIR="$dir"
         apply_config_defaults
-        CONFIG_PATH_ARG=""
         local assignment
         for assignment in "${assignments[@]}"; do
             export "${assignment?}"
         done
-        load_effective_config >/dev/null 2>&1
+        load_environment_config >/dev/null 2>&1
         [ "${#READONLY_PATHS[@]}" = 300 ] && \
             [ "${READONLY_PATHS[0]}" = path-0 ] && \
             [ "${READONLY_PATHS[299]}" = path-299 ]
@@ -274,9 +268,8 @@ test_exclusivity_and_notice() {
         (
             PROJECT_DIR="$dir"
             apply_config_defaults
-            CONFIG_PATH_ARG=""
             export JAILBOX_CONFIG_DEV_TARGET_STAGE=dev
-            load_effective_config
+            load_environment_config
             [ -z "$DEV_IMAGE" ] || die "file value leaked into environment configuration"
         ) 2>&1
     ) || {
@@ -285,10 +278,7 @@ test_exclusivity_and_notice() {
         return 0
     }
     pass "environment configuration excludes the file"
-    case "$output" in
-        *"not read"*"JAILBOX_CONFIG_"*) pass "bypass notice names the skipped file source" ;;
-        *) fail "bypass notice names the skipped file source (got: $output)" ;;
-    esac
+    [[ -z "$output" ]] || fail "machine configuration must not inspect or report a file"
 
     # A malformed file must not matter when environment configuration is
     # present: the file is not read at all.
@@ -296,9 +286,8 @@ test_exclusivity_and_notice() {
     if (
         PROJECT_DIR="$dir"
         apply_config_defaults
-        CONFIG_PATH_ARG=""
         export JAILBOX_CONFIG_DEV_TARGET_STAGE=dev
-        load_effective_config
+        load_environment_config
     ) >/dev/null 2>&1; then
         pass "malformed file ignored when environment configuration is present"
     else
@@ -311,83 +300,12 @@ test_exclusivity_and_notice() {
     if (
         PROJECT_DIR="$dir"
         apply_config_defaults
-        CONFIG_PATH_ARG=""
         export JAILBOX_CONFIG_DEV_TARGET_STAGE=dev
-        load_effective_config up
+        load_environment_config up
     ) >/dev/null 2>&1; then
         pass "environment configuration needs no jailbox.conf anchor"
     else
         fail "environment configuration needs no jailbox.conf anchor"
-    fi
-    rm -rf "$dir"
-}
-
-test_config_flag_conflict() {
-    local dir output status
-
-    dir=$(fixture_dir)
-    printf 'DEV_IMAGE=selected\n' > "$dir/lane.conf"
-    status=0
-    output=$(
-        (
-            PROJECT_DIR="$dir"
-            apply_config_defaults
-            CONFIG_PATH_ARG="$dir/lane.conf"
-            export JAILBOX_CONFIG_DEV_TARGET_STAGE=dev
-            load_effective_config
-        ) 2>&1 >/dev/null
-    ) || status=$?
-    if [ "$status" -ne 0 ]; then
-        case "$output" in
-            *"--config"*) pass "--config conflicts with environment configuration" ;;
-            *) fail "--config conflicts with environment configuration (got: $output)" ;;
-        esac
-    else
-        fail "--config conflicts with environment configuration (unexpectedly loaded)"
-    fi
-    rm -rf "$dir"
-}
-
-test_adapter_equivalence() {
-    local dir file_values env_values
-
-    dir=$(fixture_dir)
-    printf '%s\n' \
-        'DEV_IMAGE=node:22' \
-        'DEV_TARGET_STAGE=dev' \
-        'EGRESS_ALLOW=github.com,api.github.com' \
-        'READONLY_PATHS=Makefile,scripts/deploy.sh' \
-        > "$dir/jailbox.conf"
-    file_values=$(
-        (
-            PROJECT_DIR="$dir"
-            apply_config_defaults
-            CONFIG_PATH_ARG=""
-            load_effective_config
-            printf '%s|%s|%s|%s\n' "$DEV_IMAGE" "$DEV_TARGET_STAGE" \
-                "${EGRESS_ALLOW[*]}" "${READONLY_PATHS[*]}"
-        ) 2>/dev/null
-    )
-    env_values=$(
-        (
-            PROJECT_DIR="$dir"
-            apply_config_defaults
-            CONFIG_PATH_ARG=""
-            export JAILBOX_CONFIG_DEV_IMAGE=node:22
-            export JAILBOX_CONFIG_DEV_TARGET_STAGE=dev
-            export JAILBOX_CONFIG_EGRESS_ALLOW_0=github.com
-            export JAILBOX_CONFIG_EGRESS_ALLOW_1=api.github.com
-            export JAILBOX_CONFIG_READONLY_PATHS_0=Makefile
-            export JAILBOX_CONFIG_READONLY_PATHS_1=scripts/deploy.sh
-            load_effective_config
-            printf '%s|%s|%s|%s\n' "$DEV_IMAGE" "$DEV_TARGET_STAGE" \
-                "${EGRESS_ALLOW[*]}" "${READONLY_PATHS[*]}"
-        ) 2>/dev/null
-    )
-    if [ -n "$file_values" ] && [ "$file_values" = "$env_values" ]; then
-        pass "adapter produces the same effective values as environment input"
-    else
-        fail "adapter produces the same effective values as environment input (file: $file_values, env: $env_values)"
     fi
     rm -rf "$dir"
 }
@@ -400,44 +318,14 @@ test_unexported_not_interface() {
     if (
         PROJECT_DIR="$dir"
         apply_config_defaults
-        CONFIG_PATH_ARG=""
+        # shellcheck disable=SC2034 # An unexported name must not be consumed.
         JAILBOX_CONFIG_DEV_IMAGE=shadow
-        load_effective_config >/dev/null 2>&1
-        [ "$DEV_IMAGE" = fromfile ]
+        load_environment_config >/dev/null 2>&1
+        [ -z "$DEV_IMAGE" ]
     ); then
         pass "unexported shell variables are not part of the interface"
     else
         fail "unexported shell variables are not part of the interface"
-    fi
-    rm -rf "$dir"
-}
-
-test_file_editor_stays_frontend() {
-    local dir
-
-    dir=$(fixture_dir)
-    printf 'EDITOR=code\n' > "$dir/jailbox.conf"
-    if (
-        PROJECT_DIR="$dir"
-        apply_config_defaults
-        CONFIG_PATH_ARG=""
-        load_effective_config >/dev/null 2>&1
-        [ "$EDITOR" = code ]
-    ); then
-        pass "file EDITOR remains a valid frontend input"
-    else
-        fail "file EDITOR remains a valid frontend input"
-    fi
-    printf 'EDITOR=vim\n' > "$dir/jailbox.conf"
-    if (
-        PROJECT_DIR="$dir"
-        apply_config_defaults
-        CONFIG_PATH_ARG=""
-        load_effective_config
-    ) >/dev/null 2>&1; then
-        fail "file EDITOR is still validated"
-    else
-        pass "file EDITOR is still validated"
     fi
     rm -rf "$dir"
 }
@@ -509,10 +397,7 @@ main() {
     test_many_member_array
     test_rejections
     test_exclusivity_and_notice
-    test_config_flag_conflict
-    test_adapter_equivalence
     test_unexported_not_interface
-    test_file_editor_stays_frontend
     test_declaration_integrity
 
     echo ""

@@ -16,14 +16,8 @@ fi
 #   as the project's dev environment — no bridge, no exec proxy.
 #
 # CONFIGURATION
-#   Declared JAILBOX_CONFIG_* environment variables are the canonical machine
-#   configuration (see host/public-api.sh): scalars as JAILBOX_CONFIG_KEY,
-#   arrays as contiguous JAILBOX_CONFIG_KEY_0.. members. When none is present,
-#   a temporary adapter parses jailbox.conf in the project root instead:
-#     DEV_IMAGE, DEV_CONTAINERFILE, DEV_BUILD_CONTEXT, DEV_TARGET_STAGE,
-#     MEMORY_LIMIT, CPU_LIMIT, PIDS_LIMIT, EPHEMERAL_HOME, EGRESS_ALLOW, READONLY_PATHS,
-#     and the frontend-only EDITOR.
-#   The two sources are exclusive; they never merge.
+#   Machine commands consume JAILBOX_CONFIG_* environment policy. Frontend
+#   launches parse jailbox.conf and pass composed policy to public children.
 #
 # REQUIREMENTS
 #   podman, ssh, ssh-keygen; bare launch also requires VSCodium/VSCode with
@@ -49,162 +43,25 @@ resolve_script_path() {
 
 SCRIPT_DIR="$(resolve_script_path)"
 PROJECT_DIR=$(pwd -P)
+CONFIG_PATH_ARG=""
 
 # shellcheck source=host/public-api.sh
 source "$SCRIPT_DIR/host/public-api.sh"
-# Defaults overridden by jailbox.conf
-apply_config_defaults
-# shellcheck source=host/common.sh
-source "$SCRIPT_DIR/host/common.sh"
-# shellcheck source=host/preflight.sh
-source "$SCRIPT_DIR/host/preflight.sh"
-# shellcheck source=host/dev-image.sh
-source "$SCRIPT_DIR/host/dev-image.sh"
-# shellcheck source=host/ssh.sh
-source "$SCRIPT_DIR/host/ssh.sh"
-# shellcheck source=host/network.sh
-source "$SCRIPT_DIR/host/network.sh"
-# shellcheck source=host/downloader-proxy.sh
-source "$SCRIPT_DIR/host/downloader-proxy.sh"
-# shellcheck source=host/editor.sh
-source "$SCRIPT_DIR/host/editor.sh"
-# shellcheck source=host/container-runtime.sh
-source "$SCRIPT_DIR/host/container-runtime.sh"
-# shellcheck source=host/validation.sh
-source "$SCRIPT_DIR/host/validation.sh"
-# shellcheck source=host/config-digest.sh
-source "$SCRIPT_DIR/host/config-digest.sh"
-# shellcheck source=host/exec.sh
-source "$SCRIPT_DIR/host/exec.sh"
-
-bring_up_sandbox() {
-    local pre_build_hook="${1:-}"
-
-    initialize_runtime_ids
-    validate_configured_readonly_paths
-    # Stored home policy outranks digest incompatibility: stop cannot repair
-    # a persistent-to-ephemeral change or corrupt retention metadata.
-    require_compatible_home
-    # The digest is the compatibility gate for every policy-bearing resource
-    # that outlives a single launch, so it is computed — and every surviving
-    # resource checked against it — before anything is built or created.
-    compute_config_digest launch
-    require_compatible_project_resources
-    inspect_sandbox_for_up
-    if [ "$UP_DEV_STATE" = absent ]; then
-        build_or_select_dev_image
-        validate_dev_image
-        if [ -n "$pre_build_hook" ]; then
-            "$pre_build_hook"
-        fi
-        # Classify launch inputs before the wrapper build. Mount construction
-        # repeats this to catch subsequent path replacement.
-        finalize_effective_readonly_paths
-        build_jailbox_image
-    fi
-    if [ "$UP_PROXY_STATE" = absent ]; then
-        build_current_proxy_image
-    fi
-    validate_existing_sandbox_health
-    check_local_port_available "$UP_DEV_STATE"
-    # All refusals above are read-only with respect to sandbox resources.
-    # Record attempts before mutation so failures inside an engine operation
-    # also enter dependency-safe rollback.
-    trap 'rollback_ssh_launch "$?"' EXIT
-    trap 'exit 1' HUP INT TERM
-    begin_up_convergence
-    configure_network
-    if [ "$UP_DEV_STATE" = absent ]; then
-        configure_runtime_mounts
-        create_ssh_generation
-        build_readonly_mounts
-        track_up_resource "volume:$VOLUME_NAME"
-        ensure_home_volume
-        track_up_resource "container:$CONTAINER_NAME"
-        start_jailbox_container
-    elif [ "$UP_DEV_STATE" != running ]; then
-        resume_jailbox_container
-    fi
-    wait_for_ssh
-    validate_sandbox_structure
-    validate_running_development
-    validate_proxy_ready
-    configure_downloader_proxy
-    post_start_validation
-    trap - EXIT HUP INT TERM
-}
-
-prepare_launch() {
-    initialize_project_names
-    require_command podman
-    load_effective_config "${1:-}"
-    host_preflight "${1:-}"
-    initialize_launch_state
-}
-
-run_launch() {
-    prepare_launch
-    bring_up_sandbox warn_if_alpine_dev_image_with_vscode
-    open_editor
-}
-
-run_up() {
-    prepare_launch up
-    bring_up_sandbox
-}
-
-run_init() {
-    initialize_project_names
-    [ -z "$CONFIG_PATH_ARG" ] || die "--config cannot be used with init; initialization always creates $PROJECT_DIR/jailbox.conf"
-    require_command podman
-    require_sandbox_absent
-    init_project_config
-}
-
-run_ssh_config() {
-    initialize_project_names
-    initialize_ssh_state
-    print_ssh_config_instructions
-}
-
-run_clean() {
-    initialize_project_names
-    require_command podman
-    initialize_launch_state
-    clean_jailbox
-}
-
-run_stop() {
-    initialize_project_names
-    require_command podman
-    initialize_ssh_state
-    stop_jailbox
-}
 
 run_uninstall() {
     # Delegate to the installer copy shipped inside this install, so the
     # uninstall logic always matches the installed version's layout.
     [ -f "$SCRIPT_DIR/.jailbox-install" ] || \
-        die "this jailbox is not an installed copy (source checkout?); nothing to uninstall"
+        { echo "Error: this jailbox is not an installed copy (source checkout?); nothing to uninstall" >&2; return 1; }
     # exec: install.sh deletes SCRIPT_DIR, so this script must not keep
     # running (bash reads scripts incrementally from disk).
     JAILBOX_INSTALL_DIR="$SCRIPT_DIR" exec bash "$SCRIPT_DIR/install.sh" --uninstall
-}
-
-initialize_launch_state() {
-    initialize_config_digest_state
-    initialize_dev_image_state
-    initialize_ssh_state
-    initialize_editor_state
-    initialize_network_state
-    initialize_container_runtime_state
 }
 
 main() {
     local option handler
     local -A seen_options=()
     validate_cli_implementation
-    validate_digest_api_mapping
     while [[ "${1:-}" =~ ^-{0,2}[A-Za-z][A-Za-z0-9-]*$ && -n "${CLI_OPTION_TARGETS[${1:-}]-}" ]]; do
         option="$1"
         [[ ! -v seen_options[$option] ]] || { echo "Error: repeated option: $option" >&2; exit 2; }
@@ -219,11 +76,32 @@ main() {
     done
 
     parse_args "$@"
+    case "${1:-}" in
+        ''|--no-editor|validate) ;;
+        *) [[ -z "$CONFIG_PATH_ARG" ]] || { echo "Error: --config cannot be used with ${1:-}" >&2; exit 2; } ;;
+    esac
+    case "${1:-}" in
+        ''|--no-editor|init)
+            # shellcheck source=host/frontend/entry.sh
+            source "$SCRIPT_DIR/host/frontend/entry.sh"
+            ;;
+        validate)
+            if [[ -n "$CONFIG_PATH_ARG" ]]; then
+                source "$SCRIPT_DIR/host/frontend/entry.sh"
+            else
+                # shellcheck source=host/core/entry.sh
+                source "$SCRIPT_DIR/host/core/entry.sh"
+            fi
+            ;;
+        --help|--uninstall|config-schema) ;;
+        *) source "$SCRIPT_DIR/host/core/entry.sh" ;;
+    esac
     if [[ -z "${1:-}" ]]; then
         run_launch
     else
         handler=${CLI_COMMAND_HANDLERS[$1]}
         shift
+        declare -F "$handler" >/dev/null || public_api_error "missing command handler '$handler'"
         "$handler" "$@"
     fi
 }

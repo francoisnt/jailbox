@@ -1,6 +1,5 @@
 # Command and terminal attachment. Only the final SSH process inherits input.
 run_shell() {
-    [ -z "$CONFIG_PATH_ARG" ] || die '--config cannot be used with shell; use JAILBOX_CONFIG_* environment configuration'
     [[ -t 0 && -t 1 ]] || die 'jailbox shell requires a terminal on both stdin and stdout'
     load_environment_config || return 1
     validate_attachment </dev/null >&2 || return 1
@@ -17,7 +16,6 @@ run_exec() {
         printf 'Error: jailbox exec requires a command\n' >&2
         return 2
     fi
-    [ -z "$CONFIG_PATH_ARG" ] || die '--config cannot be used with exec; use JAILBOX_CONFIG_* environment configuration'
     require_command base64 || return 1
     require_command tr || return 1
     frame=$(set -o pipefail; printf '%s\0' "$@" | base64 | tr -d '\n') || die 'could not encode jailbox exec arguments'

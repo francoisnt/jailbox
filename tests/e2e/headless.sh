@@ -25,8 +25,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$JAILBOX_DIR/tests/lib/logging.sh"
 test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
 
-# shellcheck source=host/project-id.sh
-source "$JAILBOX_DIR/host/project-id.sh"
+# shellcheck source=host/core/project-id.sh
+source "$JAILBOX_DIR/host/core/project-id.sh"
 # shellcheck source=versions.env
 source "$JAILBOX_DIR/versions.env"
 # shellcheck source=tests/lib/run-meta.sh
@@ -228,7 +228,7 @@ assert_vscodium_reh_probe() {
 }
 
 # ── stub VS Code ──────────────────────────────────────────────────────────────
-# Minimal stub: verify jailbox called open_editor without SSH CLI options.
+# Minimal stub: answer extension inventory and validate launch arguments/settings.
 # The real SSH assertions run after jailbox exits, while the container is up.
 
 setup_stub_editor() {
@@ -339,7 +339,7 @@ EOF
     if (
         cd "$project_dir"
         JAILBOX_E2E_REJECT_EDITOR=1 PATH="$stub_dir:$PATH" \
-            "$JAILBOX_DIR/jailbox" --config config/runtime.conf up
+            "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor
     ) 2>&1; then
         pass "up pipeline (build → start → SSH wait → validation)"
     else
@@ -488,7 +488,7 @@ EOF
         printf 'ENV REBUILD_TEST=changed\n' >> "$project_dir/Containerfile"
         printf 'changed\n' > "$project_dir/rebuild-payload"
     fi
-    if relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up) 2>&1); then
+    if relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor) 2>&1); then
         pass "running up reuses the sandbox"
     else
         fail "running up failed: $relaunch_output"
@@ -501,7 +501,7 @@ EOF
     fi
     podman stop "$ctr" >/dev/null
     assert_status "$project_dir" stopped
-    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up); then
+    if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor); then
         pass "up resumes the stopped generation"
     else
         fail "up could not resume the stopped generation"
@@ -512,14 +512,14 @@ EOF
     assert_ssh "$ssh_cfg" "$ctr" "reuse and resume preserve home content" 'test "$(cat "$HOME/retention-marker")" = retained'
     if [[ "$stage" == egress ]]; then
         podman stop "${ctr}-proxy" >/dev/null
-        if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up); then
+        if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor); then
             pass "up starts a stopped proxy beneath a running development container"
         else
             fail "mixed-state proxy resume failed"
             report_proxy_connectivity "$ssh_cfg" "$ctr"
         fi
         podman rm -f "${ctr}-proxy" >/dev/null
-        if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up); then
+        if (cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor); then
             pass "up creates a missing proxy on surviving networks"
         else
             fail "partial proxy convergence failed"
@@ -530,7 +530,7 @@ EOF
         digest=$(podman container inspect "$ctr" --format '{{index .Config.Labels "jailbox.config-digest"}}')
         for malformed in '' invalid "$digest"$'\n'; do
             podman network create --label "jailbox.config-digest=$malformed" "${ctr}-net" >/dev/null
-            if relaunch_output=$(cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf up 2>&1); then
+            if relaunch_output=$(cd "$project_dir" && "$JAILBOX_DIR/jailbox" --config config/runtime.conf --no-editor 2>&1); then
                 fail 'malformed digest on an out-of-mode network must refuse'
             elif [[ "$relaunch_output" == *'configuration digest'* || "$relaunch_output" == *'digest label'* ]]; then
                 pass 'complete-inventory digest gate rejects malformed metadata'

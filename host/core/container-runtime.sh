@@ -100,6 +100,7 @@ jailbox_resource_label() {
 # configuration is missing or malformed, so an occupant of a derived name is
 # removed whatever created it.
 resolve_present_resources() {
+    # shellcheck disable=SC2178 # Nameref receives an array name.
     local -n present_ref="$1"
     shift
     local target kind name status inventory
@@ -213,24 +214,6 @@ require_compatible_home() {
     esac
 }
 
-require_sandbox_absent() {
-    local name status
-
-    for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
-        status=0
-        jailbox_resource_exists container "$name" || status=$?
-        case "$status" in
-            0)
-                die "project sandbox container '$name' is still present; run 'jailbox stop' to remove it"
-                ;;
-            1) ;;
-            *) die "could not determine whether container '$name' exists with Podman" ;;
-        esac
-    done
-}
-
-# Determine retention before mutation, then remove containers, networks, and
-# finally an ephemeral home. A failed or interrupted removal remains retryable.
 stop_jailbox() {
     local target policy=false
     local -a present=() removable=()
@@ -301,12 +284,7 @@ finalize_effective_readonly_paths() {
         [ "$status" -eq 0 ] || return "$status"
         effective_readonly_contains "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
     done
-    # Launch requires the default config, so a finalized launch set always
-    # contains it. The presence flag still gates the non-launch callers that
-    # finalize without one. Every observed input must exist at each recheck.
     automatic_inputs=()
-    [ "$DEFAULT_CONFIG_PRESENT" -eq 1 ] && automatic_inputs+=("$DEFAULT_CONFIG_INPUT")
-    [ -n "$SELECTED_CONFIG_INPUT" ] && automatic_inputs+=("$SELECTED_CONFIG_INPUT")
     [ -n "$SELECTED_DEV_CONTAINERFILE_INPUT" ] && automatic_inputs+=("$SELECTED_DEV_CONTAINERFILE_INPUT")
     for path in "${automatic_inputs[@]}"; do
         status=0
@@ -457,7 +435,7 @@ start_jailbox_container() {
         --tmpfs /tmp:rw,size=512m \
         --mount type=tmpfs,destination=/run,tmpfs-size=64m,tmpfs-mode=0700,U=true \
         -v "$SSHD_RUNTIME_DIR:/run/jailbox-sshd:ro,Z" \
-        -v "$VOLUME_NAME":/home/$MANAGED_USER \
+        -v "$VOLUME_NAME:/home/$MANAGED_USER" \
         "${GITCONFIG_MOUNT[@]}" \
         -p 127.0.0.1:"$LOCAL_PORT":2222 \
         -v "$PROJECT_DIR:$REMOTE_PATH:Z" \

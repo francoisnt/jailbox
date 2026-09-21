@@ -1,6 +1,6 @@
 # Network setup and optional tinyproxy egress sidecar.
 
-# shellcheck source=host/project-id.sh
+# shellcheck source=host/core/project-id.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
 
 declare -A NETWORK_STATE=(
@@ -120,42 +120,16 @@ configure_proxy_network() {
 
 effective_egress_allowlist() {
     local -n result="$1"
-    local host editor_name
+    local sorted_hosts
     local hosts=("${EGRESS_ALLOW[@]}")
-    local -A seen=()
 
     result=()
+    [ -n "${EGRESS_ALLOW[*]-}" ] || return 0
 
-    if [[ -n "$EDITOR_BIN" ]]; then
-        editor_name=$(basename "$EDITOR_BIN") || return 1
-        case "$editor_name" in
-            code)
-                # main.vscode-cdn.net succeeded vo.msecnd.net as the download
-                # CDN; keep both while older VS Code builds remain in use.
-                hosts+=(
-                    update.code.visualstudio.com
-                    vscode.download.prss.microsoft.com
-                    main.vscode-cdn.net
-                    vo.msecnd.net
-                )
-                ;;
-            codium)
-                hosts+=(
-                    github.com
-                    githubusercontent.com
-                )
-                ;;
-        esac
-    fi
-
-    for host in "${hosts[@]}"; do
-        [ -n "$host" ] || continue
-        # Configured hosts are validated before this function is called; the
-        # remaining values are fixed editor domains declared above.
-        [[ -v seen[$host] ]] && continue
-        seen["$host"]=1
-        result+=("$host")
-    done
+    # Match the digest's set semantics: validated hosts contain no newlines.
+    # Capture the producer status before publishing the array to the caller.
+    sorted_hosts=$(printf '%s\n' "${hosts[@]}" | LC_ALL=C sort -u) || return 1
+    mapfile -t result <<< "$sorted_hosts"
 }
 
 configure_proxy_env() {
@@ -384,7 +358,7 @@ print_tinyproxy_conf() {
 validate_proxy_configuration() {
     local subnet template expected_filter expected_conf
     local effective=()
-    effective_egress_allowlist effective
+    effective_egress_allowlist effective || return 1
     subnet=$(podman network inspect "${NETWORK_NAME}-internal" --format '{{(index .Subnets 0).Subnet}}') || die 'could not inspect proxy subnet'
     if ! validate_ssh_file "${NETWORK_STATE[filter_file]}" 644 file ||
         ! validate_ssh_file "${NETWORK_STATE[proxy_conf_file]}" 644 file; then

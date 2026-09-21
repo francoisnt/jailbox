@@ -5,13 +5,13 @@ JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/public-api.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/common.sh"
+source "$JAILBOX_DIR/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/dev-image.sh"
+source "$JAILBOX_DIR/host/core/dev-image.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/container-runtime.sh"
+source "$JAILBOX_DIR/host/core/container-runtime.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/validation.sh"
+source "$JAILBOX_DIR/host/core/validation.sh"
 REMOTE_PATH=/home/jailbox/project
 PASSED=0
 FAILED=0
@@ -36,11 +36,6 @@ with_project() {
     PROJECT_RESOURCE_PREFIX="test"
     initialize_dev_image_state
     initialize_container_runtime_state
-    CONFIG_PATH_ARG=""
-    CONFIG_FILE=""
-    DEFAULT_CONFIG_INPUT="$PROJECT_DIR/jailbox.conf"
-    DEFAULT_CONFIG_PRESENT=0
-    SELECTED_CONFIG_INPUT=""
 }
 test_validation() {
     local path
@@ -69,14 +64,11 @@ test_order_and_mounts() {
     : > "$PROJECT_DIR/jailbox.conf"
     : > "$PROJECT_DIR/config/lane.conf"
     : > "$PROJECT_DIR/Containerfile"
-    READONLY_PATHS=(docs/policy)
-    DEFAULT_CONFIG_INPUT="$PROJECT_DIR/jailbox.conf"
-    DEFAULT_CONFIG_PRESENT=1
-    SELECTED_CONFIG_INPUT="$PROJECT_DIR/config/lane.conf"
+    READONLY_PATHS=(docs/policy jailbox.conf config/lane.conf)
     SELECTED_DEV_CONTAINERFILE_INPUT="$PROJECT_DIR/Containerfile"
     finalize_effective_readonly_paths
     if [ "${EFFECTIVE_READONLY_PATHS[*]}" = "docs/policy jailbox.conf config/lane.conf Containerfile" ]; then
-        pass "effective order is configured, default config, selected config, Containerfile"
+        pass "effective order is composed paths then Containerfile"
     else
         fail "effective order (${EFFECTIVE_READONLY_PATHS[*]})"
     fi
@@ -98,12 +90,9 @@ test_anchor_and_empty_regression() {
     with_project
     external=$(fixture_dir)
     : > "$external/lane.conf"
-    READONLY_PATHS=()
     : > "$PROJECT_DIR/jailbox.conf"
-    DEFAULT_CONFIG_INPUT="$PROJECT_DIR/jailbox.conf"
-    DEFAULT_CONFIG_PRESENT=1
-    SELECTED_CONFIG_INPUT="$external/lane.conf"
     SELECTED_DEV_CONTAINERFILE_INPUT=""
+    READONLY_PATHS=(jailbox.conf)
     finalize_effective_readonly_paths
     if [ "${EFFECTIVE_READONLY_PATHS[*]-}" = jailbox.conf ]; then pass "external config launch retains default anchor"; else fail "external config launch retains default anchor"; fi
     EFFECTIVE_READONLY_PATHS=()

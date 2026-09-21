@@ -5,7 +5,7 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/editor.sh"
+source "$JAILBOX_DIR/host/frontend/settings.sh"
 
 PASSED=0
 FAILED=0
@@ -35,12 +35,10 @@ assert_not_contains() {
 
 with_settings_file() {
     SETTINGS_DIR=$(mktemp -d)
-    JAILBOX_EDITOR_USER_DATA="$SETTINGS_DIR"
     JAILBOX_EDITOR_USER_SETTINGS="$SETTINGS_DIR/User/settings.json"
     SSH_CONFIG="$SETTINGS_DIR/ssh_config"
-    declare -gA NETWORK_STATE=(
-        [proxy_url]="http://proxy.test:8888"
-        [no_proxy]="localhost,127.0.0.1"
+    declare -gA EDITOR_CONNECTION=(
+        [ssh_config]="$SSH_CONFIG" [proxy_url]="http://10.240.1.2:8888"
     )
 }
 
@@ -49,14 +47,12 @@ test_egress_editor_settings_include_proxy() {
 
     with_settings_file
     settings="$JAILBOX_EDITOR_USER_SETTINGS"
-    EGRESS_ALLOW=(api.example.test)
-    JAILBOX_EDITOR_SMOKE_TEST_SETTINGS=""
 
-    write_jailbox_editor_user_settings
+    write_editor_settings "$JAILBOX_EDITOR_USER_SETTINGS"
 
     assert_contains "egress settings include SSH config" "$settings" "\"remote.SSH.configFile\": \"$SSH_CONFIG\""
-    assert_contains "egress settings include editor HTTP proxy" "$settings" "\"http.proxy\": \"${NETWORK_STATE[proxy_url]}\""
-    assert_contains "egress settings include terminal proxy env" "$settings" "\"terminal.integrated.env.linux\""
+    assert_contains "egress settings include editor HTTP proxy" "$settings" "\"http.proxy\": \"${EDITOR_CONNECTION[proxy_url]}\""
+    assert_not_contains "egress settings omit terminal proxy env" "$settings" "\"terminal.integrated.env.linux\""
     rm -rf "$SETTINGS_DIR"
 }
 
@@ -65,30 +61,14 @@ test_non_egress_editor_settings_skip_proxy() {
 
     with_settings_file
     settings="$JAILBOX_EDITOR_USER_SETTINGS"
-    EGRESS_ALLOW=()
-    JAILBOX_EDITOR_SMOKE_TEST_SETTINGS=""
+    EDITOR_CONNECTION[proxy_url]=""
 
-    write_jailbox_editor_user_settings
+    write_editor_settings "$JAILBOX_EDITOR_USER_SETTINGS"
 
     assert_contains "non-egress settings include SSH config" "$settings" "\"remote.SSH.configFile\": \"$SSH_CONFIG\""
     assert_not_contains "non-egress settings omit editor HTTP proxy" "$settings" "\"http.proxy\""
     assert_not_contains "non-egress settings omit terminal proxy env" "$settings" "\"terminal.integrated.env.linux\""
     rm -rf "$SETTINGS_DIR"
-}
-
-test_smoke_machine_settings_include_proxy_in_egress() {
-    local output
-
-    EGRESS_ALLOW=(api.example.test)
-    declare -gA NETWORK_STATE=([proxy_url]="http://proxy.test:8888")
-
-    output=$(editor_smoke_settings_json_object)
-
-    if grep -Fq "\"http.proxy\": \"${NETWORK_STATE[proxy_url]}\"" <<< "$output"; then
-        pass "smoke machine settings include editor HTTP proxy in egress"
-    else
-        fail "smoke machine settings include editor HTTP proxy in egress"
-    fi
 }
 
 main() {
@@ -97,19 +77,6 @@ main() {
 
     test_egress_editor_settings_include_proxy
     test_non_egress_editor_settings_skip_proxy
-    test_smoke_machine_settings_include_proxy_in_egress
-    (
-        source "$JAILBOX_DIR/tests/lib/file-publication.sh"
-        with_settings_file
-        trap 'rm -rf "$SETTINGS_DIR"' EXIT
-        EGRESS_ALLOW=()
-        assert_file_publication write_jailbox_editor_user_settings "$JAILBOX_EDITOR_USER_SETTINGS"
-        mv() { return 43; }
-        write_remote_editor_smoke_settings() { touch "$SETTINGS_DIR/launched"; }
-        if launch_editor_remote; then exit 1; fi
-        [[ ! -e "$SETTINGS_DIR/launched" ]]
-    )
-    pass 'settings publication preserves destination and caller state across failures and signals'
 
     echo ""
     if [ "$FAILED" -eq 0 ]; then

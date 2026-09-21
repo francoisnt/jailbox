@@ -103,7 +103,7 @@ assert_zero_effective_capabilities() {
         "awk '/^CapEff:/ { exit (\$2 == \"0000000000000000\" ? 0 : 1) }' /proc/1/status"
 }
 
-# host/dev-image.sh validation probes execute the dev image (including its
+# host/core/dev-image.sh validation probes execute the dev image (including its
 # entrypoint) before any jailbox runtime hardening applies, so podman_probe
 # must supply its own constraints: no network and no capabilities.
 # Sourcing happens inside the command substitutions because dev-image.sh
@@ -114,8 +114,8 @@ assert_probe_hardening() {
     local interfaces capabilities
 
     interfaces=$(
-        # shellcheck source=host/dev-image.sh
-        source "$JAILBOX_DIR/host/dev-image.sh"
+        # shellcheck source=host/core/dev-image.sh
+        source "$JAILBOX_DIR/host/core/dev-image.sh"
         podman_probe "$image" /bin/sh -c 'ls /sys/class/net' 2>/dev/null || true
     )
     if [ "$interfaces" = "lo" ]; then
@@ -125,8 +125,8 @@ assert_probe_hardening() {
     fi
 
     capabilities=$(
-        # shellcheck source=host/dev-image.sh
-        source "$JAILBOX_DIR/host/dev-image.sh"
+        # shellcheck source=host/core/dev-image.sh
+        source "$JAILBOX_DIR/host/core/dev-image.sh"
         podman_probe "$image" /bin/sh -c 'grep ^CapEff: /proc/self/status' 2>/dev/null || true
     )
     case "$capabilities" in
@@ -149,8 +149,8 @@ assert_readonly_mount_validation() {
     # Host validation resolves its shipped payload relative to the CLI root.
     local SCRIPT_DIR="$JAILBOX_DIR"
 
-    # shellcheck source=host/validation.sh
-    source "$JAILBOX_DIR/host/validation.sh"
+    # shellcheck source=host/core/validation.sh
+    source "$JAILBOX_DIR/host/core/validation.sh"
     refuse_sandbox() { echo "$*" >&2; exit 1; }
 
     # Globals consumed by check_readonly_mounts. CONTAINER_NAME doubles as

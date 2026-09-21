@@ -3,10 +3,10 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=host/public-api.sh
 source "$ROOT/host/public-api.sh"
-# shellcheck source=host/common.sh
-source "$ROOT/host/common.sh"
-# shellcheck source=host/config-digest.sh
-source "$ROOT/host/config-digest.sh"
+# shellcheck source=host/core/common.sh
+source "$ROOT/host/core/common.sh"
+# shellcheck source=host/core/config-digest.sh
+source "$ROOT/host/core/config-digest.sh"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 while IFS= read -r name; do unset "$name"; done < <(environment_config_names)
 context=$(print_attachment_digest_context)

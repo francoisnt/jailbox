@@ -26,12 +26,13 @@ chmod +x "$FIXTURE/bin/podman"
 # must not run in a subshell.
 new_project() {
     PROJECT=$(mktemp -d "$FIXTURE/project.XXXXXX")
+    unset JAILBOX_CONFIG_DEV_IMAGE JAILBOX_CONFIG_EPHEMERAL_HOME
     printf "READONLY_PATHS=\n" > "$PROJECT/jailbox.conf"
     FAKE_PODMAN_STATE="$PROJECT/.podman-state"
     mkdir -p "$FAKE_PODMAN_STATE"
     export FAKE_PODMAN_STATE
-    PREFIX=$(source "$JAILBOX_DIR/host/project-id.sh" && jailbox_resource_prefix_for_path "$PROJECT")
-    STATE_DIR="$FIXTURE/xdg-state/jailbox/projects/$(source "$JAILBOX_DIR/host/project-id.sh" && jailbox_project_hash_for_path "$PROJECT")"
+    PREFIX=$(source "$JAILBOX_DIR/host/core/project-id.sh" && jailbox_resource_prefix_for_path "$PROJECT")
+    STATE_DIR="$FIXTURE/xdg-state/jailbox/projects/$(source "$JAILBOX_DIR/host/core/project-id.sh" && jailbox_project_hash_for_path "$PROJECT")"
 }
 
 # Declare a resource in the fake Podman state: kind, name, optional label
@@ -203,12 +204,6 @@ test_stop_ignores_configuration() {
     else
         fail "stop succeeds with no config at all (got: $output)"
     fi
-
-    if output=$(run_jailbox "$project" --config missing.conf stop); then
-        pass "stop ignores --config naming a missing file"
-    else
-        fail "stop ignores --config naming a missing file (got: $output)"
-    fi
 }
 
 # stop is a precondition for launch, so it must not inherit launch's toolchain.
@@ -356,46 +351,44 @@ test_clean_leaves_undeclared_names_alone() {
 
 # Legacy containers refuse at the digest gate after configuration validation.
 test_launch_rejects_legacy_containers() {
-    local project output name command labels description
+    local project output name labels description
 
     printf '#!/bin/bash\nexit 0\n' > "$FIXTURE/bin/codium"
     chmod +x "$FIXTURE/bin/codium"
 
-    for command in "" up; do
-        for name in "" -proxy; do
-            for description in "this project's label" "a foreign project label" "no labels at all"; do
-                new_project
-                project="$PROJECT"
-                printf "DEV_IMAGE=localhost/fixture\n" >> "$project/jailbox.conf"
-                case "$description" in
-                    "this project's label") labels="jailbox.project=$project" ;;
-                    "a foreign project label") labels="jailbox.project=/somewhere/else" ;;
-                    *) labels="" ;;
-                esac
-                declare_resource container "$PREFIX$name" "$labels"
-                output=$(run_jailbox "$project" $command || true)
-                case "$output" in
-                    *"jailbox stop"*)
-                        pass "launch names jailbox stop for a ${name:-development} container with $description"
-                        ;;
-                    *)
-                        fail "launch names jailbox stop for a ${name:-development} container with $description (got: $output)"
-                        ;;
-                esac
-                case "$output" in
-                    *"does not own"*)
-                        fail "launch no longer distinguishes owned from foreign ${name:-development} containers"
-                        ;;
-                    *)
-                        pass "launch gives one diagnostic for a ${name:-development} container with $description"
-                        ;;
-                esac
-                if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
-                    pass "the ${name:-development} container with $description is left untouched"
-                else
-                    fail "the ${name:-development} container with $description is left untouched"
-                fi
-            done
+    for name in "" -proxy; do
+        for description in "this project's label" "a foreign project label" "no labels at all"; do
+            new_project
+            project="$PROJECT"
+            export JAILBOX_CONFIG_DEV_IMAGE=localhost/fixture
+            case "$description" in
+                "this project's label") labels="jailbox.project=$project" ;;
+                "a foreign project label") labels="jailbox.project=/somewhere/else" ;;
+                *) labels="" ;;
+            esac
+            declare_resource container "$PREFIX$name" "$labels"
+            output=$(run_jailbox "$project" up || true)
+            case "$output" in
+                *"jailbox stop"*)
+                    pass "launch names jailbox stop for a ${name:-development} container with $description"
+                    ;;
+                *)
+                    fail "launch names jailbox stop for a ${name:-development} container with $description (got: $output)"
+                    ;;
+            esac
+            case "$output" in
+                *"does not own"*)
+                    fail "launch no longer distinguishes owned from foreign ${name:-development} containers"
+                    ;;
+                *)
+                    pass "launch gives one diagnostic for a ${name:-development} container with $description"
+                    ;;
+            esac
+            if resource_present container "$PREFIX$name" && [ -z "$(actions)" ]; then
+                pass "the ${name:-development} container with $description is left untouched"
+            else
+                fail "the ${name:-development} container with $description is left untouched"
+            fi
         done
     done
     rm "$FIXTURE/bin/codium"
@@ -404,35 +397,33 @@ test_launch_rejects_legacy_containers() {
 # Configuration must be valid before launch can decide whether a live sandbox
 # is compatible. Its presence no longer implies a stop precondition.
 test_configuration_precedes_convergence() {
-    local project output command
+    local project output
 
-    for command in "" up; do
-        new_project
-        project="$PROJECT"
-        rm "$project/jailbox.conf"
-        declare_resource container "$PREFIX"
+    new_project
+    project="$PROJECT"
+    export JAILBOX_CONFIG_EPHEMERAL_HOME=invalid
+    declare_resource container "$PREFIX"
 
-        output=$(run_jailbox "$project" $command || true)
-        case "$output" in
-            *"jailbox init"*) pass "launch validates configuration before convergence" ;;
-            *) fail "launch validates configuration before convergence (got: $output)" ;;
-        esac
-        case "$output" in
-            *"jailbox stop"*) fail "no absence-only refusal before configuration" ;;
-            *) pass "no absence-only refusal before configuration" ;;
-        esac
+    output=$(run_jailbox "$project" up || true)
+    case "$output" in
+        *"invalid EPHEMERAL_HOME"*) pass "launch validates configuration before convergence" ;;
+        *) fail "launch validates configuration before convergence (got: $output)" ;;
+    esac
+    case "$output" in
+        *"jailbox stop"*) fail "no absence-only refusal before configuration" ;;
+        *) pass "no absence-only refusal before configuration" ;;
+    esac
 
-        run_jailbox "$project" stop >/dev/null
-        output=$(run_jailbox "$project" $command || true)
-        case "$output" in
-            *"Project is not initialized"*"jailbox init"*)
-                pass "the next launch after stopping reports the initialization requirement"
-                ;;
-            *)
-                fail "the next launch after stopping reports the initialization requirement (got: $output)"
-                ;;
-        esac
-    done
+    run_jailbox "$project" stop >/dev/null
+    output=$(run_jailbox "$project" up || true)
+    case "$output" in
+        *"invalid EPHEMERAL_HOME"*)
+            pass "the next launch after stopping reports the configuration error"
+            ;;
+        *)
+            fail "the next launch after stopping reports the configuration error (got: $output)"
+            ;;
+    esac
 }
 
 test_launch_reports_missing_podman_first() {
@@ -451,13 +442,13 @@ test_launch_reports_missing_podman_first() {
     new_project
     project="$PROJECT"
     output=$( (cd "$project" && PATH="$restricted" \
-        XDG_STATE_HOME="$FIXTURE/xdg-state" "$JAILBOX_DIR/jailbox") 2>&1 || true)
+        XDG_STATE_HOME="$FIXTURE/xdg-state" "$JAILBOX_DIR/jailbox" up) 2>&1 || true)
     case "$output" in
         *"required command not found: podman"*)
-            pass "bare launch reports missing podman before probing container names"
+            pass "machine up reports missing podman before probing container names"
             ;;
         *)
-            fail "bare launch reports missing podman before probing container names (got: $output)"
+            fail "machine up reports missing podman before probing container names (got: $output)"
             ;;
     esac
 }
@@ -501,13 +492,13 @@ test_cksum_is_required_only_by_launch() {
     esac
 
     output=$( (cd "$project" && PATH="$restricted" XDG_STATE_HOME="$FIXTURE/xdg-state" \
-        "$JAILBOX_DIR/jailbox") 2>&1 || true)
+        "$JAILBOX_DIR/jailbox" up) 2>&1 || true)
     case "$output" in
         *"required command not found: cksum"*)
-            pass "bare launch still requires cksum before building the wrapper image"
+            pass "machine up still requires cksum before building the wrapper image"
             ;;
         *)
-            fail "bare launch still requires cksum before building the wrapper image (got: $output)"
+            fail "machine up still requires cksum before building the wrapper image (got: $output)"
             ;;
     esac
 }
@@ -568,7 +559,7 @@ test_up_documented_in_help() {
         *) fail "up appears in the literal usage synopsis (got: $output)" ;;
     esac
     case "$output" in
-        *"up"*"Launch the sandbox without opening an editor"*)
+        *"up"*"Launch the sandbox using environment configuration"*)
             pass "up appears in the generated options block"
             ;;
         *) fail "up appears in the generated options block (got: $output)" ;;
@@ -580,7 +571,7 @@ test_up_ignores_editor_environment_override() {
 
     new_project
     project="$PROJECT"
-    printf 'DEV_IMAGE=example.invalid/dev\n' > "$project/jailbox.conf"
+    export JAILBOX_CONFIG_DEV_IMAGE=example.invalid/dev
     output=$(JAILBOX_EDITOR=not-an-editor run_jailbox "$project" up || true)
     case "$output" in
         *"invalid EDITOR="*|*"neither 'codium' nor 'code'"*)
@@ -627,7 +618,7 @@ test_identity_requires_a_sha256_tool() {
         fail "restricted PATH has neither sha256sum nor shasum"
     fi
 
-    for command in stop --clean status connection-info ssh-config up ""; do
+    for command in stop --clean status connection-info ssh-config up; do
         new_project
         project="$PROJECT"
         declare_resource container "$PREFIX"
@@ -712,14 +703,14 @@ test_both_sha256_tools_produce_the_same_identity() {
 }
 
 test_launch_runs_without_replace() {
-    if grep -Fq -- '--replace' "$JAILBOX_DIR/host/container-runtime.sh" ||
-        grep -Fq -- '--replace' "$JAILBOX_DIR/host/network.sh"; then
+    if grep -Fq -- '--replace' "$JAILBOX_DIR/host/core/container-runtime.sh" ||
+        grep -Fq -- '--replace' "$JAILBOX_DIR/host/core/network.sh"; then
         fail "development and proxy runs do not use --replace"
     else
         pass "development and proxy runs do not use --replace"
     fi
-    if grep -Fq 'Replacing existing' "$JAILBOX_DIR/host/container-runtime.sh" ||
-        grep -Fq 'Replacing existing' "$JAILBOX_DIR/host/network.sh"; then
+    if grep -Fq 'Replacing existing' "$JAILBOX_DIR/host/core/container-runtime.sh" ||
+        grep -Fq 'Replacing existing' "$JAILBOX_DIR/host/core/network.sh"; then
         fail "dead replacement notices are removed"
     else
         pass "dead replacement notices are removed"
@@ -792,7 +783,7 @@ test_home_recovery() {
     for policy in legacy false true corrupt empty; do
         for requested in false true; do
             new_project
-            printf 'DEV_IMAGE=example.invalid/dev\nEPHEMERAL_HOME=%s\n' "$requested" > "$PROJECT/jailbox.conf"
+            export JAILBOX_CONFIG_DEV_IMAGE=example.invalid/dev JAILBOX_CONFIG_EPHEMERAL_HOME=$requested
             case "$policy" in
                 legacy) declare_resource volume "$PREFIX-home" ;;
                 empty) declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=' ;;
@@ -836,7 +827,7 @@ test_home_recovery() {
     done
 
     new_project
-    printf 'DEV_IMAGE=example.invalid/dev\nEPHEMERAL_HOME=invalid\n' > "$PROJECT/jailbox.conf"
+    export JAILBOX_CONFIG_DEV_IMAGE=example.invalid/dev JAILBOX_CONFIG_EPHEMERAL_HOME=invalid
     status=0
     output=$(run_jailbox "$PROJECT" up) || status=$?
     if [ "$status" -eq 1 ] && [ -z "$(actions)" ] && [[ "$output" == *"invalid EPHEMERAL_HOME"* ]]; then
@@ -854,9 +845,9 @@ run_home_function() (
     # shellcheck disable=SC1091
     source "$JAILBOX_DIR/host/public-api.sh"
     # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/host/common.sh"
+    source "$JAILBOX_DIR/host/core/common.sh"
     # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/host/container-runtime.sh"
+    source "$JAILBOX_DIR/host/core/container-runtime.sh"
     apply_config_defaults
     PROJECT_DIR="$PROJECT"
     initialize_project_names
@@ -869,7 +860,7 @@ test_home_creation_and_generation() {
     local mode before output status
 
     (
-        source "$JAILBOX_DIR/host/container-runtime.sh"
+        source "$JAILBOX_DIR/host/core/container-runtime.sh"
         VOLUME_NAME=test-home EPHEMERAL_HOME=false
         resolve_present_resources() { local -n result=$1; result=(); }
         for fault in create inspect chown; do
@@ -982,7 +973,7 @@ test_interrupted_stop_and_exact_images() {
     local output status name
 
     new_project
-    printf 'DEV_IMAGE=example.invalid/dev\n' > "$PROJECT/jailbox.conf"
+    export JAILBOX_CONFIG_DEV_IMAGE=example.invalid/dev
     declare_resource volume "$PREFIX-home" 'jailbox.ephemeral-home=false'
     declare_resource network "$PREFIX-net" 'jailbox.config-digest=stale'
     output=$(run_jailbox "$PROJECT" up || true)

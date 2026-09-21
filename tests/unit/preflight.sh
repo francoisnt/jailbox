@@ -5,7 +5,7 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/preflight.sh"
+source "$JAILBOX_DIR/host/frontend/editor.sh"
 
 PASSED=0
 FAILED=0

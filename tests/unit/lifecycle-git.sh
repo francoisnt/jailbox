@@ -9,8 +9,8 @@ source "$ROOT/tests/lib/logging.sh"
 source "$ROOT/tests/lib/resource-ledger.sh"
 # shellcheck source=tests/lib/lifecycle-runtime.sh
 source "$ROOT/tests/lib/lifecycle-runtime.sh"
-# shellcheck source=host/container-runtime.sh
-source "$ROOT/host/container-runtime.sh"
+# shellcheck source=host/core/container-runtime.sh
+source "$ROOT/host/core/container-runtime.sh"
 mkdir "$test_root/bin"
 # Init checks for an existing container; no engine mutation is permitted.
 cat > "$test_root/bin/podman" <<'ENGINE'

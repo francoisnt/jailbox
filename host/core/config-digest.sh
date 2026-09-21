@@ -282,7 +282,7 @@ require_compatible_project_resources() {
     fi
     # Attempt the required refusal before advisory context. Output failures
     # must neither suppress this attempt nor change the refusal's exit status.
-    # Keep the prefix consistent with die in host/common.sh; calling die here
+    # Keep the prefix consistent with die in host/core/common.sh; calling die here
     # would exit before the advisory context can be attempted.
     printf 'Error: %s\n' "refusing to reuse project resources that do not match this configuration and jailbox version: $summary. $guidance" >&2 || true
     if [[ ${1:-} = attach ]]; then

@@ -18,6 +18,15 @@ done
 
 [[ -n "${JAILBOX_E2E_PROJECT:-}" ]] || { echo "stub: JAILBOX_E2E_PROJECT not set" >&2; exit 1; }
 [[ "${JAILBOX_E2E_REJECT_EDITOR:-}" != "1" ]] || { echo "stub: editor must not be called by up" >&2; exit 1; }
+# Preflight queries the shared extension directory before creating a profile.
+if [[ $# = 3 && "$1" = --extensions-dir && "$3" = --list-extensions ]]; then
+    case "${0##*/}" in
+        codium) printf 'jeanp413.open-remote-ssh\n' ;;
+        code) printf 'ms-vscode-remote.remote-ssh\n' ;;
+        *) exit 1 ;;
+    esac
+    exit 0
+fi
 [[ -n "$user_data_dir" ]] || { echo "stub: no --user-data-dir argument received" >&2; exit 1; }
 [[ -f "$user_data_dir/User/settings.json" ]] || { echo "stub: user-data settings missing" >&2; exit 1; }
 grep -Fq '"remote.SSH.configFile":' "$user_data_dir/User/settings.json" || {

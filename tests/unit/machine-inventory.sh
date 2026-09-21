@@ -33,7 +33,6 @@ failure() {
 
 schema=$'DEV_IMAGE\tscalar\nDEV_CONTAINERFILE\tscalar\nDEV_BUILD_CONTEXT\tscalar\nDEV_TARGET_STAGE\tscalar\nMEMORY_LIMIT\tscalar\nCPU_LIMIT\tscalar\nPIDS_LIMIT\tscalar\nEPHEMERAL_HOME\tscalar\nEGRESS_ALLOW\tarray\nREADONLY_PATHS\tarray'
 success "$schema" cli config-schema
-success "$schema" cli --config /missing config-schema
 failure cli status # Podman is required, even for absence.
 for command in config-schema status; do
     failure cli "$command" extra
@@ -51,10 +50,10 @@ CONFIG_ARRAY_KEYS+=(SAMPLE_ARRAY)
 CONFIG_DEFAULTS+=('SAMPLE_SCALAR=' 'SAMPLE_ARRAY=')
 initialize_public_api_lookups
 API
-printf '\nDIGEST_ARRAY_MODES[SAMPLE_ARRAY]=ordered\n' >> "$tmp/source/host/config-digest.sh"
+printf '\nDIGEST_ARRAY_MODES[SAMPLE_ARRAY]=ordered\n' >> "$tmp/source/host/core/config-digest.sh"
 extended=${schema/$'EGRESS_ALLOW\tarray'/$'SAMPLE_SCALAR\tscalar\nEGRESS_ALLOW\tarray'}
 success "$extended"$'\nSAMPLE_ARRAY\tarray' cli config-schema
-cp "$ROOT/host/config-digest.sh" "$tmp/source/host/config-digest.sh"
+cp "$ROOT/host/core/config-digest.sh" "$tmp/source/host/core/config-digest.sh"
 for declaration in \
     'CONFIG_ARRAY_KEYS+=(DEV_IMAGE)' \
     'CONFIG_SCALAR_KEYS+=(DEV_IMAGE)' \
@@ -69,8 +68,8 @@ cp "$ROOT/host/public-api.sh" "$tmp/source/host/public-api.sh"
 
 # Derive expected names using the existing identity contract, then assert that
 # the stub sees precisely these resources, never images, labels, or SSH state.
-# shellcheck source=host/project-id.sh
-source "$ROOT/host/project-id.sh"
+# shellcheck source=host/core/project-id.sh
+source "$ROOT/host/core/project-id.sh"
 export TEST_PREFIX
 TEST_PREFIX=$(jailbox_resource_prefix_for_path "$(pwd -P)")
 export TEST_CALLS="$tmp/calls" TEST_PRESENT='' TEST_RUNNING=false TEST_FAULT='' TEST_PARTIAL=''
@@ -129,11 +128,11 @@ STUB
     mv "$tmp/bin/$tool.real" "$tmp/bin/$tool"
 done
 
-# Physical cwd identity is shared by symlink invocation. Neither the default
-# file nor a selected missing configuration affects either command.
+# Physical cwd identity is shared by symlink invocation. The default config
+# file does not affect inventory.
 ln -s "$tmp/project" "$tmp/alias"
 cd "$tmp/alias"
-success running cli --config /missing status
+success running cli status
 [[ ! -e "$XDG_STATE_HOME" ]] || fail 'status created runtime state'
 [[ $(cat "$tmp/project/jailbox.conf") = 'invalid configuration' ]] || fail 'configuration changed'
 printf 'PASS: schema discovery, all inventory combinations, and discovery failures\n'

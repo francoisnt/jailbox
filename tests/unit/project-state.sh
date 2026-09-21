@@ -7,11 +7,9 @@ JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/public-api.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/common.sh"
+source "$JAILBOX_DIR/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/ssh.sh"
-# shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/editor.sh"
+source "$JAILBOX_DIR/host/core/ssh.sh"
 
 PASSED=0
 FAILED=0
@@ -52,12 +50,10 @@ test_project_state_paths() {
 
     initialize_project_names
     initialize_ssh_state
-    initialize_editor_state
     hash=$(jailbox_project_hash_for_path "$project_dir")
 
     assert_eq "SSH state uses XDG project state dir" "$state_home/jailbox/projects/$hash" "$SSH_DIR"
     assert_eq "SSH config uses project state dir" "$state_home/jailbox/projects/$hash/ssh-generation/ssh_config" "$SSH_CONFIG"
-    assert_eq "editor profile remains in XDG state" "$state_home/jailbox/editor-profiles/$hash" "$JAILBOX_EDITOR_USER_DATA"
     assert_eq "shared project state root uses XDG state" "$state_home/jailbox" "$PROJECT_STATE_ROOT"
     assert_not_prefix "SSH state is outside project" "$project_dir" "$SSH_DIR"
 

@@ -6,12 +6,12 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=host/public-api.sh
 source "$ROOT/host/public-api.sh"
-# shellcheck source=host/common.sh
-source "$ROOT/host/common.sh"
-# shellcheck source=host/preflight.sh
-source "$ROOT/host/preflight.sh"
-# shellcheck source=host/config-digest.sh
-source "$ROOT/host/config-digest.sh"
+# shellcheck source=host/core/common.sh
+source "$ROOT/host/core/common.sh"
+# shellcheck source=host/core/preflight.sh
+source "$ROOT/host/core/preflight.sh"
+# shellcheck source=host/core/config-digest.sh
+source "$ROOT/host/core/config-digest.sh"
 # shellcheck source=tests/lib/lifecycle-matrix.sh
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh
@@ -167,9 +167,9 @@ CLI_HELP+=("sample=Sample command")
 initialize_public_api_lookups
 API
 expect_failure "command handlers: missing mapping 'sample'" bash "$tmp/cli/jailbox" --help
-printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='missing_handler'" >> "$tmp/cli/host/common.sh"
-expect_failure "missing command handler 'missing_handler'" bash "$tmp/cli/jailbox" --help
-printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='usage'" >> "$tmp/cli/host/common.sh"
+printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='missing_handler'" >> "$tmp/cli/host/public-api.sh"
+expect_failure "missing command handler 'missing_handler'" bash "$tmp/cli/jailbox" sample
+printf '%s\n' "CLI_COMMAND_HANDLERS[sample]='usage'" >> "$tmp/cli/host/public-api.sh"
 bash "$tmp/cli/jailbox" sample > "$tmp/dispatched"
 grep -Fq 'Sample command' "$tmp/dispatched"
 # A new value option also propagates to parsing through its declared target.
@@ -182,7 +182,7 @@ API
 # shellcheck disable=SC2016 # Function body is evaluated by the copied CLI.
 printf '%s\n' 'CLI_OPTION_TARGETS[--sample2]=SAMPLE_VALUE' \
     "CLI_COMMAND_HANDLERS[sample]='sample_value'" \
-    'sample_value() { printf "%s\n" "$SAMPLE_VALUE"; }' >> "$tmp/cli/host/common.sh"
+    'sample_value() { printf "%s\n" "$SAMPLE_VALUE"; }' >> "$tmp/cli/host/public-api.sh"
 [[ $(bash "$tmp/cli/jailbox" --sample2 'value with spaces' sample) = 'value with spaces' ]]
 for token in "${CLI_FLAGS_WITH_VALUES[@]}" "${CLI_FLAGS_WITHOUT_VALUES[@]}" --sample2; do
     [[ "$token" = -* ]] || continue

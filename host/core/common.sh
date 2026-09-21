@@ -1,17 +1,9 @@
 # Common helpers and configuration loading.
 
-# shellcheck source=host/project-id.sh
+# shellcheck source=host/core/project-id.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
-# shellcheck source=host/version.sh
+# shellcheck source=host/core/version.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/version.sh"
-
-declare -A CONFIG_SEEN_KEYS=()
-
-CONFIG_PATH_ARG=""
-CONFIG_FILE=""
-DEFAULT_CONFIG_INPUT=""
-SELECTED_CONFIG_INPUT=""
-DEFAULT_CONFIG_PRESENT=0
 
 PROJECT_HASH=""
 PROJECT_RESOURCE_PREFIX=""
@@ -25,91 +17,6 @@ LOCAL_PORT=""
 MY_UID=""
 MANAGED_USER="jailbox"
 REMOTE_PATH="/home/jailbox/project"
-
-# Each handler owns its setup and behavior. Membership comes from public-api.sh;
-# validate_cli_implementation rejects missing or undeclared handlers.
-declare -A CLI_COMMAND_HANDLERS=(
-    [exec]=run_exec [shell]=run_shell [init]=run_init [up]=run_up [stop]=run_stop
-    [config-schema]=run_config_schema [status]=run_status
-    [connection-info]=run_connection_info [validate]=run_validate [ssh-config]=run_ssh_config [--clean]=run_clean
-    [--uninstall]=run_uninstall [--version]=run_version [--help]=usage
-)
-declare -A CLI_OPTION_TARGETS=([--config]=CONFIG_PATH_ARG)
-
-usage() {
-    local flag synopsis="" separator=""
-
-    for flag in "${CLI_FLAGS_WITH_VALUES[@]}"; do
-        synopsis+="[$flag ${CLI_VALUE_NAMES[$flag]}] "
-    done
-    synopsis+='['
-    for flag in "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
-        synopsis+="$separator$flag"
-        separator='|'
-    done
-    synopsis+=']'
-
-    cat <<EOF_USAGE
-Usage: $(basename "$0") $synopsis
-
-Launch this project inside a hardened jailbox container.
-
-Options:
-EOF_USAGE
-
-    for flag in "${CLI_FLAGS_WITH_VALUES[@]}"; do
-        printf '  %-14s %s\n' "$flag ${CLI_VALUE_NAMES[$flag]}" "$(cli_flag_help "$flag")"
-    done
-    for flag in "${CLI_FLAGS_WITHOUT_VALUES[@]}"; do
-        printf '  %-14s %s\n' "$flag" "$(cli_flag_help "$flag")"
-    done
-}
-
-command_requires_config() {
-    [ -z "${1:-}" ] || [ "${1:-}" = up ]
-}
-
-init_project_config() (
-    local destination nested_link tmp_file
-
-    destination="$PROJECT_DIR/jailbox.conf"
-    if [ -e "$destination" ] || [ -L "$destination" ]; then
-        die "jailbox.conf already exists; refusing to overwrite it"
-    fi
-
-    tmp_file=""
-    trap '[ -z "$tmp_file" ] || rm -f -- "$tmp_file"' EXIT
-    trap 'exit 1' HUP INT TERM
-
-    tmp_file=$(mktemp "$PROJECT_DIR/.jailbox.conf.tmp.XXXXXX") || \
-        die "could not create temporary project configuration"
-    if ! printf '%s\n' \
-        '# Additional project paths mounted read-only inside the sandbox.' \
-        'READONLY_PATHS=' > "$tmp_file"; then
-        die "could not write temporary project configuration"
-    fi
-
-    if ln -- "$tmp_file" "$destination" 2>/dev/null; then
-        # ln treats an existing directory (and, on some hosts, a symlink to
-        # one) as a directory operand. A destination introduced after the
-        # check above must not turn publication into a hidden link inside that
-        # directory while jailbox reports success.
-        if [ "$tmp_file" -ef "$destination" ]; then
-            echo "Created $destination"
-            return 0
-        fi
-
-        nested_link="$destination/${tmp_file##*/}"
-        if [[ -e "$nested_link" && "$tmp_file" -ef "$nested_link" ]]; then
-            rm -f -- "$nested_link"
-        fi
-    fi
-
-    if [ -e "$destination" ] || [ -L "$destination" ]; then
-        die "jailbox.conf already exists; refusing to overwrite it"
-    fi
-    die "could not publish $destination"
-)
 
 die() {
     echo "Error: $*" >&2
@@ -289,58 +196,6 @@ classify_trusted_directory() {
     printf '%s\n' "$canonical"
 }
 
-prepare_config_selection() {
-    local command selected classified status
-
-    command="${1:-}"
-
-    require_command realpath
-    DEFAULT_CONFIG_INPUT="$PROJECT_DIR/jailbox.conf"
-    DEFAULT_CONFIG_PRESENT=0
-    SELECTED_CONFIG_INPUT=""
-    if [ -e "$DEFAULT_CONFIG_INPUT" ] || [ -L "$DEFAULT_CONFIG_INPUT" ]; then
-        status=0
-        classified=$(classify_trusted_file "$DEFAULT_CONFIG_INPUT" "default config") || status=$?
-        [ "$status" -eq 0 ] || return "$status"
-        DEFAULT_CONFIG_PRESENT=1
-    elif command_requires_config "$command"; then
-        die "Project is not initialized: jailbox.conf is required even with --config so the sandbox cannot create policy for a later bare launch. Run 'jailbox init'."
-    fi
-
-    if [ -n "$CONFIG_PATH_ARG" ]; then
-        case "$CONFIG_PATH_ARG" in
-            /*) selected="$CONFIG_PATH_ARG" ;;
-            *) selected="$PWD/$CONFIG_PATH_ARG" ;;
-        esac
-    else
-        selected=""
-        [ -e "$DEFAULT_CONFIG_INPUT" ] && selected="$DEFAULT_CONFIG_INPUT"
-    fi
-
-    CONFIG_FILE=""
-    [ -n "$selected" ] || return 0
-
-    SELECTED_CONFIG_INPUT="$selected"
-    status=0
-    classified=$(classify_trusted_file "$SELECTED_CONFIG_INPUT" "config") || status=$?
-    [ "$status" -eq 0 ] || return "$status"
-    CONFIG_FILE="${classified%%$'\t'*}"
-}
-
-load_project_config() {
-    local config_file
-
-    config_file="$CONFIG_FILE"
-    [ -n "$config_file" ] || return 0
-
-    # jailbox.conf is deliberately data, not shell. Parse a tiny KEY=value
-    # grammar explicitly so user config can never execute code through source,
-    # command substitution, arithmetic expansion, or shell metacharacters.
-    parse_config_file "$config_file" || return $?
-    validate_editor_config
-    validate_machine_config
-}
-
 # --- Environment configuration (JAILBOX_CONFIG_*) ------------------------
 #
 # The canonical machine configuration model: one derived spelling per key
@@ -352,10 +207,6 @@ load_project_config() {
 # are outside the interface.
 
 ENV_CONFIG_PREFIX="JAILBOX_CONFIG_"
-
-environment_config_present() {
-    compgen -A export "$ENV_CONFIG_PREFIX" >/dev/null 2>&1
-}
 
 environment_config_names() {
     compgen -A export "$ENV_CONFIG_PREFIX" || true
@@ -479,193 +330,6 @@ load_environment_config() {
     validate_machine_config
 }
 
-# Load the effective configuration for a consuming command. Declared
-# JAILBOX_CONFIG_* variables are the complete configuration; otherwise a
-# temporary in-core adapter parses jailbox.conf into the same effective
-# values and runs the same machine validator. The two paths are exclusive:
-# never precedence, never merge.
-load_effective_config() {
-    local command
-
-    command="${1:-}"
-    validate_public_api_declaration
-
-    if environment_config_present; then
-        [ -z "$CONFIG_PATH_ARG" ] || \
-            die "JAILBOX_CONFIG_* environment configuration is present; --config cannot select a file (environment configuration is complete and exclusive)"
-        if [ -e "$PROJECT_DIR/jailbox.conf" ] || [ -L "$PROJECT_DIR/jailbox.conf" ]; then
-            echo "Notice: $PROJECT_DIR/jailbox.conf is not read because JAILBOX_CONFIG_* environment configuration is present." >&2
-        fi
-        load_environment_config
-        return 0
-    fi
-
-    # Temporary file adapter until the frontend layer owns jailbox.conf
-    # parsing and composes the environment itself.
-    prepare_config_selection "$command"
-    load_project_config
-}
-
-config_die() {
-    local line_no message display_path
-
-    line_no="$1"
-    message="$2"
-    display_path="${CONFIG_PATH_ARG:-${CONFIG_FILE:-$PROJECT_DIR/jailbox.conf}}"
-    die "invalid config '$display_path' line $line_no: $message"
-}
-
-trim() {
-    local value
-
-    value="$1"
-    value="${value#"${value%%[![:space:]]*}"}"
-    value="${value%"${value##*[![:space:]]}"}"
-    printf '%s\n' "$value"
-}
-
-parse_config_file() {
-    local config_file line trimmed line_no key value
-    CONFIG_SEEN_KEYS=()
-
-    config_file="$1"
-    line_no=0
-    while IFS= read -r line || [ -n "$line" ]; do
-        line_no=$((line_no + 1))
-        trimmed=$(trim "$line")
-        [ -z "$trimmed" ] && continue
-        [[ "$trimmed" == \#* ]] && continue
-
-        # Keep the grammar intentionally narrow: KEY=value, comments only as
-        # full lines, optional matching quotes around values, no escapes. This
-        # makes malformed config fail predictably and keeps parser behavior
-        # easy to audit.
-        if [[ "$trimmed" != *=* ]]; then
-            config_die "$line_no" "expected KEY=value"
-        fi
-
-        key="${trimmed%%=*}"
-        value=$(trim "${trimmed#*=}")
-
-        if ! [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
-            config_die "$line_no" "invalid key '${key}' (use KEY=value with no spaces around =)"
-        fi
-        if ! is_config_scalar_key "$key" && ! is_config_array_key "$key" && \
-            ! is_frontend_scalar_key "$key"; then
-            config_die "$line_no" "unknown setting '$key'"
-        fi
-        if config_key_seen "$key"; then
-            config_die "$line_no" "duplicate setting '$key'"
-        fi
-        CONFIG_SEEN_KEYS["$key"]=1
-
-        if is_config_array_key "$key"; then
-            parse_config_array "$key" "$value" "$line_no" || return $?
-        else
-            parse_config_scalar "$key" "$value" "$line_no" || return $?
-        fi
-    done < "$config_file"
-}
-
-config_key_seen() {
-    local key
-
-    key="$1"
-    [[ -v CONFIG_SEEN_KEYS[$key] ]]
-}
-
-validate_config_value() {
-    local value line_no
-
-    value="$1"
-    line_no="$2"
-
-    # Values are atoms. Paths, image refs, stage names, and hostnames currently
-    # do not need spaces; rejecting whitespace avoids quote/escape semantics.
-    if [[ "$value" =~ [[:space:]] ]]; then
-        config_die "$line_no" "values cannot contain whitespace"
-    fi
-    # Reject shell metacharacters even though values are not evaluated. This
-    # keeps config visually unambiguous and prevents future call sites from
-    # accidentally inheriting dangerous-looking strings.
-    case "$value" in
-        *'"'*|*'`'*|*'$'*|*';'*|*'&'*|*'|'*|*'<'*|*'>'*|*'('*|*')'*|*'{'*|*'}'*|*'['*|*']'*)
-            config_die "$line_no" "unsupported character in value"
-            ;;
-    esac
-}
-
-unquote_config_value() {
-    local value line_no first last
-
-    value="$1"
-    line_no="$2"
-    first="${value:0:1}"
-    last="${value: -1}"
-
-    if [ "${#value}" -ge 2 ] && { { [[ "$first" = '"' && "$last" = '"' ]]; } || { [[ "$first" = "'" && "$last" = "'" ]]; }; }; then
-        printf '%s\n' "${value:1:${#value}-2}"
-        return 0
-    fi
-
-    case "$value" in
-        *'"'*|*"'"*)
-            config_die "$line_no" "mismatched or embedded quote in value"
-            ;;
-    esac
-
-    printf '%s\n' "$value"
-}
-
-parse_config_scalar() {
-    local key value line_no
-
-    key="$1"
-    value="$2"
-    line_no="$3"
-
-    value=$(unquote_config_value "$value" "$line_no") || return $?
-    validate_config_value "$value" "$line_no"
-    if [[ "$value" == *,* ]]; then
-        config_die "$line_no" "scalar setting '$key' cannot contain a comma"
-    fi
-
-    # The parser has already established that $key is a declared scalar or
-    # frontend key, so the indirect assignment target is declaration-driven.
-    assign_config_scalar "$key" "$value"
-}
-
-parse_config_array() {
-    local key raw_value line_no item items parts
-
-    key="$1"
-    raw_value="$2"
-    line_no="$3"
-    raw_value=$(unquote_config_value "$raw_value" "$line_no") || return $?
-    items=()
-
-    if [ -z "$raw_value" ]; then
-        set_config_array "$key"
-        return 0
-    fi
-
-    # Arrays are comma-separated data, not Bash arrays. That keeps the only
-    # list syntax independent of shell parsing while remaining easy to edit.
-    IFS=',' read -ra parts <<< "$raw_value"
-    for item in "${parts[@]}"; do
-        item=$(trim "$item")
-        [ -n "$item" ] || config_die "$line_no" "empty list item for '$key'"
-        item=$(unquote_config_value "$item" "$line_no") || return $?
-        validate_config_value "$item" "$line_no"
-        items+=("$item")
-    done
-
-    set_config_array "$key" "${items[@]}"
-}
-
-# The effective machine validator: runs on the final configuration values
-# whether they came from the environment model or the temporary file adapter.
-# Editor validation is frontend-only and belongs to the file path.
 validate_machine_config() {
     case "$EPHEMERAL_HOME" in
         true|false) ;;
@@ -673,13 +337,6 @@ validate_machine_config() {
     esac
     validate_egress_allow
     validate_readonly_paths_lexical
-}
-
-validate_editor_config() {
-    case "$EDITOR" in
-        ""|codium|code) ;;
-        *) die "invalid EDITOR '$EDITOR' (use 'codium' or 'code')" ;;
-    esac
 }
 
 validate_egress_allow() {

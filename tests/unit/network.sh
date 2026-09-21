@@ -1,16 +1,16 @@
 #!/bin/bash
-# Unit tests for host/network.sh helpers.
+# Unit tests for host/core/network.sh helpers.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Safe because host/network.sh currently contains only function definitions and
+# Safe because host/core/network.sh currently contains only function definitions and
 # no top-level executable code. Keep that true for this unit test; accidentally
 # calling configure_network or related functions here would invoke podman, which
 # is intentionally unavailable in the unit-test environment.
-# shellcheck source=host/network.sh
-source "$JAILBOX_DIR/host/network.sh"
+# shellcheck source=host/core/network.sh
+source "$JAILBOX_DIR/host/core/network.sh"
 
 PASSED=0
 FAILED=0
@@ -196,23 +196,23 @@ test_effective_egress_allowlist_array_output() {
     actual=(stale)
     effective_egress_allowlist actual
 
-    if [[ "${actual[*]}" == "github.com api.github.com" ]]; then
-        pass "effective allowlist preserves order and removes duplicates"
+    if [[ "${actual[*]}" == "api.github.com github.com" ]]; then
+        pass "effective allowlist sorts hosts and removes duplicates"
     else
-        fail "effective allowlist preserves order and removes duplicates (got ${actual[*]})"
+        fail "effective allowlist sorts hosts and removes duplicates (got ${actual[*]})"
     fi
 
     EDITOR_BIN="/usr/bin/codium"
     effective_egress_allowlist actual
-    if [[ "${actual[*]}" == "github.com api.github.com githubusercontent.com" ]]; then
-        pass "bare VSCodium launch adds editor bootstrap hosts"
+    if [[ "${actual[*]}" == "api.github.com github.com" ]]; then
+        pass "core ignores editor selection"
     else
-        fail "bare VSCodium launch adds editor bootstrap hosts (got ${actual[*]})"
+        fail "core ignores editor selection (got ${actual[*]})"
     fi
 
     EDITOR_BIN=""
     effective_egress_allowlist actual
-    if [[ "${actual[*]}" == "github.com api.github.com" ]]; then
+    if [[ "${actual[*]}" == "api.github.com github.com" ]]; then
         pass "up-style launch omits editor bootstrap hosts"
     else
         fail "up-style launch omits editor bootstrap hosts (got ${actual[*]})"
@@ -227,6 +227,90 @@ test_effective_egress_allowlist_array_output() {
         fail "effective allowlist clears stale array output"
     fi
 }
+
+# Exercise the real file comparison and metadata checks with only engine
+# inspection stubbed. Equivalent policy must not rewrite the live files.
+test_proxy_policy_equivalence() (
+    source "$JAILBOX_DIR/host/core/ssh.sh"
+    source "$JAILBOX_DIR/host/core/container-runtime.sh"
+    local fixture editor expected before actual=()
+    fixture=$(mktemp -d)
+    trap 'rm -rf "$fixture"' EXIT
+    SCRIPT_DIR=$JAILBOX_DIR
+    # shellcheck disable=SC2030 # This fixture owns isolated network state.
+    NETWORK_NAME=test-net PROXY_NAME=test-proxy UP_CONVERGING=false
+    NETWORK_STATE[filter_file]=$fixture/filter
+    NETWORK_STATE[proxy_conf_file]=$fixture/conf
+    die() { printf '%s\n' "$*" >&2; exit 1; }
+    up_stop_guidance() { printf "Run 'jailbox stop' and then 'jailbox up'.\n"; }
+    podman() {
+        [[ "$1 $2 $3" = 'network inspect test-net-internal' ]] || return 125
+        printf '10.240.57.0/24\n'
+    }
+    require_container_mount() { printf 'mount\n' >> "$fixture/checks"; }
+    require_container_property() { printf 'property\n' >> "$fixture/checks"; }
+    render_tinyproxy_conf "${NETWORK_STATE[proxy_conf_file]}" 10.240.57.0/24
+
+    for editor in '' /usr/bin/codium /usr/bin/code; do
+        EDITOR_BIN=$editor
+        EGRESS_ALLOW=(z.example.com a.example.com)
+        effective_egress_allowlist actual
+        case "$editor" in
+            '') expected='a.example.com z.example.com' ;;
+            */codium) expected='a.example.com z.example.com' ;;
+            */code) expected='a.example.com z.example.com' ;;
+        esac
+        [[ "${actual[*]}" = "$expected" ]]
+        render_tinyproxy_filter "${NETWORK_STATE[filter_file]}" "${actual[@]}"
+        cp "${NETWORK_STATE[filter_file]}" "$fixture/original"
+        EGRESS_ALLOW=(a.example.com z.example.com a.example.com)
+        effective_egress_allowlist actual
+        render_tinyproxy_filter "$fixture/reordered" "${actual[@]}"
+        cmp "$fixture/original" "$fixture/reordered"
+        : > "$fixture/checks"
+        if ! validate_proxy_configuration; then exit 1; fi
+        [[ $(wc -l < "$fixture/checks") -eq 4 ]]
+        cmp "$fixture/original" "${NETWORK_STATE[filter_file]}"
+
+        EGRESS_ALLOW+=(changed.example.com)
+        if (validate_proxy_configuration) > "$fixture/error" 2>&1; then exit 1; fi
+        grep -Fq 'proxy configuration differs from requested policy' "$fixture/error"
+        grep -Fq "'jailbox stop' and then 'jailbox up'" "$fixture/error"
+        cmp "$fixture/original" "${NETWORK_STATE[filter_file]}"
+    done
+
+    # A producer emitting plausible partial data must still abort comparison
+    # and network setup, including under conditional invocation.
+    # shellcheck disable=SC2329 # Fault injected into the sourced producer.
+    sort() { printf 'a.example.com\n'; return 42; }
+    actual=(stale)
+    if effective_egress_allowlist actual; then exit 1; fi
+    [[ -z "${actual[*]-}" ]]
+    before=$(cat "$fixture/checks")
+    if validate_proxy_configuration; then exit 1; fi
+    [[ $(cat "$fixture/checks") = "$before" ]]
+    assert_config_digest_ready() { :; }
+    podman() { printf 'unexpected engine call\n' >> "$fixture/engine"; return 125; }
+    if configure_network; then exit 1; fi
+    [[ ! -e "$fixture/engine" ]]
+    unset -f sort
+
+    # Editor selection cannot turn an empty policy into filtered networking.
+    EGRESS_ALLOW=()
+    UP_PRESENT=(network:test-net)
+    # shellcheck disable=SC2034 # Deliberately irrelevant inherited editor state.
+    for EDITOR_BIN in '' /usr/bin/codium /usr/bin/code; do
+        actual=(stale)
+        effective_egress_allowlist actual
+        [[ -z "${actual[*]-}" ]]
+        NETWORK_STATE[proxy_url]=stale
+        NETWORK_SSH_SESSION_ENV=(stale)
+        configure_network
+        [[ "${NETWORK_STATE[selected_network]}" = test-net ]]
+        [[ -z "${NETWORK_STATE[proxy_url]}${NETWORK_SSH_SESSION_ENV[*]-}" ]]
+        [[ ! -e "$fixture/engine" ]]
+    done
+)
 
 test_initialize_network_state_clears_outputs() {
     NETWORK_STATE[selected_network]="stale-network"
@@ -245,7 +329,7 @@ test_initialize_network_state_clears_outputs() {
 
 main() {
     (
-        source "$JAILBOX_DIR/host/container-runtime.sh"
+        source "$JAILBOX_DIR/host/core/container-runtime.sh"
         fixture=$(mktemp -d)
         trap 'rm -rf "$fixture"' EXIT
         die() { echo "$*" >&2; exit 1; }
@@ -255,7 +339,7 @@ main() {
         CONFIG_DIGEST_LABEL_ARGS=(--label test)
         UP_PRESENT=() UP_CREATED=() UP_HOST_CREATED=()
         NETWORK_NAME=test-net PROXY_NAME=test-proxy PROXY_IMAGE=test-image
-        PROJECT_HASH=abcdef123456 EDITOR_BIN="" UP_PROXY_STATE=absent
+        PROJECT_HASH=abcdef123456 UP_PROXY_STATE=absent
         SSH_DIR=$fixture/state
         SCRIPT_DIR=$JAILBOX_DIR
         podman() {
@@ -333,6 +417,8 @@ main() {
     test_configure_proxy_env_rejects_missing_address
     test_effective_egress_allowlist_array_output
     test_initialize_network_state_clears_outputs
+    test_proxy_policy_equivalence
+    pass "proxy set equivalence, changed-policy refusal, producer failures, and unfiltered mode"
 
     echo ""
     if [[ "$FAILED" -eq 0 ]]; then

@@ -2,12 +2,12 @@
 # Network identity representations used by older and newer Podman releases.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=host/network.sh
-source "$ROOT/host/network.sh"
-# shellcheck source=host/ssh.sh
-source "$ROOT/host/ssh.sh"
-# shellcheck source=host/container-runtime.sh
-source "$ROOT/host/container-runtime.sh"
+# shellcheck source=host/core/network.sh
+source "$ROOT/host/core/network.sh"
+# shellcheck source=host/core/ssh.sh
+source "$ROOT/host/core/ssh.sh"
+# shellcheck source=host/core/container-runtime.sh
+source "$ROOT/host/core/container-runtime.sh"
 
 die() { echo "$*" >&2; exit 1; }
 refuse_sandbox() { die "$*"; }

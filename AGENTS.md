@@ -44,14 +44,11 @@ in `tests/lib/lifecycle-contracts.sh` before the matrix schedules them.
 
 Keep host orchestration in `host/`, container behavior in `container/`,
 maintenance tooling in `scripts/`, and test code in `tests/`.
-The frontend split must place all frontend implementation files in
-`host/frontend/` and machine implementation files in `host/core/`. This
-includes any frontend entry module and editor module. Keep shared public
-declarations in `host/public-api.sh`, usable by both layers without core
-initialization. Perform the directory migration with the frontend split,
-updating source paths, installer inventory, tests, tooling, and this file's
-module paths together. The flat module paths below describe the current tree
-until that migration.
+Frontend implementation lives in `host/frontend/`, machine implementation in
+`host/core/`, and shared public declarations and CLI syntax in
+`host/public-api.sh`. The `jailbox` entrypoint selects a layer before loading
+its implementation. Frontend code invokes core only through public CLI child
+processes; it never sources core modules or accesses private core state.
 
 ## Git and release safety
 
@@ -121,10 +118,10 @@ until that migration.
   Include extracted programs in the applicable lint, syntax, packaging, and
   runtime checks, preserving stdin, exit status, cleanup, and cache behavior.
 - Declare mutable host state in the module that owns its lifecycle. Keep shared
-  project/resource identity in `host/common.sh`, image state in
-  `host/dev-image.sh`, SSH state in `host/ssh.sh`, editor state in
-  `host/editor.sh`, network state in `host/network.sh`, and mount/runtime state
-  in `host/container-runtime.sh`.
+  project/resource identity in `host/core/common.sh`, image state in
+  `host/core/dev-image.sh`, SSH state in `host/core/ssh.sh`, editor state in
+  `host/frontend/editor.sh`, network state in `host/core/network.sh`, and mount/runtime state
+  in `host/core/container-runtime.sh`.
 - Check critical prerequisites and mutations explicitly; `set -e` alone is not
   a failure contract. Before calling a function through `if`, `!`, `&&`, or
   `||`, check its callees too: that context can suppress errexit throughout the

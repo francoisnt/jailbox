@@ -19,8 +19,10 @@ for editor in code codium; do
 done
 cp "$ROOT/tests/fixtures/editor-client/core.sh" "$TMP/core"
 chmod 700 "$TMP/core"
+export JAILBOX_INOTIFY_MAX_USER_WATCHES_FILE=$TMP/absent
 export HOME=$TMP/home TMPDIR=$TMP/staging FAKE_TRACE=$TMP/trace FAKE_RECORDS=$TMP/records
 export JAILBOX_EDITOR=invalid EDITOR=invalid
+unset XDG_STATE_HOME
 ssh_config='/host/a "quoted"\ssh config é 😀'
 remote_path='/remote/a "quoted"\project é 😀'
 write_records() {
@@ -59,6 +61,24 @@ done
 mapfile -d '' -t argv < "$FAKE_TRACE.argv"
 [[ ${argv[0]} == --extensions-dir && ${argv[1]} == "$(cat "$FAKE_TRACE.inventory-dir")" && ${argv[2]} == --user-data-dir && ${argv[3]} == "$HOME/.local/state/jailbox/editor-profiles/012345abcdef" && ${argv[4]} == --remote && ${argv[5]} == ssh-remote+jailbox-sample-012345abcdef && ${argv[6]} == "$remote_path" ]]
 python3 "$ROOT/tests/lib/editor/check-settings.py" "$settings" "$ssh_config" http://10.0.0.2:8888
+# Relocation changes both publication and the editor argument, including spaces.
+# shellcheck disable=SC2030 # Each scenario intentionally isolates its state home.
+(
+    export XDG_STATE_HOME="$TMP/relocated state"
+    launch
+    mapfile -d '' -t argv < "$FAKE_TRACE.argv"
+    [[ ${argv[3]} == "$XDG_STATE_HOME/jailbox/editor-profiles/012345abcdef" ]]
+    python3 "$ROOT/tests/lib/editor/check-settings.py" \
+        "${argv[3]}/User/settings.json" "$ssh_config" http://10.0.0.2:8888
+)
+XDG_STATE_HOME='' launch
+mapfile -d '' -t argv < "$FAKE_TRACE.argv"
+[[ ${argv[3]} == "$HOME/.local/state/jailbox/editor-profiles/012345abcdef" ]]
+[[ -f "$settings" ]]
+# shellcheck disable=SC2031 # Each scenario supplies its own state home.
+for state_home in relative-state $'/tmp/bad\nstate'; do
+    (export XDG_STATE_HOME="$state_home"; assert_refused 'profile state home must be an absolute'; no_machine_calls)
+done
 # Reopening checks current prerequisites again rather than caching preflight.
 launch
 [[ $(head -1 "$FAKE_TRACE") == inventory:code ]]

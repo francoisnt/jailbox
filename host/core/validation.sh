@@ -191,7 +191,6 @@ validate_attachment() {
 }
 
 run_connection_info() {
-    [ -z "$CONFIG_PATH_ARG" ] || die '--config cannot be used with connection-info; use JAILBOX_CONFIG_* environment configuration'
     load_environment_config || return 1
     # Validation diagnostics cannot contaminate the record stream.
     validate_attachment >&2 || return 1

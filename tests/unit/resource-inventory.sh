@@ -2,8 +2,8 @@
 # Group discovery without retaining inventory across calls or hiding failures.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=host/container-runtime.sh
-source "$ROOT/host/container-runtime.sh"
+# shellcheck source=host/core/container-runtime.sh
+source "$ROOT/host/core/container-runtime.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }

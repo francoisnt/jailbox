@@ -7,13 +7,13 @@ JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/public-api.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/common.sh"
+source "$JAILBOX_DIR/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/ssh.sh"
+source "$JAILBOX_DIR/host/core/ssh.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/container-runtime.sh"
+source "$JAILBOX_DIR/host/core/container-runtime.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/config-digest.sh"
+source "$JAILBOX_DIR/host/core/config-digest.sh"
 
 PASSED=0
 FAILED=0

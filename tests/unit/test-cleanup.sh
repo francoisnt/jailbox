@@ -9,9 +9,9 @@ JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/host/public-api.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/common.sh"
+source "$JAILBOX_DIR/host/core/common.sh"
 # shellcheck disable=SC1091
-source "$JAILBOX_DIR/host/config-digest.sh"
+source "$JAILBOX_DIR/host/core/config-digest.sh"
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
 

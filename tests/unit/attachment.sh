@@ -161,8 +161,8 @@ CONVERGENCE_SESSION_RESULT=project-write observe refuse 'correct host project ow
 if grep -q 'jailbox stop\|jailbox --clean' "$FIXTURE/diagnostic"; then fail 'host permission failure recommends destructive recovery'; fi
 # Missing local payloads require installation repair, not sandbox replacement.
 if (
-    source "$ROOT/host/common.sh"
-    source "$ROOT/host/validation.sh"
+    source "$ROOT/host/core/common.sh"
+    source "$ROOT/host/core/validation.sh"
     SCRIPT_DIR="$FIXTURE/missing-installation"
     UP_CONVERGING=false
     EFFECTIVE_READONLY_PATHS=()
