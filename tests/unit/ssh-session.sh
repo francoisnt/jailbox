@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+trap 'printf "FAIL: SSH session test at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 sed -n '/^ssh_session_environment() ($/,/^)/p' "$ROOT/src/container/runtime/bin/jailbox-start" > "$tmp/session"
 [[ -s "$tmp/session" ]]
 printf '\nssh_session_environment\n' >> "$tmp/session"
@@ -40,8 +41,13 @@ chmod 755 "$tmp/sshd"
 export SSHD="$tmp/sshd" SESSION_TRACE="$tmp/trace"
 export HTTP_PROXY=stale HTTPS_PROXY=stale http_proxy=stale https_proxy=stale NO_PROXY=stale no_proxy=stale
 JAILBOX_SSH_PROXY_URL='' sh "$tmp/start"
-[[ $(grep -c -- '^-t$\|^-D$' "$SESSION_TRACE") == 2 ]]
-grep -qx 'SetEnv HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy= NO_PROXY= no_proxy=' "$SESSION_TRACE"
+for mode in -t -D; do
+    printf '%s\n' "$mode"
+    if [[ "$mode" == -D ]]; then printf '%s\n' -e; fi
+    printf '%s\n' -f /etc/ssh/jailbox_sshd_config -o \
+        'SetEnv HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy= NO_PROXY= no_proxy='
+done > "$tmp/expected-trace"
+cmp "$tmp/expected-trace" "$SESSION_TRACE"
 : > "$SESSION_TRACE"
 if JAILBOX_SSH_PROXY_URL='' SESSION_CHECK_STATUS=42 sh "$tmp/start"; then
     echo 'FAIL: failed daemon check accepted' >&2; exit 1
