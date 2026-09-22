@@ -85,10 +85,12 @@ compatibility and attachment validation. `entry.sh` loads the modules and
 initializes defaults. Loading a definition does not validate a version stamp or
 inspect the engine. The schema path loads only its handler.
 
-Resource operations report attempted creations through `track_up_resource` and
-`track_up_host_path`, the update interface owned by command orchestration.
-Compatibility inspection starts a fresh attempt inventory through
-`reset_up_attempts`; refusal handling reads `UP_CONVERGING` to distinguish
+Resource operations report attempted creations through `record_launch_resource_attempt` and
+`record_launch_host_path_attempt`, the update interface owned by command orchestration.
+Launch orchestration starts a fresh attempt inventory through
+`reset_launch_attempts`. Compatibility inspection updates only observations and
+derived inspection inputs; it never clears launch attempts. Refusal handling
+reads `LAUNCH_CONVERGING` to distinguish
 preflight refusal from failed convergence. These internal dependencies keep
 rollback state under one owner without calling public command handlers.
 Tests using the complete core load its entry boundary through `tests/lib/core.sh`

@@ -305,7 +305,7 @@ main() {
             if configure_runtime_mounts 2> "$PROJECT_DIR/error"; then exit 1; fi
             grep -q 'injected mkdir failure' "$PROJECT_DIR/error"
             [[ ! -e "$PROJECT_DIR/validated" && ! -e "$PROJECT_DIR/generated" ]]
-            [[ "${UP_HOST_CREATED[*]}" == *"$SSH_DIR"* ]]
+            [[ "${LAUNCH_ATTEMPTED_HOST_PATHS[*]}" == *"$SSH_DIR"* ]]
         done
     )
     pass 'failed runtime directory creation stops conditional mount preparation and retains rollback tracking'

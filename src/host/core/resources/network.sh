@@ -63,9 +63,9 @@ ensure_internal_network() {
     local internal_net attempt candidate
 
     internal_net="$1"
-    up_resource_present "network:$internal_net" && return 0
+    observed_resource_present "network:$internal_net" && return 0
 
-    track_up_resource "network:$internal_net"
+    record_launch_resource_attempt "network:$internal_net"
     for ((attempt = 0; attempt < 20; attempt++)); do
         candidate=$(proxy_internal_subnet "$attempt") || return 1
         if podman network create --internal --disable-dns --subnet "$candidate" \
@@ -103,11 +103,14 @@ proxy_internal_ip() {
     proxy_ip_for_subnet "$(proxy_internal_subnet)"
 }
 
-inspect_network_for_up() {
+# Read-only engine checks against OBSERVED_* and requested policy. Refreshes
+# NETWORK_STATE and SSH proxy settings; does not create, reconnect, or repair
+# networks. Failed observation and incompatible dependencies refuse reuse.
+inspect_network_compatibility() {
     local name subnet result member members
     initialize_network_state
     for name in "$NETWORK_NAME" "${NETWORK_NAME}-internal" "${NETWORK_NAME}-external"; do
-        up_resource_present "network:$name" || continue
+        observed_resource_present "network:$name" || continue
         members=$(podman ps -a --filter "network=$name" --format '{{.Names}}') || die "could not inspect members of network '$name'"
         while IFS= read -r member; do
             case "$member" in
@@ -133,19 +136,19 @@ inspect_network_for_up() {
         NETWORK_STATE[internal_network]="${NETWORK_NAME}-internal"
         NETWORK_STATE[filter_file]="$SSH_DIR/tinyproxy-filter"
         NETWORK_STATE[proxy_conf_file]="$SSH_DIR/tinyproxy.conf"
-        if up_resource_present "network:${NETWORK_NAME}-internal"; then
+        if observed_resource_present "network:${NETWORK_NAME}-internal"; then
             subnet=$(podman network inspect "${NETWORK_NAME}-internal" --format '{{(index .Subnets 0).Subnet}}') || die 'could not inspect internal subnet'
             NETWORK_STATE[proxy_url]="http://$(proxy_ip_for_subnet "$subnet"):8888"
             configure_proxy_env
         fi
     else
         NETWORK_STATE[selected_network]="$NETWORK_NAME"
-        [ "$UP_PROXY_STATE" = absent ] || refuse_sandbox 'proxy container exists outside requested egress mode'
+        [ "$OBSERVED_PROXY_STATE" = absent ] || refuse_sandbox 'proxy container exists outside requested egress mode'
     fi
-    if [ "$UP_DEV_STATE" != absent ] || [ "$UP_PROXY_STATE" != absent ]; then
-        up_resource_present "network:${NETWORK_STATE[selected_network]}" || refuse_sandbox 'required network is missing beneath a surviving container'
+    if [ "$OBSERVED_DEV_STATE" != absent ] || [ "$OBSERVED_PROXY_STATE" != absent ]; then
+        observed_resource_present "network:${NETWORK_STATE[selected_network]}" || refuse_sandbox 'required network is missing beneath a surviving container'
         if [ -n "${EGRESS_ALLOW[*]-}" ]; then
-            up_resource_present "network:${NETWORK_NAME}-external" || refuse_sandbox 'external proxy network is missing beneath a surviving container'
+            observed_resource_present "network:${NETWORK_NAME}-external" || refuse_sandbox 'external proxy network is missing beneath a surviving container'
         fi
     fi
 }

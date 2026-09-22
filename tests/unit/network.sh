@@ -232,11 +232,11 @@ test_proxy_policy_equivalence() (
     trap 'rm -rf "$fixture"' EXIT
     SCRIPT_DIR=$JAILBOX_DIR/src
     # shellcheck disable=SC2030 # This fixture owns isolated network state.
-    NETWORK_NAME=test-net PROXY_NAME=test-proxy UP_CONVERGING=false
+    NETWORK_NAME=test-net PROXY_NAME=test-proxy LAUNCH_CONVERGING=false
     NETWORK_STATE[filter_file]=$fixture/filter
     NETWORK_STATE[proxy_conf_file]=$fixture/conf
     die() { printf '%s\n' "$*" >&2; exit 1; }
-    up_stop_guidance() { printf "Run 'jailbox stop' and then 'jailbox up'.\n"; }
+    sandbox_stop_guidance() { printf "Run 'jailbox stop' and then 'jailbox up'.\n"; }
     podman() {
         [[ "$1 $2 $3" = 'network inspect test-net-internal' ]] || return 125
         printf '10.240.57.0/24\n'
@@ -292,7 +292,7 @@ test_proxy_policy_equivalence() (
 
     # Editor selection cannot turn an empty policy into filtered networking.
     EGRESS_ALLOW=()
-    UP_PRESENT=(network:test-net)
+    OBSERVED_RESOURCES=(network:test-net)
     # shellcheck disable=SC2034 # Deliberately irrelevant inherited editor state.
     for EDITOR_BIN in '' /usr/bin/codium /usr/bin/code; do
         actual=(stale)
@@ -331,9 +331,9 @@ main() {
         validate_ssh_state_path() { :; }
         validate_ssh_file() { :; }
         CONFIG_DIGEST_LABEL_ARGS=(--label test)
-        UP_PRESENT=() UP_CREATED=() UP_HOST_CREATED=()
+        OBSERVED_RESOURCES=() LAUNCH_ATTEMPTED_RESOURCES=() LAUNCH_ATTEMPTED_HOST_PATHS=()
         NETWORK_NAME=test-net PROXY_NAME=test-proxy PROXY_IMAGE=test-image
-        PROJECT_HASH=abcdef123456 UP_PROXY_STATE=absent
+        PROJECT_HASH=abcdef123456 OBSERVED_PROXY_STATE=absent
         SSH_DIR=$fixture/state
         SCRIPT_DIR=$JAILBOX_DIR/src
         podman() {
@@ -351,11 +351,11 @@ main() {
         for fault in plain internal external inspect partial mkdir chmod policy run start; do
             : > "$fixture/calls"
             initialize_network_state
-            UP_PRESENT=() UP_CREATED=()
+            OBSERVED_RESOURCES=() LAUNCH_ATTEMPTED_RESOURCES=()
             EGRESS_ALLOW=(example.com)
             [[ "$fault" != plain ]] || EGRESS_ALLOW=()
-            UP_PROXY_STATE=absent
-            [[ "$fault" != start ]] || UP_PROXY_STATE=stopped
+            OBSERVED_PROXY_STATE=absent
+            [[ "$fault" != start ]] || OBSERVED_PROXY_STATE=stopped
             # Exhausted subnet retries intentionally die; inspect this case in
             # a child while retaining shared rollback tracking for other cases.
             if [[ "$fault" == internal ]]; then
@@ -369,28 +369,28 @@ main() {
             esac
             [[ -z "${NETWORK_STATE[selected_network]}" ]]
             case "$fault" in
-                plain|external) [[ "${UP_CREATED[*]}" == *network:test-net* ]] ;;
-                run) [[ "${UP_CREATED[*]}" == *container:test-proxy* ]] ;;
+                plain|external) [[ "${LAUNCH_ATTEMPTED_RESOURCES[*]}" == *network:test-net* ]] ;;
+                run) [[ "${LAUNCH_ATTEMPTED_RESOURCES[*]}" == *container:test-proxy* ]] ;;
             esac
             case "$fault" in
                 run|start) ;;
                 *) if grep -Eq '^(run|start) ' "$fixture/calls"; then exit 1; fi ;;
             esac
         done
-        fault=retry attempts=0 UP_PROXY_STATE=absent
-        UP_PRESENT=() UP_CREATED=()
+        fault=retry attempts=0 OBSERVED_PROXY_STATE=absent
+        OBSERVED_RESOURCES=() LAUNCH_ATTEMPTED_RESOURCES=()
         initialize_network_state
         if configure_network > /dev/null; then
             [[ "$attempts" == 3 && "${NETWORK_STATE[selected_network]}" == test-net-internal ]]
         else
             exit 1
         fi
-        fault=reuse UP_PROXY_STATE=running
-        UP_PRESENT=(network:test-net-internal network:test-net-external)
-        UP_CREATED=()
+        fault=reuse OBSERVED_PROXY_STATE=running
+        OBSERVED_RESOURCES=(network:test-net-internal network:test-net-external)
+        LAUNCH_ATTEMPTED_RESOURCES=()
         : > "$fixture/calls"
         if configure_network > /dev/null; then
-            [[ -z "${UP_CREATED[*]-}" ]]
+            [[ -z "${LAUNCH_ATTEMPTED_RESOURCES[*]-}" ]]
             if grep -Eq '^(network create|run|start)' "$fixture/calls"; then exit 1; fi
         else
             exit 1

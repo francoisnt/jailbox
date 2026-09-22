@@ -45,7 +45,7 @@ initialize_ssh_state
 initialize_runtime_ids() { :; }
 PROXY_NAME=jailbox-test-proxy
 VOLUME_NAME=jailbox-test-home
-inspect_sandbox_for_up() { UP_DEV_STATE=absent; }
+inspect_sandbox_compatibility() { OBSERVED_DEV_STATE=absent; }
 build_current_proxy_image() { :; }
 validate_existing_sandbox_health() { :; }
 validate_configured_readonly_paths() { :; }

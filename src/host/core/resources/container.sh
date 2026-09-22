@@ -123,9 +123,12 @@ resume_jailbox_container() {
     podman start "$CONTAINER_NAME" || fail_sandbox_readiness "could not start development container '$CONTAINER_NAME'"
 }
 
-inspect_up_container_state() {
+# Uses the compatibility snapshot for presence, then reads engine lifecycle
+# state. Prints absent/running/exited/stopped/created/configured. Inspection
+# failure exits; unsupported states refuse with recovery guidance. No mutation.
+inspect_container_lifecycle_state() {
     local state
-    if ! up_resource_present "container:$1"; then printf 'absent\n'; return 0; fi
+    if ! observed_resource_present "container:$1"; then printf 'absent\n'; return 0; fi
     state=$(podman container inspect "$1" --format '{{.State.Status}}') || die "could not inspect state of '$1'"
     case "$state" in
         running|exited|stopped|created|configured) printf '%s\n' "$state" ;;

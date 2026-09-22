@@ -188,7 +188,7 @@ if (
     # shellcheck source=src/host/core/checks/compatibility.sh
     source "$ROOT/src/host/core/checks/compatibility.sh"
     SCRIPT_DIR="$FIXTURE/missing-installation"
-    UP_CONVERGING=false
+    LAUNCH_CONVERGING=false
     EFFECTIVE_READONLY_PATHS=()
     EGRESS_ALLOW=()
     validate_development_session full

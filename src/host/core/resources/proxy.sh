@@ -32,7 +32,7 @@ check_proxy_egress_denied() {
     # Recreating a proxy changes its MAC while retaining its IP. The surviving
     # development container can temporarily retain the old ARP mapping. Allow
     # roughly a minute of transport retries without changing its network state.
-    if [ "${UP_PROXY_STATE:-running}" != running ]; then
+    if [ "${OBSERVED_PROXY_STATE:-running}" != running ]; then
         attempts=16
         request_timeout=3
     fi
@@ -120,7 +120,7 @@ prepare_proxy_files() {
     local path
     validate_ssh_state_path || return 1
     if [ ! -d "$SSH_DIR" ]; then
-        track_up_host_path "$SSH_DIR"
+        record_launch_host_path_attempt "$SSH_DIR"
         # New parent directories are private too; leave existing parents unchanged.
         (umask 077; mkdir -p -- "$SSH_DIR") || return 1
     fi
@@ -129,7 +129,7 @@ prepare_proxy_files() {
         if [ -e "$path" ] || [ -L "$path" ]; then
             [[ -f "$path" && ! -L "$path" ]] || die "unsafe proxy configuration path '$path'"
         else
-            track_up_host_path "$path"
+            record_launch_host_path_attempt "$path"
         fi
     done
 }

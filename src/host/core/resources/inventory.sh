@@ -5,6 +5,9 @@
 # type-specific while the decision made from it is not.
 # Tests may request engine diagnostics; ordinary CLI callers retain quiet
 # probes and provide their command-specific errors.
+# Returns the engine status: 0 present, 1 absent, other nonzero inspection error.
+# It performs no cleanup and publishes no classification; do not treat all
+# nonzero statuses as absence or use incidental engine stdout as an answer.
 jailbox_resource_exists() {
     case "$1" in
         container|volume|network|image) ;;
@@ -46,6 +49,8 @@ jailbox_resource_label() {
 # Resolve "TYPE:NAME" targets into the present removal set named by the first
 # argument. Every target is probed before anything is removed, so a Podman
 # probe failure aborts the whole operation with nothing mutated.
+# Populates the named caller array; an inspection error exits through die, so
+# any partially populated array must not be used after failed observation.
 #
 # Presence under the derived name is the only test. Deletion deliberately does
 # not consult the configuration digest: stop and --clean stay usable when

@@ -163,6 +163,8 @@ ssh_file_metadata() {
     stat -c '%u:%a' "$1" 2>/dev/null || stat -f '%u:%Lp' "$1"
 }
 
+# Read-only metadata predicate: 0 valid, nonzero invalid or unobservable. The
+# caller supplies context and refusal guidance; this helper never repairs files.
 validate_ssh_file() {
     local path="$1" mode="$2" kind="$3" metadata
     [ ! -L "$path" ] || return 1
@@ -207,6 +209,9 @@ validate_ssh_pair() {
 
 # Expected session configuration comes from validated policy and the live
 # network. No file is sourced, repaired, or passed to ssh before comparison.
+# Returns nonzero with a diagnostic for invalid/unreadable material; missing
+# required initialization exits. Success proves local consistency, not binding
+# to a particular container or live SSH readiness (checked separately).
 validate_ssh_generation() {
     local root="${1:-$SSH_GENERATION_DIR}" path mode public expected_config
     assert_ssh_state_initialized

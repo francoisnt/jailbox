@@ -131,8 +131,8 @@ printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
 # Podman writes this receipt under the caller's umask; fix a representative
 # mode here so the suite exercises the engine's range rather than one default.
 chmod 640 "$SSH_GENERATION_DIR/container-id"
-UP_CREATED=("container:$CONTAINER_NAME")
-UP_HOST_CREATED=("$SSH_GENERATION_DIR")
+LAUNCH_ATTEMPTED_RESOURCES=("container:$CONTAINER_NAME")
+LAUNCH_ATTEMPTED_HOST_PATHS=("$SSH_GENERATION_DIR")
 container_present=true
 podman() {
     case "$1 $2" in
@@ -141,23 +141,23 @@ podman() {
         *) return 1 ;;
     esac
 }
-rollback_ssh_launch 1
+rollback_launch_on_exit 1
 if ssh_generation_present; then echo 'FAIL: rollback leaked state'; exit 1; fi
 create_ssh_generation
 printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"
 chmod 600 "$SSH_GENERATION_DIR/container-id"
 # shellcheck disable=SC2329 # Called indirectly through reject_rollback.
 podman() { return 125; }
-reject_rollback 'cleanup could not remove' rollback_ssh_launch 1
+reject_rollback 'cleanup could not remove' rollback_launch_on_exit 1
 [ -f "$KEY_FILE" ]
 
 # Before container creation, confirmed absence permits cleanup. An engine
 # inspection error must retain the generation for explicit stop recovery.
 rm "$SSH_GENERATION_DIR/container-id"
-reject_rollback 'cleanup could not remove' rollback_ssh_launch 1
+reject_rollback 'cleanup could not remove' rollback_launch_on_exit 1
 [ -f "$KEY_FILE" ]
 podman() { return 1; }
-rollback_ssh_launch 1
+rollback_launch_on_exit 1
 if ssh_generation_present; then echo 'FAIL: pre-container rollback leaked state'; exit 1; fi
 create_ssh_generation
 printf '%s\n' "$container_id" > "$SSH_GENERATION_DIR/container-id"

@@ -3,6 +3,8 @@
 # Classify inside the template: arbitrary label bytes (including trailing
 # newlines) must never become valid through shell command substitution. An
 # absent key, a present empty value, and failed inspection stay distinct.
+# Prints false (persistent, including legacy unlabeled homes), true (ephemeral),
+# or corrupt. Failed inspection exits; it never becomes a deletion decision.
 home_retention_policy() {
     local policy
 
@@ -20,6 +22,8 @@ home_clean_guidance() {
     printf "Run 'jailbox --clean' and then 'jailbox up'; --clean permanently deletes this project's home and runtime state."
 }
 
+# Read-only launch/attachment policy check. Exits with recovery guidance for
+# incompatible or corrupt retention; stop uses the recorded policy separately.
 require_compatible_home() {
     local policy
     local -a present=()

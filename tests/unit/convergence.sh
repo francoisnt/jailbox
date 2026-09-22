@@ -81,6 +81,33 @@ expect_success
 if grep -Eq '^(build|probe|run|start|stop|rm|network create|volume create)' "$CONVERGENCE_LOG"; then exit 1; fi
 echo 'PASS: absent creation and running reuse preserve identities and home'
 
+# Inspect through both callers in one shell with existing rollback inventory.
+# The real detectors may refresh observations, but only a new launch may clear
+# attempts. Use the existing engine fixture and real SSH material, not detector
+# stubs, so the complete compatibility path is exercised conditionally too.
+(
+    # shellcheck source=tests/lib/core.sh
+    source "$ROOT/tests/lib/core.sh" "$ROOT/src"
+    PROJECT_DIR="$FIXTURE/project"
+    prepare_launch
+    initialize_runtime_ids
+    LAUNCH_ATTEMPTED_RESOURCES=(network:attempted)
+    LAUNCH_ATTEMPTED_HOST_PATHS=("$FIXTURE/attempted")
+    for mode in launch attach; do
+        if ! inspect_sandbox_compatibility "$mode"; then exit 1; fi
+        [[ ${LAUNCH_ATTEMPTED_RESOURCES[*]} = network:attempted ]]
+        [[ ${LAUNCH_ATTEMPTED_HOST_PATHS[*]} = "$FIXTURE/attempted" ]]
+        [[ "$OBSERVED_DEV_STATE" = running && "$OBSERVED_PROXY_STATE" = absent ]]
+        observed_resource_present "container:$PREFIX"
+    done
+    # Healthy reuse should start with fresh bookkeeping and record no creations.
+    bring_up_sandbox > "$FIXTURE/reuse-state-output" 2>&1
+    [[ -z ${LAUNCH_ATTEMPTED_RESOURCES[*]-} && -z ${LAUNCH_ATTEMPTED_HOST_PATHS[*]-} ]]
+)
+[[ "$before" == "$(snapshot)" ]]
+if grep -Eq '^(build|probe|run|start|stop|rm|network create|volume create)' "$CONVERGENCE_LOG"; then exit 1; fi
+echo 'PASS: compatibility inspection preserves attempts; launch owns their reset'
+
 echo exited > "$CONVERGENCE_ENGINE/container.$PREFIX.status"
 keys=$(find "$GENERATION" -type f -exec cksum {} + | sort)
 before=$(snapshot)

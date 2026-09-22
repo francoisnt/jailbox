@@ -1,9 +1,21 @@
-# Compatibility coordination owns this invocation's observed resource inventory.
-UP_PRESENT=()
-UP_DEV_STATE=absent
-UP_PROXY_STATE=absent
+# Compatibility coordination owns the current inspection snapshot, shared by
+# launch and attachment. It is not a live inventory or a cross-command cache;
+# callers use it only after successful inspection and before dependent mutation.
+OBSERVED_RESOURCES=()
+OBSERVED_DEV_STATE=absent
+OBSERVED_PROXY_STATE=absent
 
-up_stop_guidance() {
+# Query the current compatibility snapshot; return 0 for present, 1 for absent.
+# No engine call, refresh, or launch-bookkeeping update occurs here.
+observed_resource_present() {
+    local target
+    for target in "${OBSERVED_RESOURCES[@]}"; do
+        [ "$target" != "$1" ] || return 0
+    done
+    return 1
+}
+
+sandbox_stop_guidance() {
     local policy=false probe=0
     jailbox_resource_exists volume "$VOLUME_NAME" || probe=$?
     case "$probe" in
@@ -20,30 +32,33 @@ up_stop_guidance() {
 
 refuse_sandbox() {
     local guidance
-    if [ "$UP_CONVERGING" = true ]; then
+    if [ "$LAUNCH_CONVERGING" = true ]; then
         fail_sandbox_readiness "$@"
     fi
-    guidance=$(up_stop_guidance) || die "could not inspect home retention; resolve the engine error before choosing recovery"
+    guidance=$(sandbox_stop_guidance) || die "could not inspect home retention; resolve the engine error before choosing recovery"
     die "refusing sandbox reuse: $*. $guidance"
 }
 
-inspect_sandbox_for_up() {
+# Read-only with respect to sandbox resources. Refreshes OBSERVED_* and derived
+# network/image-selection/mount inputs. Does not reset or record launch attempts.
+# Returns nonzero or exits with recovery guidance on failure; partial outputs
+# must not authorize mutation. Launch and attach differ only in input selection.
+inspect_sandbox_compatibility() {
     local mode="${1:-launch}"
-    reset_up_attempts
-    resolve_present_resources UP_PRESENT \
+    resolve_present_resources OBSERVED_RESOURCES \
         "container:$CONTAINER_NAME" "container:$PROXY_NAME" \
         "network:$NETWORK_NAME" "network:${NETWORK_NAME}-internal" \
         "network:${NETWORK_NAME}-external" "volume:$VOLUME_NAME"
-    UP_DEV_STATE=$(inspect_up_container_state "$CONTAINER_NAME") || return 1
-    UP_PROXY_STATE=$(inspect_up_container_state "$PROXY_NAME") || return 1
-    inspect_network_for_up || return 1
+    OBSERVED_DEV_STATE=$(inspect_container_lifecycle_state "$CONTAINER_NAME") || return 1
+    OBSERVED_PROXY_STATE=$(inspect_container_lifecycle_state "$PROXY_NAME") || return 1
+    inspect_network_compatibility || return 1
     validate_ssh_state_path || return 1
     validate_runtime_files || return 1
-    if [ "$UP_DEV_STATE" = absent ]; then
-        require_ssh_generation_absent || { up_stop_guidance >&2; return 1; }
+    if [ "$OBSERVED_DEV_STATE" = absent ]; then
+        require_ssh_generation_absent || { sandbox_stop_guidance >&2; return 1; }
     else
-        up_resource_present "volume:$VOLUME_NAME" || refuse_sandbox 'development container has no home volume'
-        validate_ssh_resume || { up_stop_guidance >&2; return 1; }
+        observed_resource_present "volume:$VOLUME_NAME" || refuse_sandbox 'development container has no home volume'
+        validate_ssh_resume || { sandbox_stop_guidance >&2; return 1; }
     fi
     # Selection is needed before effective protected mounts can be inspected.
     if [ -z "$DEV_IMAGE" ]; then
@@ -59,6 +74,8 @@ inspect_sandbox_for_up() {
     validate_sandbox_structure
 }
 
+# Re-inspects container structure and relationships, without live service probes
+# or repair. Required inspection failures and incompatibilities refuse reuse.
 validate_sandbox_structure() {
     local name present=()
     resolve_present_resources present "container:$CONTAINER_NAME" "container:$PROXY_NAME"
@@ -184,11 +201,11 @@ print_attachment_digest_context() {
 }
 
 refuse_local_validation() {
-    if [ "$UP_CONVERGING" = true ]; then fail_sandbox_readiness "$@"; fi
+    if [ "$LAUNCH_CONVERGING" = true ]; then fail_sandbox_readiness "$@"; fi
     die "$*"
 }
 
 refuse_downloader_sync() {
-    if [ "$UP_CONVERGING" = true ]; then fail_sandbox_readiness "$@"; fi
+    if [ "$LAUNCH_CONVERGING" = true ]; then fail_sandbox_readiness "$@"; fi
     die "$*; run 'jailbox up' before attaching"
 }

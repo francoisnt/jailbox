@@ -24,7 +24,7 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
 refuse_sandbox() { die "$@"; }
 SCRIPT_DIR=$ROOT/src
-UP_CONVERGING=false
+LAUNCH_CONVERGING=false
 EGRESS_ALLOW=(example.com)
 NETWORK_NAME=fixture-net
 PROXY_NAME=fixture-proxy

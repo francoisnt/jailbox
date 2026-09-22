@@ -47,19 +47,19 @@ reply=$'true\n' producer_status=125
 reject inspect_container_running fixture
 producer_status=0
 # The lifecycle detector preserves engine states; unsupported states refuse.
-UP_PRESENT=(container:fixture)
+OBSERVED_RESOURCES=(container:fixture)
 refuse_sandbox() { printf 'refused: %s\n' "$*" >&2; return 1; }
 for state in running exited stopped created configured; do
     reply="$state"
-    expect "$state" inspect_up_container_state fixture
+    expect "$state" inspect_container_lifecycle_state fixture
 done
 reply=paused
-reject inspect_up_container_state fixture
+reject inspect_container_lifecycle_state fixture
 reply=running producer_status=125
-reject inspect_up_container_state fixture
+reject inspect_container_lifecycle_state fixture
 producer_status=0
-UP_PRESENT=()
-expect absent inspect_up_container_state fixture
+OBSERVED_RESOURCES=()
+expect absent inspect_container_lifecycle_state fixture
 # Stored home policy is independent of requested policy. Unknown metadata is
 # corrupt, whereas failed observation refuses even with plausible stdout.
 VOLUME_NAME=fixture-home

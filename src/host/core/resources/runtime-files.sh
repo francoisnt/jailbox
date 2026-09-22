@@ -44,7 +44,7 @@ configure_runtime_mounts() {
     local path
     validate_ssh_state_path || return 1
     if [ ! -d "$SSH_DIR" ]; then
-        track_up_host_path "$SSH_DIR"
+        record_launch_host_path_attempt "$SSH_DIR"
         # New parent directories are private too; leave existing parents unchanged.
         (umask 077; mkdir -p -- "$SSH_DIR") || return 1
     fi
@@ -53,7 +53,7 @@ configure_runtime_mounts() {
     GITCONFIG_MOUNT=()
     path="$SSH_DIR/gitconfig"
     if [[ ! -e "$path" && ! -L "$path" ]]; then
-        track_up_host_path "$path"
+        record_launch_host_path_attempt "$path"
         generate_minimal_gitconfig "$path" || return 1
     fi
     if [ -e "$path" ] || [ -L "$path" ]; then
@@ -61,7 +61,7 @@ configure_runtime_mounts() {
         GITCONFIG_MOUNT=(-v "$path:/home/$MANAGED_USER/.gitconfig:ro")
     fi
     ROOTFS_FLAG=(--read-only)
-    track_up_host_path "$SSH_GENERATION_DIR"
+    record_launch_host_path_attempt "$SSH_GENERATION_DIR"
 }
 
 # Validate generated-file paths without repair or publication.
