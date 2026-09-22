@@ -75,8 +75,9 @@ their respective jobs; this is not a claim that both GUI binaries ran in one job
 
 ## Remaining release verification
 
-Run all four complete gates, including both real editor jobs, before declaring
-the frontend umbrella complete. Consumer compatibility and complete installer
+The frontend umbrella was accepted as complete by the user on 2026-09-22
+after review of saved local results. Release verification still requires all
+four complete gates, including both real editor jobs. Consumer compatibility and complete installer
 dependency inventory verification remain with the closing machine-boundary work.
 The new real runtime/editor cases require Linux/Podman and the editor jobs require
 a display or Xvfb; portable simulations cannot establish those results.
@@ -89,3 +90,14 @@ fixture-review changes, closing the pending local editor rerun.
 The later migration from a mounted SSH session file to container environment
 and server startup options still requires real runtime, matrix, and editor
 verification; the earlier editor passes do not establish that migration's result.
+
+The acceptance review located a VSCodium run with 126 passes and zero failures
+(`editor-20260921-005953-2418952`), runtime artifacts with 68 wrapper and 237
+headless passes and zero failures (`test-20260921-010830-2499149` and
+`e2e-20260921-010848-2512730`), and a successful full matrix run covering
+493 cases and 61 jobs (`lifecycle-20260921-014349-3825331`). Matrix snapshots
+contain the simplified SSH proxy environment configuration. The editor/runtime
+logs do not establish that they used the final simplification; VS Code and
+macOS CI results are also not established by these local logs. Acceptance
+closes the frontend plans with those evidence limits recorded, without claiming
+new test runs or completion of the machine-boundary release verification.
