@@ -1,11 +1,37 @@
 #!/bin/bash
 set -euo pipefail
-# shellcheck disable=SC1091
-source "$GENERATION_REPO/src/host/core/common.sh"
-# shellcheck disable=SC1091
-source "$GENERATION_REPO/src/host/core/ssh.sh"
-# shellcheck disable=SC1091
-source "$GENERATION_REPO/src/host/core/container-runtime.sh"
+# shellcheck source=src/host/core/project/hash.sh
+source "$GENERATION_REPO/src/host/core/project/hash.sh"
+# shellcheck source=src/host/core/configuration/version.sh
+source "$GENERATION_REPO/src/host/core/configuration/version.sh"
+# shellcheck source=src/host/core/checks/host.sh
+source "$GENERATION_REPO/src/host/core/checks/host.sh"
+# shellcheck source=src/host/core/project/paths.sh
+source "$GENERATION_REPO/src/host/core/project/paths.sh"
+# shellcheck source=src/host/core/configuration/load.sh
+source "$GENERATION_REPO/src/host/core/configuration/load.sh"
+# shellcheck source=src/host/core/project/identity.sh
+source "$GENERATION_REPO/src/host/core/project/identity.sh"
+# shellcheck source=src/host/core/resources/ssh.sh
+source "$GENERATION_REPO/src/host/core/resources/ssh.sh"
+# shellcheck source=src/host/core/resources/container.sh
+source "$GENERATION_REPO/src/host/core/resources/container.sh"
+# shellcheck source=src/host/core/commands/status.sh
+source "$GENERATION_REPO/src/host/core/commands/status.sh"
+# shellcheck source=src/host/core/resources/inventory.sh
+source "$GENERATION_REPO/src/host/core/resources/inventory.sh"
+# shellcheck source=src/host/core/resources/home.sh
+source "$GENERATION_REPO/src/host/core/resources/home.sh"
+# shellcheck source=src/host/core/commands/stop.sh
+source "$GENERATION_REPO/src/host/core/commands/stop.sh"
+# shellcheck source=src/host/core/resources/runtime-files.sh
+source "$GENERATION_REPO/src/host/core/resources/runtime-files.sh"
+# shellcheck source=src/host/core/commands/clean.sh
+source "$GENERATION_REPO/src/host/core/commands/clean.sh"
+# shellcheck source=src/host/core/commands/up.sh
+source "$GENERATION_REPO/src/host/core/commands/up.sh"
+# shellcheck source=src/host/core/checks/compatibility.sh
+source "$GENERATION_REPO/src/host/core/checks/compatibility.sh"
 # shellcheck disable=SC1091
 source "$GENERATION_FIXTURE/launch-function"
 die() { echo "$*" >&2; exit 1; }

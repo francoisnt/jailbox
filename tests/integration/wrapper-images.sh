@@ -368,8 +368,8 @@ run_case() {
 wrapper_install_cache_bust() (
     # Preparation and the CLI must identify the same wrapper build inputs.
     SCRIPT_DIR=$JAILBOX_DIR/src
-    # shellcheck source=src/host/core/dev-image.sh
-    source "$JAILBOX_DIR/src/host/core/dev-image.sh"
+    # shellcheck source=src/host/core/resources/images.sh
+    source "$JAILBOX_DIR/src/host/core/resources/images.sh"
     jailbox_install_cache_bust
 )
 

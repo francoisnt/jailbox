@@ -6,6 +6,8 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 source "$ROOT/tests/lib/logging.sh"
 # shellcheck source=tests/lib/resource-ledger.sh
 source "$ROOT/tests/lib/resource-ledger.sh"
+# shellcheck source=tests/lib/lifecycle-matrix.sh
+source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-assertions.sh
 source "$ROOT/tests/lib/lifecycle-assertions.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh

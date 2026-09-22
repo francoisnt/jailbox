@@ -10,6 +10,7 @@ lifecycle_jobs() {
     local row command policy
     local -a policies=()
     validate_lifecycle_contracts
+    validate_lifecycle_recovery_contracts || return 1
     while IFS= read -r row; do
         printf 'row.%s|row|%s\n' "${row%%|*}" "$row"
     done < <(lifecycle_matrix_rows)
@@ -87,6 +88,7 @@ lifecycle_fixed_cases() {
     local row command policy missing baseline
     local -a policies=()
     validate_lifecycle_contracts
+    validate_lifecycle_recovery_contracts || return 1
     while IFS='|' read -r row _; do
         for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do printf '%s.%s\n' "$row" "$command"; done
     done < <(lifecycle_matrix_rows)

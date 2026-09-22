@@ -1,16 +1,12 @@
 #!/bin/bash
-# Unit tests for host/core/network.sh helpers.
+# Unit tests for host/core/resources/network.sh helpers.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Safe because host/core/network.sh currently contains only function definitions and
-# no top-level executable code. Keep that true for this unit test; accidentally
-# calling configure_network or related functions here would invoke podman, which
-# is intentionally unavailable in the unit-test environment.
-# shellcheck source=src/host/core/network.sh
-source "$JAILBOX_DIR/src/host/core/network.sh"
+# shellcheck source=tests/lib/core.sh
+source "$JAILBOX_DIR/tests/lib/core.sh" "$JAILBOX_DIR/src"
 
 PASSED=0
 FAILED=0
@@ -231,8 +227,6 @@ test_effective_egress_allowlist_array_output() {
 # Exercise the real file comparison and metadata checks with only engine
 # inspection stubbed. Equivalent policy must not rewrite the live files.
 test_proxy_policy_equivalence() (
-    source "$JAILBOX_DIR/src/host/core/ssh.sh"
-    source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
     local fixture editor expected before actual=()
     fixture=$(mktemp -d)
     trap 'rm -rf "$fixture"' EXIT
@@ -253,6 +247,7 @@ test_proxy_policy_equivalence() (
 
     for editor in '' /usr/bin/codium /usr/bin/code; do
         EDITOR_BIN=$editor
+        # shellcheck disable=SC2030 # Isolated policy fixture.
         EGRESS_ALLOW=(z.example.com a.example.com)
         effective_egress_allowlist actual
         case "$editor" in
@@ -329,7 +324,6 @@ test_initialize_network_state_clears_outputs() {
 
 main() {
     (
-        source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
         fixture=$(mktemp -d)
         trap 'rm -rf "$fixture"' EXIT
         die() { echo "$*" >&2; exit 1; }

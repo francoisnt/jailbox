@@ -7,6 +7,47 @@ KEY_FILE=""
 SSHD_RUNTIME_DIR=""
 SSH_GENERATION_DIR=""
 
+validation_ssh() {
+    ssh -F "$SSH_CONFIG" -o ConnectTimeout=3 -o ServerAliveInterval=3 \
+        -o ServerAliveCountMax=2 "$CONTAINER_NAME" "$@"
+}
+
+validate_development_session() {
+    local mode="$1" path arguments result proxy="" index payload status=0
+    local -a paths=(/)
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do paths+=("$REMOTE_PATH/$path"); done
+    if [[ "$mode" = full && -n "${EGRESS_ALLOW[*]-}" ]]; then proxy=${NETWORK_STATE[proxy_url]}; fi
+    if [[ ! -f "$SCRIPT_DIR/container/checks/validate-session.sh" ]] ||
+        ! payload=$(< "$SCRIPT_DIR/container/checks/validate-session.sh"); then
+        refuse_local_validation 'could not read local validation payload; repair the jailbox installation before retrying'
+        return 1
+    fi
+    printf -v arguments "%q " "$mode" "$REMOTE_PATH" "$proxy" "${paths[@]}"
+    result=$(validation_ssh "bash -s -- $arguments" <<< "$payload" && printf '.') || status=$?
+    if [[ "$status" != 0 ]]; then
+        refuse_sandbox "SSH validation command failed (exit $status; transport or remote execution error)"
+        return 1
+    fi
+    case "$result" in
+        $'ok\n.') return 0 ;;
+        $'authorized-keys\n.') refuse_sandbox 'authorized_keys is unavailable' ;;
+        $'project-write\n.') refuse_local_validation 'managed user cannot write the project; correct host project ownership and permissions before retrying' ;;
+        $'sockets\n.') refuse_sandbox 'runtime socket isolation could not be established' ;;
+        $'hardening\n.') refuse_sandbox 'live process hardening could not be established' ;;
+        $'proxy-env\n.') refuse_sandbox 'live SSH proxy settings differ from policy' ;;
+        $'direct-route\n.') refuse_sandbox 'direct-route isolation could not be established' ;;
+        *)
+            for index in "${!paths[@]}"; do
+                if [[ "$result" = "mount:$index"$'\n.' ]]; then
+                    refuse_sandbox "read-only mount '${paths[index]}' could not be established"
+                    return 1
+                fi
+            done
+            refuse_sandbox 'invalid SSH validation response: expected one result; check shell startup files for unexpected output' ;;
+    esac
+    return 1
+}
+
 initialize_ssh_state() {
     [[ -n "$PROJECT_STATE_ROOT" && -n "$PROJECT_HASH" ]] || \
         die "internal error: SSH state requires initialized project state"

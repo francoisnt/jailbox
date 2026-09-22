@@ -1,7 +1,4 @@
-# Network setup and optional tinyproxy egress sidecar.
-
-# shellcheck source=src/host/core/project-id.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-id.sh"
+# Network state and resource validation.
 
 declare -A NETWORK_STATE=(
     [selected_network]=""
@@ -26,110 +23,6 @@ initialize_network_state() {
         [proxy_conf_file]=""
     )
     NETWORK_SSH_SESSION_ENV=()
-}
-
-configure_network() {
-    # Every network carries the digest, so no network is created before the
-    # current configuration has one.
-    assert_config_digest_ready || return 1
-
-    if [ -n "${EGRESS_ALLOW[*]-}" ]; then
-        configure_proxy_network || return 1
-    else
-        if ! up_resource_present "network:$NETWORK_NAME"; then
-            track_up_resource "network:$NETWORK_NAME"
-            podman network create "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$NETWORK_NAME" || return 1
-        fi
-        NETWORK_STATE[selected_network]="$NETWORK_NAME"
-        NETWORK_SSH_SESSION_ENV=()
-        NETWORK_STATE[proxy_url]=""
-        NETWORK_STATE[no_proxy]=""
-    fi
-}
-
-configure_proxy_network() {
-    # Egress enforcement model: direct container egress is blocked by an
-    # internal-only Podman network (no external route). Outbound HTTP(S) is
-    # brokered exclusively through the tinyproxy sidecar, which enforces the
-    # EGRESS_ALLOW domain allowlist. Enforcement is proxy-mediated
-    # (protocol/domain filter), not per-packet or firewall-level.
-    #
-    # Rootless, zero-capability Podman intentionally avoids NET_ADMIN,
-    # iptables/nftables, and TUN/TProxy interception. Hostname-aware
-    # transparent filtering would require one of those mechanisms. The chosen
-    # topology trades transparent filtering for a simpler, capability-free
-    # model: tools must cooperate with proxy configuration (HTTP_PROXY /
-    # HTTPS_PROXY env, curlrc, wgetrc) to reach allowed hosts.
-    local internal_net external_net effective_egress_allow proxy_internal_ip proxy_internal_subnet
-
-    effective_egress_allowlist effective_egress_allow || return 1
-    NETWORK_STATE[filter_file]="$SSH_DIR/tinyproxy-filter"
-
-    internal_net="${NETWORK_NAME}-internal"
-    external_net="${NETWORK_NAME}-external"
-
-    ensure_internal_network "$internal_net" || return 1
-    if ! up_resource_present "network:$external_net"; then
-        track_up_resource "network:$external_net"
-        podman network create "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$external_net" || return 1
-    fi
-
-    # Derive the proxy address from the network's actual subnet rather than
-    # recomputing the hash candidate: an existing network may have been
-    # created on a fallback subnet after a collision.
-    proxy_internal_subnet=$(internal_network_subnet "$internal_net") || {
-        echo "Error: could not determine subnet of internal network $internal_net" >&2
-        return 1
-    }
-    [ -n "$proxy_internal_subnet" ] || die "could not determine subnet of internal network $internal_net"
-    proxy_internal_ip=$(proxy_ip_for_subnet "$proxy_internal_subnet") || return 1
-
-    NETWORK_STATE[proxy_conf_file]="$SSH_DIR/tinyproxy.conf"
-    if [ "$UP_PROXY_STATE" = absent ]; then
-        prepare_proxy_files || return 1
-        render_tinyproxy_filter "${NETWORK_STATE[filter_file]}" "${effective_egress_allow[@]}" || return 1
-        render_tinyproxy_conf "${NETWORK_STATE[proxy_conf_file]}" "$proxy_internal_subnet" || return 1
-        track_up_resource "container:$PROXY_NAME"
-
-        echo "🔒 Starting egress proxy (${#effective_egress_allow[@]} allowed hosts)..."
-        # Attach both networks at creation so external_net owns the default
-        # route. Never reconnect a surviving container to repair attachments.
-        podman run -d \
-            --name "$PROXY_NAME" \
-            "${CONFIG_DIGEST_LABEL_ARGS[@]}" \
-            --network "$external_net" \
-            --network "$internal_net:ip=$proxy_internal_ip" \
-            --user tinyproxy \
-            --read-only \
-            --tmpfs /tmp:rw,noexec,nosuid,nodev \
-            --tmpfs /run:rw,noexec,nosuid,nodev \
-            --cap-drop=ALL \
-            --security-opt=no-new-privileges \
-            -v "${NETWORK_STATE[filter_file]}:/etc/tinyproxy/filter:ro,Z" \
-            -v "${NETWORK_STATE[proxy_conf_file]}:/etc/tinyproxy/tinyproxy.conf:ro,Z" \
-            "$PROXY_IMAGE" || return 1
-    elif [ "$UP_PROXY_STATE" != running ]; then
-        podman start "$PROXY_NAME" || return 1
-    fi
-
-    NETWORK_STATE[selected_network]="$internal_net"
-    NETWORK_STATE[internal_network]="$internal_net"
-    NETWORK_STATE[proxy_url]="http://$proxy_internal_ip:8888"
-    configure_proxy_env
-}
-
-effective_egress_allowlist() {
-    local -n result="$1"
-    local sorted_hosts
-    local hosts=("${EGRESS_ALLOW[@]}")
-
-    result=()
-    [ -n "${EGRESS_ALLOW[*]-}" ] || return 0
-
-    # Match the digest's set semantics: validated hosts contain no newlines.
-    # Capture the producer status before publishing the array to the caller.
-    sorted_hosts=$(printf '%s\n' "${hosts[@]}" | LC_ALL=C sort -u) || return 1
-    mapfile -t result <<< "$sorted_hosts"
 }
 
 configure_proxy_env() {
@@ -160,30 +53,6 @@ configure_proxy_env() {
         "NO_PROXY=${NETWORK_STATE[no_proxy]}"
         "no_proxy=${NETWORK_STATE[no_proxy]}"
     )
-}
-
-tinyproxy_escape_host() {
-    printf '%s\n' "$1" | sed 's/\./\\./g'
-}
-
-render_tinyproxy_filter() {
-    local filter_file="$1" parent
-    shift
-    parent=$(dirname "$filter_file") || return 1
-    mkdir -p "$parent" || return 1
-    print_tinyproxy_filter "$@" > "$filter_file" || return 1
-    # Public policy must be readable by the unprivileged proxy user.
-    chmod 644 "$filter_file"
-}
-
-# Rendered copy of the packaged tinyproxy.conf plus a launch-time client ACL.
-# Without Allow lines tinyproxy accepts any client that can reach port 8888.
-render_tinyproxy_conf() {
-    local conf_file="$1" subnet="$2" parent
-    parent=$(dirname "$conf_file") || return 1
-    mkdir -p "$parent" || return 1
-    print_tinyproxy_conf "$subnet" > "$conf_file" || return 1
-    chmod 644 "$conf_file"
 }
 
 # Create the internal egress network, falling back across candidate subnets:
@@ -320,59 +189,4 @@ validate_container_networks() {
         properties+=("$template" 'proxy address')
     fi
     require_container_properties "$name" "${properties[@]}"
-}
-
-prepare_proxy_files() {
-    local path
-    validate_ssh_state_path || return 1
-    if [ ! -d "$SSH_DIR" ]; then
-        UP_HOST_CREATED+=("$SSH_DIR")
-        # New parent directories are private too; leave existing parents unchanged.
-        (umask 077; mkdir -p -- "$SSH_DIR") || return 1
-    fi
-    validate_ssh_file "$SSH_DIR" 700 directory || die 'unsafe runtime directory metadata'
-    for path in "${NETWORK_STATE[filter_file]}" "${NETWORK_STATE[proxy_conf_file]}"; do
-        if [ -e "$path" ] || [ -L "$path" ]; then
-            [[ -f "$path" && ! -L "$path" ]] || die "unsafe proxy configuration path '$path'"
-        else
-            UP_HOST_CREATED+=("$path")
-        fi
-    done
-}
-
-print_tinyproxy_filter() {
-    local host escaped
-    # Two patterns per domain: exact match and subdomain match. The grouped
-    # anchor in (^|\.)domain$ is not honoured by musl's POSIX ERE implementation.
-    for host in "$@"; do
-        escaped=$(tinyproxy_escape_host "$host") || return 1
-        printf '^%s$\n\\.%s$\n' "$escaped" "$escaped" || return 1
-    done
-}
-
-print_tinyproxy_conf() {
-    cat "$SCRIPT_DIR/container/tinyproxy/tinyproxy.conf" || return 1
-    printf '\n# Rendered at launch: only the internal jailbox network may use the proxy.\nAllow %s\n' "$1"
-}
-
-validate_proxy_configuration() {
-    local subnet template expected_filter expected_conf
-    local effective=()
-    effective_egress_allowlist effective || return 1
-    subnet=$(podman network inspect "${NETWORK_NAME}-internal" --format '{{(index .Subnets 0).Subnet}}') || die 'could not inspect proxy subnet'
-    if ! validate_ssh_file "${NETWORK_STATE[filter_file]}" 644 file ||
-        ! validate_ssh_file "${NETWORK_STATE[proxy_conf_file]}" 644 file; then
-        refuse_sandbox 'unsafe proxy configuration files'
-    fi
-    expected_filter=$(print_tinyproxy_filter "${effective[@]}" && printf '.') || die 'could not render expected proxy filter'
-    expected_conf=$(print_tinyproxy_conf "$subnet" && printf '.') || die 'could not read or render expected proxy configuration'
-    if ! cmp -s "${NETWORK_STATE[filter_file]}" <(printf '%s' "${expected_filter%.}") ||
-        ! cmp -s "${NETWORK_STATE[proxy_conf_file]}" <(printf '%s' "${expected_conf%.}"); then
-        refuse_sandbox 'proxy configuration differs from requested policy'
-    fi
-    require_container_mount "$PROXY_NAME" /etc/tinyproxy/filter bind "${NETWORK_STATE[filter_file]}" false
-    require_container_mount "$PROXY_NAME" /etc/tinyproxy/tinyproxy.conf bind "${NETWORK_STATE[proxy_conf_file]}" false
-    template='{{range .Mounts}}{{if not (or (eq .Destination "/etc/tinyproxy/filter") (eq .Destination "/etc/tinyproxy/tinyproxy.conf"))}}invalid{{end}}{{end}}true'
-    require_container_property "$PROXY_NAME" "$template" 'proxy mount inventory'
-    require_container_property "$PROXY_NAME" '{{and (eq .Config.User "tinyproxy") (eq (len .HostConfig.PortBindings) 0)}}' 'proxy user/port policy'
 }

@@ -3,10 +3,38 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 SCRIPT_DIR=$ROOT/src
-# shellcheck source=src/host/core/container-runtime.sh
-source "$ROOT/src/host/core/container-runtime.sh"
-# shellcheck source=src/host/core/validation.sh
-source "$ROOT/src/host/core/validation.sh"
+# shellcheck source=src/host/core/resources/container.sh
+source "$ROOT/src/host/core/resources/container.sh"
+# shellcheck source=src/host/core/commands/status.sh
+source "$ROOT/src/host/core/commands/status.sh"
+# shellcheck source=src/host/core/resources/inventory.sh
+source "$ROOT/src/host/core/resources/inventory.sh"
+# shellcheck source=src/host/core/resources/home.sh
+source "$ROOT/src/host/core/resources/home.sh"
+# shellcheck source=src/host/core/commands/stop.sh
+source "$ROOT/src/host/core/commands/stop.sh"
+# shellcheck source=src/host/core/resources/runtime-files.sh
+source "$ROOT/src/host/core/resources/runtime-files.sh"
+# shellcheck source=src/host/core/commands/clean.sh
+source "$ROOT/src/host/core/commands/clean.sh"
+# shellcheck source=src/host/core/commands/up.sh
+source "$ROOT/src/host/core/commands/up.sh"
+# shellcheck source=src/host/core/checks/compatibility.sh
+source "$ROOT/src/host/core/checks/compatibility.sh"
+# shellcheck source=src/host/core/resources/ssh.sh
+source "$ROOT/src/host/core/resources/ssh.sh"
+# shellcheck source=src/host/core/checks/attachment.sh
+source "$ROOT/src/host/core/checks/attachment.sh"
+# shellcheck source=src/host/core/resources/container.sh
+source "$ROOT/src/host/core/resources/container.sh"
+# shellcheck source=src/host/core/resources/proxy.sh
+source "$ROOT/src/host/core/resources/proxy.sh"
+# shellcheck source=src/host/core/resources/downloader.sh
+source "$ROOT/src/host/core/resources/downloader.sh"
+# shellcheck source=src/host/core/commands/connection-info.sh
+source "$ROOT/src/host/core/commands/connection-info.sh"
+# shellcheck source=src/host/core/checks/compatibility.sh
+source "$ROOT/src/host/core/checks/compatibility.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }

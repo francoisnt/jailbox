@@ -7,7 +7,7 @@ cp -R "$ROOT/src/host" "$tmp/host"
 cp "$ROOT/src/public-api.sh" "$tmp/public-api.sh"
 python3 "$ROOT/scripts/check-frontend-boundary.py" "$tmp"
 # shellcheck disable=SC2016 # Literal shell references are boundary fixtures.
-for violation in 'configure_network' 'configure_network() { :; }' 'DEV_IMAGE=bad' 'declare -g DEV_IMAGE=unexpected' 'declare -g "DEV_IMAGE=unexpected"' 'printf -v SSH_CONFIG %s /tmp/private' 'printf -v "SSH_CONFIG" %s /tmp/private' 'bad() { NETWORK_STATE[proxy_url]=unexpected; }' 'printf "%s" "$SSH_CONFIG"' 'cat "$HOME/.local/state/jailbox/projects/id/ssh-generation/ssh_config"' 'podman ps' '"podman" ps' 'if podman ps; then :; fi' 'env podman ps' 'source host/core/common.sh'; do
+for violation in 'configure_network' 'configure_network() { :; }' 'DEV_IMAGE=bad' 'declare -g DEV_IMAGE=unexpected' 'declare -g "DEV_IMAGE=unexpected"' 'printf -v SSH_CONFIG %s /tmp/private' 'printf -v "SSH_CONFIG" %s /tmp/private' 'bad() { NETWORK_STATE[proxy_url]=unexpected; }' 'printf "%s" "$SSH_CONFIG"' 'cat "$HOME/.local/state/jailbox/projects/id/ssh-generation/ssh_config"' 'podman ps' '"podman" ps' 'if podman ps; then :; fi' 'env podman ps' 'source host/core/configuration/load.sh'; do
     printf '%s\n' "$violation" > "$tmp/host/frontend/violation.sh"
     if python3 "$ROOT/scripts/check-frontend-boundary.py" "$tmp" > "$tmp/error" 2>&1; then
         echo "Accepted boundary violation: $violation" >&2

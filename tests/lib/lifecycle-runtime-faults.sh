@@ -152,7 +152,7 @@ run_mutation_faults() {
             lifecycle_same_fault_event "$trace" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'fault point reached a different operation'
             unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE
             inventory=$(fault_inventory) || matrix_die "could not observe interrupted inventory"
-            matrix_observe_fault interrupted
+            matrix_observe_fault interrupted readiness
             if [[ "$contract" = launch ]]; then
                 if [[ "$home_preexisting" = true ]]; then assert_marker keep; fi
                 if [[ "$policy" = resume ]]; then
@@ -202,7 +202,7 @@ run_mutation_faults() {
             else
                 assert_marker "$retained"
             fi
-            matrix_observe recovered running allow
+            matrix_observe recovered running allow readiness
             matrix_case_pass
         done
     done
@@ -404,5 +404,5 @@ matrix_observe_fault() {
     local inventory attachment
     inventory=$(fault_inventory) || matrix_die 'could not observe fault inventory'
     attachment=$(fault_attachment) || matrix_die 'could not establish fault attachment expectation'
-    matrix_observe "$1" "$inventory" "$attachment"
+    matrix_observe "$1" "$inventory" "$attachment" "${2:-full}"
 }

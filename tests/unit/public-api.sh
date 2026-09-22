@@ -21,12 +21,24 @@ source "$ROOT/src/host/api-support.sh"
 initialize_public_api_lookups
 # shellcheck source=src/host/cli.sh
 source "$ROOT/src/host/cli.sh"
-# shellcheck source=src/host/core/common.sh
-source "$ROOT/src/host/core/common.sh"
-# shellcheck source=src/host/core/preflight.sh
-source "$ROOT/src/host/core/preflight.sh"
-# shellcheck source=src/host/core/config-digest.sh
-source "$ROOT/src/host/core/config-digest.sh"
+# shellcheck source=src/host/core/project/hash.sh
+source "$ROOT/src/host/core/project/hash.sh"
+# shellcheck source=src/host/core/configuration/version.sh
+source "$ROOT/src/host/core/configuration/version.sh"
+# shellcheck source=src/host/core/checks/host.sh
+source "$ROOT/src/host/core/checks/host.sh"
+# shellcheck source=src/host/core/project/paths.sh
+source "$ROOT/src/host/core/project/paths.sh"
+# shellcheck source=src/host/core/configuration/load.sh
+source "$ROOT/src/host/core/configuration/load.sh"
+# shellcheck source=src/host/core/project/identity.sh
+source "$ROOT/src/host/core/project/identity.sh"
+# shellcheck source=src/host/core/checks/host.sh
+source "$ROOT/src/host/core/checks/host.sh"
+# shellcheck source=src/host/core/configuration/digest.sh
+source "$ROOT/src/host/core/configuration/digest.sh"
+# shellcheck source=src/host/core/checks/compatibility.sh
+source "$ROOT/src/host/core/checks/compatibility.sh"
 # shellcheck source=tests/lib/lifecycle-matrix.sh
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh

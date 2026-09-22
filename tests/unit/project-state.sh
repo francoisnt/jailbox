@@ -9,10 +9,20 @@ source "$JAILBOX_DIR/src/public-api.sh"
 # shellcheck source=src/host/api-support.sh
 source "$JAILBOX_DIR/src/host/api-support.sh"
 initialize_public_api_lookups
-# shellcheck disable=SC1091
-source "$JAILBOX_DIR/src/host/core/common.sh"
-# shellcheck disable=SC1091
-source "$JAILBOX_DIR/src/host/core/ssh.sh"
+# shellcheck source=src/host/core/project/hash.sh
+source "$JAILBOX_DIR/src/host/core/project/hash.sh"
+# shellcheck source=src/host/core/configuration/version.sh
+source "$JAILBOX_DIR/src/host/core/configuration/version.sh"
+# shellcheck source=src/host/core/checks/host.sh
+source "$JAILBOX_DIR/src/host/core/checks/host.sh"
+# shellcheck source=src/host/core/project/paths.sh
+source "$JAILBOX_DIR/src/host/core/project/paths.sh"
+# shellcheck source=src/host/core/configuration/load.sh
+source "$JAILBOX_DIR/src/host/core/configuration/load.sh"
+# shellcheck source=src/host/core/project/identity.sh
+source "$JAILBOX_DIR/src/host/core/project/identity.sh"
+# shellcheck source=src/host/core/resources/ssh.sh
+source "$JAILBOX_DIR/src/host/core/resources/ssh.sh"
 
 PASSED=0
 FAILED=0

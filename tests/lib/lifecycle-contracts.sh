@@ -125,3 +125,49 @@ lifecycle_fault_requirements() {
     esac
     printf '%s\n' "${requirements[@]}"
 }
+
+# Each concrete SSH defect still owes refusal, non-mutation, and safe cleanup.
+# Once cleanup proves the same retained-home baseline, these representatives
+# supply the full relaunch/transport proof. Metadata and key-content defects
+# retain separate representatives. Unlisted rows retain comprehensive recovery.
+declare -A LIFECYCLE_RECOVERY_REPRESENTATIVES=(
+    [ssh-missing]=ssh-mode [ssh-symlink]=ssh-mode [ssh-directory]=ssh-mode
+    [ssh-fifo]=ssh-mode [ssh-owner]=ssh-mode [ssh-mode]=ssh-mode
+    [ssh-parent-mode]=ssh-mode
+    [ssh-server-pair]=ssh-client-pair [ssh-client-pair]=ssh-client-pair
+    [ssh-authorized]=ssh-client-pair [ssh-pin]=ssh-client-pair
+    [ssh-config]=ssh-client-pair
+)
+
+validate_lifecycle_recovery_contracts() {
+    local rows key signature representative
+    local -A signatures=()
+    rows=$(lifecycle_matrix_rows) || return 1
+    while IFS='|' read -r key signature; do
+        [[ "$key" =~ ^[a-z][a-z0-9-]*$ ]] || { printf 'Invalid recovery row\n' >&2; return 1; }
+        [[ ! -v signatures[$key] ]] || { printf 'Duplicate recovery row\n' >&2; return 1; }
+        signatures[$key]=$signature
+    done <<< "$rows"
+    for key in "${!LIFECYCLE_RECOVERY_REPRESENTATIVES[@]}"; do
+        [[ "$key" =~ ^[a-z][a-z0-9-]*$ ]] || return 1
+        representative=${LIFECYCLE_RECOVERY_REPRESENTATIVES[$key]}
+        [[ "$representative" =~ ^[a-z][a-z0-9-]*$ ]] || return 1
+        if [[ ! -v signatures[$key] || ! -v signatures[$representative] ||
+              ${LIFECYCLE_RECOVERY_REPRESENTATIVES[$representative]-} != "$representative" ]]; then
+            printf 'Missing or indirect recovery representative for %s\n' "$key" >&2; return 1
+        fi
+        # Equivalence concerns the complete independently authored row contract,
+        # not a verdict inferred from a production detector.
+        if [[ ${signatures[$key]} = "${signatures[$representative]}" &&
+              ${signatures[$key]} = 'plain|false|false|refuse|stopped|refuse|stop|keep|stopped' ]]; then
+            continue
+        else
+            printf 'Non-equivalent recovery contract for %s\n' "$key" >&2; return 1
+        fi
+    done
+}
+
+lifecycle_recovery_representative() {
+    [[ "$1" =~ ^[a-z][a-z0-9-]*$ ]] || return 1
+    printf '%s\n' "${LIFECYCLE_RECOVERY_REPRESENTATIVES[$1]-$1}"
+}

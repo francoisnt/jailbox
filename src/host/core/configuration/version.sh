@@ -1,3 +1,5 @@
+# configuration — version
+
 # The release stamp is data, never shell code. Keep this accessor shared with
 # compatibility consumers so they use exactly the token printed by --version.
 jailbox_version() {

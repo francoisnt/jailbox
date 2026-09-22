@@ -76,6 +76,32 @@ orchestrator is planned, so the machine interface has a concrete consumer.
 | Container programs | Install wrapper dependencies, start SSH, perform streamed checks, support remote execution | `src/container/` |
 | Maintenance and tests | Package releases, check declarations, construct fixtures, verify behavior | `scripts/` and `tests/` |
 
+Core is organized by command and resource. `commands/` owns public handlers,
+sequencing, and rollback; `resources/` owns detailed observations and explicit
+operations for containers, networks, homes, SSH, images, and runtime files.
+`configuration/` owns environment loading, fingerprints, and shared version
+lookup; `project/` owns identity and host-path rules; `checks/` coordinates
+compatibility and attachment validation. `entry.sh` loads the modules and
+initializes defaults. Loading a definition does not validate a version stamp or
+inspect the engine. The schema path loads only its handler.
+
+Resource operations report attempted creations through `track_up_resource` and
+`track_up_host_path`, the update interface owned by command orchestration.
+Compatibility inspection starts a fresh attempt inventory through
+`reset_up_attempts`; refusal handling reads `UP_CONVERGING` to distinguish
+preflight refusal from failed convergence. These internal dependencies keep
+rollback state under one owner without calling public command handlers.
+Tests using the complete core load its entry boundary through `tests/lib/core.sh`
+before setting fixture state or stubbing operations; focused tests may load
+individual resource modules.
+
+Shared observations do not impose shared prerequisites on every command.
+Inventory can report a running container with broken SSH credentials. Stop and
+clean use resource identity and their retention rules even when launch policy
+is invalid. Attachment still requires the complete compatibility and readiness
+boundary. Tests exercise production observations with independent expected
+states and verify that failed inspection never becomes permission to mutate.
+
 The frontend may know the public configuration keys. It must not inspect Podman,
 read core's private state files, or call core's Bash functions. Running
 `jailbox connection-info` is how it obtains validated connection information.
@@ -461,6 +487,19 @@ attachment behavior, and executes recovery. Fault tests use tool wrappers and
 barriers to interrupt selected external-operation boundaries. They do not cover
 every instruction, internal filesystem write, or possible race.
 
+Constructed-state and targeted-failure observations exercise status,
+connection-info, exec, and shell. Discovered interruption sweeps exercise status
+and full connection-info validation before and after their real recovery
+sequence. Exec and shell share that attachment boundary; repeating both
+transports at every fault point adds no new transport contract. Independent
+fixture observations still establish expected outcomes, and every fault retains
+its preservation and recovery assertions. Every concrete SSH defect proves its
+own refusal and safe cleanup; explicit equivalent-recovery contracts share the
+final relaunch proof through selected metadata and key-content representatives.
+A shared proof is allowed only after independently checking the repaired
+resource baseline, home data/labels, and unrelated runtime content. Observation logs identify which
+workload ran; a failed readiness check cannot be recorded as success.
+
 Frontend tests separately prove composition, child-command ordering, failure
 propagation, editor selection, connection parsing, and the private-core boundary.
 Bare launch and `--no-editor` delegate lifecycle work to `up`; they do not become
@@ -477,6 +516,8 @@ run relevant cases under both `0022` and `0002` umasks.
 
 ### Where to follow the evidence
 
+- [Core resource and assertion coverage](tests/core-verification.md), including
+  observation workloads, negative controls, and benchmark limitations.
 - [Frontend contract evidence](tests/frontend-verification.md), including
   reused portable coverage and the real runtime/editor integration cases.
 - [Gate runner](tests/run) and [contributor test guide](CONTRIBUTING.md#linting-and-tests).

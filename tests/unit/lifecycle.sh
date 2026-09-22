@@ -31,8 +31,8 @@ new_project() {
     FAKE_PODMAN_STATE="$PROJECT/.podman-state"
     mkdir -p "$FAKE_PODMAN_STATE"
     export FAKE_PODMAN_STATE
-    PREFIX=$(source "$JAILBOX_DIR/src/host/core/project-id.sh" && jailbox_resource_prefix_for_path "$PROJECT")
-    STATE_DIR="$FIXTURE/xdg-state/jailbox/projects/$(source "$JAILBOX_DIR/src/host/core/project-id.sh" && jailbox_project_hash_for_path "$PROJECT")"
+    PREFIX=$(source "$JAILBOX_DIR/src/host/core/project/hash.sh" && jailbox_resource_prefix_for_path "$PROJECT")
+    STATE_DIR="$FIXTURE/xdg-state/jailbox/projects/$(source "$JAILBOX_DIR/src/host/core/project/hash.sh" && jailbox_project_hash_for_path "$PROJECT")"
 }
 
 # Declare a resource in the fake Podman state: kind, name, optional label
@@ -703,14 +703,14 @@ test_both_sha256_tools_produce_the_same_identity() {
 }
 
 test_launch_runs_without_replace() {
-    if grep -Fq -- '--replace' "$JAILBOX_DIR/src/host/core/container-runtime.sh" ||
-        grep -Fq -- '--replace' "$JAILBOX_DIR/src/host/core/network.sh"; then
+    if grep -Fq -- '--replace' "$JAILBOX_DIR/src/host/core/resources/container.sh" ||
+        grep -Fq -- '--replace' "$JAILBOX_DIR/src/host/core/resources/network.sh"; then
         fail "development and proxy runs do not use --replace"
     else
         pass "development and proxy runs do not use --replace"
     fi
-    if grep -Fq 'Replacing existing' "$JAILBOX_DIR/src/host/core/container-runtime.sh" ||
-        grep -Fq 'Replacing existing' "$JAILBOX_DIR/src/host/core/network.sh"; then
+    if grep -Fq 'Replacing existing' "$JAILBOX_DIR/src/host/core/resources/container.sh" ||
+        grep -Fq 'Replacing existing' "$JAILBOX_DIR/src/host/core/resources/network.sh"; then
         fail "dead replacement notices are removed"
     else
         pass "dead replacement notices are removed"
@@ -842,16 +842,8 @@ test_home_recovery() {
 run_home_function() (
     # Exercise creation/reuse at the owning layer, without a complete fake
     # image build/SSH stack. The CLI refusal cases above test dispatch wiring.
-    # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/src/public-api.sh"
-    # shellcheck source=src/host/api-support.sh
-    source "$JAILBOX_DIR/src/host/api-support.sh"
-    initialize_public_api_lookups
-    # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/src/host/core/common.sh"
-    # shellcheck disable=SC1091
-    source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
-    apply_config_defaults
+    # shellcheck source=tests/lib/core.sh
+    source "$JAILBOX_DIR/tests/lib/core.sh" "$JAILBOX_DIR/src"
     PROJECT_DIR="$PROJECT"
     initialize_project_names
     EPHEMERAL_HOME="$1"
@@ -863,7 +855,8 @@ test_home_creation_and_generation() {
     local mode before output status
 
     (
-        source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
+        # shellcheck source=src/host/core/resources/home.sh
+        source "$JAILBOX_DIR/src/host/core/resources/home.sh"
         VOLUME_NAME=test-home EPHEMERAL_HOME=false
         resolve_present_resources() { local -n result=$1; result=(); }
         for fault in create inspect chown; do

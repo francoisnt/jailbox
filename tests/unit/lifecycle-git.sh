@@ -9,8 +9,24 @@ source "$ROOT/tests/lib/logging.sh"
 source "$ROOT/tests/lib/resource-ledger.sh"
 # shellcheck source=tests/lib/lifecycle-runtime.sh
 source "$ROOT/tests/lib/lifecycle-runtime.sh"
-# shellcheck source=src/host/core/container-runtime.sh
-source "$ROOT/src/host/core/container-runtime.sh"
+# shellcheck source=src/host/core/resources/container.sh
+source "$ROOT/src/host/core/resources/container.sh"
+# shellcheck source=src/host/core/commands/status.sh
+source "$ROOT/src/host/core/commands/status.sh"
+# shellcheck source=src/host/core/resources/inventory.sh
+source "$ROOT/src/host/core/resources/inventory.sh"
+# shellcheck source=src/host/core/resources/home.sh
+source "$ROOT/src/host/core/resources/home.sh"
+# shellcheck source=src/host/core/commands/stop.sh
+source "$ROOT/src/host/core/commands/stop.sh"
+# shellcheck source=src/host/core/resources/runtime-files.sh
+source "$ROOT/src/host/core/resources/runtime-files.sh"
+# shellcheck source=src/host/core/commands/clean.sh
+source "$ROOT/src/host/core/commands/clean.sh"
+# shellcheck source=src/host/core/commands/up.sh
+source "$ROOT/src/host/core/commands/up.sh"
+# shellcheck source=src/host/core/checks/compatibility.sh
+source "$ROOT/src/host/core/checks/compatibility.sh"
 mkdir "$test_root/bin"
 # Init checks for an existing container; no engine mutation is permitted.
 cat > "$test_root/bin/podman" <<'ENGINE'

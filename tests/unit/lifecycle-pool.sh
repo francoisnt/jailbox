@@ -197,7 +197,8 @@ grep -Fq "$tree/proc}" "$tree/tests/lib/fixture-ports.sh"
 mkdir -p "$tree/src/host/core"
 cp "$ROOT/src/public-api.sh" "$tree/src/"
 cp "$ROOT/src/host/api-support.sh" "$tree/src/host/"
-cp "$ROOT/src/host/core/project-id.sh" "$tree/src/host/core/"
+mkdir -p "$tree/src/host/core/project"
+cp "$ROOT/src/host/core/project/hash.sh" "$tree/src/host/core/project/"
 cp "$ROOT/tests/fixtures/lifecycle-pool/podman.sh" "$tree/bin/podman"
 chmod 755 "$tree/bin/podman"
 # This fixture exercises coordination and ownership, not Linux process-group
@@ -304,6 +305,30 @@ TEST_CASE='the actual row runner skips unselected commands before constructing r
     matrix_case_begin() { echo 'FAIL: unselected case was started' >&2; exit 1; }
     run_row running plain false false success running healthy allow none keep stopped
 )
+pass
+
+TEST_CASE='the real worker loads the catalog needed by row recovery contracts'
+cp "$ROOT/tests/lib/"{lifecycle-worker,lifecycle-assertions,lifecycle-fixture,lifecycle-runtime,lifecycle-runtime-faults}.sh "$tree/tests/lib/"
+cat "$ROOT/tests/fixtures/lifecycle-pool/worker-bootstrap.sh" >> "$tree/tests/lib/lifecycle-runtime-faults.sh"
+for variant in complete missing-catalog; do
+    run="$tree/bootstrap-$variant"
+    mkdir -p "$run/claims" "$run/done" "$run/log"
+    printf 'absent.up\n' > "$run/expected-fixed"
+    printf 'row.running|row|running|plain|false|false|success|running|allow|none|keep|stopped\n' > "$run/jobs"
+    if [[ "$variant" = missing-catalog ]]; then
+        sed '/^source .*\/lifecycle-matrix.sh"$/d' "$ROOT/tests/lib/lifecycle-worker.sh" > "$tree/tests/lib/lifecycle-worker.sh"
+    fi
+    result=0
+    bash "$tree/tests/lib/lifecycle-worker.sh" "$run" "$run/log" "$run/fixture" > "$run/output" 2>&1 || result=$?
+    if [[ "$variant" = complete ]]; then
+        [[ "$result" = 0 ]] || { cat "$run/output"; exit 1; }
+        [[ -f "$run/done/row.running" ]]
+    else
+        [[ "$result" != 0 && ! -e "$run/done/row.running" ]]
+        grep -Fq 'lifecycle_matrix_rows: command not found' "$run/output"
+        grep -Fq 'invalid recovery contracts' "$run/output"
+    fi
+done
 pass
 
 TEST_CASE='CLI ownership reaches both ledgers before command execution'

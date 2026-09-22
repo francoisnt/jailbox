@@ -2,10 +2,22 @@
 # Exercise host callers with real payloads across simulated transport boundaries.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=src/host/core/ssh.sh
-source "$ROOT/src/host/core/ssh.sh"
-# shellcheck source=src/host/core/validation.sh
-source "$ROOT/src/host/core/validation.sh"
+# shellcheck source=src/host/core/resources/ssh.sh
+source "$ROOT/src/host/core/resources/ssh.sh"
+# shellcheck source=src/host/core/resources/ssh.sh
+source "$ROOT/src/host/core/resources/ssh.sh"
+# shellcheck source=src/host/core/checks/attachment.sh
+source "$ROOT/src/host/core/checks/attachment.sh"
+# shellcheck source=src/host/core/resources/container.sh
+source "$ROOT/src/host/core/resources/container.sh"
+# shellcheck source=src/host/core/resources/proxy.sh
+source "$ROOT/src/host/core/resources/proxy.sh"
+# shellcheck source=src/host/core/resources/downloader.sh
+source "$ROOT/src/host/core/resources/downloader.sh"
+# shellcheck source=src/host/core/commands/connection-info.sh
+source "$ROOT/src/host/core/commands/connection-info.sh"
+# shellcheck source=src/host/core/checks/compatibility.sh
+source "$ROOT/src/host/core/checks/compatibility.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }

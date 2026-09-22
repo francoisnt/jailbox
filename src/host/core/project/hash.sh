@@ -1,12 +1,6 @@
-# Shared project identity helpers.
-#
-# Identity is the first 12 lowercase hexadecimal characters of the SHA-256
-# digest of the canonical physical project path, which the CLI establishes with
-# `pwd -P`. There is no fallback hash: a host with neither sha256sum nor shasum
-# cannot derive a name at all, so every command that needs project identity
-# fails with that dependency error before touching a resource. Hashing failures
-# propagate for the same reason — a partial or empty digest must never reach a
-# derived name.
+# Project identity is the first 12 lowercase hexadecimal SHA-256 characters
+# of the canonical physical project path. A missing or failed hash tool refuses
+# identity construction; there is no fallback identity.
 
 # Human-readable slug from the project directory name. The prefix is used in
 # image tags too, so the slug must satisfy the strictest naming rules (OCI

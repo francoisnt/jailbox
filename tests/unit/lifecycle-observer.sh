@@ -121,3 +121,53 @@ snapshot() { printf stable; }
 image_snapshot() { return 42; }
 reject
 printf 'PASS: all observations enforce framing; bounded cases enforce non-mutation\n'
+
+# Discovered interruptions retain independently expected status and complete
+# connection validation, without repeating the exec/shell validation boundary.
+CASE_KEY=interrupt.up.false.1.before
+REPLY=$'running\n'
+observe_connection() { printf 'connection\n' >> "$tmp/checks"; }
+observe_exec() { printf 'exec\n' >> "$tmp/checks"; }
+observe_shell() { printf 'shell\n' >> "$tmp/checks"; }
+: > "$tmp/checks"
+matrix_observe interrupted running allow readiness
+printf 'connection\n' > "$tmp/expected-checks"
+cmp "$tmp/checks" "$tmp/expected-checks"
+: > "$tmp/checks"
+matrix_observe recovered running allow full
+printf 'connection\nexec\nshell\n' > "$tmp/expected-checks"
+cmp "$tmp/checks" "$tmp/expected-checks"
+grep -Fxq "$CASE_KEY|interrupted|running|allow|readiness" "$LOG/observations"
+cp "$LOG/observations" "$tmp/before-refusal"
+# shellcheck disable=SC2329 # Invoked inside the observer under test.
+observe_connection() { return 42; }
+if (matrix_observe interrupted running allow readiness) > "$tmp/out" 2> "$tmp/err"; then
+    fail 'readiness failure became success'
+fi
+cmp "$tmp/before-refusal" "$LOG/observations"
+if (matrix_observe interrupted running allow unknown) > "$tmp/out" 2> "$tmp/err"; then
+    fail 'unknown observation workload accepted'
+fi
+cmp "$tmp/before-refusal" "$LOG/observations"
+printf 'PASS: readiness workload retains required checks and fails closed\n'
+
+# The shared production probe must retain engine diagnostics in the matrix,
+# while ordinary CLI callers keep their existing quiet-probe behavior.
+# shellcheck source=src/host/core/resources/inventory.sh
+source "$ROOT/src/host/core/resources/inventory.sh"
+podman() { printf 'fixture engine inspection failed\n' >&2; return "$ENGINE_RESULT"; }
+ENGINE_RESULT=125
+if (exists container fixture) > "$tmp/out" 2> "$tmp/err"; then
+    fail 'engine error became a known inventory state'
+fi
+grep -Fq 'fixture engine inspection failed' "$tmp/err"
+grep -Fq 'could not inspect container fixture (exit 125)' "$tmp/err"
+result=0
+jailbox_resource_exists container fixture > "$tmp/out" 2> "$tmp/err" || result=$?
+[[ "$result" = 125 && ! -s "$tmp/err" ]] || fail 'quiet production probe changed'
+for ENGINE_RESULT in 0 1; do
+    result=0
+    exists container fixture > "$tmp/out" 2> "$tmp/err" || result=$?
+    [[ "$result" = "$ENGINE_RESULT" ]] || fail 'matrix probe changed existence status'
+done
+printf 'PASS: matrix preserves engine diagnostics and production probe statuses\n'

@@ -161,8 +161,32 @@ CONVERGENCE_SESSION_RESULT=project-write observe refuse 'correct host project ow
 if grep -q 'jailbox stop\|jailbox --clean' "$FIXTURE/diagnostic"; then fail 'host permission failure recommends destructive recovery'; fi
 # Missing local payloads require installation repair, not sandbox replacement.
 if (
-    source "$ROOT/src/host/core/common.sh"
-    source "$ROOT/src/host/core/validation.sh"
+    # shellcheck source=src/host/core/project/hash.sh
+    source "$ROOT/src/host/core/project/hash.sh"
+    # shellcheck source=src/host/core/configuration/version.sh
+    source "$ROOT/src/host/core/configuration/version.sh"
+    # shellcheck source=src/host/core/checks/host.sh
+    source "$ROOT/src/host/core/checks/host.sh"
+    # shellcheck source=src/host/core/project/paths.sh
+    source "$ROOT/src/host/core/project/paths.sh"
+    # shellcheck source=src/host/core/configuration/load.sh
+    source "$ROOT/src/host/core/configuration/load.sh"
+    # shellcheck source=src/host/core/project/identity.sh
+    source "$ROOT/src/host/core/project/identity.sh"
+    # shellcheck source=src/host/core/resources/ssh.sh
+    source "$ROOT/src/host/core/resources/ssh.sh"
+    # shellcheck source=src/host/core/checks/attachment.sh
+    source "$ROOT/src/host/core/checks/attachment.sh"
+    # shellcheck source=src/host/core/resources/container.sh
+    source "$ROOT/src/host/core/resources/container.sh"
+    # shellcheck source=src/host/core/resources/proxy.sh
+    source "$ROOT/src/host/core/resources/proxy.sh"
+    # shellcheck source=src/host/core/resources/downloader.sh
+    source "$ROOT/src/host/core/resources/downloader.sh"
+    # shellcheck source=src/host/core/commands/connection-info.sh
+    source "$ROOT/src/host/core/commands/connection-info.sh"
+    # shellcheck source=src/host/core/checks/compatibility.sh
+    source "$ROOT/src/host/core/checks/compatibility.sh"
     SCRIPT_DIR="$FIXTURE/missing-installation"
     UP_CONVERGING=false
     EFFECTIVE_READONLY_PATHS=()

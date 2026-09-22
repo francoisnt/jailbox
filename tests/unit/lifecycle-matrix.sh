@@ -288,3 +288,26 @@ while IFS='|' read -r key mode policy requested up status attachment recovery re
 done < <(lifecycle_matrix_rows)
 TEST_CASE='lifecycle catalog'
 pass
+
+TEST_CASE='recovery equivalence is explicit and independently validated'
+validate_lifecycle_recovery_contracts
+[[ $(lifecycle_recovery_representative ssh-fifo) = ssh-mode ]]
+[[ $(lifecycle_recovery_representative ssh-pin) = ssh-client-pair ]]
+[[ $(lifecycle_recovery_representative missing-network) = missing-network ]]
+(
+    unset 'LIFECYCLE_RECOVERY_REPRESENTATIVES[ssh-mode]'
+    if validate_lifecycle_recovery_contracts; then exit 1; fi
+) > "$FIXTURE/recovery-error" 2>&1
+grep -Fq 'Missing or indirect recovery representative' "$FIXTURE/recovery-error"
+(
+    LIFECYCLE_RECOVERY_REPRESENTATIVES[ssh-fifo]=absent
+    LIFECYCLE_RECOVERY_REPRESENTATIVES[absent]=absent
+    if validate_lifecycle_recovery_contracts; then exit 1; fi
+) > "$FIXTURE/recovery-error" 2>&1
+grep -Fq 'Non-equivalent recovery contract' "$FIXTURE/recovery-error"
+(
+    LIFECYCLE_RECOVERY_REPRESENTATIVES[not-a-fixture]=ssh-mode
+    if validate_lifecycle_recovery_contracts; then exit 1; fi
+) > "$FIXTURE/recovery-error" 2>&1
+grep -Fq 'Missing or indirect recovery representative' "$FIXTURE/recovery-error"
+pass

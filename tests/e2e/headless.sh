@@ -25,8 +25,8 @@ JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$JAILBOX_DIR/tests/lib/logging.sh"
 test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
 
-# shellcheck source=src/host/core/project-id.sh
-source "$JAILBOX_DIR/src/host/core/project-id.sh"
+# shellcheck source=src/host/core/project/hash.sh
+source "$JAILBOX_DIR/src/host/core/project/hash.sh"
 # shellcheck source=versions.env
 source "$JAILBOX_DIR/versions.env"
 # shellcheck source=tests/lib/run-meta.sh

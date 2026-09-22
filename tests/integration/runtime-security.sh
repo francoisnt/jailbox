@@ -104,10 +104,10 @@ assert_zero_effective_capabilities() {
         "awk '/^CapEff:/ { exit (\$2 == \"0000000000000000\" ? 0 : 1) }' /proc/1/status"
 }
 
-# host/core/dev-image.sh validation probes execute the dev image (including its
+# host/core/resources/images.sh validation probes execute the dev image (including its
 # entrypoint) before any jailbox runtime hardening applies, so podman_probe
 # must supply its own constraints: no network and no capabilities.
-# Sourcing happens inside the command substitutions because dev-image.sh
+# Sourcing happens inside the command substitutions because resources/images.sh
 # defines jailbox_install_cache_bust, which would otherwise shadow this
 # harness's version of that helper.
 assert_probe_hardening() {
@@ -115,8 +115,10 @@ assert_probe_hardening() {
     local interfaces capabilities
 
     interfaces=$(
-        # shellcheck source=src/host/core/dev-image.sh
-        source "$JAILBOX_DIR/src/host/core/dev-image.sh"
+        # shellcheck source=src/host/core/resources/images.sh
+        source "$JAILBOX_DIR/src/host/core/resources/images.sh"
+        # shellcheck source=src/host/core/commands/validate.sh
+        source "$JAILBOX_DIR/src/host/core/commands/validate.sh"
         podman_probe "$image" /bin/sh -c 'ls /sys/class/net' 2>/dev/null || true
     )
     if [ "$interfaces" = "lo" ]; then
@@ -126,8 +128,10 @@ assert_probe_hardening() {
     fi
 
     capabilities=$(
-        # shellcheck source=src/host/core/dev-image.sh
-        source "$JAILBOX_DIR/src/host/core/dev-image.sh"
+        # shellcheck source=src/host/core/resources/images.sh
+        source "$JAILBOX_DIR/src/host/core/resources/images.sh"
+        # shellcheck source=src/host/core/commands/validate.sh
+        source "$JAILBOX_DIR/src/host/core/commands/validate.sh"
         podman_probe "$image" /bin/sh -c 'grep ^CapEff: /proc/self/status' 2>/dev/null || true
     )
     case "$capabilities" in
@@ -150,8 +154,21 @@ assert_readonly_mount_validation() {
     # Host validation resolves its shipped payload relative to the CLI root.
     local SCRIPT_DIR="$JAILBOX_DIR/src"
 
-    # shellcheck source=src/host/core/validation.sh
-    source "$JAILBOX_DIR/src/host/core/validation.sh"
+    # shellcheck source=src/host/core/resources/ssh.sh
+    source "$JAILBOX_DIR/src/host/core/resources/ssh.sh"
+    # shellcheck source=src/host/core/checks/attachment.sh
+    source "$JAILBOX_DIR/src/host/core/checks/attachment.sh"
+    # shellcheck source=src/host/core/resources/container.sh
+    source "$JAILBOX_DIR/src/host/core/resources/container.sh"
+    # shellcheck source=src/host/core/resources/proxy.sh
+    source "$JAILBOX_DIR/src/host/core/resources/proxy.sh"
+    # shellcheck source=src/host/core/resources/downloader.sh
+    source "$JAILBOX_DIR/src/host/core/resources/downloader.sh"
+    # shellcheck source=src/host/core/commands/connection-info.sh
+    source "$JAILBOX_DIR/src/host/core/commands/connection-info.sh"
+    # shellcheck source=src/host/core/checks/compatibility.sh
+    source "$JAILBOX_DIR/src/host/core/checks/compatibility.sh"
+    # shellcheck disable=SC2329 # Resource validators invoke this refusal callback.
     refuse_sandbox() { echo "$*" >&2; exit 1; }
 
     # Globals consumed by check_readonly_mounts. CONTAINER_NAME doubles as

@@ -1,4 +1,13 @@
-# Machine host/tool validation.
+# checks — host
+
+die() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
 
 # The derived port can collide with an unrelated listener; fail with a clear
 # message instead of a confusing podman bind error or wait_for_ssh timeout.

@@ -4,12 +4,8 @@
 set -euo pipefail
 TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 JAILBOX_DIR=$(cd "$TEST_DIR/../.." && pwd)
-# shellcheck source=src/host/core/common.sh
-source "$JAILBOX_DIR/src/host/core/common.sh"
-# shellcheck source=src/host/core/ssh.sh
-source "$JAILBOX_DIR/src/host/core/ssh.sh"
-# shellcheck source=src/host/core/container-runtime.sh
-source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
+# shellcheck source=tests/lib/core.sh
+source "$JAILBOX_DIR/tests/lib/core.sh" "$JAILBOX_DIR/src"
 FIXTURE=$(mktemp -d)
 FIXTURE=$(cd "$FIXTURE" && pwd -P)
 trap 'rm -rf "$FIXTURE"' EXIT
@@ -214,7 +210,7 @@ reject validate_ssh_resume
 # Exercise the production launch ordering and EXIT trap with actual key creation.
 # Only image/network work is stubbed; each failure runs in a fresh Bash process
 # so errexit has its normal CLI semantics.
-sed -n '/^bring_up_sandbox() {$/,/^}$/p' "$JAILBOX_DIR/src/host/core/entry.sh" > "$FIXTURE/launch-function"
+sed -n '/^bring_up_sandbox() {$/,/^}$/p' "$JAILBOX_DIR/src/host/core/commands/up.sh" > "$FIXTURE/launch-function"
 grep -q '^bring_up_sandbox() {' "$FIXTURE/launch-function"
 cp "$JAILBOX_DIR/tests/fixtures/ssh-generation-launch.sh" "$FIXTURE/launch-test"
 for phase in before during readiness; do

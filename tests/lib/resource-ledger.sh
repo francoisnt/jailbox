@@ -36,8 +36,8 @@
 #   ledger_prune_stale_runs                 clean up after runs that have ended
 #   ledger_sweep_own_run                    clean up whatever this run left
 
-# shellcheck source=src/host/core/project-id.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/src/host/core/project-id.sh"
+# shellcheck source=src/host/core/project/hash.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/src/host/core/project/hash.sh"
 
 LEDGER_DIR=""
 LEDGER_FILE=""

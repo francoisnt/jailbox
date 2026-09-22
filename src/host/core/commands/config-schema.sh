@@ -1,3 +1,5 @@
+# commands — config schema
+
 # Machine schema output; no runtime initialization required.
 run_config_schema() {
     local key

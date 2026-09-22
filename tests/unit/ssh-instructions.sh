@@ -14,8 +14,8 @@ ln -s "$(command -v "$tool")" "$tmp/bin/$tool"
 export XDG_STATE_HOME="$tmp/state with spaces"
 export JAILBOX_CONFIG_UNKNOWN=invalid
 cd "$tmp/project"
-# shellcheck source=src/host/core/project-id.sh
-source "$ROOT/src/host/core/project-id.sh"
+# shellcheck source=src/host/core/project/hash.sh
+source "$ROOT/src/host/core/project/hash.sh"
 hash=$(jailbox_project_hash_for_path "$PWD")
 config="$XDG_STATE_HOME/jailbox/projects/$hash/ssh-generation/ssh_config"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }

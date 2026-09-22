@@ -100,8 +100,8 @@ main() {
             fi
             ;;
         config-schema)
-            # shellcheck source=src/host/core/schema.sh
-            source "$SCRIPT_DIR/host/core/schema.sh"
+            # shellcheck source=src/host/core/commands/config-schema.sh
+            source "$SCRIPT_DIR/host/core/commands/config-schema.sh"
             ;;
         --help|--uninstall) ;;
         *)

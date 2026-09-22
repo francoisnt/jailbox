@@ -82,15 +82,6 @@ validate_local_build_inputs() {
     [ "$context_status" -eq 0 ] || return "$context_status"
 }
 
-run_validate() {
-    require_command realpath
-    load_environment_config || return 1
-    validate_configured_readonly_paths || return 1
-    validate_local_build_inputs || return 1
-    finalize_effective_readonly_paths || return 1
-    printf 'Configuration and local launch inputs are valid; sandbox health and build success were not checked.\n'
-}
-
 # Run the trusted selector for a launch, turning a vanished or unusable
 # selection into launch's specific missing-input diagnostic. The digest shares
 # this entry point so both reach the same Containerfile by the same order.

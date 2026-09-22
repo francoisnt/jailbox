@@ -50,10 +50,10 @@ CONFIG_SCALAR_KEYS+=(SAMPLE_SCALAR)
 CONFIG_ARRAY_KEYS+=(SAMPLE_ARRAY)
 CONFIG_DEFAULTS+=('SAMPLE_SCALAR=' 'SAMPLE_ARRAY=')
 API
-printf '\nDIGEST_ARRAY_MODES[SAMPLE_ARRAY]=ordered\n' >> "$tmp/source/host/core/config-digest.sh"
+printf '\nDIGEST_ARRAY_MODES[SAMPLE_ARRAY]=ordered\n' >> "$tmp/source/host/core/configuration/digest.sh"
 extended=${schema/$'EGRESS_ALLOW\tarray'/$'SAMPLE_SCALAR\tscalar\nEGRESS_ALLOW\tarray'}
 success "$extended"$'\nSAMPLE_ARRAY\tarray' cli config-schema
-cp "$ROOT/src/host/core/config-digest.sh" "$tmp/source/host/core/config-digest.sh"
+cp "$ROOT/src/host/core/configuration/digest.sh" "$tmp/source/host/core/configuration/digest.sh"
 for declaration in \
     'CONFIG_ARRAY_KEYS+=(DEV_IMAGE)' \
     'CONFIG_SCALAR_KEYS+=(DEV_IMAGE)' \
@@ -68,8 +68,8 @@ cp "$ROOT/src/public-api.sh" "$tmp/source/public-api.sh"
 
 # Derive expected names using the existing identity contract, then assert that
 # the stub sees precisely these resources, never images, labels, or SSH state.
-# shellcheck source=src/host/core/project-id.sh
-source "$ROOT/src/host/core/project-id.sh"
+# shellcheck source=src/host/core/project/hash.sh
+source "$ROOT/src/host/core/project/hash.sh"
 export TEST_PREFIX
 TEST_PREFIX=$(jailbox_resource_prefix_for_path "$(pwd -P)")
 export TEST_CALLS="$tmp/calls" TEST_PRESENT='' TEST_RUNNING=false TEST_FAULT='' TEST_PARTIAL=''

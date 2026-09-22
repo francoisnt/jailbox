@@ -108,8 +108,13 @@ damaged resources, refusal non-mutation, interrupted launch/cleanup, dependency-
 `tests/lib/lifecycle-matrix.sh`; mutation-boundary cases extend the same runner
 through `tests/lib/lifecycle-runtime-faults.sh`. The runner's `matrix_observe`
 hook asserts status bytes, connection-info outcomes, exec execution/refusal
-with binary stdin, and shell attachment/refusal with valid local TTYs for each
-fixture; fault expectations come from independent surviving-resource and
+with binary stdin, and shell attachment/refusal with valid local TTYs for
+constructed-state and targeted-failure fixtures. Discovered interruption sweeps
+use status and full connection-info validation, retaining every recovery,
+identity, data, and dependency assertion without repeating both transports.
+Observation records include `full` or `readiness` as their trailing field.
+The [core coverage inventory](tests/core-verification.md) maps the assertions
+and their negative controls. Fault expectations come from independent surviving-resource and
 live-service observations, never the attachment command's verdict.
 
 The `running.up` case also checks eight health variants: writable root, retained capabilities, missing
@@ -125,21 +130,23 @@ The recovered `missing-proxy.up` observation also verifies the command's proxy
 environment and absence of an implicit login shell.
 
 The deterministic 50- and 150-case samples retain their declared case membership
-and counts, but now execute connection validation, exec validation/execution,
-shell validation/attachment, and the health variants above. Each observation
-includes a complete exec attachment and a shell attachment with a PTY;
+and counts. Observations include connection, exec, and PTY shell validation;
 `running.up` adds the transport and concurrency assertions described above.
-These are workload changes: older timings are not directly comparable merely
-because case names match. Samples remain partial coverage, never replacements
+Each SSH defect proves its own refusal and repaired baseline; explicit metadata
+and key-content representatives supply the final relaunch proof. Group contracts
+must match and their representative must be selected. `recovery-coverage` logs
+these assignments. This leaves the 50-case workload unchanged but changes the
+150-case workload. Establish a new 150-case baseline or compare exactly shared
+work; identical case names do not make old timings comparable. Samples remain partial coverage, never replacements
 for the four gates.
 
-Case labels separate the 144 matrix command cases, seven discovery traces,
+Case labels separate the 144 matrix command cases, nine discovery traces,
 13 targeted failures, and interruption cases numbered within each trace.
 An interactive terminal shows one updating progress line beneath case output,
 with completed/total counts by type and overall, clipped to the terminal width.
 Redirected output, CI, and saved worker logs keep plain timestamped progress
 records. Terminals with `TERM=dumb` use the same plain format. Totals marked `known` grow as traces discover interruption points;
-they become final when all seven discovery cases complete. Case numbers are
+they become final when all nine discovery cases complete. Case numbers are
 catalog positions, so parallel workers can start them out of order.
 
 The lifecycle suite automatically sizes its worker pool at startup using

@@ -12,19 +12,8 @@ set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
 
-# shellcheck disable=SC1091
-source "$JAILBOX_DIR/src/public-api.sh"
-# shellcheck source=src/host/api-support.sh
-source "$JAILBOX_DIR/src/host/api-support.sh"
-initialize_public_api_lookups
-# shellcheck disable=SC1091
-source "$JAILBOX_DIR/src/host/core/common.sh"
-# shellcheck disable=SC1091
-source "$JAILBOX_DIR/src/host/core/dev-image.sh"
-# shellcheck disable=SC1091
-source "$JAILBOX_DIR/src/host/core/container-runtime.sh"
-# shellcheck disable=SC1091
-source "$JAILBOX_DIR/src/host/core/config-digest.sh"
+# shellcheck source=tests/lib/core.sh
+source "$JAILBOX_DIR/tests/lib/core.sh" "$JAILBOX_DIR/src"
 
 FIXTURE=$(mktemp -d)
 FIXTURE=$(cd "$FIXTURE" && pwd -P)
@@ -238,12 +227,26 @@ installed_digest=$(
     # shellcheck disable=SC1091
     source "$FIXTURE/installed-host/api-support.sh"
     initialize_public_api_lookups
-    # shellcheck disable=SC1091
-    source "$FIXTURE/installed-host/core/common.sh"
-    # shellcheck disable=SC1091
-    source "$FIXTURE/installed-host/core/dev-image.sh"
-    # shellcheck disable=SC1091
-    source "$FIXTURE/installed-host/core/config-digest.sh"
+    # shellcheck source=src/host/core/project/hash.sh
+    source "$FIXTURE/installed-host/core/project/hash.sh"
+    # shellcheck source=src/host/core/configuration/version.sh
+    source "$FIXTURE/installed-host/core/configuration/version.sh"
+    # shellcheck source=src/host/core/checks/host.sh
+    source "$FIXTURE/installed-host/core/checks/host.sh"
+    # shellcheck source=src/host/core/project/paths.sh
+    source "$FIXTURE/installed-host/core/project/paths.sh"
+    # shellcheck source=src/host/core/configuration/load.sh
+    source "$FIXTURE/installed-host/core/configuration/load.sh"
+    # shellcheck source=src/host/core/project/identity.sh
+    source "$FIXTURE/installed-host/core/project/identity.sh"
+    # shellcheck source=src/host/core/resources/images.sh
+    source "$FIXTURE/installed-host/core/resources/images.sh"
+    # shellcheck source=src/host/core/commands/validate.sh
+    source "$FIXTURE/installed-host/core/commands/validate.sh"
+    # shellcheck source=src/host/core/configuration/digest.sh
+    source "$FIXTURE/installed-host/core/configuration/digest.sh"
+    # shellcheck source=src/host/core/checks/compatibility.sh
+    source "$FIXTURE/installed-host/core/checks/compatibility.sh"
     apply_config_defaults
     export JAILBOX_CONFIG_DEV_IMAGE=img
     load_environment_config "" >/dev/null
@@ -620,7 +623,8 @@ echo ""
     printf 'changed proxy\n' >> "$SCRIPT_DIR/container/tinyproxy/Containerfile"
     [[ $(jailbox_install_cache_bust) != "$after" ]]
     mkdir -p "$SCRIPT_DIR/host/core"
-    cp "$JAILBOX_DIR/src/host/core/dev-image.sh" "$SCRIPT_DIR/host/core/"
+    mkdir -p "$SCRIPT_DIR/host/core/resources"
+    cp "$JAILBOX_DIR/src/host/core/resources/images.sh" "$SCRIPT_DIR/host/core/resources/"
     sed -n '/^wrapper_install_cache_bust()/,/^)/p' "$JAILBOX_DIR/tests/integration/wrapper-images.sh" > "$FIXTURE/wrapper-cache.sh"
     # shellcheck disable=SC1091 # Extract the real preparation helper, not main.
     source "$FIXTURE/wrapper-cache.sh"

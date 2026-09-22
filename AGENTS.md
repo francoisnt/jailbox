@@ -46,7 +46,14 @@ in `tests/lib/lifecycle-contracts.sh` before the matrix schedules them.
 Keep host orchestration in `src/host/`, container behavior in `src/container/`,
 maintenance tooling in `scripts/`, and test code in `tests/`.
 Frontend implementation lives in `src/host/frontend/`, machine implementation in
-`src/host/core/`. App-wide declarations live in `src/public-api.sh`, which
+`src/host/core/`. Core command handlers and operation orchestration live in
+`commands/`, resource detection and explicit operations in `resources/`,
+environment/digest/version support in `configuration/`, identity and path rules
+in `project/`, and cross-resource validation in `checks/`. Core module loading
+belongs to `entry.sh`; resource modules do not call public command handlers.
+Shared detectors preserve command-specific inspection scope: status is inventory,
+not attachment readiness, and recovery does not require valid launch policy.
+App-wide declarations live in `src/public-api.sh`, which
 contains data only: no function definitions, initialization calls, or runtime
 configuration mutation. Shared host validation and lookups live in
 `src/host/api-support.sh`; shared CLI parsing, help, and dispatch mappings live
@@ -129,10 +136,11 @@ remain relative to the executable. Keep both layouts covered by tests.
   Include extracted programs in the applicable lint, syntax, packaging, and
   runtime checks, preserving stdin, exit status, cleanup, and cache behavior.
 - Declare mutable host state in the module that owns its lifecycle. Keep shared
-  project/resource identity in `src/host/core/common.sh`, image state in
-  `src/host/core/dev-image.sh`, SSH state in `src/host/core/ssh.sh`, editor state in
-  `src/host/frontend/editor.sh`, network state in `src/host/core/network.sh`, and mount/runtime state
-  in `src/host/core/container-runtime.sh`.
+  project/resource identity in `src/host/core/project/identity.sh`, image state in
+  `src/host/core/resources/images.sh`, SSH state in `src/host/core/resources/ssh.sh`, editor state in
+  `src/host/frontend/editor.sh`, network state in `src/host/core/resources/network.sh`, and mount/runtime state
+  in `src/host/core/resources/container.sh`. Launch attempts and rollback inventory
+  belong to `src/host/core/commands/up.sh`.
 - Check critical prerequisites and mutations explicitly; `set -e` alone is not
   a failure contract. Before calling a function through `if`, `!`, `&&`, or
   `||`, check its callees too: that context can suppress errexit throughout the

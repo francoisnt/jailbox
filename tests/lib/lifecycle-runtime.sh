@@ -3,6 +3,10 @@
 
 lifecycle_setup() {
     local tool variable
+    # Reuse production existence semantics; fixture expectations and survivor
+    # assertions remain independent of this primitive observation.
+    # shellcheck source=src/host/core/resources/inventory.sh
+    source "$ROOT/src/host/core/resources/inventory.sh"
     FIXTURE="$1"
     LOG="$2"
     PROJECT="$FIXTURE/project"
@@ -76,7 +80,7 @@ cli() {
 }
 exists() {
     local result=0
-    podman "$1" exists "$2" || result=$?
+    jailbox_resource_exists "$1" "$2" --diagnostics || result=$?
     case "$result" in
         0|1) return "$result" ;;
         *) matrix_die "could not inspect $1 $2 (exit $result)" ;;
@@ -170,7 +174,11 @@ status_snapshot_required() {
 }
 
 matrix_observe() {
-    local phase="$1" status="$2" attachment="$3"
+    local phase="$1" status="$2" attachment="$3" workload="${4-full}"
+    case "$workload" in
+        full|readiness) ;;
+        *) matrix_die "unknown observation workload: $workload" ;;
+    esac
     local output="$LOG/$CASE_KEY.$phase.status" compare=false
     if status_snapshot_required "$CASE_KEY" "$phase"; then compare=true; fi
     if [[ "$compare" = true ]]; then
@@ -180,9 +188,11 @@ matrix_observe() {
     cli status > "$output.stdout" 2> "$output.stderr" || matrix_die "status failed (see $output.stderr)"
     printf '%s\n' "$status" > "$output.expected"
     cmp -s "$output.expected" "$output.stdout" || matrix_die "wrong status (see $output.stdout)"
-    observe_connection "$attachment" "$LOG/$CASE_KEY.$phase.connection"
-    observe_exec "$attachment" "$LOG/$CASE_KEY.$phase.exec"
-    observe_shell "$attachment" "$LOG/$CASE_KEY.$phase.shell"
+    observe_connection "$attachment" "$LOG/$CASE_KEY.$phase.connection" || matrix_die "connection observation failed"
+    if [[ "$workload" = full ]]; then
+        observe_exec "$attachment" "$LOG/$CASE_KEY.$phase.exec" || matrix_die "exec observation failed"
+        observe_shell "$attachment" "$LOG/$CASE_KEY.$phase.shell" || matrix_die "shell observation failed"
+    fi
     if [[ "$CASE_KEY:$phase" = running.up:initial ]]; then
         verify_exec_transport
     fi
@@ -195,7 +205,7 @@ matrix_observe() {
         cmp -s "$output.before" "$output.after" || matrix_die 'status mutated resources or host state'
         cmp -s "$output.images-before" "$output.images-after" || matrix_die 'status mutated images'
     fi
-    printf '%s|%s|%s|%s\n' "$CASE_KEY" "$phase" "$status" "$attachment" >> "$LOG/observations"
+    printf '%s|%s|%s|%s|%s\n' "$CASE_KEY" "$phase" "$status" "$attachment" "$workload" >> "$LOG/observations"
 }
 shell_observer_exec() {
     LEDGER_FILE="$LIFECYCLE_POOL_LEDGER" ledger_record_owner "$BASHPID" || exit 1
@@ -415,12 +425,17 @@ assert_service() {
     fi
 }
 assert_cleanup() {
-    local command="$1" policy="$2" name contract
+    local command="$1" policy="$2" name contract path
     contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
     for name in "$PREFIX" "$PREFIX-proxy"; do require_absent container "$name"; done
     for name in "$NETWORK" "$NETWORK-internal" "$NETWORK-external"; do require_absent network "$name"; done
-    [[ ! -e "$GENERATION" ]] || matrix_die 'generation survived cleanup'
-    if compgen -G "$STATE/.ssh-generation.*" >/dev/null; then matrix_die 'partial generation survived cleanup'; fi
+    # Independently check every current, staged, and legacy credential path.
+    # A dangling symlink also blocks relaunch, despite failing the -e test.
+    for path in "$GENERATION" "$STATE"/.ssh-generation.* \
+        "$STATE/key" "$STATE/key.pub" "$STATE/known_hosts" \
+        "$STATE/known_hosts.old" "$STATE/ssh_config" "$STATE/sshd-runtime"; do
+        [[ ! -e "$path" && ! -L "$path" ]] || matrix_die "SSH material survived cleanup: $path"
+    done
     if [[ "$contract" = clean || "$policy" = true || "$policy" = none ]]; then
         require_absent volume "$HOME_VOLUME"
     else
@@ -440,8 +455,10 @@ run_row() {
     # test contract. Refusal recovery deliberately invokes stop or --clean;
     # subsequent convergence executes the command under test again.
     local key="$1" mode="$2" policy="$3" requested="$4" up="$5" status="$6" attach="$7" recovery="$8" retained="$9" stopped="${10}" command
-    local dev_id proxy_id generation_present extra_present contract selection
+    local dev_id proxy_id generation_present extra_present contract selection representative
     validate_lifecycle_contracts
+    validate_lifecycle_recovery_contracts || matrix_die 'invalid recovery contracts'
+    representative=$(lifecycle_recovery_representative "$key") || matrix_die 'invalid recovery row'
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
         selection=0
         lifecycle_case_selected "$RUN" "$key.$command" || selection=$?
@@ -451,10 +468,17 @@ run_row() {
             *) matrix_die 'could not determine selected lifecycle cases' ;;
         esac
         contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
+        if [[ "$contract" = launch && "$representative" != "$key" ]]; then
+            lifecycle_case_selected "$RUN" "$representative.$command" || matrix_die 'required recovery representative is not selected'
+        fi
         matrix_case_begin "$key.$command"
         construct "$key" "$mode" "$policy" "$requested"
+        rm -f -- "$LOG/home-labels-before" || matrix_die 'could not clear previous home labels'
         if exists volume "$HOME_VOLUME"; then
-            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/home-labels-before"
+            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/home-labels-before" || matrix_die 'could not inspect initial home labels'
+        fi
+        if [[ "$contract" = launch && "$retained" = keep && ! -f "$LOG/home-labels-before" ]]; then
+            matrix_die 'retained-home recovery requires initial home labels'
         fi
         matrix_observe initial "$status" "$attach"
         if [[ "$contract" != launch ]]; then
@@ -501,6 +525,18 @@ run_row() {
                 fi
                 expect_success stop
             fi
+        fi
+        if [[ "$representative" != "$key" ]]; then
+            # Independently establish the representative's input baseline before
+            # sharing its relaunch proof: no containers/networks/credentials,
+            # preserved persistent home, labels, marker, and unrelated content.
+            assert_cleanup stop "$policy"
+            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/home-labels-after" || matrix_die 'could not inspect retained home labels'
+            cmp -s "$LOG/home-labels-before" "$LOG/home-labels-after" || matrix_die 'repair rewrote home metadata'
+            matrix_observe repaired "$stopped" refuse
+            printf '%s|%s\n' "$CASE_KEY" "$representative.$command" >> "$LOG/recovery-coverage"
+            matrix_case_pass
+            continue
         fi
         expect_success "$command"
         if [[ -n "$dev_id" ]]; then

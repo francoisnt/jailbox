@@ -23,8 +23,8 @@ cat > "$FIXTURE/bin/sleep" <<'SLEEP'
 exit 0
 SLEEP
 chmod +x "$FIXTURE/bin/"*
-# shellcheck source=src/host/core/project-id.sh
-source "$ROOT/src/host/core/project-id.sh"
+# shellcheck source=src/host/core/project/hash.sh
+source "$ROOT/src/host/core/project/hash.sh"
 PREFIX=$(jailbox_resource_prefix_for_path "$FIXTURE/project")
 HASH=$(jailbox_project_hash_for_path "$FIXTURE/project")
 GENERATION="$XDG_STATE_HOME/jailbox/projects/$HASH/ssh-generation"
