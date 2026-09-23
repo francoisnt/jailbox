@@ -1,5 +1,5 @@
 # shellcheck disable=SC2030,SC2031 # Cleanup reads locals in the owning subshell.
-# JSON for the generated, string-only editor settings object. Keep this small
+# JSON for the generated editor settings object. Keep this small
 # schema local; unrelated editor settings are not a frontend input contract.
 
 valid_settings_text() {
@@ -32,6 +32,7 @@ render_editor_settings() {
     # Cat is intentionally a checked producer, as in the existing writer.
     cat <<EOF_SETTINGS
 {
+  "remote.SSH.enableAgentForwarding": false,
   "remote.SSH.configFile": $config_json$proxy_line
 }
 EOF_SETTINGS

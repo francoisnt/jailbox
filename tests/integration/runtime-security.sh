@@ -104,6 +104,38 @@ assert_zero_effective_capabilities() {
         "awk '/^CapEff:/ { exit (\$2 == \"0000000000000000\" ? 0 : 1) }' /proc/1/status"
 }
 
+# Request forwarding explicitly with a real local agent: absence of an agent
+# socket must result from server policy, not from a client default or no agent.
+assert_ssh_forwarding_disabled() (
+    local config=$1 container=$2 agent_dir agent_pid="" attempt policy
+    agent_dir=$(mktemp -d) || return 1
+    # shellcheck disable=SC2329 # Invoked by this subshell's EXIT trap.
+    cleanup_forwarding_agent() {
+        local status=$?
+        if [[ -n "$agent_pid" ]]; then
+            kill "$agent_pid" 2>/dev/null || true
+            wait "$agent_pid" 2>/dev/null || true
+        fi
+        rm -rf -- "$agent_dir"
+        exit "$status"
+    }
+    trap cleanup_forwarding_agent EXIT
+    trap 'exit 1' HUP INT TERM
+    ssh-agent -D -a "$agent_dir/socket" > "$agent_dir/log" 2>&1 &
+    agent_pid=$!
+    for ((attempt=0; attempt<50; attempt++)); do
+        [[ ! -S "$agent_dir/socket" ]] || break
+        kill -0 "$agent_pid" 2>/dev/null || { cat "$agent_dir/log" >&2; return 1; }
+        sleep 0.1
+    done
+    [[ -S "$agent_dir/socket" ]] || return 1
+    SSH_AUTH_SOCK="$agent_dir/socket" ssh -A -F "$config" -o ConnectTimeout=3 \
+        jailbox-test 'test -z "${SSH_AUTH_SOCK:-}"' || return 1
+    policy=$(podman exec "$container" sshd -T -f /etc/ssh/jailbox_sshd_config) || return 1
+    grep -Fxq 'allowagentforwarding no' <<< "$policy" || return 1
+    grep -Fxq 'x11forwarding no' <<< "$policy"
+)
+
 # host/core/resources/images.sh validation probes execute the dev image (including its
 # entrypoint) before any jailbox runtime hardening applies, so podman_probe
 # must supply its own constraints: no network and no capabilities.

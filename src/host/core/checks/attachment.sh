@@ -32,6 +32,7 @@ validate_attachment() {
     require_command ssh || return 1
     require_command ssh-keygen || return 1
     require_command realpath || return 1
+    validate_project_boundary || return 1
     initialize_project_names || return 1
     initialize_config_digest_state || return 1
     initialize_dev_image_state || return 1

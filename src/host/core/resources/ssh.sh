@@ -331,6 +331,8 @@ Host $CONTAINER_NAME
     GlobalKnownHostsFile /dev/null
     UpdateHostKeys no
     BatchMode yes
+    ForwardAgent no
+    ForwardX11 no
 SSHEOF
 
     write_ssh_setenv '    '
@@ -379,7 +381,7 @@ wait_for_ssh() {
 
     if [ "$SSH_READY" = false ]; then
         echo "Error: sshd did not become ready in time. Check container logs:" >&2
-        echo "  podman logs $CONTAINER_NAME"
+        echo "  podman logs $CONTAINER_NAME" >&2
         podman logs "$CONTAINER_NAME" >&2 || true
         exit 1
     fi

@@ -60,7 +60,7 @@ configure_proxy_env() {
 # different jailbox project's or anything else on the host — already claims
 # the range.
 ensure_internal_network() {
-    local internal_net attempt candidate
+    local internal_net attempt candidate diagnostic
 
     internal_net="$1"
     observed_resource_present "network:$internal_net" && return 0
@@ -68,12 +68,13 @@ ensure_internal_network() {
     record_launch_resource_attempt "network:$internal_net"
     for ((attempt = 0; attempt < 20; attempt++)); do
         candidate=$(proxy_internal_subnet "$attempt") || return 1
-        if podman network create --internal --disable-dns --subnet "$candidate" \
-            "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$internal_net" >/dev/null 2>&1; then
+        if diagnostic=$(podman network create --internal --disable-dns --subnet "$candidate" \
+            "${CONFIG_DIGEST_LABEL_ARGS[@]}" "$internal_net" 2>&1 >/dev/null); then
             return 0
         fi
     done
-    die "could not allocate a free subnet for internal network $internal_net (tried 20 candidates in 10.240.0.0/16)"
+    printf 'Last Podman network creation diagnostic: %s\n' "${diagnostic:-no diagnostic returned}" >&2
+    die "could not create internal network $internal_net (tried 20 subnet candidates in 10.240.0.0/16)"
 }
 
 internal_network_subnet() {

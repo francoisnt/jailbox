@@ -434,6 +434,37 @@ mode.
 
 ## Developer experience
 
+### Repository-owned editor configuration and extensions
+
+Design how project editor settings and extensions are declared, installed, and
+retained across launches. Prefer editor-native configuration committed to the
+repository over adding another jailbox configuration format. Account for the
+supported editors, local versus remote extensions, workspace trust, version
+selection, bootstrap networking, and the boundary between project preferences
+and jailbox-owned connection/security settings. The generated profile settings
+continue to be replaced on launch until this design is implemented; do not add
+ad hoc JSON merging as an interim persistence contract.
+
+### Development images with an existing host UID
+
+Investigate safe support for images such as `node:22-bookworm` that already
+assign UID 1000 to an image user. Compare preserving an existing account,
+explicit image adaptation, and user-namespace mapping approaches against SSH
+identity, home ownership, permissions, and the managed-user contract. Do not
+silently rename accounts or recursively chown image/project files. Include the
+README quick-start recipes in acceptance: their Node image currently conflicts
+with jailbox's refusal when the host UID is 1000. Existing refusal remains in
+place until a supported design and regression coverage are established.
+
+### Alpine editor dependency experiment
+
+After the current security and diagnostic fixes are verified, manually compare
+the supported Alpine editor workload with and without `webkit2gtk-4.1`. Hold
+editor/REH versions and the remaining image inputs fixed; verify fresh server
+bootstrap, remote attachment, native modules, and task execution, then compare
+image size. Its removal is not authorized by an assumption that it is unused;
+retain the dependency until the experiment establishes compatibility.
+
 ### Runtime packaging and installation coverage
 
 Assigned to 03.2.16 as a release requirement for the machine-boundary series.

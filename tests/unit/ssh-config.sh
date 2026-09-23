@@ -42,6 +42,15 @@ test_paths_with_spaces_are_quoted() {
         '    UserKnownHostsFile "/tmp/jailbox path/state/known_hosts"'
     assert_contains "StrictHostKeyChecking is enabled" "$output" \
         '    StrictHostKeyChecking yes'
+    assert_contains 'agent forwarding is explicitly disabled' "$output" '    ForwardAgent no'
+    assert_contains 'X11 forwarding is explicitly disabled' "$output" '    ForwardX11 no'
+    local fixture effective
+    fixture=$(mktemp -d)
+    printf '%s\nHost *\n    ForwardAgent yes\n    ForwardX11 yes\n' "$output" > "$fixture/config"
+    effective=$(ssh -G -F "$fixture/config" "$CONTAINER_NAME" 2>/dev/null)
+    assert_contains 'specific policy overrides later wildcard agent forwarding' "$effective" 'forwardagent no'
+    assert_contains 'specific policy overrides later wildcard X11 forwarding' "$effective" 'forwardx11 no'
+    rm -rf "$fixture"
 }
 
 test_quotes_inside_paths_are_escaped() {

@@ -48,6 +48,40 @@ finalize_effective_readonly_paths() {
         [ -n "$relative" ] || continue
         effective_readonly_contains "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
     done
+    expand_readonly_symlink_targets
+}
+
+readonly_path_covered() {
+    local candidate=$1 path
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
+        [[ "$candidate" != "$path" && "$candidate" != "$path/"* ]] || return 0
+    done
+    return 1
+}
+
+# Scan the transitive closure of protected directories. find does not follow
+# links: explicit resolution records both their targets and mutable link-chain
+# directories. A completion record distinguishes an empty walk from a failure.
+expand_readonly_symlink_targets() {
+    local project index path link dependencies relative complete
+    project=$(realpath -e -- "$PROJECT_DIR") || return 1
+    for ((index=0; index<${#EFFECTIVE_READONLY_PATHS[@]}; index++)); do
+        path=$project/${EFFECTIVE_READONLY_PATHS[index]}
+        [[ -d "$path" ]] || continue
+        complete=false
+        while IFS= read -r -d '' link; do
+            if [[ "$link" = readonly-walk-complete ]]; then complete=true; break; fi
+            dependencies=$(project_symlink_dependencies "$link" "$project") || return 1
+            [[ -n "$dependencies" ]] || continue
+            while IFS= read -r relative; do
+                readonly_path_covered "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
+            done <<< "$dependencies"
+        done < <(set -o pipefail; find "$path" -type l -print0 | LC_ALL=C sort -z || exit; printf 'readonly-walk-complete\0')
+        [[ "$complete" = true ]] || {
+            printf 'Error: could not inspect symlinks beneath protected path %s\n' "$path" >&2
+            return 1
+        }
+    done
 }
 
 build_readonly_mounts() {

@@ -414,6 +414,13 @@ capabilities, and `no-new-privileges`. Its writable areas include the project,
 home volume, and designated temporary filesystems. Protected project files are
 validated and overmounted read-only. Core protects its known build inputs;
 the frontend contributes anchors for the policy files it consumes.
+Launch and attachment reject a project that contains the host home or jailbox
+state directory, before sandbox access or creation. Protected directories add
+their symlinks' in-project targets transitively to the read-only mount inventory;
+intermediate link directories are protected against retargeting too. Unresolvable
+links and dependencies requiring the entire project to be read-only refuse.
+External targets add no host mounts. Writable hard-link aliases remain outside
+the integrity guarantee of a pathname overlay.
 
 In unfiltered mode the development container has normal outbound networking.
 In filtered mode it attaches only to an internal network with no direct external
@@ -428,6 +435,9 @@ SSH uses a fresh client/server key generation for each new development-container
 object. The client private key stays on the host; server keys and authorized keys
 are mounted read-only into the container. Host-key checking pins the server
 identity. Resume keeps the same keys and validates their metadata and contents.
+Both the generated client configuration and dedicated server configuration
+explicitly disable agent and X11 forwarding. Generated editor settings also
+disable agent forwarding.
 
 The trust boundary excludes a malicious host process with the user's authority.
 The writable project and persistent home are also not reset to known-clean

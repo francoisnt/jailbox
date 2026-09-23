@@ -195,16 +195,18 @@ build_jailbox_image() {
         --build-arg JAILBOX_INSTALL_CACHE_BUST="$install_cache_bust" \
         --build-arg USER_ID="$MY_UID" \
         "$SCRIPT_DIR/container"; then
-        echo ""
-        echo "Error: jailbox image build failed."
-        printf "  Dev image:       %s\n" "$PROJECT_DEV_IMAGE"
-        [ -n "$DEV_TARGET_STAGE" ] && printf "  Stage:           %s\n" "$DEV_TARGET_STAGE"
-        printf "  Package manager: %s\n" "$PKG_MANAGER"
-        echo ""
-        echo "Common causes:"
-        echo "  - The selected stage is a production or distroless stage"
-        echo "  - The wrapper prerequisites cannot be installed in this image"
-        echo "Fix: check the selected development target stage (DEV_TARGET_STAGE) or use a supported development image."
+        {
+            echo ""
+            echo "Error: jailbox image build failed."
+            printf "  Dev image:       %s\n" "$PROJECT_DEV_IMAGE"
+            [ -n "$DEV_TARGET_STAGE" ] && printf "  Stage:           %s\n" "$DEV_TARGET_STAGE"
+            printf "  Package manager: %s\n" "$PKG_MANAGER"
+            echo ""
+            echo "Common causes:"
+            echo "  - The selected stage is a production or distroless stage"
+            echo "  - The wrapper prerequisites cannot be installed in this image"
+            echo "Fix: check the selected development target stage (DEV_TARGET_STAGE) or use a supported development image."
+        } >&2
         exit 1
     fi
 }

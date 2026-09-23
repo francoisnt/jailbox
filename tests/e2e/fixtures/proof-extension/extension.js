@@ -116,7 +116,11 @@ async function activate() {
     }
 
     // Read effective settings through the real editor configuration API.
-    const settings = { 'remote.SSH.configFile': vscode.workspace.getConfiguration('remote.SSH').get('configFile') };
+    const sshSettings = vscode.workspace.getConfiguration('remote.SSH');
+    const settings = {
+        'remote.SSH.configFile': sshSettings.get('configFile'),
+        'remote.SSH.enableAgentForwarding': sshSettings.get('enableAgentForwarding')
+    };
     const proxy = vscode.workspace.getConfiguration('http').get('proxy');
     if (proxy) settings['http.proxy'] = proxy;
     writeFileAtomic(root, '.jailbox-editor-settings.json', [JSON.stringify(settings)]);

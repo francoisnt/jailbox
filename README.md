@@ -535,9 +535,13 @@ READONLY_PATHS=
 
 `init` refuses to overwrite any existing file or other filesystem object and
 requires neither Podman nor an absent sandbox. It suggests existing `.env`,
-`.git/hooks`, `AGENTS.md`, `CLAUDE.md`, and `.github/workflows` paths, in that
-order, as comments. Add chosen paths to the single comma-separated
+`.git/hooks`, `.git/config`, `AGENTS.md`, `CLAUDE.md`, and `.github/workflows`
+paths, in that order, as comments. Add chosen paths to the single comma-separated
 `READONLY_PATHS=` assignment; suggestions do not enable protection themselves.
+Protecting `.git/hooks` alone
+does not prevent Git-triggered host execution: writable `.git/config` can select
+other hooks or commands. Making `.git/config` read-only prevents in-sandbox
+`git config --local` updates.
 
 Configuration uses strict `KEY=value` lines (no shell syntax, values cannot
 contain whitespace or ASCII control characters):
@@ -634,7 +638,8 @@ unrestricted outbound internet access.
 - Rootless Podman containers (`--userns=keep-id`)
 - Fresh client and server SSH key pairs per container, with strict pinned host-key checking
 - No container runtime sockets mounted
-- Strict sshd configuration (key auth only, local forwarding only)
+- Strict sshd configuration (key auth only, local TCP forwarding only,
+  agent and X11 forwarding explicitly disabled in client and server policy)
 - Optional egress control: when `EGRESS_ALLOW` is set, the container is
   placed on an internal-only network with no direct external route and no
   DNS; an unprivileged tinyproxy sidecar is the only outbound gateway,
@@ -644,6 +649,9 @@ unrestricted outbound internet access.
 ### Important realities
 - The container runs with your **host UID**, so it can read and write your
   project files
+- Launch and attachment refuse projects that equal or contain the host home
+  directory or jailbox runtime-state directory. Normal projects beneath the
+  home directory remain supported.
 - Project files are mounted writable. Core automatically overlays the exact
   in-project Containerfile used for the build read-only. File-driven launches
   also protect the default `jailbox.conf` and selected in-project config.
@@ -653,8 +661,17 @@ unrestricted outbound internet access.
   policy that a later bare launch would trust.
 - Only additional paths explicitly listed in `READONLY_PATHS` receive
   read-only overlays. They must already exist as regular files or directories;
-  missing paths are rejected and no stubs are created. Every other project
-  path, including unused Containerfile candidates, remains writable.
+  missing paths are rejected and no stubs are created. Other project paths,
+  including unused Containerfile candidates, remain writable unless included
+  by the symlink-target protection below.
+- Symlinks inside protected directories also protect their in-project targets,
+  recursively. Intermediate symlinks require protecting their containing
+  directories against retargeting. Broken links, cycles, unsupported targets,
+  and links requiring protection of the entire project are rejected. External
+  targets do not introduce host mounts. Explicit protected paths still cannot
+  contain symlink components.
+- Protection is pathname-based: pre-existing writable hard-link aliases can
+  still modify the same inode.
 - Read-only overlays protect integrity, not secrecy: code in the sandbox can
   still read their contents.
 - Paths are validated before launch and rechecked while mount arguments are

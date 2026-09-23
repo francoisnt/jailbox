@@ -211,6 +211,8 @@ KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 UsePAM no
 AllowTcpForwarding local
+AllowAgentForwarding no
+X11Forwarding no
 AllowStreamLocalForwarding yes
 PermitTunnel no
 GatewayPorts no

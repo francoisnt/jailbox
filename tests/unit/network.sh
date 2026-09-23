@@ -341,7 +341,7 @@ main() {
             case "$fault:$*" in
                 plain:'network create '*|internal:'network create --internal '*|external:'network create --label '*|inspect:'network inspect '*|run:'run '*|start:'start '*) return 42 ;;
                 partial:'network inspect '*) printf '10.240.1.0/24\n'; return 42 ;;
-                retry:'network create --internal '*) attempts=$((attempts + 1)); [[ "$attempts" -gt 2 ]] || return 42 ;;
+                retry:'network create --internal '*) [[ $(grep -c '^network create --internal ' "$fixture/calls") -gt 2 ]] || return 42 ;;
             esac
             [[ "$1 $2" != 'network inspect' ]] || printf '10.240.1.0/24\n'
         }
@@ -377,11 +377,12 @@ main() {
                 *) if grep -Eq '^(run|start) ' "$fixture/calls"; then exit 1; fi ;;
             esac
         done
-        fault=retry attempts=0 OBSERVED_PROXY_STATE=absent
+        fault=retry OBSERVED_PROXY_STATE=absent
+        : > "$fixture/calls"
         OBSERVED_RESOURCES=() LAUNCH_ATTEMPTED_RESOURCES=()
         initialize_network_state
         if configure_network > /dev/null; then
-            [[ "$attempts" == 3 && "${NETWORK_STATE[selected_network]}" == test-net-internal ]]
+            [[ $(grep -c '^network create --internal ' "$fixture/calls") == 3 && "${NETWORK_STATE[selected_network]}" == test-net-internal ]]
         else
             exit 1
         fi

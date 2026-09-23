@@ -6,6 +6,7 @@ for name in "${!JAILBOX_CONFIG_@}"; do unset "$name"; done
 export JAILBOX_CONFIG_DEV_IMAGE="$5"
 export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
 export JAILBOX_CONFIG_READONLY_PATHS_1=config/runtime.conf
+export JAILBOX_CONFIG_READONLY_PATHS_2=protected-policy
 export JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com
 export JAILBOX_CONFIG_EGRESS_ALLOW_1=github.com
 export JAILBOX_CONFIG_EGRESS_ALLOW_2=githubusercontent.com

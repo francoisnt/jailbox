@@ -359,6 +359,11 @@ run_case() {
     assert_rootfs_read_only "$ssh_dir/config" "rootfs is read-only"
     assert_host_container_sockets_absent "$ssh_dir/config"
     assert_zero_effective_capabilities "$ssh_dir/config"
+    if assert_ssh_forwarding_disabled "$ssh_dir/config" "$ctr"; then
+        pass 'server denies requested agent forwarding and disables X11 forwarding'
+    else
+        fail 'SSH forwarding policy'
+    fi
     assert_local_forwarding "$ssh_dir/config" "$forward_port" "SSH local forwarding works"
     # Last: mutates effective read-only and other host-module globals (safe in this
     # per-stage subshell, but keep it after the plain container assertions).

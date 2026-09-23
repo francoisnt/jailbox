@@ -5,6 +5,10 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 trap 'printf "FAIL: SSH session test at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
+# The dedicated server configuration must not depend on vendor defaults.
+sed -n '/^cat > \/etc\/ssh\/jailbox_sshd_config << EOF$/,/^EOF$/p' "$ROOT/src/container/setup.sh" > "$tmp/server-config"
+grep -Fxq 'AllowAgentForwarding no' "$tmp/server-config"
+grep -Fxq 'X11Forwarding no' "$tmp/server-config"
 sed -n '/^ssh_session_environment() ($/,/^)/p' "$ROOT/src/container/runtime/bin/jailbox-start" > "$tmp/session"
 [[ -s "$tmp/session" ]]
 printf '\nssh_session_environment\n' >> "$tmp/session"

@@ -121,6 +121,53 @@ test_symlinked_project_root() {
     rm -f "$project_link"
     rm -rf "$project_real"
 }
+test_directory_symlink_targets() {
+    local external original
+    with_project
+    external=$(fixture_dir)
+    mkdir -p "$PROJECT_DIR/policy" "$PROJECT_DIR/targets/nested" "$PROJECT_DIR/chain"
+    printf 'protected\n' > "$PROJECT_DIR/target file"
+    printf 'transitive\n' > "$PROJECT_DIR/transitive"
+    printf 'outside\n' > "$external/file"
+    ln -s '../target file' "$PROJECT_DIR/policy/file"
+    ln -s ../targets "$PROJECT_DIR/policy/directory"
+    ln -s '../../target file' "$PROJECT_DIR/targets/nested/link"
+    ln -s ../../transitive "$PROJECT_DIR/targets/nested/transitive"
+    ln -s . "$PROJECT_DIR/policy/self"
+    ln -s "$external/file" "$PROJECT_DIR/policy/external"
+    ln -s '../target file' "$PROJECT_DIR/chain/link"
+    ln -s ../chain/link "$PROJECT_DIR/policy/chained"
+    READONLY_PATHS=(policy)
+    build_readonly_mounts
+    assert_success 'file symlink target is protected' effective_readonly_contains 'target file'
+    assert_success 'directory symlink target is protected' effective_readonly_contains targets
+    assert_success 'intermediate link directory cannot be retargeted' effective_readonly_contains chain
+    assert_success 'new directory targets recursively protect their links' effective_readonly_contains transitive
+    [[ ${#EFFECTIVE_READONLY_PATHS[@]} = 5 ]] || fail 'unexpected expansion or duplicate cycle'
+    original=${READONLY_MOUNTS[*]}
+    assert_success 'repeated expansion is stable' build_readonly_mounts
+    [[ ${READONLY_MOUNTS[*]} = "$original" ]] || fail 'unstable mount order'
+    ln -s missing "$PROJECT_DIR/policy/broken"
+    assert_failure 'dangling nested symlink refuses' build_readonly_mounts
+    rm "$PROJECT_DIR/policy/broken"
+    ln -s '../target file/' "$PROJECT_DIR/policy/not-directory"
+    assert_failure 'trailing slash cannot turn a file into a directory target' build_readonly_mounts
+    rm "$PROJECT_DIR/policy/not-directory"
+    ln -s cycle "$PROJECT_DIR/policy/cycle"
+    assert_failure 'cyclic nested symlink refuses' build_readonly_mounts
+    rm "$PROJECT_DIR/policy/cycle"
+    ln -s .. "$PROJECT_DIR/policy/root"
+    assert_failure 'whole-project target refuses rather than weakening protection' build_readonly_mounts
+    rm "$PROJECT_DIR/policy/root"
+    # A failed walk with plausible output must not turn into an empty closure.
+    (
+        # shellcheck disable=SC2329 # Called by the production directory walker.
+        find() { printf '%s\0' "$PROJECT_DIR/policy/file"; return 42; }
+        if finalize_effective_readonly_paths; then exit 1; fi
+    ) || fail 'failed directory discovery accepted'
+    pass 'failed symlink discovery refuses partial results'
+    rm -rf "$PROJECT_DIR" "$external"
+}
 test_containerfile_state() {
     local external external_link output output_file
     with_project
@@ -199,6 +246,7 @@ main() {
     test_anchor_and_empty_regression
     test_recheck
     test_symlinked_project_root
+    test_directory_symlink_targets
     test_containerfile_state
     echo ""
     if [ "$FAILED" -eq 0 ]; then echo "readonly paths tests: $PASSED passed"; else echo "readonly paths tests: $PASSED passed, $FAILED failed"; exit 1; fi

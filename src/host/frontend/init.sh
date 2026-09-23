@@ -18,7 +18,7 @@ write_init_template() {
         'READONLY_PATHS=' \
         '# Add selected suggestions comma-separated to the single READONLY_PATHS assignment.' || return $?
     # Existence only: never open candidate contents (in particular .env).
-    for candidate in .env .git/hooks AGENTS.md CLAUDE.md .github/workflows; do
+    for candidate in .env .git/hooks .git/config AGENTS.md CLAUDE.md .github/workflows; do
         if [[ -e "$project/$candidate" ]]; then
             printf '# %s\n' "$candidate" || return $?
         fi

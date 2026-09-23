@@ -24,10 +24,10 @@ for mode in 0022 0002; do
         # read its contents. No real dotenv file is opened by this suite.
         mkdir "$local_project/.env"
         chmod 000 "$local_project/.env"
-        touch "$local_project/AGENTS.md" "$local_project/CLAUDE.md"
+        touch "$local_project/.git/config" "$local_project/AGENTS.md" "$local_project/CLAUDE.md"
         chmod 600 "$local_project/AGENTS.md" "$local_project/CLAUDE.md"
         PATH="$TMP/bin" init_project_config "$local_project" > "$TMP/out"
-        expected=$'# Additional project paths mounted read-only inside the sandbox.\nREADONLY_PATHS=\n# Add selected suggestions comma-separated to the single READONLY_PATHS assignment.\n# .env\n# .git/hooks\n# AGENTS.md\n# CLAUDE.md\n# .github/workflows'
+        expected=$'# Additional project paths mounted read-only inside the sandbox.\nREADONLY_PATHS=\n# Add selected suggestions comma-separated to the single READONLY_PATHS assignment.\n# .env\n# .git/hooks\n# .git/config\n# AGENTS.md\n# CLAUDE.md\n# .github/workflows'
         [[ $(cat "$local_project/jailbox.conf") == "$expected" ]] || fail 'suggestion order or template'
         [[ $(LC_ALL=C ls -l "$local_project/jailbox.conf") == -rw-------* ]] || fail 'private file mode'
         load_file_policy "$local_project"

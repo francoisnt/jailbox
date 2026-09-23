@@ -307,6 +307,9 @@ run_e2e_case() {
     fi
 
     mkdir -p "$project_dir/config"
+    mkdir -p "$project_dir/protected-policy" "$project_dir/linked-policy"
+    printf 'protected target\n' > "$project_dir/linked-policy/file"
+    ln -s ../linked-policy "$project_dir/protected-policy/target"
     cat > "$project_dir/config/runtime.conf" << EOF
 DEV_IMAGE=${dev_image}
 EOF
@@ -321,7 +324,7 @@ EOF
     fi
     # Explicit anchors let machine attachments reproduce this file-driven
     # fixture's complete mount inventory with identical environment policy.
-    printf 'READONLY_PATHS=jailbox.conf,config/runtime.conf\n' >> "$project_dir/config/runtime.conf"
+    printf 'READONLY_PATHS=jailbox.conf,config/runtime.conf,protected-policy\n' >> "$project_dir/config/runtime.conf"
 
     # Launch requires the default policy anchor even when it selects another
     # config. Create it with the real command so this gate covers the
@@ -366,6 +369,7 @@ EOF
         export JAILBOX_CONFIG_DEV_IMAGE="$dev_image"
         export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
         export JAILBOX_CONFIG_READONLY_PATHS_1=config/runtime.conf
+        export JAILBOX_CONFIG_READONLY_PATHS_2=protected-policy
         if [[ "$stage" = debian ]]; then
             unset JAILBOX_CONFIG_DEV_IMAGE
             export JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile
@@ -391,6 +395,9 @@ EOF
         "printf '%s\n' edited > /home/jailbox/project/editor-write.txt"
     assert_ssh "$ssh_cfg" "$ctr" "git index write works with managed UID" \
         "git -C /home/jailbox/project add editor-write.txt"
+    assert_ssh "$ssh_cfg" "$ctr" 'protected symlink target is immutable through both paths' \
+        "! printf changed >> /home/jailbox/project/protected-policy/target/file 2>/dev/null && ! printf changed >> /home/jailbox/project/linked-policy/file 2>/dev/null && ! rm /home/jailbox/project/linked-policy/file 2>/dev/null"
+    assert_eq 'protected target host contents survive write attempts' 'protected target' "$(cat "$project_dir/linked-policy/file")"
     assert_ssh "$ssh_cfg" "$ctr" "selected in-project config is immutable" \
         "! printf 'DEV_IMAGE=attacker\\n' >> /home/jailbox/project/config/runtime.conf 2>/dev/null && ! rm /home/jailbox/project/config/runtime.conf 2>/dev/null"
     # The anchor is not the selected config for this run; it must still be
@@ -591,7 +598,7 @@ EOF
     fi
 
     if [[ "$stage" == egress ]]; then
-        printf 'DEV_IMAGE=%s\nEDITOR=codium\nEGRESS_ALLOW=example.com\nREADONLY_PATHS=jailbox.conf,config/runtime.conf\n' "$dev_image" > "$project_dir/config/runtime.conf"
+        printf 'DEV_IMAGE=%s\nEDITOR=codium\nEGRESS_ALLOW=example.com\nREADONLY_PATHS=jailbox.conf,config/runtime.conf,protected-policy\n' "$dev_image" > "$project_dir/config/runtime.conf"
     fi
     # A bare launch after the explicit stop restores the positive editor-stub
     # coverage and proves that editor discovery changes only filtered policy.
