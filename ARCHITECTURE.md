@@ -537,10 +537,15 @@ run relevant cases under both `0022` and `0002` umasks.
 ## 9. Installation, versioning, and release
 
 The installed artifact contains the host and container programs needed at
-runtime. A successful tarball build is not enough: the installer must reject a
-payload missing required dependencies. The frontend migration updates module
-paths and packaging; complete dependency-inventory verification remains pending
-closing work. Installation retains Bash 3.2 compatibility, while host modules
+runtime. Packaging copies the complete `src/` tree into the bundle root and
+adds README and the version stamp. Installation checks the basic bundle shape
+and copies its contents recursively, so new runtime files need no separate
+installer inventory. Downloaded archives are checksum-verified; failed extraction
+or copying stops installation. Packaging and installation regressions verify
+that new runtime files survive both steps. README ships with the runtime; the
+architecture and contributor guides remain repository-only. See the
+[bundle regressions](tests/unit/bundle-install.sh).
+Installation retains Bash 3.2 compatibility, while host modules
 require Bash 4.4 or newer. Container startup/setup scripts retain POSIX `sh`
 compatibility where declared.
 

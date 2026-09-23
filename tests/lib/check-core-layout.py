@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate core ownership and the immediate host-module install inventory."""
+"""Validate core ownership and module loading."""
 import pathlib
 import re
 import sys
@@ -37,12 +37,7 @@ for path in (core / 'resources').glob('*.sh'):
         if re.search(r'(?<![\w])' + re.escape(handler) + r'(?![\w])', code):
             errors.append(f'resource calls public handler: {path.name}: {handler}')
 
-installed = set(re.findall(r'^    "(host/core/[^"\n]+)"$',
-                          (source / 'install.sh').read_text(), re.M))
 expected = {str(path.relative_to(source)) for path in modules}
-if installed != expected:
-    errors.append('installer core inventory mismatch: ' +
-                  repr(sorted(installed ^ expected)))
 loaded = set()
 for path in (source / 'jailbox', core / 'entry.sh'):
     loaded.update(re.findall(r'^source "\$SCRIPT_DIR/(host/core/[^"\n]+)"',
@@ -54,4 +49,4 @@ if loaded != expected:
     errors.append('core loading inventory mismatch: ' + repr(sorted(loaded ^ expected)))
 if errors:
     sys.exit('\n'.join(errors))
-print('Core ownership, loading, and host-module install inventory are complete')
+print('Core ownership and loading are complete')

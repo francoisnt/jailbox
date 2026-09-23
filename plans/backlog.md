@@ -111,6 +111,44 @@ If explicit policy comparison is included, report only what the aggregate
 digest establishes; it cannot identify which input changed. Reassess the
 maintenance cost and overlap with attachment diagnostics before implementing.
 
+### Host-side diagnostic history for editor disconnects
+
+Consider bounded diagnostic collection saved on the host, outside the project
+and container, to investigate intermittent SSH/editor disconnects and resource
+exhaustion. Preserve evidence across container exit, replacement, and removal,
+with explicit retention and deletion rules. Collect from the host where possible
+so a failed SSH connection or exhausted container cannot prevent recording.
+
+Recommended data to retain:
+
+- UTC timestamps, project and container-instance identifiers, jailbox, Podman,
+  host/kernel, editor, and Remote SSH extension versions, and effective resource
+  limits, so evidence can be correlated across components and launches.
+- Periodic memory usage, available peak usage, swap usage and limits, and cgroup
+  `memory.events` counters, including allocation failures and OOM kills. Record
+  counter baselines and changes rather than treating historical counts as a new
+  incident.
+- PID/thread usage and limits, plus `pids.events` limit-hit counters; the PID
+  budget includes threads. Include CPU usage/throttling and available memory
+  pressure indicators to distinguish hard exhaustion from prolonged contention.
+- Timestamped Podman lifecycle events, container state, exit status and reported
+  OOM state, plus bounded sshd/container logs. Where accessible, retain relevant
+  host kernel OOM records identifying killed processes: an editor process can
+  die while the container remains running.
+- Relevant VSCodium/VS Code Remote SSH and remote-server logs, with frontend
+  ownership of editor-specific collection, and a way to mark the observed
+  disconnect time. Correlate with whether ordinary SSH remained usable.
+
+Use private host storage with size/age limits and rotation, and keep collection
+overhead low. Exclude credentials, environment dumps, and project contents;
+define filtering for logs that may contain sensitive values. Preserve existing
+sandbox protections without granting the container host-engine access. Report
+unavailable counters, permissions, collection gaps, and unsupported platforms
+explicitly; absent evidence must not be reported as absence of exhaustion.
+Usage samples alone can miss short spikes, and an OOM event alone does not prove
+the disconnect's cause. Reassess collection lifetime, opt-in/default behavior,
+and diagnostic export before defining a public command or configuration surface.
+
 ### Per-input digest mismatch diagnostics
 
 After aggregate configuration-digest enforcement lands, consider advisory
@@ -396,11 +434,12 @@ mode.
 
 ## Developer experience
 
-### Installer required-file coverage
+### Runtime packaging and installation coverage
 
 Assigned to 03.2.16 as a release requirement for the machine-boundary series.
-It owns complete runtime dependency coverage and portable regressions rejecting
-incomplete payloads, following 03.2.11's directory and installer path migration.
+Verify that new runtime files ship and install through recursive copying and
+that copy failures preserve an existing installation, following 03.2.11's
+source-layout migration.
 
 ### Editor validation on relevant pull requests
 

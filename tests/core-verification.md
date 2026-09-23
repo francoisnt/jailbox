@@ -32,7 +32,7 @@ proof for equivalent contracts. The cases themselves are not removed.
 | Healthy creation/reuse/resume; persistent and ephemeral stop/relaunch; clean/relaunch | Existing constructed-state matrix command cases and every interrupted recovery sequence |
 | Interrupted launch/stop/clean, failed rollback/removal, surviving dependencies, exact identities, unrelated resources, data and retryability | All discovered before/after/barrier cases remain; independent operation-role floors in `lib/lifecycle-contracts.sh`, fixture snapshots/marker assertions and real recovery remain unchanged |
 | Observer effectiveness and missing coverage | `unit/lifecycle-observer.sh`, `unit/lifecycle-recovery.sh`, `unit/connection-observer.sh`, `unit/exec-observer.sh`, `unit/shell-observer.sh`, `unit/lifecycle-matrix.sh`, `unit/lifecycle-pool.sh`; wrong-classification, suppressed-refusal, missing-operation and malformed-producer negative controls |
-| Public declarations, source/installed dispatch, nested layout, packaging and installer host inventory | Portable declaration/dispatch/boundary/distribution suites, `unit/core-layout.sh` |
+| Public declarations, source/installed dispatch, nested layout, packaging and recursive installation | Portable declaration/dispatch/boundary/distribution suites, `unit/core-layout.sh`, `unit/bundle-install.sh` |
 
 ## Observation workloads
 

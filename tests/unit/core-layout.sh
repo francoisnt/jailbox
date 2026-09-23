@@ -1,5 +1,5 @@
 #!/bin/bash
-# New core modules and command handlers cannot escape ownership/install checks.
+# New core modules and command handlers cannot escape ownership/loading checks.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=src/public-api.sh
@@ -26,7 +26,7 @@ check_refusal() {
     grep -Fq "$1" "$tmp/error"
 }
 printf 'future_check() { :; }\n' > "$tmp/tree/src/host/core/resources/future.sh"
-check_refusal 'installer core inventory mismatch'
+check_refusal 'core loading inventory mismatch'
 rm "$tmp/tree/src/host/core/resources/future.sh"
 printf '\ninvalid_resource() { run_up; }\n' >> "$tmp/tree/src/host/core/resources/container.sh"
 check_refusal 'resource calls public handler'

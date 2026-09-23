@@ -34,55 +34,6 @@ fi
 
 LINK_PATH="$BIN_DIR/$APP_NAME"
 
-REQUIRED_PATHS=(
-    "jailbox"
-    "host/api-support.sh"
-    "host/core/checks/attachment.sh"
-    "host/core/checks/compatibility.sh"
-    "host/core/checks/host.sh"
-    "host/core/commands/clean.sh"
-    "host/core/commands/config-schema.sh"
-    "host/core/commands/connection-info.sh"
-    "host/core/commands/exec.sh"
-    "host/core/commands/shell.sh"
-    "host/core/commands/ssh-config.sh"
-    "host/core/commands/status.sh"
-    "host/core/commands/stop.sh"
-    "host/core/commands/up.sh"
-    "host/core/commands/validate.sh"
-    "host/core/commands/version.sh"
-    "host/core/configuration/digest.sh"
-    "host/core/configuration/load.sh"
-    "host/core/configuration/version.sh"
-    "host/core/entry.sh"
-    "host/core/project/hash.sh"
-    "host/core/project/identity.sh"
-    "host/core/project/paths.sh"
-    "host/core/resources/container.sh"
-    "host/core/resources/downloader.sh"
-    "host/core/resources/home.sh"
-    "host/core/resources/images.sh"
-    "host/core/resources/inventory.sh"
-    "host/core/resources/network.sh"
-    "host/core/resources/proxy.sh"
-    "host/core/resources/runtime-files.sh"
-    "host/core/resources/ssh.sh"
-    "host/cli.sh"
-    "host/frontend/connection.sh"
-    "host/frontend/editor.sh"
-    "host/frontend/entry.sh"
-    "host/frontend/file-policy.sh"
-    "host/frontend/init.sh"
-    "host/frontend/settings.sh"
-    "public-api.sh"
-    "container/setup.sh"
-    "container/runtime/bin/jailbox-manage-proxy"
-    "container/runtime/bin/jailbox-start"
-    "container/tinyproxy/Containerfile"
-    "container/Containerfile.wrapper"
-    "container/tinyproxy/tinyproxy.conf"
-)
-
 usage() {
     cat <<EOF_USAGE
 Usage: ./install.sh [--uninstall|--help]
@@ -132,11 +83,10 @@ download_file() {
 }
 
 installer_bundle_is_available() {
-    local path
-
-    for path in "${REQUIRED_PATHS[@]}"; do
-        [ -e "$SOURCE_DIR/$path" ] || return 1
-    done
+    # Recognize local bundles before checking their basic shape, so a broken
+    # local tree does not silently select the network bootstrap path.
+    [ -e "$SOURCE_DIR/VERSION" ] || [ -e "$SOURCE_DIR/jailbox" ] ||
+        [ -d "$SOURCE_DIR/host" ] || [ -d "$SOURCE_DIR/container" ]
 }
 
 absolute_path() {
@@ -186,11 +136,14 @@ assert_replaceable_target_dir() {
     die "refusing to replace unmanaged install directory: $TARGET_DIR"
 }
 
+# Check bundle shape; recursive copying owns the runtime file inventory.
 validate_source_tree() {
     local path
-
-    for path in "${REQUIRED_PATHS[@]}"; do
-        [ -e "$SOURCE_DIR/$path" ] || die "installer bundle is missing required path: $path"
+    for path in jailbox install.sh public-api.sh; do
+        [ -f "$SOURCE_DIR/$path" ] || die "installer bundle is missing required file: $path"
+    done
+    for path in host container; do
+        [ -d "$SOURCE_DIR/$path" ] || die "installer bundle is missing required directory: $path"
     done
 }
 
@@ -233,10 +186,10 @@ copy_bundle() {
     local tmp_dir script
 
     tmp_dir="$1"
-    cp -R "$SOURCE_DIR/." "$tmp_dir/"
+    cp -R "$SOURCE_DIR/." "$tmp_dir/" || die "could not copy installer bundle"
     # Release bundles include the README; checkouts keep it above src/.
     if [ ! -f "$tmp_dir/README.md" ]; then
-        cp "$SOURCE_DIR/../README.md" "$tmp_dir/README.md"
+        cp "$SOURCE_DIR/../README.md" "$tmp_dir/README.md" || die "could not copy README"
     fi
 
     chmod 755 "$tmp_dir/jailbox"
