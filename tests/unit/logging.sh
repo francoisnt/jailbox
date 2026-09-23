@@ -124,3 +124,20 @@ TEST_CASE='early EOF ends a transient progress line with a newline'
 printf 'Progress: 1/2 completed\n' | test_display_stream 80 > "$FIXTURE/output"
 [[ $(tail -c 1 "$FIXTURE/output" | od -An -tu1 | tr -d ' ') = 10 ]]
 pass
+
+TEST_CASE='lint progress updates in place and clears after every final outcome'
+for result in passed failed interrupted; do
+    printf 'Progress: ShellCheck: 1/3 batches complete\nproblem in script.sh\nProgress: ShellCheck: 2/3 batches complete\nShellCheck %s · 5s\nnext suite\n' "$result" > "$FIXTURE/input"
+    test_display_stream 100 < "$FIXTURE/input" > "$FIXTURE/output"
+    {
+        printf '\r\033[2KShellCheck: 1/3 batches complete'
+        printf '\r\033[2Kproblem in script.sh\n'
+        printf '\r\033[2KShellCheck: 1/3 batches complete'
+        printf '\r\033[2KShellCheck: 2/3 batches complete'
+        printf '\r\033[2KShellCheck %s · 5s\nnext suite\n' "$result"
+    } > "$FIXTURE/expected"
+    cmp "$FIXTURE/expected" "$FIXTURE/output"
+    test_display_stream < "$FIXTURE/input" > "$FIXTURE/output"
+    cmp "$FIXTURE/input" "$FIXTURE/output"
+done
+pass

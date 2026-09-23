@@ -3,7 +3,7 @@
 #
 # For each stage: runs the full jailbox CLI, then while the container is still
 # up runs headless SSH assertions covering tools, shell, mounts, and egress.
-# All stages run in parallel; output is buffered and printed in defined order.
+# Stages run with resource-based concurrency limits and separate saved logs.
 #
 # Prerequisites: run tests/integration/wrapper-images.sh first to build the jailbox-test-* images.
 #
@@ -23,7 +23,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=tests/lib/logging.sh
 source "$JAILBOX_DIR/tests/lib/logging.sh"
-test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
+if [[ ${BASH_SOURCE[0]} = "$0" ]]; then
+    test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
+fi
 
 # shellcheck source=src/host/core/project/hash.sh
 source "$JAILBOX_DIR/src/host/core/project/hash.sh"
@@ -240,35 +242,12 @@ setup_stub_editor() {
 # ── run_e2e_case ──────────────────────────────────────────────────────────────
 # Designed to run inside a subshell. PASSED/FAILED are subshell-local.
 
-headless_fixture() {
-    local stage="$1" candidate offset port attempt
-    for ((attempt=1; attempt<=100; attempt++)); do
-        candidate=$(mktemp -d "/tmp/jailbox-e2e-${stage}.XXXXXX") || return 1
-        offset=$(jailbox_project_hash_port_offset "$(jailbox_project_hash_for_path "$candidate")") || {
-            rm -rf "$candidate"; return 1;
-        }
-        port=$((49152 + offset))
-        # Claims live until the entire run ends: later stop/relaunch assertions
-        # must not let another stage borrow this port while it is unbound.
-        if test_fixture_port_available "$port" && mkdir "$stub_dir/ports/$port" 2>/dev/null; then
-            printf '%s\n' "$candidate"
-            return 0
-        fi
-        rm -rf "$candidate"
-    done
-    die "could not allocate a free SSH port outside the ephemeral range for $stage"
-}
-
 cleanup_e2e_stage() {
     echo "$PASSED $FAILED" > "$stage_counts_file"
     if [[ -n "$project_dir" ]]; then
         (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --clean 2>/dev/null || true)
         rm -rf "$project_dir"
     fi
-}
-
-run_e2e_case_logged() {
-    ( run_e2e_case "$@" ) 2>&1 | test_timestamp_stream
 }
 
 run_e2e_case() {
@@ -287,7 +266,7 @@ run_e2e_case() {
     echo ""
     echo "── e2e: $stage (user: jailbox) ─────────────────────────────────────"
 
-    project_dir=$(headless_fixture "$stage") || return 1
+    project_dir=$(test_fixture_project "/tmp/jailbox-e2e-$stage" "$stub_dir/ports" test_fixture_port_available) || return 1
     # Before anything can create them, and outside the fixture directory.
     ledger_record_project_resources "$project_dir" || return 1
     git -C "$project_dir" init -q
@@ -785,6 +764,10 @@ assert_isolated_status_inventory() {
     podman image rm "$prefix-image" >/dev/null || return 1
 }
 
+# shellcheck source=tests/lib/stage-pool.sh
+source "$JAILBOX_DIR/tests/lib/stage-pool.sh"
+STAGE_WORKER_VARIABLES="stub_dir LEDGER_DIR LEDGER_FILE"
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 main() {
@@ -833,57 +816,8 @@ main() {
     echo "Stages : ${stages[*]}"
     echo ""
 
-    local -A stage_pids=()
-    for stage in "${stages[@]}"; do
-        printf "  ⏳ %s\n" "$stage"
-        # The redirect belongs to the worker's own output. A registration
-        # failure lands in that log too, so report it on the terminal rather
-        # than aborting the run with nothing visible.
-        if ! ledger_start_worker run_e2e_case_logged "$stage" "$log_dir" \
-            > "$log_dir/${stage}.log" 2>&1; then
-            die "could not register the $stage stage with the resource ledger (see $log_dir/${stage}.log)"
-        fi
-        stage_pids[$stage]=$LEDGER_WORKER_PID
-    done
-    echo ""
-
-    local -A reported=()
-    local last_progress
-    last_progress=$SECONDS
-    while [[ ${#reported[@]} -lt ${#stages[@]} ]]; do
-        for stage in "${stages[@]}"; do
-            [[ "${reported[$stage]+_}" ]] && continue
-            local p=0 f=0
-            if [[ -f "$log_dir/${stage}.counts" ]]; then
-                read -r p f < "$log_dir/${stage}.counts" || true
-                if [[ "$f" -eq 0 ]]; then
-                    printf "  ✅ %-16s (%d passed)\n" "$stage" "$p"
-                else
-                    printf "  ❌ %-16s (%d passed, %d failed)\n" "$stage" "$p" "$f"
-                    sed 's/^/      /' "$log_dir/${stage}.log" 2>/dev/null || true
-                fi
-                reported[$stage]=1
-            elif ! kill -0 "${stage_pids[$stage]}" 2>/dev/null; then
-                printf "  ❌ %-16s (crashed)\n" "$stage"
-                sed 's/^/      /' "$log_dir/${stage}.log" 2>/dev/null || true
-                reported[$stage]=1
-            fi
-        done
-        if [[ ${#reported[@]} -lt ${#stages[@]} && $((SECONDS - last_progress)) -ge 30 ]]; then
-            printf "  … still running:"
-            for stage in "${stages[@]}"; do
-                [[ "${reported[$stage]+_}" ]] || printf " %s" "$stage"
-            done
-            printf "\n"
-            last_progress=$SECONDS
-        fi
-        [[ ${#reported[@]} -lt ${#stages[@]} ]] && sleep 0.3
-    done
-    echo ""
-
-    for pid in "${stage_pids[@]}"; do
-        wait "$pid" 2>/dev/null || true
-    done
+    local pool_result=0
+    run_stage_pool runtime "$log_dir" run_e2e_case "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
 
     # Every stage has finished, so anything still standing under a recorded
     # name is this run's leftover. Whatever survives stays in the ledger for
@@ -917,7 +851,7 @@ main() {
             [[ "$f" -gt 0 ]] && echo "  $rel_log_dir/${stage}.log"
         done
     fi
-    [ $total_failed -eq 0 ] || exit 1
+    [[ $total_failed -eq 0 && $pool_result -eq 0 ]] || exit 1
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} = "$0" ]]; then main "$@"; fi

@@ -1,15 +1,15 @@
 #!/bin/bash
 # Integration test runner for jailbox.
 #
-# For each stage in tests/integration/dev-images.Containerfile, in parallel:
+# For each stage in tests/integration/dev-images.Containerfile:
 #   1. Build the stage as a dev image
 #   2. Build container/Containerfile.wrapper against it
 #   3. Start the container with SSH
 #   4. Run assertions
 #   5. Tear down
 #
-# Each stage gets its own SSH port so all stages can run simultaneously.
-# Output is buffered per stage and printed in order once all finish.
+# Stages use distinct SSH ports and a resource-sized worker pool.
+# Full output is saved per stage; failures are also printed to the terminal.
 #
 # Usage: tests/integration/wrapper-images.sh [--prepare-only] [stage...]
 set -euo pipefail
@@ -18,7 +18,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=tests/lib/logging.sh
 source "$JAILBOX_DIR/tests/lib/logging.sh"
-test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
+if [[ ${BASH_SOURCE[0]} = "$0" ]]; then
+    test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
+fi
 
 ALL_STAGES=(debian alpine fedora uid-owned-by-other-user user-conflict)
 PREPARATION_STAGES=(debian alpine fedora)
@@ -37,7 +39,7 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [--prepare-only] [stage...]
 
-Run jailbox integration tests. With no arguments all stages run in parallel.
+Run jailbox integration tests. With no arguments stages run with resource-based concurrency limits.
 With --prepare-only, build positive-stage images without contract assertions.
 
 Stages: ${ALL_STAGES[*]}
@@ -378,6 +380,10 @@ wrapper_install_cache_bust() (
     jailbox_install_cache_bust
 )
 
+# shellcheck source=tests/lib/stage-pool.sh
+source "$JAILBOX_DIR/tests/lib/stage-pool.sh"
+STAGE_WORKER_VARIABLES="PREPARE_ONLY"
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 main() {
@@ -431,56 +437,8 @@ main() {
     echo "Stages : ${stages[*]}"
     echo ""
 
-    # Launch all stages in parallel; each subshell buffers its own output.
-    local -A stage_pids=()
-    for stage in "${stages[@]}"; do
-        printf "  ⏳ %s\n" "$stage"
-        ( run_case "$stage" "$log_dir" ) 2>&1 | test_timestamp_stream > "$log_dir/${stage}.log" &
-        stage_pids[$stage]=$!
-    done
-    echo ""
-
-    # Poll every 300ms; print a result line as each stage finishes.
-    # Completion is signalled by the EXIT trap writing $stage.counts.
-    local -A reported=()
-    local last_progress
-    last_progress=$SECONDS
-    while [[ ${#reported[@]} -lt ${#stages[@]} ]]; do
-        for stage in "${stages[@]}"; do
-            [[ "${reported[$stage]+_}" ]] && continue
-            local p=0 f=0
-            if [[ -f "$log_dir/${stage}.counts" ]]; then
-                read -r p f < "$log_dir/${stage}.counts" || true
-                if [[ "$f" -eq 0 ]]; then
-                    printf "  ✅ %-16s (%d passed)\n" "$stage" "$p"
-                else
-                    printf "  ❌ %-16s (%d passed, %d failed)\n" "$stage" "$p" "$f"
-                    sed 's/^/      /' "$log_dir/${stage}.log" 2>/dev/null || true
-                fi
-                reported[$stage]=1
-            elif ! kill -0 "${stage_pids[$stage]}" 2>/dev/null; then
-                # Process exited without writing counts (early crash).
-                printf "  ❌ %-16s (crashed)\n" "$stage"
-                sed 's/^/      /' "$log_dir/${stage}.log" 2>/dev/null || true
-                reported[$stage]=1
-            fi
-        done
-        if [[ ${#reported[@]} -lt ${#stages[@]} && $((SECONDS - last_progress)) -ge 30 ]]; then
-            printf "  … still running:"
-            for stage in "${stages[@]}"; do
-                [[ "${reported[$stage]+_}" ]] || printf " %s" "$stage"
-            done
-            printf "\n"
-            last_progress=$SECONDS
-        fi
-        [[ ${#reported[@]} -lt ${#stages[@]} ]] && sleep 0.3
-    done
-    echo ""
-
-    # Reap all background jobs.
-    for pid in "${stage_pids[@]}"; do
-        wait "$pid" 2>/dev/null || true
-    done
+    local pool_result=0
+    run_stage_pool runtime "$log_dir" run_case "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
 
     # Record only base images selected for this run. In particular, VS Code
     # preparation omits Alpine and must not pull it merely for metadata.
@@ -498,11 +456,9 @@ main() {
         run_meta_image "$log_dir" "$base_stage" "$base_ref"
     done
 
-    # Print full per-stage output in defined order and keep the same files in
-    # testlog for terminals that clip long runs.
+    # Aggregate assertions; full stage output remains in the reported logs.
     local total_passed=0 total_failed=0 p f
     for stage in "${stages[@]}"; do
-        cat "$log_dir/${stage}.log" 2>/dev/null || true
         if [[ -f "$log_dir/${stage}.counts" ]]; then
             read -r p f < "$log_dir/${stage}.counts"
             total_passed=$((total_passed + p))
@@ -516,7 +472,7 @@ main() {
     echo "──────────────────────────────────────────────────────────────────────"
     echo "Results: $total_passed passed, $total_failed failed"
     echo "Full logs: $(run_log_path "$log_dir")"
-    [ $total_failed -eq 0 ] || exit 1
+    [[ $total_failed -eq 0 && $pool_result -eq 0 ]] || exit 1
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} = "$0" ]]; then main "$@"; fi

@@ -78,6 +78,49 @@ runs, put their Homebrew `libexec/gnubin` directories on `PATH`.
 All four gates require Python 3: portable, runtime, and matrix use it for
 bounded pseudoterminal tests, and editor uses it to package the proof extension.
 The CI setup scripts install it; jailbox itself does not require Python.
+Lint, portable unit suites, runtime stages, editor stages, and the lifecycle
+matrix share a Bash process pool
+and resource detection. Worker counts adapt to available CPUs and memory,
+including Linux affinity/cgroup limits and macOS available-page estimates.
+Unknown resource data selects one worker; all pools have a ceiling of 16.
+Lint budgets one CPU and 1.5 GiB per worker, with 512 MiB reserved; portable units
+budget one CPU and 256 MiB per worker with the same reserve. The matrix retains
+its two-CPU/2-GiB allowance and 1-GiB reserve. Runtime stages use the same
+allowance; editor stages budget two CPUs and 4 GiB with a 1-GiB reserve. Runtime
+and editor allowances are conservative starting estimates pending measurements
+on a Podman host, including build processes, containers, and editor descendants.
+These are scheduling estimates,
+not enforced limits. Two fixed-concurrency ShellCheck samples peaked at
+1.21–1.24 GiB for the entrypoint; sampled complete unit-suite process trees
+peaked at 16–35 MiB. Larger or changed workloads may require revisiting these
+allowances.
+
+The portable lint driver (`scripts/lint.sh`) shows a single updating terminal
+progress line, occasional progress snapshots
+in redirected output, and grouped diagnostics. Detailed batch timings and output
+remain in the reported `testlog/shellcheck.*` directory. Source analysis and file
+discovery remain enabled for every run.
+
+Portable runs lint, generated-file checks, unit suites, and distribution in
+that order. Reviewed unit suites in `tests/lib/portable-parallel.txt` run in
+parallel, with separate logs and timings under `testlog/portable.*`. New or
+unlisted suites run exclusively until their shared paths, ports, external
+effects, and nested concurrency have been reviewed. Pool tests run exclusively
+because they deliberately create nested workers; distribution remains sequential
+because it writes fixed release-artifact paths. A failed suite stops new
+scheduling, joins active suites, and prevents subsequent gate phases. Nested
+auto-sized tools inherit `JAILBOX_TEST_JOB_LIMIT=1`; that test-only variable can
+also cap lint, portable, runtime, or editor concurrency for diagnosis without changing gate modes.
+
+Runtime and editor keep image preparation before dependent tests. Their stage
+runners use the shared pool, report compact progress, and retain per-stage logs,
+statuses, worker counts, and timings in the reported log directory. All selected
+stages are attempted and any crash or assertion failure fails the gate. Editor
+workers retain their slot through teardown; cache writes retain their existing
+locks. Runtime and editor fixture allocation reserves SSH ports across each
+run, including intervals when stop/reopen tests leave them unbound. Workers
+start in fresh Bash processes so coordinator error handling cannot suppress
+their errexit behavior. Cancellation joins workers before the coordinator releases shared state.
 
 ```bash
 tests/run            # Every gate in order

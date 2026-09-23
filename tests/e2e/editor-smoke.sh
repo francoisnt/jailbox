@@ -33,7 +33,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=tests/lib/logging.sh
 source "$JAILBOX_DIR/tests/lib/logging.sh"
-test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
+if [[ ${BASH_SOURCE[0]} = "$0" ]]; then
+    test_log_entrypoint "$SCRIPT_DIR/${BASH_SOURCE[0]##*/}" "$@"
+fi
 
 # shellcheck source=src/host/core/project/hash.sh
 source "$JAILBOX_DIR/src/host/core/project/hash.sh"
@@ -43,6 +45,8 @@ source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
 # shellcheck source=tests/lib/editor/workflows.sh
 source "$JAILBOX_DIR/tests/lib/editor/workflows.sh"
+# shellcheck source=tests/lib/fixture-ports.sh
+source "$JAILBOX_DIR/tests/lib/fixture-ports.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
 VSCODE_STAGES=(debian fedora egress)
@@ -65,8 +69,6 @@ EDITOR_CACHE_VERSION=""
 EDITOR_CACHE_COMMIT=""
 EDITOR_CACHE_ARCH=""
 EDITOR_CACHE_SEEDED=0
-# PIDs of backgrounded success-path teardowns, joined in main() before exit.
-TEARDOWN_PIDS=()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -154,17 +156,18 @@ log_run() {
     printf '%s\n' "$*" | test_timestamp_stream | tee -a "$RUN_LOG"
 }
 
-run_stage_logged() {
-    local stage="$1"
-    local idx="$2"
-    local total="$3"
-    local stage_log="$LOG_DIR/${stage}.log"
+# shellcheck source=tests/lib/stage-pool.sh
+source "$JAILBOX_DIR/tests/lib/stage-pool.sh"
+STAGE_WORKER_VARIABLES="LOG_DIR RUN_LOG PROOF_VSIX EDITOR_CACHE_ROOT EDITOR_CACHE_BASE EDITOR_CACHE_VERSION EDITOR_CACHE_COMMIT EDITOR_CACHE_ARCH LEDGER_DIR LEDGER_FILE"
 
-    log_run "LOG $stage $stage_log"
-    if run_stage "$stage" "$idx" "$total" > >(test_timestamp_stream | tee "$stage_log") 2>&1; then
-        return 0
-    fi
-    return 1
+run_editor_stage() {
+    local stage=$1 logs=$2 index=$3 total=$4 result=0
+    PASSED=0
+    FAILED=0
+    run_stage "$stage" "$index" "$total" || result=1
+    ((result == 0)) || FAILED=$((FAILED + 1))
+    printf '%s %s\n' "$PASSED" "$FAILED" > "$logs/$stage.counts" || return 1
+    return "$result"
 }
 
 editor_bin() {
@@ -909,7 +912,7 @@ run_stage() {
     printf "  Stage %d/%d  ·  %s\n" "$idx" "$total" "$stage"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    project_dir=$(mktemp -d "/tmp/jailbox-editor-${stage}.XXXXXX")
+    project_dir=$(test_fixture_project "/tmp/jailbox-editor-$stage" "$LOG_DIR/ports") || return 1
     # Before anything can create them, and outside the fixture directory.
     ledger_record_project_resources "$project_dir" || die "could not record this stage's resources"
     ctr=$(jailbox_container_name "$project_dir")
@@ -1048,22 +1051,14 @@ run_stage() {
         fi
     fi
 
-    # Success: hand teardown to the background so the next stage starts without
-    # waiting on this stage's editor close (the slow part). Close then clean as
-    # one ordered unit — removing the container out from under a still-closing
-    # window risks a disconnect dialog. Every stage uses independently-named
-    # resources, so an overlapping teardown has nothing to collide with. main()
-    # joins these before summarizing. The failure path below stays synchronous
-    # so diagnostics and JAILBOX_KEEP_FAILED are unaffected.
+    # Keep teardown inside the worker's resource allowance.
     if [[ "$rc" -eq 0 ]]; then
         if [[ "$editor_opened" -eq 1 ]]; then
-            ledger_start_worker cleanup_successful_stage "$project_dir" "$ctr" ||
-                return 1
-            TEARDOWN_PIDS+=("$LEDGER_WORKER_PID")
+            cleanup_successful_stage "$project_dir" "$ctr" || return 1
         else
-            cleanup_stage "$project_dir"
+            cleanup_stage "$project_dir" || return 1
         fi
-        project_dir=""  # disarm the EXIT trap — teardown owns cleanup now
+        project_dir=""
         return 0
     fi
 
@@ -1152,31 +1147,24 @@ main() {
     fi
     log_run "Logs   : $LOG_DIR"
     log_run ""
-    log_run "This test opens a graphical editor window and automates validation after launch."
+    log_run "This test opens isolated editor windows and automates validation after launch."
     log_run ""
 
-    local total=${#stages[@]}
-    local idx=0
+    mkdir "$LOG_DIR/ports" || return 1
+    local pool_result=0 p f
     local failed_stages=()
-
+    run_stage_pool editor "$LOG_DIR" run_editor_stage "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
     for stage in "${stages[@]}"; do
-        idx=$((idx + 1))
-        if run_stage_logged "$stage" "$idx" "$total"; then
-            log_run "PASS $stage"
-        else
-            log_run "FAIL $stage"
+        p=0; f=1
+        if [[ -f "$LOG_DIR/$stage.counts" ]]; then
+            read -r p f < "$LOG_DIR/$stage.counts" || return 1
+        fi
+        PASSED=$((PASSED + p))
+        FAILED=$((FAILED + f))
+        if [[ ! -f "$LOG_DIR/$stage.exit-status" || $(cat "$LOG_DIR/$stage.exit-status") != 0 ]]; then
             failed_stages+=("$stage")
         fi
     done
-
-    # Success-path teardowns run in the background so a stage never waits on the
-    # previous stage's editor close; join them before summarizing so the last
-    # stage's container is removed and nothing is orphaned.
-    if [[ -n "${TEARDOWN_PIDS[*]-}" ]]; then
-        echo ""
-        echo "Waiting for background stage teardowns to finish..."
-        wait "${TEARDOWN_PIDS[@]}" 2>/dev/null || true
-    fi
 
     # Every teardown has finished, so anything still standing under a recorded
     # name is this run's leftover. Whatever survives here stays in the ledger
@@ -1199,7 +1187,7 @@ main() {
     fi
     log_run "Full logs: $(run_log_path "$LOG_DIR")"
 
-    [[ "$FAILED" -eq 0 ]]
+    [[ "$FAILED" -eq 0 && "$pool_result" -eq 0 ]]
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} = "$0" ]]; then main "$@"; fi

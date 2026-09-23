@@ -10,6 +10,17 @@ printf '%s\n' "$LEDGER_FILE" > "$log/ledger"
 printf '%s\n' "$3" > "$log/fixture"
 : > "$log/cases"
 : > "$log/expected-faults"
+case ${POOL_TEST_MODE:-normal} in
+    fail) exit 42 ;;
+    wait)
+        # Ownership must be registered before any worker work begins.
+        grep -Eq "^owner $$ " "$LIFECYCLE_POOL_LEDGER"
+        trap 'printf stopped > "$log/stopped"' EXIT
+        trap 'exit 143' TERM
+        printf '%s\n' "$$" > "$run/mock-started-$$"
+        while :; do sleep 0.05; done
+        ;;
+esac
 complete_job() {
     local kind="$1" key
     shift

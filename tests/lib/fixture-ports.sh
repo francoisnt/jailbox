@@ -18,3 +18,22 @@ test_fixture_port_available() {
         END {exit occupied}
     ' "${tables[@]}"
 }
+
+# Claims survive stop/reopen cycles until the owning run ends. The optional
+# availability callback also excludes host ports unsuitable for that runner.
+test_fixture_project() {
+    local prefix=$1 claims=$2 available=${3:-:} candidate hash offset port attempt
+    for ((attempt=1; attempt<=100; attempt++)); do
+        candidate=$(mktemp -d "$prefix.XXXXXX") || return 1
+        hash=$(jailbox_project_hash_for_path "$candidate") || { rm -rf "$candidate"; return 1; }
+        offset=$(jailbox_project_hash_port_offset "$hash") || { rm -rf "$candidate"; return 1; }
+        port=$((49152 + offset))
+        if "$available" "$port" && mkdir "$claims/$port" 2>/dev/null; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+        rm -rf "$candidate" || return 1
+    done
+    printf 'Could not reserve a fixture SSH port for %s\n' "$prefix" >&2
+    return 1
+}

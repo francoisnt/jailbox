@@ -183,6 +183,8 @@ pass
 TEST_CASE='the coordinator consolidates complete coverage and cleans every worker'
 tree="$TEST_ROOT/coordinator"
 mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/src/host" "$tree/bin"
+mkdir -p "$tree/scripts/lib"
+cp "$ROOT/scripts/lib/"{process-pool,worker-resources}.sh "$tree/scripts/lib/"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
 cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts,fixture-ports}.sh "$tree/tests/lib/"
 cp -R "$ROOT/tests/lib/lifecycle" "$tree/tests/lib/"
@@ -292,6 +294,10 @@ for sample_run in 50:1 50:4 50:8 150:1 150:4 150:8; do
 done
 pass
 
+TEST_CASE='coordinator failures and cancellation preserve cleanup ownership'
+python3 "$ROOT/tests/lib/check-lifecycle-cancellation.py" "$tree"
+pass
+
 TEST_CASE='the actual row runner skips unselected commands before constructing resources'
 (
     # shellcheck source=tests/lib/lifecycle-runtime.sh
@@ -398,26 +404,26 @@ printf '600000 100000\n' > "$cgroup/parent/cpu.max"
 printf 'max\n' > "$cgroup/parent/child/memory.max"
 printf '%s\n' "$((12 * 1073741824))" > "$cgroup/parent/memory.max"
 printf '%s\n' "$((2 * 1073741824))" > "$cgroup/parent/memory.current"
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = "6|$((10 * 1048576))" ]]
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 2) = "2|$((10 * 1048576))" ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 16) = "6|$((10 * 1048576))" ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 2) = "2|$((10 * 1048576))" ]]
 printf '150000 100000\n' > "$cgroup/cpu.max"
 printf '%s\n' "$((8 * 1073741824))" > "$cgroup/memory.max"
 printf '%s\n' "$((4 * 1073741824))" > "$cgroup/memory.current"
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = "1|$((4 * 1048576))" ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 16) = "1|$((4 * 1048576))" ]]
 printf 'MemAvailable: 1048576 kB\n' > "$proc/meminfo"
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|1048576' ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 16) = '1|1048576' ]]
 pass
 
 TEST_CASE='unknown resource data and exhausted cgroups select one worker'
 printf 'unknown\n' > "$proc/meminfo"
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 16) = '1|0' ]]
 printf 'MemAvailable: 67108864 kB\n' > "$proc/meminfo"
 printf '%s\n' "$((9 * 1073741824))" > "$cgroup/memory.current"
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 16) = '1|0' ]]
 printf 'garbage\n' > "$cgroup/memory.max"
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 16) = '1|0' ]]
 printf '0::/../../outside\n' > "$proc/self/cgroup"
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 16) = '1|0' ]]
 printf '2:memory:/legacy\n' > "$proc/self/cgroup"
-[[ $(lifecycle_worker_resources "$proc" "$cgroup" 16) = '1|0' ]]
+[[ $(worker_linux_resources "$proc" "$cgroup" 16) = '1|0' ]]
 pass

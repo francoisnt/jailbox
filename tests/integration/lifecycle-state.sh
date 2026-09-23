@@ -11,6 +11,8 @@ source "$ROOT/tests/lib/resource-ledger.sh"
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh
 source "$ROOT/tests/lib/lifecycle-jobs.sh"
+# shellcheck source=scripts/lib/process-pool.sh
+source "$ROOT/scripts/lib/process-pool.sh"
 validate_lifecycle_contracts
 
 die() { printf 'FAIL [lifecycle-pool]: %s\n' "$*" >&2; exit 1; }
@@ -26,7 +28,8 @@ if [[ -n ${JAILBOX_LIFECYCLE_JOBS:-} ]]; then
     WORKERS=$JAILBOX_LIFECYCLE_JOBS
     WORKER_SELECTION="explicit override"
 else
-    IFS="|" read -r AVAILABLE_CPUS AVAILABLE_MEMORY < <(lifecycle_worker_resources /proc /sys/fs/cgroup)
+    resources=$(worker_host_resources) || die 'could not inspect worker resources'
+    IFS="|" read -r AVAILABLE_CPUS AVAILABLE_MEMORY <<< "$resources"
     WORKERS=$(lifecycle_worker_budget "$AVAILABLE_CPUS" "$AVAILABLE_MEMORY")
     WORKER_SELECTION="auto: $AVAILABLE_CPUS CPUs, $((AVAILABLE_MEMORY / 1024)) MiB available; budget 2 CPUs + 2048 MiB per worker, reserve 1024 MiB"
 fi
@@ -57,15 +60,14 @@ ledger_begin_run lifecycle-pool
 export LIFECYCLE_POOL_LEDGER="$LEDGER_FILE"
 ledger_prune_stale_runs
 
-declare -a worker_pids=() fixtures=() worker_logs=()
+declare -a fixtures=() worker_logs=()
 declare -A used_ports=() used_subnets=()
 pool_cleanup() {
-    local result=$? pid log child_ledger fixture safe=true
+    local result=$? log child_ledger fixture safe=true
     trap - EXIT
-    for pid in "${worker_pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
-    for pid in "${worker_pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+    process_pool_cancel || result=1
     # Also covers cancellation between registration and recording the PID in
-    # worker_pids, and CLIs orphaned by an unexpectedly killed worker.
+    # the process pool, and CLIs orphaned by an unexpectedly killed worker.
     if [[ $(ledger_file_state "$LEDGER_FILE" owners) != ended ]]; then safe=false; fi
     for log in "${worker_logs[@]}"; do
         [[ -f "$log/ledger" ]] || continue
@@ -125,16 +127,22 @@ for ((slot=1; slot<=WORKERS; slot++)); do
 done
 
 launch_worker() { exec bash "$ROOT/tests/lib/lifecycle-worker.sh" "$@"; }
+register_worker() {
+    ledger_start_worker launch_worker "$@" || return 1
+    PROCESS_POOL_LAUNCHED_PID=$LEDGER_WORKER_PID
+}
+report_worker() {
+    printf 'Lifecycle worker %s: exit %s, elapsed %ss\n' "$1" "$2" "$3"
+}
 printf 'Lifecycle: %s jobs, %s workers; logs: %s\n' "$(wc -l < "$RUN/jobs")" "$WORKERS" "$RUN"
 printf 'Worker selection: %s\n' "$WORKER_SELECTION"
 lifecycle_progress "$RUN"
+process_pool_init "$WORKERS" report_worker
 for ((slot=0; slot<WORKERS; slot++)); do
-    ledger_start_worker launch_worker "$RUN" "${worker_logs[$slot]}" "${fixtures[$slot]}" || die 'could not register worker'
-    worker_pids+=("$LEDGER_WORKER_PID")
+    process_pool_submit "$((slot + 1))" register_worker "$RUN" "${worker_logs[$slot]}" "${fixtures[$slot]}" || die 'could not register worker'
 done
 result=0
-for pid in "${worker_pids[@]}"; do wait "$pid" || result=1; done
-worker_pids=()
+process_pool_wait || result=1
 # Per-job files are written only after success; retain timings even on failure.
 find "$RUN/done" -type f -exec cat {} + | LC_ALL=C sort > "$RUN/timings"
 cut -d '|' -f1 "$RUN/catalog" | LC_ALL=C sort > "$RUN/expected-jobs"

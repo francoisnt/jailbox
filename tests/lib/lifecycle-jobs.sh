@@ -3,6 +3,8 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lifecycle-contracts.sh"
 # shellcheck source=tests/lib/fixture-ports.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-ports.sh"
+# shellcheck source=scripts/lib/worker-resources.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/worker-resources.sh"
 
 # A row is one job (three independent command fixtures). Each fault job keeps
 # its healthy trace and every interruption in one worker's project identity.
@@ -182,63 +184,7 @@ lifecycle_progress() {
     awk -F '|' -f "${BASH_SOURCE[0]%/*}/lifecycle/progress.awk" "${completed[@]}" "${manifests[@]}"
 }
 
-# Startup sizing is a scheduling estimate, not a memory reservation. Use the
-# process CPU affinity and visible cgroup-v2 ancestors, including containers
-# whose cgroup namespace exposes their own limits at the mount root.
-lifecycle_worker_resources() {
-    local proc=$1 cgroup=$2 cpus=${3:-}
-    local memory relative directory quota period limit used available
-    if [[ -z "$cpus" ]]; then cpus=$(nproc 2>/dev/null) || cpus=1; fi
-    [[ "$cpus" =~ ^[1-9][0-9]{0,5}$ ]] || cpus=1
-    memory=$(awk '$1 == "MemAvailable:" && $2 ~ /^[0-9]+$/ {print $2; exit}' "$proc/meminfo" 2>/dev/null) || memory=0
-    [[ "$memory" =~ ^[0-9]{1,12}$ ]] || memory=0
-    memory=$((10#$memory))
-    relative=$(awk -F: '$1 == "0" && $2 == "" {print $3; exit}' "$proc/self/cgroup" 2>/dev/null) || relative=""
-    # Unknown or legacy cgroup layouts cannot establish usable headroom.
-    if [[ "$relative" != /* || "$relative" = *'/../'* || "$relative" = */.. || ! -d "$cgroup$relative" ]]; then
-        printf '1|0\n'; return
-    fi
-    directory="$cgroup${relative%/}"
-    while :; do
-        if [[ -f "$directory/cpu.max" ]]; then
-            quota=""; period=""
-            read -r quota period < "$directory/cpu.max" || true
-            if [[ "$quota" != max ]]; then
-                if [[ "$quota" =~ ^[0-9]{1,12}$ && "$period" =~ ^[1-9][0-9]{0,11}$ ]]; then
-                    available=$((10#$quota / 10#$period))
-                    ((available >= 1)) || available=1
-                    if ((available < cpus)); then cpus=$available; fi
-                else
-                    cpus=1
-                fi
-            fi
-        fi
-        if [[ -f "$directory/memory.max" ]]; then
-            limit=""; used=""
-            read -r limit < "$directory/memory.max" || true
-            if [[ "$limit" != max ]]; then
-                if [[ -r "$directory/memory.current" ]]; then read -r used < "$directory/memory.current" || true; fi
-                if [[ "$limit" =~ ^[0-9]{1,15}$ && "$used" =~ ^[0-9]{1,15}$ ]]; then
-                    available=$(((10#$limit - 10#$used) / 1024))
-                    ((available >= 0)) || available=0
-                    if ((available < memory)); then memory=$available; fi
-                else
-                    memory=0
-                fi
-            fi
-        fi
-        [[ "$directory" != "$cgroup" ]] || break
-        directory=${directory%/*}
-    done
-    printf '%s|%s\n' "$cpus" "$memory"
-}
 
 lifecycle_worker_budget() {
-    local cpus="$1" memory="$2" workers memory_workers
-    workers=$((cpus / 2))
-    memory_workers=$(((memory - 1048576) / 2097152))
-    if ((memory_workers < workers)); then workers=$memory_workers; fi
-    ((workers >= 1)) || workers=1
-    ((workers <= 16)) || workers=16
-    printf '%s\n' "$workers"
+    worker_budget "$1" "$2" 2 2097152 1048576 16
 }

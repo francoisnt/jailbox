@@ -21,7 +21,9 @@ test_log_entrypoint() {
     shift
     [[ ${JAILBOX_TEST_LOG_SCRIPT:-} != "$script" ]] || return 0
     local result=0
-    JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 | test_timestamp_stream | test_display_stream || result=$?
+    local terminal=false
+    [[ ! -t 1 || ${TERM:-dumb} = dumb ]] || terminal=true
+    JAILBOX_TEST_PROGRESS_TERMINAL=$terminal JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 | test_timestamp_stream | test_display_stream || result=$?
     exit "$result"
 }
 
@@ -53,10 +55,13 @@ test_display_stream() {
         message=${line#\[*\] }
         if [[ "$message" = 'Progress: '* ]]; then
             status="$message"
+            [[ "$message" != 'Progress: ShellCheck:'* && "$message" != 'Progress: Portable:'* && "$message" != 'Progress: Stages:'* ]] || status=${message#Progress: }
         else
             [[ -z "$status" ]] || printf '\r\033[2K'
             printf '%s\n' "$line"
-            if [[ "$message" = 'Lifecycle: '*' cases completed;'* || "$message" = 'FAIL [lifecycle-pool]'* ]]; then
+            if [[ "$message" = 'Lifecycle: '*' cases completed;'* || "$message" = 'FAIL [lifecycle-pool]'* ||
+                  "$message" = 'ShellCheck passed'* || "$message" = 'ShellCheck failed'* || "$message" = 'ShellCheck interrupted'* ||
+                  "$message" = 'Stages finished:'* || "$message" = 'Portable units:'* ]]; then
                 status=""
             fi
         fi

@@ -80,12 +80,9 @@ run_suite() {
 }
 
 run_unit_suites() {
-    local test_file label
-
-    while IFS= read -r test_file; do
-        label="unit/$(basename "${test_file%.sh}")"
-        run_suite "$label" bash "$test_file"
-    done < <(find "$SCRIPT_DIR/unit" -maxdepth 1 -type f -name '*.sh' -print | sort)
+    # shellcheck source=tests/lib/portable-pool.sh
+    source "$SCRIPT_DIR/lib/portable-pool.sh"
+    run_portable_unit_suites
 }
 
 print_summary() {
