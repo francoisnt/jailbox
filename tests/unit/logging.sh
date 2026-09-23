@@ -141,3 +141,15 @@ for result in passed failed interrupted; do
     cmp "$FIXTURE/input" "$FIXTURE/output"
 done
 pass
+
+TEST_CASE='phase boundaries retain elapsed time and failure status without sleeping'
+TEST_PHASE_LOG="$FIXTURE/phases"
+test_phase_begin build > "$FIXTURE/phase-output"
+TEST_PHASE_STARTED=$((SECONDS - 7))
+test_phase_begin checks >> "$FIXTURE/phase-output"
+TEST_PHASE_STARTED=$((SECONDS - 3))
+test_phase_end 7 >> "$FIXTURE/phase-output"
+test_phase_end 0
+[[ $(cat "$TEST_PHASE_LOG") = $'build|7|0\nchecks|3|7' ]]
+grep -q 'Phase finished: checks.*status=7' "$FIXTURE/phase-output"
+pass

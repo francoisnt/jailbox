@@ -85,3 +85,26 @@ test_display_stream() {
     [[ -z "$status" ]] || printf '\r\033[2K%s\n' "$status"
     return 0
 }
+
+# Sequential phase boundaries inside an isolated stage worker. Keep explicit
+# records alongside timestamped output, including phases stopped by failure.
+TEST_PHASE_NAME=""
+TEST_PHASE_STARTED=0
+TEST_PHASE_LOG=""
+test_phase_end() {
+    local status=${1:-0} elapsed
+    [[ -n "$TEST_PHASE_NAME" ]] || return 0
+    elapsed=$((SECONDS - TEST_PHASE_STARTED))
+    printf 'Phase finished: %s · %ss · status=%s\n' "$TEST_PHASE_NAME" "$elapsed" "$status" || return 1
+    if [[ -n "$TEST_PHASE_LOG" ]]; then
+        printf '%s|%s|%s\n' "$TEST_PHASE_NAME" "$elapsed" "$status" >> "$TEST_PHASE_LOG" || return 1
+    fi
+    TEST_PHASE_NAME=""
+}
+
+test_phase_begin() {
+    test_phase_end || return 1
+    TEST_PHASE_NAME=$1
+    TEST_PHASE_STARTED=$SECONDS
+    printf 'Phase started: %s\n' "$TEST_PHASE_NAME"
+}

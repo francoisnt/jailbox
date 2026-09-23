@@ -1,5 +1,6 @@
 """Exercise bounded stage lifetime, assertion/crash results and cancellation."""
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -49,6 +50,11 @@ def run_case(workers, cancel=False, ledger=False):
                         assert (root / f"{stage}.cleaned").exists()
                         expected = "0" if stage in ("one", "two") else "1"
                         assert (root / f"{stage}.exit-status").read_text().strip() == expected
+                for stage in ("one", "two") if cancel else stages:
+                    lines = (root / f"{stage}.log").read_text().splitlines()
+                    assert lines[-1].endswith("fixture cleanup finished"), lines
+                    assert all(re.match(r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\] ", line) for line in lines)
+                    assert (root / f"{stage}.phases").read_text().startswith("fixture|")
                 assert (root / "parent.cleaned").exists()
                 assert (root / "worker-context").stat().st_mode & 0o777 == 0o600
             finally:

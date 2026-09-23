@@ -86,8 +86,6 @@ jobs:
       codium_version: ${{ needs.resolve.outputs.codium_version }}
       remote_ssh_version: ${{ needs.resolve.outputs.remote_ssh_version }}
       open_remote_ssh_version: ${{ needs.resolve.outputs.open_remote_ssh_version }}
-      reh_release: ${{ needs.resolve.outputs.codium_version }}
-      reh_commit: ${{ needs.codium-commit.outputs.codium_commit }}
 
   report:
     needs: [resolve, codium-commit, test-gate]

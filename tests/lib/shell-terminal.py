@@ -164,6 +164,10 @@ def exercise(args):
             b"&& printf '__customizations_%s__\\n' kept",
             b"__customizations_kept__",
         )
+        if args.startup_only:
+            tty.send(b"exit 0\n")
+            tty.finish(0, restored=True)
+            return
         tty.request(b"stty size", b"31 97")
         tty.resize(43, 113)
         tty.request(b"stty size", b"43 113")
@@ -208,11 +212,15 @@ def main():
     parser.add_argument("--stdin-pipe", action="store_true")
     parser.add_argument("--stdout-pipe", action="store_true")
     parser.add_argument("--exercise", action="store_true")
+    parser.add_argument("--startup-only", action="store_true",
+                        help="check login environment and customization without repeating terminal mechanics")
     parser.add_argument("--proxy", default="")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.command[:1] == ["--"]:
         args.command.pop(0)
+    if args.startup_only and not args.exercise:
+        parser.error("--startup-only requires --exercise")
     if not args.command:
         parser.error("a command is required")
     try:

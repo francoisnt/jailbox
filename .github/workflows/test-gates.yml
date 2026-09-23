@@ -29,14 +29,6 @@ on:
         description: Open Remote SSH version override; empty uses versions.env
         type: string
         default: ""
-      reh_release:
-        description: VSCodium REH release override; empty uses versions.env
-        type: string
-        default: ""
-      reh_commit:
-        description: VSCodium REH commit override; empty uses versions.env
-        type: string
-        default: ""
 
 jobs:
   portable:
@@ -102,9 +94,6 @@ jobs:
         run: bash tests/ci/setup-linux.sh
 
       - name: Run runtime gate
-        env:
-          JAILBOX_E2E_REH_RELEASE: ${{ inputs.reh_release }}
-          JAILBOX_E2E_REH_COMMIT: ${{ inputs.reh_commit }}
         run: bash tests/run runtime
 
       - name: Upload runtime logs

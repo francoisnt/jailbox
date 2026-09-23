@@ -20,7 +20,7 @@ cmp "$OUTPUT.expected" "$OUTPUT.actual"
 printf 'binary\0stdin\377\n' > "$OUTPUT.input"
 cli exec cat < "$OUTPUT.input" > "$OUTPUT.actual"
 cmp "$OUTPUT.input" "$OUTPUT.actual"
-bash "$ROOT/tests/lib/shell-runtime.sh" "$ROOT" "$PROJECT" "$CONTAINER" "$OUTPUT.shell"
+bash "$ROOT/tests/lib/shell-runtime.sh" "$ROOT" "$PROJECT" "$CONTAINER" "$OUTPUT.shell" frontend
 podman inspect "$CONTAINER" "${CONTAINER}-proxy" > "$OUTPUT.before"
 export JAILBOX_CONFIG_EGRESS_ALLOW_3=changed.example.com
 if cli exec touch /home/jailbox/project/attachment-must-not-run > "$OUTPUT.out" 2> "$OUTPUT.err"; then

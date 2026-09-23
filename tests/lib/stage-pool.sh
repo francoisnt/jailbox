@@ -17,7 +17,7 @@ stage_pool_cleanup() {
 
 stage_pool_launch() {
     local stage=$1 index=$2
-    local -a command=(bash "$JAILBOX_DIR/tests/lib/stage-worker.sh"
+    local -a command=(bash "$JAILBOX_DIR/tests/lib/stage-log.sh"
         "$stage_runner" "$stage_logs/worker-context" "$stage_callback"
         "$stage" "$stage_logs" "$index" "$stage_total")
     if declare -F ledger_start_worker >/dev/null; then

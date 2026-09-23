@@ -114,10 +114,31 @@ also cap lint, portable, runtime, or editor concurrency for diagnosis without ch
 
 Runtime and editor keep image preparation before dependent tests. Their stage
 runners use the shared pool, report compact progress, and retain per-stage logs,
-statuses, worker counts, and timings in the reported log directory. All selected
+statuses, worker counts, and timings in the reported log directory. Stage logs
+carry capture timestamps. Runtime stages also write `<stage>.phases` records
+(`phase|elapsed-seconds|exit-status`) covering preparation, launch, assertions,
+recovery, and cleanup. These timings include the whole phase, not just CPU work.
+Stopped and missing proxy recovery run in the lifecycle matrix; runtime owns
+proxy enforcement and frontend launch integration.
+SSH forwarding is exercised through the CLI-created sandbox in headless tests;
+wrapper contract tests focus on image hardening and startup. VSCodium remote
+server bootstrap and attachment, including Alpine, belong to the editor gate.
+Portable tests retain simulated failures, declaration propagation, packaging,
+and test-harness regressions; matrix tests retain real engine state transitions
+and interruption cleanup. Similar assertions at those boundaries are intentional:
+a simulated engine cannot establish real resource behavior, and a working SSH
+session cannot establish editor task inheritance. Each gate prepares its own
+required images so it remains independently runnable.
+The full terminal exit-status and direct-signal sequence runs once per runtime
+distribution. The later filtered-frontend check retains real login startup,
+proxy environment, customization, and changed-policy refusal without repeating
+the baseline attachment or terminal mechanics. All selected
 stages are attempted and any crash or assertion failure fails the gate. Editor
 workers retain their slot through teardown; cache writes retain their existing
-locks. Runtime and editor fixture allocation reserves SSH ports across each
+locks. Debian contract checks still build from restrictive input permissions;
+preparation then retains a normally built `jailbox-wrapper-debian` tag so later
+CLI builds can reuse its layers through project cleanup. Preparation-only runs
+use normal inputs directly. Runtime and editor fixture allocation reserves SSH ports across each
 run, including intervals when stop/reopen tests leave them unbound. Workers
 start in fresh Bash processes so coordinator error handling cannot suppress
 their errexit behavior. Cancellation joins workers before the coordinator releases shared state.

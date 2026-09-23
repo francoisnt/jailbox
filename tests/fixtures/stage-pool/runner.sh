@@ -10,10 +10,17 @@ if [[ ${STAGE_TEST_LEDGER:-0} = 1 ]]; then
     STAGE_WORKER_VARIABLES="LEDGER_DIR LEDGER_FILE"
 fi
 worker_tool_budget() { printf '%s\n' "$STAGE_TEST_WORKERS"; }
+cleanup_fixture_stage() {
+    local status=$?
+    test_phase_end "$status"
+    printf 'fixture cleanup finished\n'
+    touch "$fixture_logs/$fixture_name.cleaned"
+}
 fixture_stage() {
     fixture_name=$1 fixture_logs=$2
     local stage=$1 logs=$2
-    trap 'touch "$fixture_logs/$fixture_name.cleaned"' EXIT
+    trap cleanup_fixture_stage EXIT
+    test_phase_begin fixture
     if [[ ${STAGE_TEST_LEDGER:-0} = 1 ]]; then
         grep -q "^owner $BASHPID " "$LEDGER_FILE" || return 1
     fi

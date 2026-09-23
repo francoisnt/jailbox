@@ -10,7 +10,6 @@
 #   run_log_path    <dir>                     repository-relative form for output
 #   write_run_meta  <dir>                     date, jailbox git SHA, host, podman
 #   run_meta_editor <dir> <editor-bin>        editor version/commit + remote extension
-#   run_meta_reh    <dir> <release> <commit>  VSCodium REH build under test
 #   run_meta_image  <dir> <name> <ref>        image ref, resolved digest, os-release
 
 # Run directories live under JAILBOX_DIR. Printing them relative to it keeps
@@ -71,16 +70,6 @@ run_meta_editor() {
     meta_kv "$dir" EDITOR_VERSION "$version"
     meta_kv "$dir" EDITOR_COMMIT "$commit"
     meta_kv "$dir" EDITOR_REMOTE_EXTENSION "$remote_ext"
-}
-
-run_meta_reh() {
-    local dir="$1" release="$2" commit="$3"
-
-    meta_kv "$dir" REH_RELEASE "$release"
-    meta_kv "$dir" REH_COMMIT "$commit"
-    # The Alpine stage is the only REH probe target; record its artifact URL.
-    meta_kv "$dir" REH_DOWNLOAD_URL \
-        "https://github.com/VSCodium/vscodium/releases/download/${release}/vscodium-reh-alpine-x64-${release}.tar.gz"
 }
 
 run_meta_image() {

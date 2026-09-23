@@ -61,17 +61,6 @@ stage_port() {
     esac
 }
 
-stage_forward_port() {
-    case "$1" in
-        debian)       echo 23229 ;;
-        alpine)       echo 23230 ;;
-        fedora)       echo 23231 ;;
-        uid-owned-by-other-user) echo 23232 ;;
-        user-conflict)           echo 23233 ;;
-        *) die "unknown stage: $1" ;;
-    esac
-}
-
 # ── SSH helpers ───────────────────────────────────────────────────────────────
 
 setup_ssh_keys() {
@@ -153,43 +142,14 @@ assert_eq() {
     fi
 }
 
-assert_local_forwarding() {
-    local config="$1" port="$2" desc="$3"
-    local forward_pid=""
-
-    ssh -F "$config" -N -L "127.0.0.1:${port}:127.0.0.1:2222" jailbox-test >/dev/null 2>&1 &
-    forward_pid=$!
-
-    for _ in $(seq 1 20); do
-        if timeout 1 bash -c \
-            "exec 3<>/dev/tcp/127.0.0.1/$port; IFS= read -r line <&3; [[ \$line == SSH-* ]]" \
-            2>/dev/null; then
-            kill "$forward_pid" >/dev/null 2>&1 || true
-            wait "$forward_pid" 2>/dev/null || true
-            pass "$desc"
-            return 0
-        fi
-        sleep 0.1
-    done
-
-    kill "$forward_pid" >/dev/null 2>&1 || true
-    wait "$forward_pid" 2>/dev/null || true
-    echo "  Forwarding diagnostic:"
-    ssh -vv -F "$config" -o ConnectTimeout=3 -N \
-        -L "127.0.0.1:${port}:127.0.0.1:2222" jailbox-test 2>&1 \
-        | sed 's/^/    /' &
-    forward_pid=$!
-    sleep 1
-    kill "$forward_pid" >/dev/null 2>&1 || true
-    wait "$forward_pid" 2>/dev/null || true
-    fail "$desc"
-}
-
 # ── run_case ──────────────────────────────────────────────────────────────────
 # Designed to run inside a subshell. PASSED/FAILED are subshell-local;
 # written to $log_dir/$stage.counts at exit for the parent to collect.
 
 cleanup_wrapper_stage() {
+    local status=$?
+    test_phase_end "$status" || true
+    test_phase_begin cleanup || true
     echo "$PASSED $FAILED" > "$stage_counts_file"
     rm -rf "$ssh_dir"
     rm -rf "$home_dir"
@@ -198,12 +158,13 @@ cleanup_wrapper_stage() {
     rm -rf "$build_context"
     podman stop "$ctr" >/dev/null 2>&1 || true
     podman rm "$ctr" >/dev/null 2>&1 || true
+    test_phase_end "$status" || true
 }
 
 run_case() {
     local stage="$1"
     local log_dir="$2"
-    local port forward_port test_build_args expect_wrapper_failure test_image_id wrapper_context
+    local port test_build_args expect_wrapper_failure test_image_id wrapper_context install_cache_bust
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope. Initialize here so the trap can
     # always reference them safely under set -u.
@@ -215,7 +176,6 @@ run_case() {
     build_context=""
 
     port=$(stage_port "$stage")
-    forward_port=$(stage_forward_port "$stage")
     test_build_args=()
     expect_wrapper_failure=false
 
@@ -247,6 +207,7 @@ run_case() {
     podman stop "$ctr" 2>/dev/null || true
     podman rm   "$ctr" 2>/dev/null || true
 
+    test_phase_begin dev-image-build || return 1
     # Build test dev image
     if ! test_log_capture "$build_log" podman build \
             --target "$stage" \
@@ -271,20 +232,22 @@ run_case() {
     # Model runtime inputs copied by a restrictive installer. Startup and the
     # unprivileged runtime checks must still be able to read installed helpers.
     wrapper_context="$JAILBOX_DIR/src/container"
-    if [[ "$stage" = debian ]]; then
+    if [[ "$stage" = debian && "$PREPARE_ONLY" = false ]]; then
         build_context=$(mktemp -d) || return 1
         cp -R "$JAILBOX_DIR/src/container/." "$build_context/" || return 1
         find "$build_context/runtime" -type d -exec chmod 0700 {} + || return 1
         find "$build_context/runtime" -type f -exec chmod 0600 {} + || return 1
         wrapper_context="$build_context"
     fi
+    test_phase_begin wrapper-image-build || return 1
     # Build jailbox wrapper
+    install_cache_bust=$(wrapper_install_cache_bust) || return 1
     if ! test_log_capture "$build_log" podman build \
             -t "$wrapper_image" \
             -f "$JAILBOX_DIR/src/container/Containerfile.wrapper" \
             --pull=never \
             --build-arg "DEV_IMAGE=${test_image_id}" \
-            --build-arg "JAILBOX_INSTALL_CACHE_BUST=$(wrapper_install_cache_bust)" \
+            --build-arg "JAILBOX_INSTALL_CACHE_BUST=$install_cache_bust" \
             --build-arg "USER_ID=$(id -u)" \
             "$wrapper_context"; then
         if [ "$expect_wrapper_failure" = true ] && grep -Eq "already exists in the dev image|already belongs to existing image user" "$build_log"; then
@@ -307,6 +270,7 @@ run_case() {
     # performs every wrapper/container assertion.
     [ "$PREPARE_ONLY" = false ] || return 0
 
+    test_phase_begin container-contract || return 1
     assert_probe_hardening "$test_image"
 
     setup_ssh_keys "$ssh_dir" "$port"
@@ -366,10 +330,24 @@ run_case() {
     else
         fail 'SSH forwarding policy'
     fi
-    assert_local_forwarding "$ssh_dir/config" "$forward_port" "SSH local forwarding works"
     # Last: mutates effective read-only and other host-module globals (safe in this
     # per-stage subshell, but keep it after the plain container assertions).
     assert_readonly_mount_validation "$ssh_dir/config" "$project_dir"
+
+    # Keep the normal-input wrapper tagged through project cleanup. Debian's
+    # restrictive-input build above remains the one used for contract checks.
+    if [[ "$stage" = debian ]]; then
+        test_phase_begin canonical-wrapper-cache || return 1
+        if ! test_log_capture "$log_dir/$stage.canonical-build.log" podman build \
+            -t "$wrapper_image" -f "$JAILBOX_DIR/src/container/Containerfile.wrapper" \
+            --pull=never --build-arg "DEV_IMAGE=$test_image_id" \
+            --build-arg "JAILBOX_INSTALL_CACHE_BUST=$install_cache_bust" \
+            --build-arg "USER_ID=$(id -u)" "$JAILBOX_DIR/src/container"; then
+            fail 'canonical wrapper cache preparation'
+            tail -20 "$log_dir/$stage.canonical-build.log" >&2
+            return 1
+        fi
+    fi
 }
 
 wrapper_install_cache_bust() (

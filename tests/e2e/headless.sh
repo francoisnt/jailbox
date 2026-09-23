@@ -14,9 +14,6 @@
 # discovered; remove it by hand, by exact name.
 #
 # Usage: tests/e2e/headless.sh [stage...]
-# Env:   JAILBOX_E2E_REH_RELEASE / JAILBOX_E2E_REH_COMMIT
-#                              VSCodium REH build to smoke-test on Alpine
-#                              (defaults: CODIUM_VERSION/CODIUM_COMMIT in versions.env)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,8 +26,6 @@ fi
 
 # shellcheck source=src/host/core/project/hash.sh
 source "$JAILBOX_DIR/src/host/core/project/hash.sh"
-# shellcheck source=versions.env
-source "$JAILBOX_DIR/versions.env"
 # shellcheck source=tests/lib/run-meta.sh
 source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 # shellcheck source=tests/lib/resource-ledger.sh
@@ -39,11 +34,6 @@ source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
 source "$JAILBOX_DIR/tests/lib/fixture-ports.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
-
-# VSCodium REH build the Alpine stage probes; shared by the probe and the run
-# metadata. Defaults come from versions.env; the canary overrides via env.
-REH_RELEASE="${JAILBOX_E2E_REH_RELEASE:-$CODIUM_VERSION}"
-REH_COMMIT="${JAILBOX_E2E_REH_COMMIT:-$CODIUM_COMMIT}"
 
 PASSED=0
 FAILED=0
@@ -79,10 +69,6 @@ Stages: ${ALL_STAGES[*]}
 
 Requires: podman, ssh, ssh-keygen, curl
 
-Environment:
-  JAILBOX_E2E_REH_RELEASE
-  JAILBOX_E2E_REH_COMMIT  VSCodium REH build to smoke-test on Alpine.
-                          Defaults: CODIUM_VERSION/CODIUM_COMMIT in versions.env.
 EOF
 }
 
@@ -130,16 +116,6 @@ stage_forward_port() {
     esac
 }
 
-stage_reh_probe_port() {
-    case "$1" in
-        debian)       echo 25229 ;;
-        alpine)       echo 25230 ;;
-        fedora)       echo 25231 ;;
-        egress)             echo 25234 ;;
-        *) die "unknown stage: $1" ;;
-    esac
-}
-
 stage_test_image() {
     case "$1" in
         egress) echo "jailbox-test-debian" ;;
@@ -179,56 +155,6 @@ assert_local_forwarding() {
     fail "$desc"
 }
 
-assert_vscodium_reh_probe() {
-    local config="$1" ctr="$2" port="$3" desc="$4"
-    local remote_output remote_output_file remote_rc remote_command listening_on tunnel_pid=""
-
-    # Mirrors the current VSCodium/Open Remote SSH server used in editor smoke
-    # tests (file-scope REH_RELEASE/REH_COMMIT, from versions.env or env).
-    local reh_release="$REH_RELEASE"
-    local reh_commit="$REH_COMMIT"
-
-    remote_output_file="$(mktemp)"
-    printf -v remote_command 'bash -s -- %q %q' "$reh_release" "$reh_commit"
-    ssh -F "$config" -o ConnectTimeout=3 "$ctr" \
-        "$remote_command" >"$remote_output_file" 2>&1 < "$JAILBOX_DIR/tests/lib/editor/vscodium-reh-probe.sh"
-    remote_rc=$?
-    remote_output="$(cat "$remote_output_file")"
-    rm -f "$remote_output_file"
-
-    if [[ "$remote_rc" -ne 0 ]]; then
-        fail "$desc (server did not start)"
-        printf '%s\n' "$remote_output"
-        return 0
-    fi
-
-    listening_on="$(printf '%s\n' "$remote_output" | sed -n 's/^LISTENING_ON=//p' | tail -1)"
-    if [[ -z "$listening_on" ]]; then
-        fail "$desc (missing listening port)"
-        if [[ -n "$remote_output" ]]; then
-            printf '%s\n' "$remote_output"
-        else
-            echo "  No output captured from remote REH start script"
-        fi
-        return 0
-    fi
-
-    ssh -F "$config" -N -L "127.0.0.1:${port}:127.0.0.1:${listening_on}" "$ctr" >/dev/null 2>&1 &
-    tunnel_pid=$!
-    sleep 0.5
-
-    if curl -sS --max-time 3 -D - -o /dev/null "http://127.0.0.1:${port}/version" >/dev/null 2>&1; then
-        kill "$tunnel_pid" >/dev/null 2>&1 || true
-        wait "$tunnel_pid" 2>/dev/null || true
-        pass "$desc"
-        return 0
-    fi
-
-    kill "$tunnel_pid" >/dev/null 2>&1 || true
-    wait "$tunnel_pid" 2>/dev/null || true
-    fail "$desc (HTTP probe failed for remote port $listening_on)"
-}
-
 # ── stub VS Code ──────────────────────────────────────────────────────────────
 # Minimal stub: answer extension inventory and validate launch arguments/settings.
 # The real SSH assertions run after jailbox exits, while the container is up.
@@ -243,11 +169,15 @@ setup_stub_editor() {
 # Designed to run inside a subshell. PASSED/FAILED are subshell-local.
 
 cleanup_e2e_stage() {
+    local status=$?
+    test_phase_end "$status" || true
+    test_phase_begin cleanup || true
     echo "$PASSED $FAILED" > "$stage_counts_file"
     if [[ -n "$project_dir" ]]; then
         (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --clean 2>/dev/null || true)
         rm -rf "$project_dir"
     fi
+    test_phase_end "$status" || true
 }
 
 run_e2e_case() {
@@ -266,6 +196,7 @@ run_e2e_case() {
     echo ""
     echo "── e2e: $stage (user: jailbox) ─────────────────────────────────────"
 
+    test_phase_begin fixture || return 1
     project_dir=$(test_fixture_project "/tmp/jailbox-e2e-$stage" "$stub_dir/ports" test_fixture_port_available) || return 1
     # Before anything can create them, and outside the fixture directory.
     ledger_record_project_resources "$project_dir" || return 1
@@ -317,6 +248,7 @@ EOF
 
     export JAILBOX_E2E_PROJECT="$project_dir"
 
+    test_phase_begin initial-launch || return 1
     # ── Phase 1: full jailbox pipeline ────────────────────────────────────────
     if (
         cd "$project_dir"
@@ -329,15 +261,15 @@ EOF
         return 1
     fi
 
+    test_phase_begin attachment-checks || return 1
     # ── Phase 2: headless assertions (container still running) ────────────────
     local ssh_cfg
     ssh_cfg=$(jailbox_ssh_config "$project_dir")
     local ctr
     ctr=$(jailbox_container_name "$project_dir")
     assert_status "$project_dir" running
-    local forward_port reh_probe_port
+    local forward_port
     forward_port=$(stage_forward_port "$stage")
-    reh_probe_port=$(stage_reh_probe_port "$stage")
 
     # Shell and tools
     assert_ssh "$ssh_cfg" "$ctr" "login shell is executable" \
@@ -362,14 +294,9 @@ EOF
         fail 'public shell terminal and login behavior'
     fi
     assert_local_forwarding "$ssh_cfg" "$ctr" "$forward_port" "SSH local forwarding works"
-    if [[ "$stage" == "alpine" ]]; then
-        assert_vscodium_reh_probe "$ssh_cfg" "$ctr" "$reh_probe_port" "VSCodium REH reachable through OpenSSH tunnel"
-    fi
 
     # Mounts
     assert_ssh "$ssh_cfg" "$ctr" "home writable" "test -w \"\$HOME\""
-    assert_ssh "$ssh_cfg" "$ctr" "project mount writable" \
-        "touch /home/jailbox/project/.e2e-test && rm /home/jailbox/project/.e2e-test"
     assert_ssh "$ssh_cfg" "$ctr" "editor-style project write works with managed UID" \
         "printf '%s\n' edited > /home/jailbox/project/editor-write.txt"
     assert_ssh "$ssh_cfg" "$ctr" "git index write works with managed UID" \
@@ -398,6 +325,7 @@ EOF
         fail "up creates no editor settings"
     fi
 
+    test_phase_begin network-checks || return 1
     # Egress policy (only run for the egress stage)
     if [[ "$stage" == "egress" ]]; then
         local proxy_ctr="${ctr}-proxy" proxy_url state_hash filter_path
@@ -468,6 +396,7 @@ EOF
         podman logs "$proxy_ctr" 2>&1 || true
     fi
 
+    test_phase_begin convergence || return 1
     # ── Phase 3: convergence and explicit stop boundary ────────────────────
     local relaunch_output volume_name generation_dir container_id generation_before
     volume_name="${ctr}-home"
@@ -503,21 +432,8 @@ EOF
     # shellcheck disable=SC2016
     assert_ssh "$ssh_cfg" "$ctr" "reuse and resume preserve home content" 'test "$(cat "$HOME/retention-marker")" = retained'
     if [[ "$stage" == egress ]]; then
-        podman stop "${ctr}-proxy" >/dev/null
-        if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor); then
-            pass "up starts a stopped proxy beneath a running development container"
-        else
-            fail "mixed-state proxy resume failed"
-            report_proxy_connectivity "$ssh_cfg" "$ctr"
-        fi
-        podman rm -f "${ctr}-proxy" >/dev/null
-        if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor); then
-            pass "up creates a missing proxy on surviving networks"
-        else
-            fail "partial proxy convergence failed"
-            report_proxy_connectivity "$ssh_cfg" "$ctr"
-        fi
-        assert_eq "partial convergence preserves development identity" "$container_id" "$(podman container inspect "$ctr" --format "{{.Id}}")"
+        # Mixed and missing proxy recovery belong to the lifecycle matrix.
+        test_phase_begin digest-refusals || return 1
         local digest malformed
         digest=$(podman container inspect "$ctr" --format '{{index .Config.Labels "jailbox.config-digest"}}')
         for malformed in '' invalid "$digest"$'\n'; do
@@ -534,6 +450,7 @@ EOF
         done
     fi
 
+    test_phase_begin stop || return 1
     if (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" stop) >/dev/null 2>&1; then
         pass "stop removes the running sandbox"
     else
@@ -579,6 +496,7 @@ EOF
     if [[ "$stage" == egress ]]; then
         printf 'DEV_IMAGE=%s\nEDITOR=codium\nEGRESS_ALLOW=example.com\nREADONLY_PATHS=jailbox.conf,config/runtime.conf,protected-policy\n' "$dev_image" > "$project_dir/config/runtime.conf"
     fi
+    test_phase_begin frontend-relaunch || return 1
     # A bare launch after the explicit stop restores the positive editor-stub
     # coverage and proves that editor discovery changes only filtered policy.
     if (
@@ -610,6 +528,7 @@ EOF
         else
             fail "bare VSCodium launch adds editor bootstrap hosts"
         fi
+        test_phase_begin frontend-attachment || return 1
         if bash "$JAILBOX_DIR/tests/lib/frontend-attachment.sh" "$JAILBOX_DIR" "$project_dir" "$ctr" "$log_dir/$stage.frontend" "$dev_image"; then
             pass 'filtered editor launch supports public exec and shell'
         else
@@ -630,20 +549,8 @@ EOF
     else
         fail "stop removes the bare-launch sandbox"
     fi
+    test_phase_begin home-lifecycle || return 1
     assert_home_lifecycle "$project_dir" "$ctr" "$dev_image"
-}
-
-report_proxy_connectivity() {
-    local config="$1" container="$2" name
-    for name in "$container" "${container}-proxy"; do
-        printf '  [diag] %s network attachments:\n' "$name"
-        podman container inspect "$name" --format '{{json .NetworkSettings.Networks}}' || true
-        printf '  [diag] %s routes and ARP cache:\n' "$name"
-        podman exec "$name" sh -c 'cat /proc/net/route /proc/net/arp' || true
-    done
-    echo '  [diag] development-to-proxy request after readiness failure:'
-    ssh -F "$config" -o ConnectTimeout=3 "$container" \
-        'curl -q --noproxy "" --proxy "$HTTP_PROXY" -v --connect-timeout 3 --max-time 5 http://jailbox-egress-diagnostic.invalid/' || true
 }
 
 # Exercise ephemeral generations and image cleanup across wrapper distributions.
@@ -805,7 +712,6 @@ main() {
     log_dir="$JAILBOX_DIR/testlog/e2e-$(date +%Y%m%d-%H%M%S)-$$"
     mkdir -p "$log_dir"
     write_run_meta "$log_dir"
-    run_meta_reh "$log_dir" "$REH_RELEASE" "$REH_COMMIT"
     stub_dir=$(mktemp -d)
     trap 'rm -rf "$stub_dir"' EXIT
     mkdir "$stub_dir/ports"

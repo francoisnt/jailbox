@@ -32,6 +32,8 @@ cmp "$tmp/settings" "$tmp/home/.vscode-server/data/Machine/settings.json"
 # runs after function locals disappear and must retain the container identity.
 result=0
 (
+    # shellcheck source=tests/lib/logging.sh
+    source "$ROOT/tests/lib/logging.sh"
     # shellcheck disable=SC1090
     source <(sed -n '/^cleanup_wrapper_stage() {/,/^}/p; /^run_case() {/,/^}/p' "$ROOT/tests/integration/wrapper-images.sh")
     # shellcheck disable=SC2034 # Inputs to the extracted stage.
