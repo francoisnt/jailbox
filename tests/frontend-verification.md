@@ -73,12 +73,27 @@ client for the selection/composition switch, while the selected real editor
 proves attachment before and after it. Both pinned clients are exercised by
 their respective jobs; this is not a claim that both GUI binaries ran in one job.
 
+## Closing consumer coverage audit
+
+The existing frontend is the consumer under test. Public version and schema
+commands are verified directly; an external orchestrator's version-range policy
+is not implemented by jailbox and needs no duplicate consumer fixture here.
+
+| Boundary | Existing evidence and focused integration coverage |
+|---|---|
+| Version framing, invalid stamps, source and installed version identity | `unit/version.sh`, `portable/smoke.sh` |
+| Schema framing, new declarations, invalid declarations and dependency isolation | `unit/machine-inventory.sh`, `unit/public-api.sh` |
+| File-to-environment composition, identical up/connection-info inputs, command order and failed producers with plausible stdout | `unit/frontend-file-policy.sh`, `unit/frontend-editor.sh`, `unit/frontend-cli.sh` |
+| Required connection framing and semantics, missing/duplicate/truncated records, opaque future values | `unit/frontend-connection.sh`; `unit/frontend-editor.sh` proves a future field preserves launch arguments/settings and duplicate or invalid required values prevent launch and settings publication |
+| Real public CLI composition, filtered exec/shell attachment and changed-policy refusal | `e2e/headless.sh`, `lib/frontend-attachment.sh` |
+| Real editor attachment, settings, reopen and policy switching | `e2e/editor-smoke.sh` |
+
 ## Remaining release verification
 
 The frontend umbrella was accepted as complete by the user on 2026-09-22
 after review of saved local results. Release verification still requires all
-four complete gates, including both real editor jobs. Consumer compatibility and complete installer
-dependency inventory verification remain with the closing machine-boundary work.
+four complete gates, including both real editor jobs. Final consumer coverage review and recursive packaging/installation verification
+remain with the closing machine-boundary work.
 The new real runtime/editor cases require Linux/Podman and the editor jobs require
 a display or Xvfb; portable simulations cannot establish those results.
 

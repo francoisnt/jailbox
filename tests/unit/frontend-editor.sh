@@ -61,6 +61,16 @@ done
 mapfile -d '' -t argv < "$FAKE_TRACE.argv"
 [[ ${argv[0]} == --extensions-dir && ${argv[1]} == "$(cat "$FAKE_TRACE.inventory-dir")" && ${argv[2]} == --user-data-dir && ${argv[3]} == "$HOME/.local/state/jailbox/editor-profiles/012345abcdef" && ${argv[4]} == --remote && ${argv[5]} == ssh-remote+jailbox-sample-012345abcdef && ${argv[6]} == "$remote_path" ]]
 python3 "$ROOT/tests/lib/editor/check-settings.py" "$settings" "$ssh_config" http://10.0.0.2:8888
+# Compatible trailing fields stay opaque through the complete launch path,
+# including values that would be invalid in required paths or JSON settings.
+cp "$FAKE_TRACE.argv" "$TMP/expected-argv"
+cp "$settings" "$TMP/expected-settings"
+printf 'future_field\topaque\tvalue\n\377\0' >> "$FAKE_RECORDS"
+launch
+cmp "$TMP/expected-argv" "$FAKE_TRACE.argv"
+cmp "$TMP/expected-settings" "$settings"
+[[ $(cat "$FAKE_TRACE") == $'inventory:code\ncore:up\ncore:connection-info\nlaunch:code' ]]
+write_records http://10.0.0.2:8888
 # Relocation changes both publication and the editor argument, including spaces.
 # shellcheck disable=SC2030 # Each scenario intentionally isolates its state home.
 (
@@ -157,6 +167,16 @@ launch || status=$?
 unset FAKE_CONNECTION_STATUS
 printf 'unterminated' > "$FAKE_RECORDS"
 assert_refused 'unterminated record'
+[[ $(cat "$settings") == original ]]
+write_records
+printf 'project_id\t012345abcdef\0' >> "$FAKE_RECORDS"
+assert_refused "duplicate field 'project_id'"
+[[ $(cat "$settings") == original ]]
+(
+    remote_path=relative
+    write_records
+)
+assert_refused "invalid 'remote_path' value"
 [[ $(cat "$settings") == original ]]
 write_records
 (
