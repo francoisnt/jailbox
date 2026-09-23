@@ -2,7 +2,7 @@
 
 Start with [Understanding jailbox](ARCHITECTURE.md) for the lifecycle,
 core/frontend responsibilities, security concepts, testing strategy, and
-glossary. The guide marks frontend behavior that is still planned.
+glossary. The guide describes the implemented frontend and machine boundary.
 
 ## Repository layout
 

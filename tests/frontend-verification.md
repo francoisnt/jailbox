@@ -88,31 +88,11 @@ is not implemented by jailbox and needs no duplicate consumer fixture here.
 | Real public CLI composition, filtered exec/shell attachment and changed-policy refusal | `e2e/headless.sh`, `lib/frontend-attachment.sh` |
 | Real editor attachment, settings, reopen and policy switching | `e2e/editor-smoke.sh` |
 
-## Remaining release verification
+## Release verification
 
-The frontend umbrella was accepted as complete by the user on 2026-09-22
-after review of saved local results. Release verification still requires all
-four complete gates, including both real editor jobs. Final consumer coverage review and recursive packaging/installation verification
-remain with the closing machine-boundary work.
-The new real runtime/editor cases require Linux/Podman and the editor jobs require
-a display or Xvfb; portable simulations cannot establish those results.
-
-The user reported a complete local editor-gate pass after the SSH server proxy
-fix. That run exercised the effective-settings API read and editor-task proxy
-inheritance for its selected editor. It does not establish results for the other
-editor's CI job. The user also confirmed passing editor tests after the
-fixture-review changes, closing the pending local editor rerun.
-The later migration from a mounted SSH session file to container environment
-and server startup options still requires real runtime, matrix, and editor
-verification; the earlier editor passes do not establish that migration's result.
-
-The acceptance review located a VSCodium run with 126 passes and zero failures
-(`editor-20260921-005953-2418952`), runtime artifacts with 68 wrapper and 237
-headless passes and zero failures (`test-20260921-010830-2499149` and
-`e2e-20260921-010848-2512730`), and a successful full matrix run covering
-493 cases and 61 jobs (`lifecycle-20260921-014349-3825331`). Matrix snapshots
-contain the simplified SSH proxy environment configuration. The editor/runtime
-logs do not establish that they used the final simplification; VS Code and
-macOS CI results are also not established by these local logs. Acceptance
-closes the frontend plans with those evidence limits recorded, without claiming
-new test runs or completion of the machine-boundary release verification.
+Release acceptance requires all four complete gates against the final tree,
+including the separate VS Code and VSCodium editor jobs. Runtime and matrix
+require Linux and Podman; editor also needs its selected editor and a display
+or Xvfb. Portable simulations cannot establish these results. Run outcomes,
+revision identity, environment limitations, and local evidence locations belong
+in the handoff, not this coverage inventory.

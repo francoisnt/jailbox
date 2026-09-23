@@ -170,6 +170,12 @@ public `up` and then `connection-info` child processes, just as an external
 orchestrator would. A failure from either command prevents editor launch. No
 launch automatically replaces an incompatible sandbox.
 
+Concurrent launches, stops, or cleans for one project are unsupported. The
+frontend does not lock the interval from `up` through `connection-info` and
+editor launch; coordinate other terminals and automation throughout that
+sequence. Once connected, the editor session has no lifecycle protection:
+another caller's `stop` or `--clean` disconnects it.
+
 Before changing sandbox state, launch validates the complete resource inventory,
 stored home policy, SSH generation, mounts, hardening, network attachments, and
 independently observable running health. Readiness that depends on an eligible
@@ -239,10 +245,12 @@ Concurrent lifecycle commands for one project are unsupported. They no longer
 silently replace each other's containers, but they still race over shared SSH,
 network, and image state; run one at a time.
 
-**State**: per-project runtime state (SSH keys/config, editor profiles) lives
-under `~/.local/state/jailbox/`; `--clean` removes the current project's
-share of it, and `stop` removes SSH credentials while retaining unrelated state.
-`init` writes only the new default `jailbox.conf`.
+**State**: host state lives under `${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/`.
+Core runtime state, including SSH keys/config, is under `projects/<project-id>/`;
+`--clean` removes that directory, and `stop` removes SSH credentials while
+retaining unrelated runtime files. Frontend profiles live separately under
+`editor-profiles/<project-id>/` and remain after both commands. `init` writes
+only the new default `jailbox.conf`.
 
 Each development-container object owns one SSH generation, prepared on the host
 before creation. Its client private key, pinned server identity, and client
@@ -456,8 +464,12 @@ may follow the required fields; their values are opaque. Values preserve all
 accepted bytes, but framing does not widen configuration or SSH path syntax.
 Use `IFS= read -r -d ''` or save stdout to a file: shell command substitution
 cannot preserve NUL bytes. Failure emits diagnostics on stderr and no records.
-Callers must serialize lifecycle changes and exclude them throughout dependent
-inspection/attachment sequences; there is no atomic multi-command transaction.
+Callers must serialize lifecycle changes per project and exclude them throughout
+dependent inspection/attachment sequences, including the complete `up` then
+`connection-info` interval. All callers, including other terminals and automation,
+must cooperate: jailbox provides neither a lock nor an atomic multi-command
+transaction. Successful attachment does not protect a long-lived session from
+later lifecycle changes.
 
 `jailbox validate` also consumes only environment configuration, ignoring even
 a malformed `jailbox.conf`. It checks defaults, declarations, local paths and
@@ -552,7 +564,7 @@ external config directly rather than a symlinked spelling.
 | `DEV_TARGET_STAGE` | final stage | Multi-stage build target to use as dev image |
 | `MEMORY_LIMIT` | `4g` | Development container memory limit (Podman `--memory` value) |
 | `CPU_LIMIT` | `2` | Development container CPU limit (Podman `--cpus` value) |
-| `PIDS_LIMIT` | `256` | Development container process-count limit (Podman `--pids-limit` value) |
+| `PIDS_LIMIT` | `256` | Development container process/thread limit (Podman `--pids-limit` value) |
 | `EPHEMERAL_HOME` | `false` | Exact lowercase `true` or `false`; `true` makes the home belong to one container generation and deletes it on stop. Empty or other values are invalid. |
 | `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`); frontend-only, file-exclusive key |
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
@@ -632,11 +644,11 @@ unrestricted outbound internet access.
 ### Important realities
 - The container runs with your **host UID**, so it can read and write your
   project files
-- Project files are mounted writable. An existing default `jailbox.conf`, the
-  selected in-project config, and the exact in-project Containerfile used for
-  the build are overlaid read-only automatically. Selecting an external config
-  does not remove protection from the default config.
-- Launch requires that default config even when an external config is selected.
+- Project files are mounted writable. Core automatically overlays the exact
+  in-project Containerfile used for the build read-only. File-driven launches
+  also protect the default `jailbox.conf` and selected in-project config.
+  Selecting an external config does not remove protection from the default.
+- File-driven launch requires that default config even when an external config is selected.
   Keeping this anchor present and read-only prevents the sandbox from creating
   policy that a later bare launch would trust.
 - Only additional paths explicitly listed in `READONLY_PATHS` receive
@@ -745,7 +757,7 @@ of these certifies attachment health.
 | `local port N is already in use` | Another process holds the project's derived SSH port; stop it and relaunch |
 | `SSH generation is orphaned` | Credentials outlived their container; run `jailbox stop` (which removes them) then `jailbox up` |
 | `SSH state path ... is a symlink` / `is not a directory` | jailbox will not read or delete credentials through a substituted path; replace that path with a real directory, or point `XDG_STATE_HOME` at one, then relaunch |
-| A request from inside the container fails in egress mode | Check the proxy log: `podman logs <project>-proxy` (find the name with `podman ps`). Blocked hosts appear as `Proxying refused on filtered domain` — add the domain to `EGRESS_ALLOW` and relaunch |
+| A request from inside the container fails in egress mode | Check the proxy log: `podman logs <project>-proxy` (find the name with `podman ps`). Blocked hosts appear as `Proxying refused on filtered domain` — add the domain to `EGRESS_ALLOW`, then use `jailbox stop` followed by your original launch command |
 | VS Code cannot connect to an Alpine-based container | VS Code Remote SSH does not support Alpine hosts; set `EDITOR=codium` |
 | Editor preflight reports missing binary or Remote SSH extension | Install the named requirement; select `EDITOR=codium` or `EDITOR=code` in `jailbox.conf` |
 | `sshd did not become ready in time` | Inspect the container log: `podman logs <container-name>` (printed in the error) |
@@ -777,7 +789,7 @@ control.
 <!-- Generated by scripts/gen-tested-matrix.sh from versions.env. Edit those, then run: bash scripts/gen-tested-matrix.sh --write -->
 
 The release gate installs the exact versions pinned in
-[`versions.env`](versions.env) — editors, Remote SSH extensions, the
+[`versions.env`](https://github.com/francoisnt/jailbox/blob/master/versions.env) — editors, Remote SSH extensions, the
 VSCodium REH server, and container base images — so a green gate vouches for
 this specific matrix. A daily canary workflow tests every new upstream
 release against the full suite and advances the pins automatically when it

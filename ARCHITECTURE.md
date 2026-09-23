@@ -372,6 +372,8 @@ derived image names. It is the destructive reset. Both commands ignore current
 configuration and digest so they remain usable when launch policy is broken.
 They inspect required targets before deletion and stop on inspection failure.
 A later deletion failure can leave a partial cleanup; retry is supported.
+Frontend editor profiles are outside core's project runtime directory and remain
+after both commands.
 
 Home retention is recorded when the volume is created. Changing today's config
 does not change what `stop` deletes. Legacy unlabeled homes are persistent.
@@ -398,9 +400,11 @@ and run real recovery, rather than checking only a nonzero exit code.
 
 Callers must serialize lifecycle mutations for each project and exclude them
 through dependent sequences such as `up` followed by `connection-info`.
-The frontend adds no lock and cannot exclude another terminal's `stop`. Two
-successful checks do not create an atomic transaction or promise that a later
-editor session stays alive forever. Different projects can proceed independently.
+Concurrent frontend launches, stops, and cleans for one project are unsupported.
+The frontend adds no lock around the sequence and cannot exclude another
+terminal or automation process. All callers must cooperate. Successful checks
+do not create an atomic transaction or protect the resulting editor session
+from a later `stop` or `--clean`. Different projects can proceed independently.
 Disconnecting SSH also does not guarantee every remote process has terminated.
 
 ## 7. How containment works
