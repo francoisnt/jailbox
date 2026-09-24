@@ -454,13 +454,6 @@ bootstrap, remote attachment, native modules, and task execution, then compare
 image size. Its removal is not authorized by an assumption that it is unused;
 retain the dependency until the experiment establishes compatibility.
 
-### Runtime packaging and installation coverage
-
-Assigned to 03.2.16 as a release requirement for the machine-boundary series.
-Verify that new runtime files ship and install through recursive copying and
-that copy failures preserve an existing installation, following 03.2.11's
-source-layout migration.
-
 ### Editor validation on relevant pull requests
 
 Consider enabling the existing editor gate for pull requests that change editor

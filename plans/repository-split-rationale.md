@@ -143,7 +143,7 @@ maintaining a product whose reason to exist has collapsed.
 
 The 03.2 series now builds the machine/human boundary inside one repository
 and one installed command instead of two products; the charter is
-`plans/03.2-machine-boundary-plan.md`. What changed in the assessment: the
+`03.2-machine-boundary-plan.md`. What changed in the assessment: the
 valuable content of the split was always the interface — environment-only
 configuration, the compatibility digest, deterministic identity,
 `config-schema`, `status`, `connection-info` — and all of it lands
