@@ -3,6 +3,7 @@
 # queue, dispatch, row runner, and contract validation.
 # shellcheck disable=SC2034,SC2329 # State and callbacks consumed by the worker.
 lifecycle_setup() {
+    [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-} = false ]] || return 1
     LOG=$2
     LIFECYCLE_SAMPLE_MODE=true
 }

@@ -54,12 +54,12 @@ rerun_with_xvfb_if_needed() {
 }
 
 suite_pass() {
-    printf '\n✅ PASS  %s\n' "$1"
+    test_log_result PASS "$GATE/$1" "${2:-0}"
     SUITES_PASSED=$((SUITES_PASSED + 1))
 }
 
 suite_fail() {
-    printf '\n❌ FAIL  %s\n' "$1"
+    test_log_result FAIL "$GATE/$1" "${2:-0}"
     SUITES_FAILED=$((SUITES_FAILED + 1))
 }
 
@@ -67,13 +67,11 @@ run_suite() {
     local label="$1" started=$SECONDS
     shift
 
-    printf '\n══ %s ══\n' "$label"
+    printf 'RUN   %s\n' "$label"
     if "$@"; then
-        printf 'Elapsed %s: %ds\n' "$label" "$((SECONDS - started))"
-        suite_pass "$label"
+        suite_pass "$label" "$((SECONDS - started))"
     else
-        printf 'Elapsed %s: %ds\n' "$label" "$((SECONDS - started))"
-        suite_fail "$label"
+        suite_fail "$label" "$((SECONDS - started))"
         print_summary
         exit 1
     fi
@@ -87,11 +85,13 @@ run_unit_suites() {
 
 print_summary() {
     echo ""
-    echo "──────────────────────────────────────────────────────────────────────"
     printf 'Gate %s: %d suite(s) passed' "$GATE" "$SUITES_PASSED"
     [[ "$SUITES_FAILED" -gt 0 ]] && printf ', %d failed' "$SUITES_FAILED"
     printf '\n'
     printf 'Elapsed gate %s: %ds\n' "$GATE" "$((SECONDS - GATE_STARTED))"
+    if [[ ${GITHUB_ACTIONS:-false} = true && -n ${GITHUB_STEP_SUMMARY:-} && ${JAILBOX_TEST_LOG_SCRIPT:-} = "$SCRIPT_DIR/run" ]]; then
+        printf '| %s | %s | %s | %ss |\n' "$GATE" "$SUITES_PASSED" "$SUITES_FAILED" "$((SECONDS - GATE_STARTED))" >> "$GITHUB_STEP_SUMMARY"
+    fi
 }
 
 gate_selected() {
@@ -210,6 +210,10 @@ esac
 # Help and argument validation finish before timestamped execution begins.
 test_log_entrypoint "$SCRIPT_DIR/run" "$@"
 require_gate_prerequisites "$@"
+TZ=UTC printf 'jailbox tests · %(%Y-%m-%d)T · UTC\n' -1
+if [[ ${GITHUB_ACTIONS:-false} = true && -n ${GITHUB_STEP_SUMMARY:-} && ${JAILBOX_TEST_LOG_SCRIPT:-} = "$SCRIPT_DIR/run" ]]; then
+    printf '| Gate | Suites passed | Suites failed | Elapsed |\n| --- | ---: | ---: | ---: |\n' >> "$GITHUB_STEP_SUMMARY"
+fi
 
 FIRST_GATE=true
 for GATE in "${GATES[@]}"; do
@@ -221,6 +225,7 @@ for GATE in "${GATES[@]}"; do
     SUITES_PASSED=0
     SUITES_FAILED=0
     GATE_STARTED=$SECONDS
+    export JAILBOX_TEST_GATE="$GATE"
     echo "jailbox test gate: $GATE"
     echo "Working directory: $JAILBOX_DIR"
     run_gate "$GATE"

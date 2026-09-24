@@ -11,7 +11,7 @@ cp "$ROOT/scripts/build-tarball.sh" "$tmp/scripts/"
 cp "$ROOT/scripts/lib/container-shells.sh" "$tmp/scripts/lib/"
 cp "$ROOT/scripts/lib/process-pool.sh" "$tmp/scripts/lib/"
 cp "$ROOT/scripts/lib/worker-resources.sh" "$tmp/scripts/lib/"
-cp "$ROOT/tests/lib/logging.sh" "$tmp/tests/lib/"
+cp "$ROOT/tests/lib/"{logging.sh,run-suite.py} "$tmp/tests/lib/"
 # shellcheck source=scripts/lib/container-shells.sh
 source "$ROOT/scripts/lib/container-shells.sh"
 for script in src/jailbox src/public-api.sh src/install.sh tests/run; do
@@ -53,6 +53,7 @@ grep -q 'ShellCheck passed' "$tmp/output"
 [[ $(grep -c 'Progress: ShellCheck:' "$tmp/output") -le 1 ]] || fail 'noisy fast lint run'
 if grep -Eq 'shellcheck: starting|shellcheck: .*: passed' "$tmp/output"; then fail 'batch chatter on console'; fi
 lint_log=$(sed -n 's/.*logs: //p' "$tmp/output")
+[[ "$lint_log" = /* ]] || lint_log="$tmp/$lint_log"
 [[ -s "$lint_log/timings.log" ]] || fail 'missing detailed timings'
 grep -q 'host modules: passed' "$lint_log/timings.log"
 printf 'true\n' > "$tmp/src/container/checks/missing-shell.sh"

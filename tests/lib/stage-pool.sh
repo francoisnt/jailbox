@@ -20,6 +20,7 @@ stage_pool_launch() {
     local -a command=(bash "$JAILBOX_DIR/tests/lib/stage-log.sh"
         "$stage_runner" "$stage_logs/worker-context" "$stage_callback"
         "$stage" "$stage_logs" "$index" "$stage_total")
+    printf 'RUN   %s/%s\n' "$stage_group" "$stage"
     if declare -F ledger_start_worker >/dev/null; then
         ledger_start_worker exec "${command[@]}" > "$stage_logs/$stage.log" 2>&1 || return 1
         PROCESS_POOL_LAUNCHED_PID=$LEDGER_WORKER_PID
@@ -45,27 +46,45 @@ stage_pool_report() {
     fi
     printf '%s\n' "$status" > "$stage_logs/$stage.exit-status" || return 1
     printf '%s: status=%s, %ss\n' "$stage" "$status" "$elapsed" >> "$stage_logs/timings.log" || return 1
+    test_log_drain "$stage_logs/$stage.log" stage "$stage_group/$stage" || return 1
+    test_log_close "$stage_logs/$stage.log"
     stage_complete=$((stage_complete + 1))
     if ((status != 0)); then
-        printf '\nStage failed: %s\n' "$stage"
-        cat "$stage_logs/$stage.log"
+        stage_failed=$((stage_failed + 1))
+        test_log_result FAIL "$stage_group/$stage" "$elapsed"
+        test_log_group "$stage_group/$stage" "$stage_logs/$stage.log"
+    else
+        test_log_result PASS "$stage_group/$stage" "$elapsed"
+        if [[ ${GITHUB_ACTIONS:-false} = true ]]; then
+            test_log_group "$stage_group/$stage" "$stage_logs/$stage.log"
+        fi
     fi
     return "$status"
 }
 
 stage_pool_progress() {
-    local interval=15
+    local interval=15 stage
+    if ((SECONDS != stage_drain_last)); then
+        stage_drain_last=$SECONDS
+        for stage in "${stage_names[@]}"; do
+            [[ ! -f "$stage_logs/$stage.exit-status" ]] || continue
+            test_log_drain "$stage_logs/$stage.log" stage "$stage_group/$stage" || return 1
+        done
+    fi
     [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-false} != true ]] || interval=1
     ((SECONDS - stage_last >= interval)) || return 0
     stage_last=$SECONDS
-    printf 'Progress: Stages: %s/%s complete · %s running · %ss elapsed\n' \
-        "$stage_complete" "$stage_total" "${#PROCESS_POOL_LABELS[@]}" "$((SECONDS - stage_started))"
+    printf 'Progress: Stages: %s/%s done · %s running · %s failed · %ss\n' \
+        "$stage_complete" "$stage_total" "${#PROCESS_POOL_LABELS[@]}" "$stage_failed" "$((SECONDS - stage_started))"
 }
 
 run_stage_pool() {
     local workload=$1 stage_logs=$2 stage_callback=$3 stage_runner=$4
     shift 4
-    local stage_total=$# stage_complete=0 stage_started=$SECONDS stage_last=$SECONDS
+    local stage_group=${JAILBOX_TEST_GATE:-$workload} stage_failed=0 stage_drain_last=-1
+    [[ "$stage_callback" != run_case ]] || stage_group+=/wrapper
+    local -a stage_names=("$@")
+    local stage_total=$# stage_complete=0 stage_started=$SECONDS stage_last=-15
     local workers stage index=0 result=0 stage_saved_traps
     local name
     local -A seen=()
@@ -96,6 +115,7 @@ run_stage_pool() {
         process_pool_submit "$stage" stage_pool_launch "$stage" "$index" || { result=1; break; }
     done
     process_pool_wait || result=1
+    for stage in "${stage_names[@]}"; do test_log_close "$stage_logs/$stage.log"; done
     printf 'Stages finished: %s/%s · %ss elapsed · logs: %s\n' \
         "$stage_complete" "$stage_total" "$((SECONDS - stage_started))" "$stage_logs"
     trap - EXIT INT TERM HUP

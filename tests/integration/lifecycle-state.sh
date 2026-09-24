@@ -131,18 +131,47 @@ register_worker() {
     ledger_start_worker launch_worker "$@" || return 1
     PROCESS_POOL_LAUNCHED_PID=$LEDGER_WORKER_PID
 }
+matrix_progress_last=-15
+matrix_drain_last=-1
+matrix_failed=0
+matrix_progress() {
+    local log interval=15 progress
+    if ((SECONDS != matrix_drain_last)); then
+        matrix_drain_last=$SECONDS
+        for log in "${worker_logs[@]}"; do test_log_drain "$log/worker.log" matrix "" || return 1; done
+    fi
+    [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-false} != true ]] || interval=1
+    ((SECONDS - matrix_progress_last >= interval)) || return 0
+    matrix_progress_last=$SECONDS
+    progress=$(lifecycle_progress "$RUN") || return 1
+    progress=${progress#Progress: }
+    progress=${progress%% |*}
+    printf 'Progress: Matrix: %s · %s running · %s failed · %ss\n' \
+        "$progress" "${#PROCESS_POOL_LABELS[@]}" "$matrix_failed" "$((SECONDS - LIFECYCLE_STARTED))"
+}
 report_worker() {
-    printf 'Lifecycle worker %s: exit %s, elapsed %ss\n' "$1" "$2" "$3"
+    local log=${worker_logs[$1-1]}
+    test_log_drain "$log/worker.log" matrix "" || return 1
+    if [[ "$2" != 0 ]]; then
+        matrix_failed=$((matrix_failed + 1))
+        test_log_result FAIL "matrix/worker-$1 (exit $2)" "$3"
+        if [[ -f "$log/worker.log" ]]; then
+            test_log_group "matrix/worker-$1" "$log/worker.log"
+        else
+            printf 'WARN  matrix/worker-%s produced no transcript\n' "$1"
+        fi
+    fi
 }
 printf 'Lifecycle: %s jobs, %s workers; logs: %s\n' "$(wc -l < "$RUN/jobs")" "$WORKERS" "$RUN"
 printf 'Worker selection: %s\n' "$WORKER_SELECTION"
 lifecycle_progress "$RUN"
-process_pool_init "$WORKERS" report_worker
+process_pool_init "$WORKERS" report_worker matrix_progress
 for ((slot=0; slot<WORKERS; slot++)); do
     process_pool_submit "$((slot + 1))" register_worker "$RUN" "${worker_logs[$slot]}" "${fixtures[$slot]}" || die 'could not register worker'
 done
 result=0
 process_pool_wait || result=1
+for log in "${worker_logs[@]}"; do test_log_close "$log/worker.log"; done
 # Per-job files are written only after success; retain timings even on failure.
 find "$RUN/done" -type f -exec cat {} + | LC_ALL=C sort > "$RUN/timings"
 cut -d '|' -f1 "$RUN/catalog" | LC_ALL=C sort > "$RUN/expected-jobs"

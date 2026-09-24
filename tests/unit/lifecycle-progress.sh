@@ -65,6 +65,15 @@ cmp "$tmp/expected" "$SUITE_TRACE" || fail 'matrix must prepare only its images 
 if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime-full > "$tmp/output" 2>&1; then fail 'removed runtime-full alias accepted'; fi
 [[ ! -s "$SUITE_TRACE" ]] || fail 'suite ran before option validation'
 pass 'runtime and matrix own separate assertions; matrix prepares its own images'
+: > "$SUITE_TRACE"
+GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY="$tmp/summary" JAILBOX_TEST_LOG_ACTIVE=false JAILBOX_TEST_LOG_SCRIPT='' \
+    PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime > "$tmp/ci-output"
+grep -Fxq '| runtime | 2 | 0 | 0s |' "$tmp/summary" || \
+    grep -Eq '^\| runtime \| 2 \| 0 \| [0-9]+s \|$' "$tmp/summary"
+grep -Eq '^\[[0-9:]+\] jailbox tests .* UTC$' "$tmp/ci-output"
+pass 'CI gate summary and compact UTC console timestamps'
+: > "$SUITE_TRACE"
+
 
 # The default dispatch includes every gate once, with matrix before editor.
 mkdir -p "$tmp/tree/scripts" "$tmp/tree/tests/unit" "$tmp/tree/tests/portable"

@@ -40,16 +40,16 @@ portable_unit_pool() (
     # shellcheck disable=SC2329 # Process-pool callbacks.
     portable_pool_report() {
         local suite=$1 result=$2 elapsed=$3
-        printf '\n══ unit/%s ══\n' "${suite%.sh}" || return 1
-        cat "$run/$suite.log" || return 1
-        printf 'Elapsed unit/%s: %ss\n' "${suite%.sh}" "$elapsed" || return 1
         printf '%s|%s|%s\n' "$suite" "$result" "$elapsed" >> "$run/timings" || return 1
         if ((result == 0)); then
             passed=$((passed + 1))
-            printf '✅ PASS  unit/%s\n' "${suite%.sh}"
+            test_log_result PASS "portable/${suite%.sh}" "$elapsed"
         else
             failed=$((failed + 1))
-            printf '❌ FAIL  unit/%s\n' "${suite%.sh}"
+            test_log_result FAIL "portable/${suite%.sh}" "$elapsed"
+        fi
+        if ((result != 0)) || [[ ${GITHUB_ACTIONS:-false} = true ]]; then
+            test_log_group "portable/${suite%.sh}" "$run/$suite.log" || return 1
         fi
         completed=$((completed + 1))
     }
@@ -59,8 +59,8 @@ portable_unit_pool() (
         [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-false} != true ]] || interval=1
         ((elapsed - last_progress >= interval)) || return 0
         last_progress=$elapsed
-        printf 'Progress: Portable: %s/%s suites complete · %s running · %ss elapsed\n' \
-            "$completed" "$total" "${#PROCESS_POOL_LABELS[@]}" "$elapsed"
+        printf 'Progress: Portable: %s/%s done · %s running · %s failed · %ss\n' \
+            "$completed" "$total" "${#PROCESS_POOL_LABELS[@]}" "$failed" "$elapsed"
     }
     # shellcheck disable=SC2329 # Process-pool callbacks.
     portable_pool_launch() {

@@ -394,6 +394,10 @@ it happens.
 
 ## User interaction
 
+- Print repository paths relative to the repository root in human-readable
+  logs, including captured command output and CI logs. Preserve actual command
+  arguments and machine-readable records; display formatting must not change
+  filesystem operations or protocol data.
 - Optimize the cost of reaching a result as well as the result itself. Start
   performance investigations with existing evidence and short, representative
   samples. Do not ask the user to run exhaustive suites for initial measurements

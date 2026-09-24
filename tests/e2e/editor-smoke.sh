@@ -165,6 +165,7 @@ run_editor_stage() {
     PASSED=0
     FAILED=0
     run_stage "$stage" "$index" "$total" || result=1
+    test_phase_end "$result" || result=1
     ((result == 0)) || FAILED=$((FAILED + 1))
     printf '%s %s\n' "$PASSED" "$FAILED" > "$logs/$stage.counts" || return 1
     return "$result"
@@ -912,6 +913,7 @@ run_stage() {
     printf "  Stage %d/%d  ·  %s\n" "$idx" "$total" "$stage"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+    test_phase_begin fixture || return 1
     project_dir=$(test_fixture_project "/tmp/jailbox-editor-$stage" "$LOG_DIR/ports") || return 1
     # Before anything can create them, and outside the fixture directory.
     ledger_record_project_resources "$project_dir" || die "could not record this stage's resources"
@@ -933,6 +935,7 @@ run_stage() {
         return 1
     fi
 
+    test_phase_begin launch || return 1
     if (
         cd "$project_dir"
         # The wrapper seeds remote preferences after frontend up. Its public
@@ -974,6 +977,7 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
+        test_phase_begin bootstrap || return 1
         ready_timeout="$EDITOR_TIMEOUT"
         if [[ "$EDITOR_CACHE_SEEDED" -eq 0 ]]; then
             ready_timeout="$EDITOR_CACHE_FILL_TIMEOUT"
@@ -989,6 +993,7 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
+        test_phase_begin proof-extension || return 1
         echo "  Closing bootstrap editor before installing the proof extension..."
         cleanup_editor_workspace "$project_dir" "$ctr"
         echo "  Installing proof extension into remote editor server..."
@@ -1001,6 +1006,7 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
+        test_phase_begin validation || return 1
         echo "  Opening a fresh validation window..."
         if activate_proof_extension "$project_dir" "$ctr"; then
             pass "proof extension activated in remote extension host"
@@ -1032,6 +1038,7 @@ run_stage() {
     fi
 
     if [[ "$rc" -eq 0 ]]; then
+        test_phase_begin workflows || return 1
         if ! verify_editor_workflows "$project_dir" "$stage" "$ctr"; then
             fail 'public frontend reopen, resume, and policy switches'
             rc=1
@@ -1051,6 +1058,8 @@ run_stage() {
         fi
     fi
 
+    test_phase_end "$rc" || return 1
+    test_phase_begin cleanup || return 1
     # Keep teardown inside the worker's resource allowance.
     if [[ "$rc" -eq 0 ]]; then
         if [[ "$editor_opened" -eq 1 ]]; then

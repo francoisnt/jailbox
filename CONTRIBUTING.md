@@ -114,8 +114,16 @@ also cap lint, portable, runtime, or editor concurrency for diagnosis without ch
 
 Runtime and editor keep image preparation before dependent tests. Their stage
 runners use the shared pool, report compact progress, and retain per-stage logs,
-statuses, worker counts, and timings in the reported log directory. Stage logs
-carry capture timestamps. Runtime stages also write `<stage>.phases` records
+statuses, worker counts, and timings in the reported log directory. All worker
+logs carry UTC capture timestamps, including portable suites and lint diagnostics.
+The console uses one coordinator: matrix case results are labelled and streamed,
+runtime/editor phase changes are labelled, and failure diagnostics stay grouped.
+Portable successes print one result per suite; their full transcripts remain in
+saved logs. Interactive progress stays below results with its timestamp; redirected
+and CI output prints periodic progress records without cursor controls. GitHub
+Actions additionally groups task transcripts and receives a gate summary table.
+Every gate uploads its detailed logs. The `tests/run` console abbreviates timestamps
+to UTC time after printing the date; saved logs retain the full date and time. Runtime stages also write `<stage>.phases` records
 (`phase|elapsed-seconds|exit-status`) covering preparation, launch, assertions,
 recovery, and cleanup. These timings include the whole phase, not just CPU work.
 Stopped and missing proxy recovery run in the lifecycle matrix; runtime owns

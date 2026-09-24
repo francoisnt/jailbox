@@ -325,14 +325,14 @@ for variant in complete missing-catalog; do
         sed '/^source .*\/lifecycle-matrix.sh"$/d' "$ROOT/tests/lib/lifecycle-worker.sh" > "$tree/tests/lib/lifecycle-worker.sh"
     fi
     result=0
-    bash "$tree/tests/lib/lifecycle-worker.sh" "$run" "$run/log" "$run/fixture" > "$run/output" 2>&1 || result=$?
+    JAILBOX_TEST_PROGRESS_TERMINAL=true bash "$tree/tests/lib/lifecycle-worker.sh" "$run" "$run/log" "$run/fixture" > "$run/output" 2>&1 || result=$?
     if [[ "$variant" = complete ]]; then
         [[ "$result" = 0 ]] || { cat "$run/output"; exit 1; }
         [[ -f "$run/done/row.running" ]]
     else
         [[ "$result" != 0 && ! -e "$run/done/row.running" ]]
-        grep -Fq 'lifecycle_matrix_rows: command not found' "$run/output"
-        grep -Fq 'invalid recovery contracts' "$run/output"
+        grep -Fq 'lifecycle_matrix_rows: command not found' "$run/log/worker.log"
+        grep -Fq 'invalid recovery contracts' "$run/log/worker.log"
     fi
 done
 pass

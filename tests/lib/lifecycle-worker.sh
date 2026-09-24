@@ -23,8 +23,10 @@ matrix_die() { printf 'FAIL [%s]: %s\n' "${CASE_KEY:-setup}" "$*" >&2; exit 1; }
 RUN="$1"
 WORKER_LOG="$2"
 ACTIVE_PID=""
+# The coordinator owns terminal progress; this worker writes a captured log.
+export JAILBOX_TEST_PROGRESS_TERMINAL=false
 exec {console_fd}>&1
-exec > >(test_timestamp_stream | tee "$WORKER_LOG/worker.log") 2>&1
+exec > >(test_timestamp_stream > "$WORKER_LOG/worker.log") 2>&1
 logger_pid=$!
 worker_cleanup() {
     local result=$?

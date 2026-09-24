@@ -68,7 +68,6 @@ matrix_case_begin() {
 matrix_case_pass() {
     printf '%s|%s\n' "$CASE_KEY" "$((SECONDS - CASE_STARTED))" >> "$LOG/cases"
     printf 'PASS [%s] %ds\n' "$CASE_KEY" "$((SECONDS - CASE_STARTED))"
-    lifecycle_progress "$RUN"
 }
 cli() {
     local result=0

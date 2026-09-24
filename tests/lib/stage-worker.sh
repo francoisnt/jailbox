@@ -19,6 +19,8 @@ fi
 # shellcheck source=tests/lib/logging.sh
 source "$JAILBOX_DIR/tests/lib/logging.sh"
 TEST_PHASE_LOG="$2/$1.phases"
+# Stage output is captured even when the coordinator owns a terminal.
+export JAILBOX_TEST_PROGRESS_TERMINAL=false
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP

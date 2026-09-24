@@ -1,10 +1,26 @@
 #!/bin/bash
 # Human-readable test output. Keep snapshots, protocol records and assertion
 # inputs in their original byte format; timestamp their diagnostic captures.
+# One checkout identity follows nested test tools; copied fixtures must not
+# silently switch the meaning of relative paths in an enclosing run's logs.
+TEST_LOG_REPOSITORY_ROOT=${JAILBOX_TEST_LOG_ROOT:-$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd -P)} || return 1
 test_timestamp_stream() {
-    local line
+    local line delimiter
+    local root=$TEST_LOG_REPOSITORY_ROOT
     local TZ=UTC
     while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ ${JAILBOX_TEST_FORMAT_COMMANDS:-false} = true &&
+              ( "$line" = ::group::* || "$line" = ::endgroup:: ) ]]; then
+            printf '%s\n' "$line"
+            continue
+        fi
+        # Only diagnostic text is rewritten, never paths passed to commands or
+        # protocol/snapshot files. Quote the pattern to treat root literally.
+        line=${line//"$root/"/}
+        [[ "$line" != *"$root" ]] || line=${line%"$root"}.
+        for delimiter in ' ' '"' "'" ':' ')' $'\t'; do
+            line=${line//"$root$delimiter"/".$delimiter"}
+        done
         # Buffered stage logs already carry their capture time when replayed.
         if [[ "$line" =~ ^[[:space:]]*\[[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\] ]]; then
             printf '%s\n' "$line"
@@ -19,11 +35,15 @@ test_timestamp_stream() {
 test_log_entrypoint() {
     local script="$1"
     shift
-    [[ ${JAILBOX_TEST_LOG_SCRIPT:-} != "$script" ]] || return 0
+    [[ ${JAILBOX_TEST_LOG_ACTIVE:-false} != true && ${JAILBOX_TEST_LOG_SCRIPT:-} != "$script" ]] || return 0
     local result=0
-    local terminal=false
+    export JAILBOX_TEST_LOG_ROOT="$TEST_LOG_REPOSITORY_ROOT"
+    local terminal=false short=false
+    [[ "$script" != */tests/run ]] || short=true
     [[ ! -t 1 || ${TERM:-dumb} = dumb ]] || terminal=true
-    JAILBOX_TEST_PROGRESS_TERMINAL=$terminal JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 | test_timestamp_stream | test_display_stream || result=$?
+    JAILBOX_TEST_LOG_ACTIVE=true JAILBOX_TEST_PROGRESS_TERMINAL=$terminal JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 |
+        JAILBOX_TEST_FORMAT_COMMANDS=true test_timestamp_stream |
+        JAILBOX_TEST_CONSOLE_SHORT=$short test_display_stream || result=$?
     exit "$result"
 }
 
@@ -47,15 +67,16 @@ test_log_capture() {
 # saved logs retain plain timestamped records; workers never move the cursor.
 # The optional width exercises terminal rendering without a PTY in unit tests.
 test_display_stream() {
-    local fixed_width=${1:-} width line message status=""
-    if [[ -z "$fixed_width" ]]; then
-        if [[ ! -t 1 || ${TERM:-dumb} = dumb ]]; then cat; return; fi
-    fi
+    local fixed_width=${1:-} width line message status="" interactive=false
+    if [[ -n "$fixed_width" || ( -t 1 && ${TERM:-dumb} != dumb ) ]]; then interactive=true; fi
     while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ ${JAILBOX_TEST_CONSOLE_SHORT:-false} = true && "$line" =~ ^\[([0-9-]+)T([0-9:]+)Z\] ]]; then
+            line="[${BASH_REMATCH[2]}] ${line#*] }"
+        fi
         message=${line#\[*\] }
+        if [[ "$interactive" = false ]]; then printf '%s\n' "$line"; continue; fi
         if [[ "$message" = 'Progress: '* ]]; then
-            status="$message"
-            [[ "$message" != 'Progress: ShellCheck:'* && "$message" != 'Progress: Portable:'* && "$message" != 'Progress: Stages:'* ]] || status=${message#Progress: }
+            status=${line/Progress: /}
         else
             [[ -z "$status" ]] || printf '\r\033[2K'
             printf '%s\n' "$line"
@@ -67,23 +88,73 @@ test_display_stream() {
         fi
         if [[ -n "$status" ]]; then
             width=$fixed_width
-            if [[ -z "$width" ]]; then
-                # stdin is the log pipeline; query the actual terminal instead.
-                width=$(tput cols 2>/dev/null </dev/tty) || width=80
-            fi
+            if [[ -z "$width" ]]; then width=$(tput cols 2>/dev/null </dev/tty) || width=80; fi
             [[ "$width" =~ ^[0-9]+$ && "$width" -gt 1 ]] || width=80
             printf '\r\033[2K%s' "$status"
-            # Only keep a transient line when it fits without wrapping. Longer
-            # records wrap normally and stay in scrollback with every count.
-            if (( ${#status} >= width )); then
-                printf '\n'
-                status=""
-            fi
+            if (( ${#status} >= width )); then printf '\n'; status=""; fi
         fi
     done
-    # Leave the cursor on a clean line even if the producer failed early.
     [[ -z "$status" ]] || printf '\r\033[2K%s\n' "$status"
     return 0
+}
+
+# Only coordinators emit results or CI control records. Worker logs are already
+# timestamped, so command-like diagnostic text is never interpreted by Actions.
+test_log_result() {
+    local result=$1 task=$2 elapsed=$3
+    printf '%-5s %-40s %ss\n' "$result" "$task" "$elapsed"
+}
+
+test_log_group() {
+    local title=$1 file=$2
+    if [[ ${GITHUB_ACTIONS:-false} = true ]]; then
+        title=${title//'%'/'%25'}
+        title=${title//$'\r'/'%0D'}
+        title=${title//$'\n'/'%0A'}
+        printf '::group::%s\n' "$title"
+    else
+        printf 'Details: %s\n' "$title"
+    fi
+    local result=0
+    cat "$file" || result=$?
+    [[ ${GITHUB_ACTIONS:-false} != true ]] || printf '::endgroup::\n'
+    return "$result"
+}
+
+# Each worker has one append-only log. Keep read offsets and partial lines in
+# the coordinator; workers never write to the display or move its cursor.
+declare -A TEST_LOG_READERS=() TEST_LOG_PARTIAL=()
+test_log_drain() {
+    local file=$1 kind=$2 label=$3 fd line message stamp
+    [[ -f "$file" ]] || return 0
+    if [[ ! -v TEST_LOG_READERS[$file] ]]; then
+        exec {fd}< "$file" || return 1
+        TEST_LOG_READERS[$file]=$fd
+        TEST_LOG_PARTIAL[$file]=""
+    fi
+    fd=${TEST_LOG_READERS[$file]}
+    while IFS= read -r line <&"$fd"; do
+        line=${TEST_LOG_PARTIAL[$file]}$line
+        TEST_LOG_PARTIAL[$file]=""
+        stamp=${line%%] *}]
+        message=${line#*] }
+        case "$kind:$message" in
+            stage:'Phase started: '*) printf '%s RUN   %s/%s\n' "$stamp" "$label" "${message#Phase started: }" ;;
+            matrix:'PASS ['*|matrix:'FAIL ['*)
+                message=${message/ [/  matrix/}
+                message=${message/]/}
+                printf '%s %s\n' "$stamp" "$message" ;;
+        esac
+    done
+    TEST_LOG_PARTIAL[$file]+=$line
+}
+
+test_log_close() {
+    local file=$1 fd
+    [[ -v TEST_LOG_READERS[$file] ]] || return 0
+    fd=${TEST_LOG_READERS[$file]}
+    exec {fd}<&-
+    unset 'TEST_LOG_READERS[$file]' 'TEST_LOG_PARTIAL[$file]'
 }
 
 # Sequential phase boundaries inside an isolated stage worker. Keep explicit

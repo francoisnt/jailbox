@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 JAILBOX_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+# shellcheck source=tests/lib/logging.sh
+source "$JAILBOX_DIR/tests/lib/logging.sh"
 # shellcheck source=tests/lib/stage-pool.sh
 source "$JAILBOX_DIR/tests/lib/stage-pool.sh"
 STAGE_WORKER_VARIABLES=""
@@ -21,6 +23,7 @@ fixture_stage() {
     local stage=$1 logs=$2
     trap cleanup_fixture_stage EXIT
     test_phase_begin fixture
+    [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-} = false ]] || return 1
     if [[ ${STAGE_TEST_LEDGER:-0} = 1 ]]; then
         grep -q "^owner $BASHPID " "$LEDGER_FILE" || return 1
     fi

@@ -76,7 +76,7 @@ pass
 TEST_CASE='entrypoint preserves stdin, errexit and exit traps'
 cp "$ROOT/tests/fixtures/logging/entrypoint.sh" "$FIXTURE/entrypoint"
 result=0
-printf 'caller input\n' | bash "$FIXTURE/entrypoint" "$ROOT" > "$FIXTURE/output" || result=$?
+printf 'caller input\n' | JAILBOX_TEST_LOG_ACTIVE=false JAILBOX_TEST_LOG_SCRIPT='' bash "$FIXTURE/entrypoint" "$ROOT" > "$FIXTURE/output" || result=$?
 [[ "$result" = 1 ]]
 grep -q '] caller input$' "$FIXTURE/output"
 grep -q '] cleanup$' "$FIXTURE/output"
@@ -94,13 +94,13 @@ cat > "$FIXTURE/input" <<'LOG'
 LOG
 test_display_stream 80 < "$FIXTURE/input" > "$FIXTURE/output"
 {
-    printf '\r\033[2KProgress: 0/2 completed'
+    printf '\r\033[2K[2000-01-02T03:04:05Z] 0/2 completed'
     printf '\r\033[2K[2000-01-02T03:04:06Z] CASE one\n'
-    printf '\r\033[2KProgress: 0/2 completed'
-    printf '\r\033[2KProgress: 1/2 completed'
+    printf '\r\033[2K[2000-01-02T03:04:05Z] 0/2 completed'
+    printf '\r\033[2K[2000-01-02T03:04:07Z] 1/2 completed'
     printf '\r\033[2K[2000-01-02T03:04:08Z] CASE two\n'
-    printf '\r\033[2KProgress: 1/2 completed'
-    printf '\r\033[2KProgress: 2/2 completed'
+    printf '\r\033[2K[2000-01-02T03:04:07Z] 1/2 completed'
+    printf '\r\033[2K[2000-01-02T03:04:09Z] 2/2 completed'
     printf '\r\033[2K[2000-01-02T03:04:10Z] Lifecycle: 2/2 cases completed; timings: run/timings\n'
 } > "$FIXTURE/expected"
 cmp "$FIXTURE/expected" "$FIXTURE/output"
@@ -113,9 +113,10 @@ pass
 
 TEST_CASE='narrow terminal retains every progress count before the next case'
 status='Progress: 139/511 completed | matrix 0/144 | discovery 9/9 | interruptions 129/345 | targeted 1/13'
-for width in 20 80 "${#status}"; do
+visible=${status#Progress: }
+for width in 20 80 "${#visible}"; do
     printf '%s\nCASE running\n' "$status" | test_display_stream "$width" > "$FIXTURE/output"
-    printf '\r\033[2K%s\nCASE running\n' "$status" > "$FIXTURE/expected"
+    printf '\r\033[2K%s\nCASE running\n' "${status#Progress: }" > "$FIXTURE/expected"
     cmp "$FIXTURE/expected" "$FIXTURE/output"
 done
 pass
@@ -152,4 +153,58 @@ test_phase_end 7 >> "$FIXTURE/phase-output"
 test_phase_end 0
 [[ $(cat "$TEST_PHASE_LOG") = $'build|7|0\nchecks|3|7' ]]
 grep -q 'Phase finished: checks.*status=7' "$FIXTURE/phase-output"
+pass
+
+TEST_CASE='coordinator drains only complete milestones without replay or interleaving'
+printf '[2000-01-02T03:04:05Z] Phase started: build\n[2000-01-02T03:04:06Z] noisy detail\n[2000-01-02T03:04:07Z] Phase sta' > "$FIXTURE/stage"
+test_log_drain "$FIXTURE/stage" stage runtime/debian > "$FIXTURE/output"
+grep -Fxq '[2000-01-02T03:04:05Z] RUN   runtime/debian/build' "$FIXTURE/output"
+[[ $(wc -l < "$FIXTURE/output") = 1 ]]
+printf 'rted: checks\n' >> "$FIXTURE/stage"
+test_log_drain "$FIXTURE/stage" stage runtime/debian >> "$FIXTURE/output"
+test_log_drain "$FIXTURE/stage" stage runtime/debian >> "$FIXTURE/output"
+[[ $(wc -l < "$FIXTURE/output") = 2 ]]
+grep -Fxq '[2000-01-02T03:04:07Z] RUN   runtime/debian/checks' "$FIXTURE/output"
+test_log_close "$FIXTURE/stage"
+printf '[2000-01-02T03:04:08Z] PASS [missing-proxy.up] 8s\n' > "$FIXTURE/matrix"
+test_log_drain "$FIXTURE/matrix" matrix '' > "$FIXTURE/output"
+grep -Fxq '[2000-01-02T03:04:08Z] PASS  matrix/missing-proxy.up 8s' "$FIXTURE/output"
+test_log_close "$FIXTURE/matrix"
+pass
+
+TEST_CASE='CI groups preserve capture times and escape titles'
+printf '::error::diagnostic, not a workflow command\n' | test_timestamp_stream > "$FIXTURE/detail"
+GITHUB_ACTIONS=true test_log_group $'suite%\nbreak' "$FIXTURE/detail" |
+    JAILBOX_TEST_FORMAT_COMMANDS=true test_timestamp_stream > "$FIXTURE/output"
+[[ $(head -1 "$FIXTURE/output") = '::group::suite%25%0Abreak' ]]
+[[ $(tail -1 "$FIXTURE/output") = '::endgroup::' ]]
+grep -q '^\[.*\] ::error::diagnostic' "$FIXTURE/output"
+pass
+
+TEST_CASE='compact console retains progress timestamps in CI and terminal'
+printf '[2000-01-02T03:04:05Z] Progress: Portable: 1/2 complete\n' > "$FIXTURE/input"
+JAILBOX_TEST_CONSOLE_SHORT=true test_display_stream < "$FIXTURE/input" > "$FIXTURE/output"
+grep -Fxq '[03:04:05] Progress: Portable: 1/2 complete' "$FIXTURE/output"
+JAILBOX_TEST_CONSOLE_SHORT=true test_display_stream 100 < "$FIXTURE/input" > "$FIXTURE/output"
+grep -Fq '[03:04:05] Portable: 1/2 complete' "$FIXTURE/output"
+pass
+
+TEST_CASE='diagnostic paths are relative without changing sibling paths or arguments'
+log_root="$FIXTURE/checkout [*]"
+printf '%s\n' "$log_root/testlog/run one" "Working directory: $log_root" \
+    "'$log_root/dist/file' and $log_root/src/file:12" "$log_root-sibling/file" > "$FIXTURE/paths"
+printf '%s\n' 'testlog/run one' 'Working directory: .' \
+    "'dist/file' and src/file:12" "$log_root-sibling/file" > "$FIXTURE/expected"
+(TEST_LOG_REPOSITORY_ROOT="$log_root"; test_timestamp_stream < "$FIXTURE/paths") |
+    sed 's/^\[[^]]*\] //' > "$FIXTURE/actual"
+cmp "$FIXTURE/expected" "$FIXTURE/actual"
+JAILBOX_TEST_LOG_ROOT="$log_root" python3 "$ROOT/tests/lib/run-suite.py" cat "$FIXTURE/paths" |
+    sed 's/^\[[^]]*\] //' > "$FIXTURE/actual"
+cmp "$FIXTURE/expected" "$FIXTURE/actual"
+# A nested captured process shares the enclosing checkout identity, and receives
+# unchanged arguments even though its diagnostic representation is relative.
+JAILBOX_TEST_LOG_ROOT="$log_root" python3 "$ROOT/tests/lib/run-suite.py" \
+    python3 -c 'import os,sys; assert sys.argv[1] == os.environ["JAILBOX_TEST_LOG_ROOT"] + "/input"; print(sys.argv[1])' \
+    "$log_root/input" | sed 's/^\[[^]]*\] //' > "$FIXTURE/actual"
+[[ $(cat "$FIXTURE/actual") = input ]]
 pass

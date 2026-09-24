@@ -55,7 +55,7 @@ lint_cleanup() {
     local status=$?
     trap - EXIT
     trap '' HUP INT TERM
-    process_pool_cancel 5 || status=1
+    process_pool_cancel 7 || status=1
     if [[ "$lint_finished" = false ]]; then
         printf 'ShellCheck interrupted · %ss · logs: %s\n' "$((SECONDS - lint_started))" "$lint_output"
     fi
@@ -73,7 +73,7 @@ lint_report() {
     printf '%s: %s, %ss (output: %s)\n' "${lint_labels[batch]}" "$result" "$elapsed" "$batch" >> "$lint_output/timings.log" || return 1
     if ((status != 0)) || [[ -s "$lint_output/$batch" ]]; then
         printf 'ShellCheck diagnostics: %s\n' "${lint_labels[batch]}" || return 1
-        cat "$lint_output/$batch" || return 1
+        test_log_group "ShellCheck: ${lint_labels[batch]}" "$lint_output/$batch" || return 1
     fi
     lint_completed=$((lint_completed + 1))
 }
@@ -90,7 +90,9 @@ lint_progress() {
 lint_launch() {
     local batch=$1
     shift
-    "$@" > "$lint_output/$batch" 2>&1 &
+    # The shared supervisor timestamps output and owns the command's process
+    # group, including cancellation; allow its five-second cleanup to finish.
+    python3 "$SCRIPT_DIR/../tests/lib/run-suite.py" "$@" > "$lint_output/$batch" 2>&1 &
     PROCESS_POOL_LAUNCHED_PID=$!
 }
 lint_job() {

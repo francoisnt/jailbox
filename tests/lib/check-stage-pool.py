@@ -22,7 +22,7 @@ def run_case(workers, cancel=False, ledger=False):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         stages = ["one", "two", "crash", "assertion"]
-        env = dict(os.environ, STAGE_TEST_WORKERS=str(workers), STAGE_TEST_LEDGER=str(int(ledger)))
+        env = dict(os.environ, JAILBOX_TEST_PROGRESS_TERMINAL="true", STAGE_TEST_WORKERS=str(workers), STAGE_TEST_LEDGER=str(int(ledger)))
         with (root / "output").open("w") as output:
             process = subprocess.Popen(
                 ["bash", runner, directory, "fixture_stage", *stages],

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 
+assert os.environ.get("JAILBOX_TEST_PROGRESS_TERMINAL") == "false", "captured suite inherited terminal cadence"
 root = Path(os.environ["PORTABLE_FIXTURE"])
 name = Path(sys.argv[1]).stem
 mode = os.environ.get("PORTABLE_FIXTURE_MODE", "pass")
@@ -34,4 +35,5 @@ finally:
     if child is not None:
         child.terminate()
         child.wait(timeout=3)
+    print(f"cleanup for {name}", flush=True)
     (root / f"{name}.end").write_text(str(time.monotonic()))
