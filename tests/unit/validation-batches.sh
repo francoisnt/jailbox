@@ -72,7 +72,7 @@ reply=$'ok\n'
 validate_running_development
 [[ $(wc -l < "$tmp/ssh-calls") = 1 ]] || fail 'session checks did not use one SSH call'
 cmp "$ROOT/src/container/checks/validate-session.sh" "$tmp/payload"
-for token in authorized-keys project-write sockets hardening proxy-env direct-route mount:0 mount:1 mount:2 'mount:999999999999999999999999' garbage; do
+for token in identity authorized-keys project-write sockets hardening proxy-env direct-route mount:0 mount:1 mount:2 'mount:999999999999999999999999' garbage; do
     reply="$token"$'\n'
     if (validate_running_development) > "$tmp/out" 2>&1; then fail "accepted remote failure $token"; fi
 done
@@ -129,6 +129,8 @@ done
 # locations are redirected; the predicates and awk programs stay unchanged.
 # Socket checks must also use fixture paths: CI hosts may run Docker or Podman.
 mkdir "$tmp/project" "$tmp/bin"
+cp "$ROOT/tests/fixtures/validation-id.sh" "$tmp/bin/id"
+chmod 755 "$tmp/bin/id"
 chmod 700 "$tmp/project"
 printf key > "$tmp/authorized"
 chmod 600 "$tmp/authorized"
@@ -157,10 +159,13 @@ healthy() {
     printf 'Iface Destination\neth0 01000000\n' > "$tmp/route"
     : > "$tmp/ipv6"
 }
-remote() { bash -s -- full "$tmp/project" '' "${paths[@]}" < "$tmp/remote"; }
+remote() { PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" '' "${paths[@]}" < "$tmp/remote"; }
 healthy
 result=$(remote)
 [[ "$result" = ok ]] || fail "healthy remote payload rejected: $result"
+for identity in missing-user missing-group root managed-mismatch wrong-uid wrong-gid; do
+    [[ $(VALIDATION_ID_CASE="$identity" remote) = identity ]] || fail "invalid remote identity accepted: $identity"
+done
 for field in CapEff CapBnd NoNewPrivs; do
     healthy
     sed "/^$field:/d" "$tmp/process" > "$tmp/changed"
@@ -191,10 +196,10 @@ proxy=http://10.0.0.2:8888
 proxy_remote() {
     HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy" http_proxy="$proxy" https_proxy="$proxy" \
         NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1 \
-        bash -s -- full "$tmp/project" "$proxy" "${paths[@]}" < "$tmp/remote"
+        PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" "$proxy" "${paths[@]}" < "$tmp/remote"
 }
 [[ $(proxy_remote) = ok ]] || fail 'healthy proxy session rejected'
-[[ $(HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'
+[[ $(PATH="$tmp/bin:$PATH" HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'
 printf 'eth0 00000000\n' >> "$tmp/route"
 [[ $(proxy_remote) = direct-route ]] || fail 'direct IPv4 route accepted'
 healthy
