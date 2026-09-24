@@ -49,18 +49,16 @@ require_compatible_home() {
 }
 
 ensure_home_volume() {
-    local volume_path uid gid
+    local volume_path
     local -a present=()
 
     resolve_present_resources present "volume:$VOLUME_NAME" || return 1
     if [ -z "${present[*]-}" ]; then
         podman volume create --label "jailbox.ephemeral-home=$EPHEMERAL_HOME" "$VOLUME_NAME" || return 1
         volume_path=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}') || return 1
-        # Rootless volumes are created from the host side. Chown only the new
-        # jailbox-managed home volume so the keep-id user can write to it; do
-        # not repair ownership inside the project or dev image.
-        uid=$(id -u) || return 1
-        gid=$(id -g) || return 1
-        podman unshare chown "$uid:$gid" "$volume_path" || return 1
+        # In Podman's rootless parent namespace, 0:0 is the invoking host
+        # user/group. The runtime maps those owners to its selected managed ID.
+        # Only initialize the new volume root; retained home contents are untouched.
+        podman unshare chown 0:0 "$volume_path" || return 1
     fi
 }

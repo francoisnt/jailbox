@@ -8,6 +8,7 @@ SELECTED_DEV_CONTAINERFILE=""
 SELECTED_DEV_CONTAINERFILE_INPUT=""
 SELECTED_DEV_BUILD_CONTEXT=""
 SELECTED_DEV_IMAGE_ID=""
+MANAGED_ID=""
 
 initialize_dev_image_state() {
     PROJECT_DEV_IMAGE="${PROJECT_RESOURCE_PREFIX}-dev"
@@ -18,6 +19,7 @@ initialize_dev_image_state() {
     SELECTED_DEV_CONTAINERFILE_INPUT=""
     SELECTED_DEV_BUILD_CONTEXT=""
     SELECTED_DEV_IMAGE_ID=""
+    MANAGED_ID=""
 }
 
 # Cleanup uses immutable project identity, never the image selected at launch.
@@ -209,6 +211,15 @@ build_jailbox_image() {
         } >&2
         exit 1
     fi
+    # The wrapper creates its account after installing distro packages. Resolve
+    # its numeric identity with no entrypoint, network, capabilities or mounts.
+    local identity
+    identity=$(podman_probe --read-only --entrypoint /bin/sh "$JAILBOX_IMAGE" -c \
+        'set -e; id -u jailbox; id -g jailbox' && printf '.') || die 'could not resolve managed image identity'
+    [[ "$identity" =~ ^([1-9][0-9]{0,4})$'\n'([1-9][0-9]{0,4})$'\n.'$ &&
+       "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]] || die 'invalid managed image identity'
+    MANAGED_ID=${identity%%$'\n'*}
+    ((MANAGED_ID <= 60000)) || die 'unsupported managed image identity'
 }
 
 build_current_proxy_image() {

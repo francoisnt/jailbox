@@ -21,10 +21,11 @@ FROM ${BASE_IMAGE_FEDORA} AS fedora
 
 # ── Arbitrary existing user conflict ──────────────────────────────────────────
 # The host UID already belongs to a non-managed image user. container/setup.sh
-# must fail instead of renaming, reusing, or chowning that user's files.
-FROM ${BASE_IMAGE_DEBIAN} AS uid-owned-by-other-user
+# must allocate another ID without renaming, reusing, or chowning that user's files.
+FROM node:22-bookworm AS uid-owned-by-other-user
 ARG HOST_UID=1000
-RUN useradd -m -u "${HOST_UID}" -s /bin/bash appuser
+RUN if [ "${HOST_UID}" != 1000 ]; then useradd -m -u "${HOST_UID}" -s /bin/bash appuser; fi
+USER node
 
 # ── Managed user conflict ────────────────────────────────────────────────────
 # jailbox pre-exists. container/setup.sh must fail clearly instead of reusing

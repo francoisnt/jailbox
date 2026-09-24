@@ -164,7 +164,7 @@ cleanup_wrapper_stage() {
 run_case() {
     local stage="$1"
     local log_dir="$2"
-    local port test_build_args expect_wrapper_failure test_image_id wrapper_context install_cache_bust
+    local port test_build_args expect_wrapper_failure test_image_id wrapper_context install_cache_bust managed_id existing_user
     # Not declared local: EXIT trap fires after the function returns, at which
     # point local variables are out of scope. Initialize here so the trap can
     # always reference them safely under set -u.
@@ -182,7 +182,6 @@ run_case() {
     case "$stage" in
         uid-owned-by-other-user)
             test_build_args=(--build-arg "HOST_UID=$(id -u)")
-            expect_wrapper_failure=true
             ;;
         user-conflict)
             expect_wrapper_failure=true
@@ -270,6 +269,9 @@ run_case() {
     # performs every wrapper/container assertion.
     [ "$PREPARE_ONLY" = false ] || return 0
 
+    managed_id=$(podman run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges \
+        --read-only --entrypoint id "$wrapper_image" -u jailbox) || return 1
+    [[ "$managed_id" =~ ^[1-9][0-9]{0,4}$ ]] || return 1
     test_phase_begin container-contract || return 1
     assert_probe_hardening "$test_image"
 
@@ -289,7 +291,8 @@ run_case() {
     if ! podman run -d \
         --name "$ctr" \
         --replace \
-        --userns=keep-id \
+        --userns="keep-id:uid=$managed_id,gid=$managed_id" \
+        --user "$managed_id:$managed_id" \
         --env JAILBOX_SSH_PROXY_URL= \
         --read-only \
         --tmpfs /tmp:rw,size=64m \
@@ -319,7 +322,21 @@ run_case() {
     assert_generation_restart "$ctr" "$ssh_dir/config" "$ssh_dir" "$sshd_runtime_dir"
 
     assert_eq "whoami is jailbox"      "jailbox" "$(ssh_run "$ssh_dir/config" whoami 2>/dev/null || true)"
-    assert_eq "UID matches host"       "$(id -u)"  "$(ssh_run "$ssh_dir/config" id -u 2>/dev/null || true)"
+    assert_eq "UID matches managed image account" "$managed_id"  "$(ssh_run "$ssh_dir/config" id -u 2>/dev/null || true)"
+    if [[ "$stage" = uid-owned-by-other-user ]]; then
+        existing_user=appuser
+        [[ $(id -u) != 1000 ]] || existing_user=node
+        assert_eq 'existing image user is unchanged' "$(id -u)" "$(ssh_run "$ssh_dir/config" id -u "$existing_user")"
+        assert_eq 'Node image retains its original account' 1000 "$(ssh_run "$ssh_dir/config" id -u node)"
+        assert_ssh "$ssh_dir/config" 'Node quick-start runtime is available' 'node --version'
+        if [[ "$managed_id" != "$(id -u)" ]]; then
+            pass 'collision selects another UID'
+        else
+            fail 'collision selects another UID'
+        fi
+    fi
+    assert_ssh "$ssh_dir/config" 'mapped user can create project files' 'touch /home/jailbox/project/owner-check'
+    assert_eq 'new project files belong to host user' "$(id -u):$(id -g)" "$(stat -c '%u:%g' "$project_dir/owner-check")"
     assert_runtime_dir_valid "$ssh_dir/config" "authentication mount is read-only, private, and owned by runtime UID"
     assert_ssh "$ssh_dir/config" "home dir exists"  "test -d /home/jailbox"
     assert_rootfs_read_only "$ssh_dir/config" "rootfs is read-only"
@@ -396,7 +413,7 @@ main() {
         if [ "$PREPARE_ONLY" = true ]; then
             case "$s" in
                 uid-owned-by-other-user|user-conflict)
-                    die "--prepare-only accepts positive stages only: ${PREPARATION_STAGES[*]}"
+                    die "--prepare-only accepts shared preparation stages only: ${PREPARATION_STAGES[*]}"
                     ;;
             esac
         fi

@@ -63,10 +63,10 @@ before=$(snapshot)
 if launch --config jailbox.conf connection-info > "$FIXTURE/records" 2> "$FIXTURE/diagnostic"; then fail 'connection-info accepted --config'; fi
 [[ ! -s "$FIXTURE/records" && ! -s "$CONVERGENCE_LOG" && "$before" = "$(snapshot)" ]] || fail '--config refusal published records or mutated state'
 grep -q -- '--config cannot be used with connection-info' "$FIXTURE/diagnostic" || fail 'missing --config rejection diagnostic'
-for property in ReadonlyRootfs EffectiveCaps SecurityOpt Privileged PortBindings Mounts .Config.Env; do
+for property in UsernsMode ReadonlyRootfs EffectiveCaps SecurityOpt Privileged PortBindings Mounts .Config.Env; do
     CONVERGENCE_BAD_PROPERTY="$property" observe refuse 'jailbox stop'
 done
-for result in authorized-keys sockets hardening proxy-env direct-route mount:0; do
+for result in identity authorized-keys sockets hardening proxy-env direct-route mount:0; do
     CONVERGENCE_SESSION_RESULT="$result" observe refuse 'jailbox stop'
 done
 CONVERGENCE_SSH_FAILURE=true observe refuse 'SSH validation command failed'

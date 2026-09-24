@@ -119,6 +119,7 @@ assert_container_launch_state() {
 start_jailbox_container() {
     assert_container_launch_state
 
+    [[ "${MANAGED_ID:-}" =~ ^[1-9][0-9]{0,4}$ ]] || die 'managed image identity is not initialized'
     echo "🚢 Starting jailbox..."
     # Authentication files are prepared on the host and mounted read-only.
     # /run stays private to the managed UID and contains only mutable daemon
@@ -134,7 +135,8 @@ start_jailbox_container() {
         --http-proxy=false \
         --env "JAILBOX_SSH_PROXY_URL=${NETWORK_STATE[proxy_url]}" \
         "${CONFIG_DIGEST_LABEL_ARGS[@]}" \
-        --userns=keep-id \
+        --userns="keep-id:uid=$MANAGED_ID,gid=$MANAGED_ID" \
+        --user "$MANAGED_ID:$MANAGED_ID" \
         --network "${NETWORK_STATE[selected_network]}" \
         "${ROOTFS_FLAG[@]}" \
         --tmpfs /tmp:rw,size=512m \
@@ -232,7 +234,25 @@ require_container_mount() {
     require_container_property "$1" "$predicate" "mount '$2'"
 }
 
+# Require the declared non-root process identity and its host-user mapping to
+# agree. This is read-only and uses the existing container, never a moving tag.
+validate_development_identity() {
+    local identity managed uid_map gid_map
+    # Podman reports keep-id as "private". Inspect the effective mappings:
+    # parent-namespace ID zero is the rootless invoking host user/group.
+    identity=$(podman container inspect "$CONTAINER_NAME" --format '{{.Config.User}}|{{.HostConfig.UsernsMode}}|{{range .HostConfig.IDMappings.UIDMap}}{{.}},{{end}}|{{range .HostConfig.IDMappings.GIDMap}}{{.}},{{end}}' && printf '.') || die 'could not inspect development identity'
+    [[ "$identity" = *$'\n.' ]] || { refuse_sandbox 'invalid development identity'; return 1; }
+    identity=${identity%$'\n.'}
+    [[ "$identity" =~ ^([1-9][0-9]{0,4}):([1-9][0-9]{0,4})\|private\|([0-9:,]+)\|([0-9:,]+)$ ]] || { refuse_sandbox 'invalid development identity'; return 1; }
+    managed=${BASH_REMATCH[1]}
+    [[ "$managed" = "${BASH_REMATCH[2]}" && "$managed" -le 60000 ]] || { refuse_sandbox 'incompatible development identity'; return 1; }
+    uid_map=,${BASH_REMATCH[3]}
+    gid_map=,${BASH_REMATCH[4]}
+    [[ "$uid_map" = *",$managed:0:1,"* && "$gid_map" = *",$managed:0:1,"* ]] || { refuse_sandbox 'incompatible development user mapping'; return 1; }
+}
+
 validate_development_mounts() {
+    validate_development_identity || return 1
     local path template allowed
     local -a properties=()
     template=$(container_mount_predicate "$REMOTE_PATH" bind "$PROJECT_DIR" true) || return 1

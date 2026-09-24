@@ -30,6 +30,7 @@ validate_development_session() {
     fi
     case "$result" in
         $'ok\n.') return 0 ;;
+        $'identity\n.') refuse_sandbox 'live SSH user differs from managed identity' ;;
         $'authorized-keys\n.') refuse_sandbox 'authorized_keys is unavailable' ;;
         $'project-write\n.') refuse_local_validation 'managed user cannot write the project; correct host project ownership and permissions before retrying' ;;
         $'sockets\n.') refuse_sandbox 'runtime socket isolation could not be established' ;;

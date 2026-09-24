@@ -155,6 +155,7 @@ test_resource_limit_flags() {
 
     with_valid_launch_state
     MANAGED_USER="jailbox"
+    MANAGED_ID=1001
     GITCONFIG_MOUNT=()
     READONLY_MOUNTS=()
     stub_dir=$(mktemp -d)
@@ -163,6 +164,8 @@ test_resource_limit_flags() {
 
     apply_config_defaults
     run_launch_with_stub_podman "$stub_dir" "$argv_file"
+    assert_argv_line "host identity maps to selected image identity" "$argv_file" '--userns=keep-id:uid=1001,gid=1001'
+    assert_argv_line "process uses selected UID and primary GID" "$argv_file" '1001:1001'
     assert_argv_line "default memory flag byte-identical" "$argv_file" "--memory=4g"
     assert_argv_line "default cpu flag byte-identical" "$argv_file" "--cpus=2"
     assert_argv_line "default pids flag byte-identical" "$argv_file" "--pids-limit=256"
@@ -217,6 +220,7 @@ with_project_state() {
     GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
     export HOME XDG_CONFIG_HOME XDG_STATE_HOME GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL
     MANAGED_USER="jailbox"
+    MANAGED_ID=1001
     initialize_project_names
     initialize_ssh_state
 }

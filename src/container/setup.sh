@@ -48,14 +48,6 @@ get_passwd_entry() {
     fi
 }
 
-get_user_for_uid() {
-    if command -v getent >/dev/null 2>&1; then
-        getent passwd "$USER_ID" 2>/dev/null | cut -d: -f1 || true
-    else
-        awk -F: -v uid="$USER_ID" '$3 == uid { print $1; exit }' /etc/passwd
-    fi
-}
-
 # ── Package manager ───────────────────────────────────────────────────────────
 if command -v apt-get >/dev/null 2>&1; then
     PKG_MGR=apt
@@ -115,8 +107,7 @@ fi
 # ── managed user ──────────────────────────────────────────────────────────────
 # The wrapper image owns the runtime user model. Dev images should install tools
 # system-wide; they must not require a pre-existing app-specific user or home
-# directory. Failing on conflicts is safer than mutating arbitrary image users
-# and avoids recursive ownership repair across system paths.
+# directory. Select unused IDs without modifying existing image accounts.
 # Prefer bash for the managed user because VS Code Remote SSH and many dev
 # tools assume it exists, but keep shell startup files under user control.
 _PREFERRED_SHELL=$(command -v bash 2>/dev/null || echo /bin/sh)
@@ -125,23 +116,26 @@ if id "$MANAGED_USER" >/dev/null 2>&1; then
     echo "Error: managed user '$MANAGED_USER' already exists in the dev image with UID $existing_uid." >&2
     echo "Fix: remove or rename that user in the dev image. jailbox always creates its own managed user." >&2
     exit 1
+fi
+# Both account databases must be readable; a failed lookup must not appear free.
+[ -r /etc/passwd ] && [ -r /etc/group ] || exit 1
+if grep -q "^${MANAGED_USER}:" /etc/group; then
+    echo "Error: managed group '$MANAGED_USER' already exists in the dev image." >&2
+    exit 1
+fi
+USER_ID=$(awk -v preferred="$USER_ID" -f /tmp/jailbox-container/select-user-id.awk /etc/passwd /etc/group) || {
+    echo 'Error: no available managed user/group ID in range 1000-60000.' >&2
+    exit 1
+}
+if command -v useradd >/dev/null 2>&1 && command -v groupadd >/dev/null 2>&1; then
+    groupadd -g "$USER_ID" "$MANAGED_USER" || exit 1
+    useradd -m -u "$USER_ID" -g "$MANAGED_USER" -s "$_PREFERRED_SHELL" "$MANAGED_USER" || exit 1
+elif command -v adduser >/dev/null 2>&1 && command -v addgroup >/dev/null 2>&1; then
+    addgroup -g "$USER_ID" "$MANAGED_USER" || exit 1
+    adduser -D -u "$USER_ID" -G "$MANAGED_USER" -h "/home/$MANAGED_USER" -s "$_PREFERRED_SHELL" "$MANAGED_USER" || exit 1
 else
-    existing_user_for_uid=$(get_user_for_uid)
-    if [ -n "$existing_user_for_uid" ]; then
-        echo "Error: host UID $USER_ID already belongs to existing image user '$existing_user_for_uid'." >&2
-        echo "jailbox will not mutate arbitrary existing users. Use a dev image where UID $USER_ID is free." >&2
-        exit 1
-    fi
-
-    if command -v useradd >/dev/null 2>&1; then
-        useradd -m -u "$USER_ID" -s "$_PREFERRED_SHELL" "$MANAGED_USER"
-    elif command -v adduser >/dev/null 2>&1; then
-        # Alpine-style adduser
-        adduser -D -u "$USER_ID" -h "/home/$MANAGED_USER" -s "$_PREFERRED_SHELL" "$MANAGED_USER"
-    else
-        echo "Error: cannot create $MANAGED_USER (no useradd or adduser)" >&2
-        exit 1
-    fi
+    echo "Error: cannot create $MANAGED_USER (no supported user/group tools)" >&2
+    exit 1
 fi
 
 # Ensure a valid home directory

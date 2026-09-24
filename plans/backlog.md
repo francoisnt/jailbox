@@ -445,17 +445,6 @@ and jailbox-owned connection/security settings. The generated profile settings
 continue to be replaced on launch until this design is implemented; do not add
 ad hoc JSON merging as an interim persistence contract.
 
-### Development images with an existing host UID
-
-Investigate safe support for images such as `node:22-bookworm` that already
-assign UID 1000 to an image user. Compare preserving an existing account,
-explicit image adaptation, and user-namespace mapping approaches against SSH
-identity, home ownership, permissions, and the managed-user contract. Do not
-silently rename accounts or recursively chown image/project files. Include the
-README quick-start recipes in acceptance: their Node image currently conflicts
-with jailbox's refusal when the host UID is 1000. Existing refusal remains in
-place until a supported design and regression coverage are established.
-
 ### Alpine editor dependency experiment
 
 After the current security and diagnostic fixes are verified, manually compare

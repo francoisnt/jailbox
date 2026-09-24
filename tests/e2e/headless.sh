@@ -406,7 +406,10 @@ EOF
     # shellcheck disable=SC2016
     assert_ssh "$ssh_cfg" "$ctr" "write home content before reuse" 'printf retained > "$HOME/retention-marker"'
     if [[ "$stage" = debian ]]; then
-        printf 'ENV REBUILD_TEST=changed\n' >> "$project_dir/Containerfile"
+        local previous_managed_id
+        previous_managed_id=$(e2e_ssh "$ssh_cfg" "$ctr" id -u) || return 1
+        printf 'RUN useradd -m -u %s imageuser\n' "$previous_managed_id" >> "$project_dir/Containerfile"
+        printf 'ENV REBUILD_TEST=changed\n'  >> "$project_dir/Containerfile"
         printf 'changed\n' > "$project_dir/rebuild-payload"
     fi
     if relaunch_output=$( (cd "$project_dir" && "$JAILBOX_DIR/src/jailbox" --config config/runtime.conf --no-editor) 2>&1); then
@@ -514,6 +517,18 @@ EOF
         # shellcheck disable=SC2016  # Expanded by the remote shell.
         assert_ssh "$ssh_cfg" "$ctr" 'stop then launch incorporates copied build input' 'test "$(cat /rebuild-payload)" = changed'
         assert_eq 'stop then launch incorporates Containerfile changes' changed "$(podman exec "$ctr" printenv REBUILD_TEST)"
+        local replacement_id
+        replacement_id=$(e2e_ssh "$ssh_cfg" "$ctr" id -u) || return 1
+        if [[ "$replacement_id" != "$previous_managed_id" ]]; then
+            pass 'rebuilt image remaps managed UID'
+        else
+            fail 'rebuilt image remaps managed UID'
+        fi
+        assert_eq 'existing image account survives wrapper setup' "$previous_managed_id" "$(e2e_ssh "$ssh_cfg" "$ctr" id -u imageuser)"
+        # shellcheck disable=SC2016 # Expanded inside the sandbox.
+        assert_ssh "$ssh_cfg" "$ctr" 'remapped user can edit retained home and project' 'printf updated >> "$HOME/retention-marker" && test "$(cat "$HOME/retention-marker")" = retainedupdated && touch /home/jailbox/project/remapped-owner'
+        assert_eq 'remapped project writes preserve host ownership' "$(id -u):$(id -g)" "$(stat -c '%u:%g' "$project_dir/remapped-owner")"
+
     fi
     if [[ -f "$settings_path" ]] && grep -Fq '"remote.SSH.configFile"' "$settings_path"; then
         pass "bare launch writes editor SSH settings"

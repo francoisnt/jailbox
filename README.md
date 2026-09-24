@@ -647,8 +647,8 @@ unrestricted outbound internet access.
   allowlist for HTTP/HTTPS
 
 ### Important realities
-- The container runs with your **host UID**, so it can read and write your
-  project files
+- The container maps your **host UID/GID** to its own non-root `jailbox`
+  account, so it can edit project files and new files remain owned by you
 - Launch and attachment refuse projects that equal or contain the host home
   directory or jailbox runtime-state directory. Normal projects beneath the
   home directory remain supported.
@@ -741,8 +741,10 @@ jailbox follows a clean layered approach:
 
 ### Project image requirements
 
-- **Do not** create or rely on a custom user. jailbox always creates and runs
-  as its own managed user called `jailbox` (with your host UID).
+- Existing image users (such as `node`) are preserved. jailbox creates its own
+  `jailbox` user and group with unused IDs and maps your host identity to them.
+  Do not pre-create a `jailbox` user or group or require tools from another
+  user's private home.
 - Install all tools, language runtimes, and dependencies **globally**
   (system-wide) so they are available to the `jailbox` user.
 - Include `bash` (preferred) or a working `/bin/sh`.
@@ -768,7 +770,7 @@ of these certifies attachment health.
 | `no Containerfile found` | Set `DEV_IMAGE=<image>` or `DEV_CONTAINERFILE=<path>` in `jailbox.conf` |
 | `dev image has no usable shell` / `no supported package manager` | The selected image/stage is production or distroless; set `DEV_TARGET_STAGE` to a dev stage or use `DEV_IMAGE` |
 | `managed user 'jailbox' already exists in the dev image` | Remove/rename that user in the dev image; jailbox manages its own user |
-| `host UID N already belongs to existing image user` | Use a dev image where your UID is free; jailbox will not mutate existing users |
+| `managed group 'jailbox' already exists in the dev image` | Use a dev image without that reserved group; existing users with other names are preserved |
 | `refusing sandbox reuse` | Follow the stated recovery; `stop` preserves persistent homes and deletes ephemeral homes, while `--clean` permanently deletes home/runtime state |
 | `sandbox convergence failed` | Startup or synchronization began before failure; read the cleanup and retained-resource report before retrying or performing recovery |
 | `local port N is already in use` | Another process holds the project's derived SSH port; stop it and relaunch |

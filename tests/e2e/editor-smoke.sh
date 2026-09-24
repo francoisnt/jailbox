@@ -323,7 +323,7 @@ seed_editor_server_cache() {
 
     podman volume create "$volume" >/dev/null || return 1
     volume_path=$(podman volume inspect "$volume" --format '{{.Mountpoint}}') || return 1
-    podman unshare chown "$(id -u):$(id -g)" "$volume_path" || return 1
+    podman unshare chown 0:0 "$volume_path" || return 1
 
     if ! podman run --rm -i \
         --name "$helper" \

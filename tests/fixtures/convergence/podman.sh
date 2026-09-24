@@ -31,6 +31,13 @@ case "$kind $action" in
             exit 0
         fi
         case "$template" in
+            *'.Config.User'*'.HostConfig.UsernsMode'*)
+                if [[ ${CONVERGENCE_BAD_PROPERTY:-} = UsernsMode ]]; then
+                    printf '1000:1000|private|0:0:65536,|0:0:65536,\n'
+                else
+                    printf '1000:1000|private|0:1:1000,1000:0:1,1001:1001:64536,|0:1:1000,1000:0:1,1001:1001:64536,\n'
+                fi
+                exit 0 ;;
             '{{.ID}} {{le .Created.UnixNano '*)
                 original=true
                 [[ ! -f "$file.recreated" ]] || original=false
@@ -95,6 +102,7 @@ case "$kind $action" in
                 if [[ "$*" == *--rm* ]]; then
                     printf 'probe\n' >> "$log"
                     [[ "$*" != *'for pm in'* ]] || echo apt-get
+                    [[ "$*" != *'id -u jailbox; id -g jailbox'* ]] || printf '1000\n1000\n'
                     exit 0
                 fi
                 printf 'run %s\n' "$*" >> "$log"

@@ -26,6 +26,7 @@ for cache_scenario in prepare contract failure; do
         wait_for_ssh() { :; }
         # shellcheck disable=SC2329
         podman() {
+            if [[ "$1" = run && "$*" = *'-u jailbox'* ]]; then printf '1000\n'; fi
             if [[ "$1 $2" = 'image inspect' ]]; then printf 'immutable-base\n'; fi
             if [[ "$1" = build && "$*" = *Containerfile.wrapper* ]]; then
                 local context=${!#}

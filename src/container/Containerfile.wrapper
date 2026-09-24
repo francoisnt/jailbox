@@ -1,12 +1,15 @@
 ARG DEV_IMAGE
 FROM ${DEV_IMAGE}
+USER root
 
 ARG USER_ID=1000
 ARG JAILBOX_INSTALL_CACHE_BUST=""
 
+COPY select-user-id.awk /tmp/jailbox-container/
 COPY setup.sh /tmp/jailbox-container/
 COPY runtime/ /tmp/jailbox-container/runtime/
 RUN : "$JAILBOX_INSTALL_CACHE_BUST" && sh /tmp/jailbox-container/setup.sh && rm -rf /tmp/jailbox-container
 
+USER jailbox
 EXPOSE 2222
 CMD ["/usr/local/bin/jailbox-start"]

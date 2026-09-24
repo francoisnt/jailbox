@@ -7,6 +7,10 @@ proxy=$3
 shift 3
 reject() { printf '%s\n' "$1"; exit 0; }
 if [[ "$mode" = full ]]; then
+    managed_uid=$(id -u jailbox) || reject identity
+    managed_gid=$(id -g jailbox) || reject identity
+    [[ "$managed_uid" != 0 && "$managed_uid" = "$managed_gid" &&
+       $(id -u) = "$managed_uid" && $(id -g) = "$managed_gid" ]] || reject identity
     [[ -f /run/jailbox-sshd/authorized_keys ]] || reject authorized-keys
     [[ -w "$project" ]] || reject project-write
     [[ ! -S /var/run/docker.sock && ! -S /run/podman/podman.sock ]] || reject sockets
