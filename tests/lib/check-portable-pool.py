@@ -28,6 +28,31 @@ def prepare(directory):
                 PORTABLE_FIXTURE_WORKER=str(root / "tests/fixtures/portable-pool/suite.py"))
 
 
+def cancellation_diagnostics(tree, process, events):
+    # Print before TemporaryDirectory removes the evidence. The outer portable
+    # suite capture retains this in both CI output and the uploaded suite log.
+    print(f"Cancellation diagnostics: coordinator={process.pid} status={process.poll()} "
+          f"platform={sys.platform} python={sys.version.split()[0]}", file=sys.stderr)
+    for event in events:
+        print(event, file=sys.stderr)
+    for pattern in ("output", "*.start", "*.child", "*.end", "*.trace", "run/*"):
+        for path in sorted(tree.glob(pattern)):
+            try:
+                data = path.read_bytes()
+                print(f"--- {path.relative_to(tree)} ({len(data)} bytes) ---\n"
+                      + data.decode(errors="replace"), file=sys.stderr)
+            except OSError as error:
+                print(f"Cannot read {path.relative_to(tree)}: {error.strerror}", file=sys.stderr)
+    # No command arguments or environment: just process identities and state.
+    try:
+        snapshot = subprocess.run(["ps", "-ax", "-o", "pid,ppid,pgid,stat,etime,comm"],
+                                  capture_output=True, text=True, timeout=3)
+        print(f"--- process snapshot (status {snapshot.returncode}) ---\n"
+              + snapshot.stdout + snapshot.stderr, file=sys.stderr)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"Process snapshot unavailable: {type(error).__name__}", file=sys.stderr)
+
+
 for workers in (1, 3):
     with tempfile.TemporaryDirectory() as directory:
         env = prepare(directory)
@@ -60,30 +85,42 @@ with tempfile.TemporaryDirectory() as directory:
     assert b"diagnostic for a" in result.stdout
 
 with tempfile.TemporaryDirectory() as directory:
-    env = dict(prepare(directory), PORTABLE_FIXTURE_MODE="cancel")
+    env = dict(prepare(directory), PORTABLE_FIXTURE_MODE="cancel",
+               JAILBOX_TEST_SUPERVISOR_TRACE=directory)
+    events = []
     with (Path(directory) / "output").open("wb") as log:
         process = subprocess.Popen(["bash", str(runner), str(root), directory, "2"], env=env,
                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        events.append(f"{time.monotonic():.6f} coordinator started pid={process.pid}")
         try:
             deadline = time.monotonic() + 10
             while len(list(Path(directory).glob("*.child"))) != 2:
                 assert time.monotonic() < deadline, "suite children did not start"
                 time.sleep(.02)
+            events.append(f"{time.monotonic():.6f} sending SIGTERM to group {process.pid}")
             os.killpg(process.pid, signal.SIGTERM)
             process.wait(timeout=10)
+            events.append(f"{time.monotonic():.6f} coordinator reaped status={process.returncode}")
             deadline = time.monotonic() + 10
             while len(list(Path(directory).glob("*.end"))) != 2:
                 assert time.monotonic() < deadline, "suite cleanup did not finish"
                 time.sleep(.02)
+            events.append(f"{time.monotonic():.6f} both cleanup markers observed")
             for name in ("a", "b"):
                 transcript = (Path(directory) / f"run/{name}.sh.log").read_text()
-                assert "cleanup for " + name in transcript, transcript
+                assert "cleanup for " + name in transcript, f"missing cleanup output: {name}: {transcript!r}"
             for marker in Path(directory).glob("*.child"):
                 try:
                     os.kill(int(marker.read_text()), 0)
                 except ProcessLookupError:
                     continue
                 raise AssertionError("suite descendant survived cancellation")
+        except Exception:
+            try:
+                cancellation_diagnostics(Path(directory), process, events)
+            except Exception as error:
+                print(f"Diagnostic collection failed: {type(error).__name__}: {error}", file=sys.stderr)
+            raise
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
