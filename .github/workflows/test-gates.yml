@@ -82,6 +82,17 @@ jobs:
           bash --version
           bash tests/run portable
 
+      - name: Upload portable logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: portable-logs-${{ matrix.os }}-${{ matrix.bash }}
+          path: |
+            testlog/portable.*/
+            testlog/shellcheck.*/
+          if-no-files-found: ignore
+          retention-days: 7
+
   runtime:
     name: runtime
     runs-on: ubuntu-24.04
