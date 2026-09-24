@@ -15,7 +15,7 @@ source "$ROOT/tests/lib/lifecycle-jobs.sh"
 source "$ROOT/scripts/lib/process-pool.sh"
 validate_lifecycle_contracts
 
-die() { printf 'FAIL [lifecycle-pool]: %s\n' "$*" >&2; exit 1; }
+die() { test_progress_complete 'FAIL [lifecycle-pool]: %s\n' "$*" >&2; exit 1; }
 export LIFECYCLE_SAMPLE_MODE=false
 LIFECYCLE_SAMPLE_SIZE=50
 case "$#:${1:-}" in
@@ -66,6 +66,7 @@ pool_cleanup() {
     local result=$? log child_ledger fixture safe=true
     trap - EXIT
     process_pool_cancel || result=1
+    test_progress_complete
     # Also covers cancellation between registration and recording the PID in
     # the process pool, and CLIs orphaned by an unexpectedly killed worker.
     if [[ $(ledger_file_state "$LEDGER_FILE" owners) != ended ]]; then safe=false; fi
@@ -135,13 +136,12 @@ matrix_progress_last=-15
 matrix_drain_last=-1
 matrix_failed=0
 matrix_progress() {
-    local log interval=15 progress
+    local log progress
     if ((SECONDS != matrix_drain_last)); then
         matrix_drain_last=$SECONDS
         for log in "${worker_logs[@]}"; do test_log_drain "$log/worker.log" matrix "" || return 1; done
     fi
-    [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-false} != true ]] || interval=1
-    ((SECONDS - matrix_progress_last >= interval)) || return 0
+    test_progress_due "$matrix_progress_last" "$SECONDS" || return 0
     matrix_progress_last=$SECONDS
     progress=$(lifecycle_progress "$RUN") || return 1
     progress=${progress#Progress: }
@@ -181,7 +181,7 @@ cat "$RUN/expected-fixed" "$RUN"/worker-*/expected-faults | LC_ALL=C sort > "$RU
 cat "$RUN"/worker-*/cases | LC_ALL=C sort > "$RUN/case-timings" || result=1
 cut -d '|' -f1 "$RUN/case-timings" | LC_ALL=C sort > "$RUN/completed-cases"
 cmp -s "$RUN/expected-cases" "$RUN/completed-cases" || result=1
-printf 'Lifecycle: %s/%s cases completed; timings: %s/timings\n' \
+test_progress_complete 'Lifecycle: %s/%s cases completed; timings: %s/timings\n' \
     "$(wc -l < "$RUN/completed-cases")" "$(wc -l < "$RUN/expected-cases")" "$RUN"
 [[ "$result" = 0 ]] || die "worker failure or incomplete coverage; inspect $RUN"
 if [[ "$LIFECYCLE_SAMPLE_MODE" = true ]]; then

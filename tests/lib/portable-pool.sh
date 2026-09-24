@@ -29,7 +29,7 @@ portable_unit_pool() (
         trap '' HUP INT TERM
         process_pool_cancel || result=1
         printf '%s|%s\n' "$passed" "$failed" > "$run/summary" || result=1
-        printf 'Portable units: %s/%s completed · %ss · logs: %s\n' "$completed" "$total" "$((SECONDS - started))" "$run"
+        test_progress_complete 'Portable units: %s/%s completed · %ss · logs: %s\n' "$completed" "$total" "$((SECONDS - started))" "$run"
         exit "$result"
     }
     trap portable_pool_cleanup EXIT
@@ -55,9 +55,8 @@ portable_unit_pool() (
     }
     # shellcheck disable=SC2329 # Process-pool callbacks.
     portable_pool_progress() {
-        local elapsed=$((SECONDS - started)) interval=15
-        [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-false} != true ]] || interval=1
-        ((elapsed - last_progress >= interval)) || return 0
+        local elapsed=$((SECONDS - started))
+        test_progress_due "$last_progress" "$elapsed" || return 0
         last_progress=$elapsed
         printf 'Progress: Portable: %s/%s done · %s running · %s failed · %ss\n' \
             "$completed" "$total" "${#PROCESS_POOL_LABELS[@]}" "$failed" "$elapsed"

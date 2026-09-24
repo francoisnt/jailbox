@@ -32,13 +32,11 @@ cmp "$tmp/settings" "$tmp/home/.vscode-server/data/Machine/settings.json"
 # runs after function locals disappear and must retain the container identity.
 result=0
 (
-    # shellcheck source=tests/lib/logging.sh
-    source "$ROOT/tests/lib/logging.sh"
-    # shellcheck disable=SC1090
-    source <(sed -n '/^cleanup_wrapper_stage() {/,/^}/p; /^run_case() {/,/^}/p' "$ROOT/tests/integration/wrapper-images.sh")
-    # shellcheck disable=SC2034 # Inputs to the extracted stage.
+    # shellcheck source=tests/integration/wrapper-images.sh
+    source "$ROOT/tests/integration/wrapper-images.sh"
+    # shellcheck disable=SC2034 # Inputs to the runner stage.
     PASSED=0 FAILED=0 JAILBOX_DIR=$ROOT BASE_IMAGE_DEBIAN=debian BASE_IMAGE_ALPINE=alpine BASE_IMAGE_FEDORA=fedora
-    # shellcheck disable=SC2329 # Called by the extracted stage.
+    # shellcheck disable=SC2329 # Called by the runner stage.
     stage_port() { printf '2222\n'; }
     # shellcheck disable=SC2329
     stage_forward_port() { printf '2223\n'; }
@@ -46,7 +44,7 @@ result=0
     podman() { printf '%s\n' "$*" >> "$tmp/engine"; }
     # shellcheck disable=SC2329
     test_log_capture() { : > "$1"; return 1; }
-    # shellcheck disable=SC2329 # Called by the extracted stage.
+    # shellcheck disable=SC2329 # Called by the runner stage.
     fail() { FAILED=$((FAILED + 1)); }
     run_case debian "$tmp"
 ) > "$tmp/stage-output" 2>&1 || result=$?

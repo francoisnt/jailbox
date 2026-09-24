@@ -1081,7 +1081,21 @@ run_stage() {
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+# The coordinator joins workers before releasing anything they may still use.
+cleanup_editor_pool() {
+    local status=$?
+    trap - EXIT
+    trap '' INT TERM HUP
+    stage_pool_cancel || { ((status != 0)) || status=1; }
+    test_progress_complete
+    exit "$status"
+}
+
 main() {
+    trap cleanup_editor_pool EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         usage
         exit 0
@@ -1160,20 +1174,10 @@ main() {
     log_run ""
 
     mkdir "$LOG_DIR/ports" || return 1
-    local pool_result=0 p f
-    local failed_stages=()
-    run_stage_pool editor "$LOG_DIR" run_editor_stage "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
-    for stage in "${stages[@]}"; do
-        p=0; f=1
-        if [[ -f "$LOG_DIR/$stage.counts" ]]; then
-            read -r p f < "$LOG_DIR/$stage.counts" || return 1
-        fi
-        PASSED=$((PASSED + p))
-        FAILED=$((FAILED + f))
-        if [[ ! -f "$LOG_DIR/$stage.exit-status" || $(cat "$LOG_DIR/$stage.exit-status") != 0 ]]; then
-            failed_stages+=("$stage")
-        fi
-    done
+    local pool_result=0
+    run_stage_pool editor "${JAILBOX_TEST_GATE:-editor}" "$LOG_DIR" run_editor_stage "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
+    PASSED=$((PASSED + STAGE_PASSED))
+    FAILED=$((FAILED + STAGE_FAILED))
 
     # Every teardown has finished, so anything still standing under a recorded
     # name is this run's leftover. Whatever survives here stays in the ledger
@@ -1191,8 +1195,8 @@ main() {
     log_run ""
     log_run "──────────────────────────────────────────────────────────────────────"
     log_run "Results: $PASSED passed, $FAILED failed"
-    if [[ -n "${failed_stages[*]-}" ]]; then
-        log_run "Failed stages: ${failed_stages[*]}"
+    if [[ -n "${STAGE_FAILED_STAGES[*]-}" ]]; then
+        log_run "Failed stages: ${STAGE_FAILED_STAGES[*]}"
     fi
     log_run "Full logs: $(run_log_path "$LOG_DIR")"
 

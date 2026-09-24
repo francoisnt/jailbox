@@ -57,7 +57,7 @@ lint_cleanup() {
     trap '' HUP INT TERM
     process_pool_cancel 7 || status=1
     if [[ "$lint_finished" = false ]]; then
-        printf 'ShellCheck interrupted · %ss · logs: %s\n' "$((SECONDS - lint_started))" "$lint_output"
+        test_progress_complete 'ShellCheck interrupted · %ss · logs: %s\n' "$((SECONDS - lint_started))" "$lint_output"
     fi
     exit "$status"
 }
@@ -79,9 +79,8 @@ lint_report() {
 }
 # shellcheck disable=SC2329 # Shared process-pool progress callback.
 lint_progress() {
-    local elapsed=$((SECONDS - lint_started)) interval=15
-    [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-false} != true ]] || interval=1
-    ((elapsed - lint_last_progress >= interval)) || return 0
+    local elapsed=$((SECONDS - lint_started))
+    test_progress_due "$lint_last_progress" "$elapsed" || return 0
     lint_last_progress=$elapsed
     printf 'Progress: ShellCheck: %s/%s batches complete · %s running · %ss elapsed\n' \
         "$lint_completed" "$lint_total" "${#PROCESS_POOL_LABELS[@]}" "$elapsed"
@@ -121,5 +120,5 @@ lint_result=0
 process_pool_wait || lint_result=1
 lint_finished=true
 if ((lint_result == 0)); then lint_summary=passed; else lint_summary=failed; fi
-printf 'ShellCheck %s · %ss · logs: %s\n' "$lint_summary" "$((SECONDS - lint_started))" "$lint_output"
+test_progress_complete 'ShellCheck %s · %ss · logs: %s\n' "$lint_summary" "$((SECONDS - lint_started))" "$lint_output"
 exit "$lint_result"

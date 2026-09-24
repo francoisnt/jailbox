@@ -63,6 +63,21 @@ test_log_capture() {
     return "$result"
 }
 
+# Coordinators retain their own clock; only the cadence policy is shared.
+test_progress_due() {
+    local interval=15
+    [[ ${JAILBOX_TEST_PROGRESS_TERMINAL:-false} != true ]] || interval=1
+    (($2 - $1 >= interval))
+}
+
+# An explicit record, consumed by the display layer before printing the summary.
+# An empty completion clears interrupted progress without adding a visible line.
+test_progress_complete() {
+    printf 'Progress complete: '
+    # shellcheck disable=SC2059 # Callers supply a literal printf format and arguments.
+    if (($#)); then printf "$@"; else printf '\n'; fi
+}
+
 # Only the outermost terminal consumer draws progress. Nested formatters and
 # saved logs retain plain timestamped records; workers never move the cursor.
 # The optional width exercises terminal rendering without a PTY in unit tests.
@@ -74,17 +89,20 @@ test_display_stream() {
             line="[${BASH_REMATCH[2]}] ${line#*] }"
         fi
         message=${line#\[*\] }
+        if [[ "$message" = 'Progress complete: '* ]]; then
+            [[ -z "$status" ]] || printf '\r\033[2K'
+            status=""
+            [[ "$message" != 'Progress complete: ' ]] || continue
+            line=${line/Progress complete: /}
+            printf '%s\n' "$line"
+            continue
+        fi
         if [[ "$interactive" = false ]]; then printf '%s\n' "$line"; continue; fi
         if [[ "$message" = 'Progress: '* ]]; then
             status=${line/Progress: /}
         else
             [[ -z "$status" ]] || printf '\r\033[2K'
             printf '%s\n' "$line"
-            if [[ "$message" = 'Lifecycle: '*' cases completed;'* || "$message" = 'FAIL [lifecycle-pool]'* ||
-                  "$message" = 'ShellCheck passed'* || "$message" = 'ShellCheck failed'* || "$message" = 'ShellCheck interrupted'* ||
-                  "$message" = 'Stages finished:'* || "$message" = 'Portable units:'* ]]; then
-                status=""
-            fi
         fi
         if [[ -n "$status" ]]; then
             width=$fixed_width

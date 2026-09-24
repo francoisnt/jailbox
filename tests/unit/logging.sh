@@ -90,7 +90,7 @@ cat > "$FIXTURE/input" <<'LOG'
 [2000-01-02T03:04:07Z] Progress: 1/2 completed
 [2000-01-02T03:04:08Z] CASE two
 [2000-01-02T03:04:09Z] Progress: 2/2 completed
-[2000-01-02T03:04:10Z] Lifecycle: 2/2 cases completed; timings: run/timings
+[2000-01-02T03:04:10Z] Progress complete: Lifecycle: 2/2 cases completed; timings: run/timings
 LOG
 test_display_stream 80 < "$FIXTURE/input" > "$FIXTURE/output"
 {
@@ -106,9 +106,10 @@ test_display_stream 80 < "$FIXTURE/input" > "$FIXTURE/output"
 cmp "$FIXTURE/expected" "$FIXTURE/output"
 pass
 
-TEST_CASE='redirected logs retain plain progress records'
+TEST_CASE='redirected logs retain plain progress records and visible summaries'
 test_display_stream < "$FIXTURE/input" > "$FIXTURE/output"
-cmp "$FIXTURE/input" "$FIXTURE/output"
+sed 's/Progress complete: //' "$FIXTURE/input" > "$FIXTURE/expected"
+cmp "$FIXTURE/expected" "$FIXTURE/output"
 pass
 
 TEST_CASE='narrow terminal retains every progress count before the next case'
@@ -128,7 +129,7 @@ pass
 
 TEST_CASE='lint progress updates in place and clears after every final outcome'
 for result in passed failed interrupted; do
-    printf 'Progress: ShellCheck: 1/3 batches complete\nproblem in script.sh\nProgress: ShellCheck: 2/3 batches complete\nShellCheck %s · 5s\nnext suite\n' "$result" > "$FIXTURE/input"
+    printf 'Progress: ShellCheck: 1/3 batches complete\nproblem in script.sh\nProgress: ShellCheck: 2/3 batches complete\nProgress complete: ShellCheck %s · 5s\nnext suite\n' "$result" > "$FIXTURE/input"
     test_display_stream 100 < "$FIXTURE/input" > "$FIXTURE/output"
     {
         printf '\r\033[2KShellCheck: 1/3 batches complete'
@@ -139,7 +140,8 @@ for result in passed failed interrupted; do
     } > "$FIXTURE/expected"
     cmp "$FIXTURE/expected" "$FIXTURE/output"
     test_display_stream < "$FIXTURE/input" > "$FIXTURE/output"
-    cmp "$FIXTURE/input" "$FIXTURE/output"
+    sed 's/Progress complete: //' "$FIXTURE/input" > "$FIXTURE/expected"
+    cmp "$FIXTURE/expected" "$FIXTURE/output"
 done
 pass
 
@@ -207,4 +209,35 @@ JAILBOX_TEST_LOG_ROOT="$log_root" python3 "$ROOT/tests/lib/run-suite.py" \
     python3 -c 'import os,sys; assert sys.argv[1] == os.environ["JAILBOX_TEST_LOG_ROOT"] + "/input"; print(sys.argv[1])' \
     "$log_root/input" | sed 's/^\[[^]]*\] //' > "$FIXTURE/actual"
 [[ $(cat "$FIXTURE/actual") = input ]]
+pass
+
+TEST_CASE='completion is explicit and independent of summary wording'
+{
+    printf 'Progress: working\nShellCheck passed\n'
+    test_progress_complete 'Any summary: %s\n' finished
+    printf 'next suite\n'
+} | test_display_stream 100 > "$FIXTURE/output"
+{
+    printf '\r\033[2Kworking\r\033[2KShellCheck passed\n\r\033[2Kworking'
+    printf '\r\033[2KAny summary: finished\nnext suite\n'
+} > "$FIXTURE/expected"
+cmp "$FIXTURE/expected" "$FIXTURE/output"
+{ printf 'Progress: working\n'; test_progress_complete; printf 'next suite\n'; } |
+    test_display_stream 100 > "$FIXTURE/output"
+printf '\r\033[2Kworking\r\033[2Knext suite\n' > "$FIXTURE/expected"
+cmp "$FIXTURE/expected" "$FIXTURE/output"
+{ test_progress_complete; test_progress_complete 'Any summary\n'; } |
+    test_timestamp_stream | test_timestamp_stream | test_display_stream > "$FIXTURE/output"
+[[ $(wc -l < "$FIXTURE/output") = 1 ]]
+grep -Eq '^\[[^]]+\] Any summary$' "$FIXTURE/output"
+pass
+
+TEST_CASE='shared cadence preserves immediate, terminal and redirected updates'
+JAILBOX_TEST_PROGRESS_TERMINAL=false
+test_progress_due -15 0
+if test_progress_due 0 14; then exit 1; fi
+test_progress_due 0 15
+JAILBOX_TEST_PROGRESS_TERMINAL=true
+if test_progress_due 7 7; then exit 1; fi
+test_progress_due 7 8
 pass

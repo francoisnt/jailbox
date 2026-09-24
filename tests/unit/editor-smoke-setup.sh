@@ -2,6 +2,8 @@
 # Test-only preferences must be seeded after up and before real editor launch.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=tests/e2e/editor-smoke.sh
+source "$ROOT/tests/e2e/editor-smoke.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 export SMOKE_TRACE="$tmp/trace" SMOKE_SETTINGS="$tmp/settings"
@@ -13,6 +15,7 @@ fake_cli() {
     return "${SMOKE_EXEC_STATUS:-0}"
 }
 export -f fake_editor fake_cli
+# shellcheck disable=SC2031 # Fresh fixture values, independent of the runner's subshell exports.
 export JAILBOX_TEST_EDITOR_REAL=fake_editor JAILBOX_TEST_CLI=fake_cli
 # exec requires executables, so expose the recording functions through Bash.
 printf '#!/bin/bash\nfake_editor "$@"\n' > "$tmp/editor"
@@ -33,16 +36,13 @@ bash "$wrapper" --folder-uri test-target || status=$?
 [[ "$status" = 23 ]]
 [[ "$(cat "$SMOKE_TRACE")" = 'cli exec /usr/local/bin/jailbox-write-editor-settings' ]]
 
-# Extract the real fixture writer; config must leave bootstrap hosts to frontend.
-# shellcheck disable=SC1090
-source <(sed -n '/^write_fixture() {/,/^close_editor_workspace() {/ { /^close_editor_workspace() {/d; p; }' "$ROOT/tests/e2e/editor-smoke.sh")
-declare -F write_fixture >/dev/null
+# Config must leave bootstrap hosts to frontend.
 stage_test_image() { printf 'test-image\n'; }
-# shellcheck disable=SC2329 # Called by the extracted fixture writer before replacement.
+# shellcheck disable=SC2329 # Called by the runner fixture writer before replacement.
 editor_bin() { printf '/test/codium\n'; }
-# shellcheck disable=SC2034 # Consumed by the extracted fixture writer.
+# shellcheck disable=SC2034 # Consumed by the runner fixture writer.
 SCRIPT_DIR="$ROOT/tests/e2e"
-# shellcheck disable=SC2034 # Consumed by the extracted fixture writer.
+# shellcheck disable=SC2034 # Consumed by the runner fixture writer.
 TASK_LABEL=test-task
 write_fixture "$tmp/project" egress test-run
 grep -qx 'EDITOR=codium' "$tmp/project/jailbox.conf"
@@ -50,9 +50,6 @@ grep -qx 'EGRESS_ALLOW=api.ipify.org' "$tmp/project/jailbox.conf"
 
 # Reopening uses the real editor directly, outside the initial-launch wrapper.
 # Exercise that path so test trust policy survives the bootstrap window closing.
-# shellcheck disable=SC1090
-source <(sed -n '/^activate_proof_extension() {/,/^}/p' "$ROOT/tests/e2e/editor-smoke.sh")
-declare -F activate_proof_extension >/dev/null
 editor_bin() { printf '%s\n' "$tmp/editor"; }
 jailbox_editor_user_data() { printf '%s\n' "$tmp/profile with spaces"; }
 snapshot_remote_editor_connections() { printf 'previous-connection\n'; }
@@ -66,7 +63,7 @@ fake_editor() {
     return "${SMOKE_EDITOR_STATUS:-0}"
 }
 export -f fake_editor
-# shellcheck disable=SC2034 # Consumed by the extracted production reopen function.
+# shellcheck disable=SC2034 # Consumed by the runner reopen function.
 EXT_ACTIVATION_MARKER=activated EDITOR_TIMEOUT=1
 touch "$tmp/project/$EXT_ACTIVATION_MARKER"
 : > "$SMOKE_TRACE"

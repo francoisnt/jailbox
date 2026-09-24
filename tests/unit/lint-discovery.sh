@@ -48,12 +48,14 @@ printf '#!/bin/sh\nvalues=(one two)\n' > "$tmp/src/container/checks/portable.sh"
 if bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1; then fail 'POSIX script checked as Bash'; fi
 grep -Fq SC3030 "$tmp/output"
 printf '#!/bin/sh\ntrue\n' > "$tmp/src/container/checks/portable.sh"
+rm -rf "$tmp/testlog"
 bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1
 grep -q 'ShellCheck passed' "$tmp/output"
 [[ $(grep -c 'Progress: ShellCheck:' "$tmp/output") -le 1 ]] || fail 'noisy fast lint run'
 if grep -Eq 'shellcheck: starting|shellcheck: .*: passed' "$tmp/output"; then fail 'batch chatter on console'; fi
-lint_log=$(sed -n 's/.*logs: //p' "$tmp/output")
-[[ "$lint_log" = /* ]] || lint_log="$tmp/$lint_log"
+lint_logs=("$tmp"/testlog/shellcheck.*)
+[[ ${#lint_logs[@]} = 1 && -d ${lint_logs[0]} ]] || fail 'expected one new lint run'
+lint_log=${lint_logs[0]}
 [[ -s "$lint_log/timings.log" ]] || fail 'missing detailed timings'
 grep -q 'host modules: passed' "$lint_log/timings.log"
 printf 'true\n' > "$tmp/src/container/checks/missing-shell.sh"

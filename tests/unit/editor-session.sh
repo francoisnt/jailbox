@@ -2,12 +2,10 @@
 # Exercise editor lifecycle guards without a display or remote server.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# Source the same guarded runner used by stage workers, then install test stubs.
+# shellcheck source=tests/e2e/editor-smoke.sh
+source "$ROOT/tests/e2e/editor-smoke.sh"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-for function in cleanup_editor_workspace wait_for_remote_editor_ready snapshot_remote_editor_connections; do
-    # shellcheck disable=SC1090
-    source <(sed -n "/^${function}() {/,/^}/p" "$ROOT/tests/e2e/editor-smoke.sh")
-    declare -F "$function" >/dev/null || fail "could not extract $function"
-done
 
 jailbox_editor_user_data() { printf '/test/editor-profile\n'; }
 editor_profile_pids() { :; }

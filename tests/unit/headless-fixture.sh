@@ -46,21 +46,23 @@ printf 'PASS: headless fixtures reject unavailable and claimed ports with bounde
 # Status artifacts survive fixture cleanup, remain outside PATH, and retain
 # repeated observations of the same state within each parallel stage.
 (
-    # shellcheck disable=SC1090
-    source <(sed -n '/^assert_status() {/,/^}/p' "$ROOT/tests/e2e/headless.sh")
+    # shellcheck source=tests/e2e/headless.sh
+    source "$ROOT/tests/e2e/headless.sh"
+    fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+    stub_dir="$fixture/stubs"
     mkdir -p "$fixture/cli/src" "$fixture/project" "$fixture/logs/debian.status" "$fixture/logs/alpine.status"
     cat > "$fixture/cli/src/jailbox" <<'CLI'
 #!/bin/bash
 printf 'absent\n'
 CLI
     chmod 755 "$fixture/cli/src/jailbox"
-    # shellcheck disable=SC2034 # Used by the extracted assert_status.
+    # shellcheck disable=SC2034 # Used by the runner assert_status.
     JAILBOX_DIR="$fixture/cli"
-    # shellcheck disable=SC2329 # Called by the extracted assert_status.
+    # shellcheck disable=SC2329 # Called by the runner assert_status.
     pass() { :; }
     for stage in debian alpine; do
         status_artifact_dir="$fixture/logs/$stage.status"
-        # shellcheck disable=SC2034 # Updated by the extracted assert_status.
+        # shellcheck disable=SC2034 # Updated by the runner assert_status.
         status_observation=0
         assert_status "$fixture/project" absent
         assert_status "$fixture/project" absent
@@ -77,9 +79,11 @@ printf 'PASS: headless status artifacts retain each stage and observation outsid
 # Use the runtime harness's actual stubs for preflight and launch. Inventory
 # must work before a profile exists, while the headless guard rejects both.
 (
-    # shellcheck disable=SC1090
-    source <(sed -n '/^setup_stub_editor() {/,/^}/p' "$ROOT/tests/e2e/headless.sh")
-    # shellcheck disable=SC2034 # Consumed by the extracted setup function.
+    # shellcheck source=tests/e2e/headless.sh
+    source "$ROOT/tests/e2e/headless.sh"
+    fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+    stub_dir="$fixture/stubs"
+    # shellcheck disable=SC2034 # Consumed by the runner setup function.
     JAILBOX_DIR="$ROOT"
     setup_stub_editor
     export JAILBOX_E2E_PROJECT="$fixture/project" JAILBOX_E2E_REJECT_EDITOR=0

@@ -381,7 +381,21 @@ STAGE_WORKER_VARIABLES="PREPARE_ONLY"
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+# The coordinator joins workers before releasing anything they may still use.
+cleanup_wrapper_pool() {
+    local status=$?
+    trap - EXIT
+    trap '' INT TERM HUP
+    stage_pool_cancel || { ((status != 0)) || status=1; }
+    test_progress_complete
+    exit "$status"
+}
+
 main() {
+    trap cleanup_wrapper_pool EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         usage; exit 0
     fi
@@ -433,7 +447,7 @@ main() {
     echo ""
 
     local pool_result=0
-    run_stage_pool runtime "$log_dir" run_case "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
+    run_stage_pool runtime "${JAILBOX_TEST_GATE:-runtime}/wrapper" "$log_dir" run_case "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
 
     # Record only base images selected for this run. In particular, VS Code
     # preparation omits Alpine and must not pull it merely for metadata.
@@ -451,23 +465,11 @@ main() {
         run_meta_image "$log_dir" "$base_stage" "$base_ref"
     done
 
-    # Aggregate assertions; full stage output remains in the reported logs.
-    local total_passed=0 total_failed=0 p f
-    for stage in "${stages[@]}"; do
-        if [[ -f "$log_dir/${stage}.counts" ]]; then
-            read -r p f < "$log_dir/${stage}.counts"
-            total_passed=$((total_passed + p))
-            total_failed=$((total_failed + f))
-        else
-            total_failed=$((total_failed + 1))
-        fi
-    done
-
     echo ""
     echo "──────────────────────────────────────────────────────────────────────"
-    echo "Results: $total_passed passed, $total_failed failed"
+    echo "Results: $STAGE_PASSED passed, $STAGE_FAILED failed"
     echo "Full logs: $(run_log_path "$log_dir")"
-    [[ $total_failed -eq 0 && $pool_result -eq 0 ]] || exit 1
+    [[ $STAGE_FAILED -eq 0 && $pool_result -eq 0 ]] || exit 1
 }
 
 if [[ ${BASH_SOURCE[0]} = "$0" ]]; then main "$@"; fi

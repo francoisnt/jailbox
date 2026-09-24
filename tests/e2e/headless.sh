@@ -692,7 +692,22 @@ STAGE_WORKER_VARIABLES="stub_dir LEDGER_DIR LEDGER_FILE"
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+# The coordinator joins workers before releasing anything they may still use.
+cleanup_headless_pool() {
+    local status=$?
+    trap - EXIT
+    trap '' INT TERM HUP
+    stage_pool_cancel || { ((status != 0)) || status=1; }
+    test_progress_complete
+    [[ -z "$stub_dir" ]] || rm -rf "$stub_dir"
+    exit "$status"
+}
+
 main() {
+    trap cleanup_headless_pool EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         usage; exit 0
     fi
@@ -728,7 +743,6 @@ main() {
     mkdir -p "$log_dir"
     write_run_meta "$log_dir"
     stub_dir=$(mktemp -d)
-    trap 'rm -rf "$stub_dir"' EXIT
     mkdir "$stub_dir/ports"
 
     setup_stub_editor
@@ -738,41 +752,25 @@ main() {
     echo ""
 
     local pool_result=0
-    run_stage_pool runtime "$log_dir" run_e2e_case "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
+    run_stage_pool runtime "${JAILBOX_TEST_GATE:-runtime}" "$log_dir" run_e2e_case "${BASH_SOURCE[0]}" "${stages[@]}" || pool_result=1
 
     # Every stage has finished, so anything still standing under a recorded
     # name is this run's leftover. Whatever survives stays in the ledger for
     # the next run.
     ledger_sweep_own_run
 
-    local total_passed=0 total_failed=0 p f
-    for stage in "${stages[@]}"; do
-        if [[ -f "$log_dir/${stage}.counts" ]]; then
-            read -r p f < "$log_dir/${stage}.counts"
-            total_passed=$((total_passed + p))
-            total_failed=$((total_failed + f))
-        else
-            total_failed=$((total_failed + 1))
-        fi
-    done
-
     echo ""
     echo "──────────────────────────────────────────────────────────────────────"
-    echo "Results: $total_passed passed, $total_failed failed"
+    echo "Results: $STAGE_PASSED passed, $STAGE_FAILED failed"
     rel_log_dir=$(run_log_path "$log_dir")
     echo "Full logs: $rel_log_dir"
-    if [[ "$total_failed" -gt 0 ]]; then
+    if [[ "$STAGE_FAILED" -gt 0 ]]; then
         echo "Failed stage logs:"
-        for stage in "${stages[@]}"; do
-            if [[ ! -f "$log_dir/${stage}.counts" ]]; then
-                echo "  $rel_log_dir/${stage}.log"
-                continue
-            fi
-            read -r p f < "$log_dir/${stage}.counts"
-            [[ "$f" -gt 0 ]] && echo "  $rel_log_dir/${stage}.log"
+        for stage in "${STAGE_FAILED_STAGES[@]}"; do
+            echo "  $rel_log_dir/${stage}.log"
         done
     fi
-    [[ $total_failed -eq 0 && $pool_result -eq 0 ]] || exit 1
+    [[ $STAGE_FAILED -eq 0 && $pool_result -eq 0 ]] || exit 1
 }
 
 if [[ ${BASH_SOURCE[0]} = "$0" ]]; then main "$@"; fi

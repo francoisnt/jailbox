@@ -232,6 +232,18 @@ done
 cp "$tree/contracts-backup" "$tree/tests/lib/lifecycle-contracts.sh"
 pass
 TEST_CASE='the coordinator consolidates complete coverage and cleans every worker'
+# Locate new artifacts in the fixture tree, independently of display formatting.
+declare -A known_runs=()
+new_coordinator_run() {
+    local candidate
+    local -a created=()
+    for candidate in "$tree"/testlog/lifecycle-*; do
+        [[ ! -d "$candidate" || -n ${known_runs[$candidate]+x} ]] || created+=("$candidate")
+    done
+    [[ ${#created[@]} = 1 ]] || return 1
+    run=${created[0]}
+    known_runs[$run]=1
+}
 previous=""
 for workers in 1 2 4; do
     if ! PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" \
@@ -239,7 +251,8 @@ for workers in 1 2 4; do
         bash "$tree/tests/integration/lifecycle-state.sh" > "$tree/output" 2>&1; then
         cat "$tree/output" >&2; exit 1
     fi
-    run=$(sed -n 's/.*matrix passed; logs: //p' "$tree/output")
+    grep -Fq 'matrix passed; logs: ' "$tree/output"
+    new_coordinator_run
     [[ $(wc -l < "$run/completed-cases") = 187 ]]
     grep -Fxq "workers=$workers" "$run/run-summary"
     grep -Eq '^elapsed_seconds=[0-9]+$' "$run/run-summary"
@@ -271,7 +284,8 @@ for sample_run in 50:1 50:4 50:8 150:1 150:4 150:8; do
         bash "$tree/tests/integration/lifecycle-state.sh" "--sample-$size" > "$tree/output" 2>&1; then
         cat "$tree/output" >&2; exit 1
     fi
-    run=$(sed -n 's/.*sample passed (partial coverage); logs: //p' "$tree/output")
+    grep -Fq 'sample passed (partial coverage); logs: ' "$tree/output"
+    new_coordinator_run
     [[ $(wc -l < "$run/completed-cases") = "$size" ]]
     LC_ALL=C sort "$TEST_ROOT/current-sample" > "$TEST_ROOT/sorted-sample"
     cmp "$TEST_ROOT/sorted-sample" "$run/completed-cases"
