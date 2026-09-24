@@ -40,6 +40,6 @@ if [[ ${BASH_SOURCE[0]} = "$0" ]]; then
     if [[ ${STAGE_TEST_LEDGER:-0} = 1 ]]; then
         JAILBOX_TEST_LEDGER_DIR="$logs/ledger" ledger_begin_run fixture
     fi
-    trap 'touch "$logs/parent.cleaned"' EXIT
+    trap 'printf "%s\n" "$?" > "$logs/parent.cleaned"' EXIT
     run_stage_pool runtime "$logs" "$callback" "${BASH_SOURCE[0]}" "$@"
 fi

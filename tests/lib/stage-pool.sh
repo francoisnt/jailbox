@@ -11,7 +11,21 @@ stage_pool_cleanup() {
     trap - EXIT
     trap '' INT TERM HUP
     process_pool_cancel
-    (eval "$stage_saved_traps"; exit "$status") || true
+    (
+        eval "$stage_saved_traps"
+        local saved_exit
+        saved_exit=$(trap -p EXIT)
+        trap - EXIT
+        [[ -n "$saved_exit" ]] || exit "$status"
+        # Bash 4.4 suppresses a subshell's EXIT trap while its parent's EXIT
+        # trap is running. Decode our saved shell-generated declaration and
+        # invoke the body explicitly, retaining its original exit status.
+        saved_exit=${saved_exit#trap -- }
+        saved_exit=${saved_exit% EXIT}
+        eval "saved_exit=$saved_exit"
+        (exit "$status")
+        eval "$saved_exit"
+    ) || true
     exit "$status"
 }
 

@@ -55,7 +55,7 @@ def run_case(workers, cancel=False, ledger=False):
                     assert lines[-1].endswith("fixture cleanup finished"), lines
                     assert all(re.match(r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\] ", line) for line in lines)
                     assert (root / f"{stage}.phases").read_text().startswith("fixture|")
-                assert (root / "parent.cleaned").exists()
+                assert (root / "parent.cleaned").read_text().strip() == str(process.returncode)
                 assert (root / "worker-context").stat().st_mode & 0o777 == 0o600
             finally:
                 for stage in stages:
