@@ -5,6 +5,17 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=tests/lib/convergence-fixture.sh
 source "$ROOT/tests/lib/convergence-fixture.sh"
+# Load production handlers once; each observation still gets fresh shell state.
+# The full policy matrix uses the shared attachment boundary via its record
+# publisher. Public transport checks below prove each CLI caller gates sessions.
+# shellcheck source=tests/lib/core.sh
+source "$ROOT/tests/lib/core.sh" "$ROOT/src"
+attachment_records() (
+    hash -r # Fixture tools may have been installed since the previous observation.
+    # shellcheck disable=SC2030 # Each handler observation has isolated invocation state.
+    PROJECT_DIR=$FIXTURE/project
+    run_connection_info
+)
 export CONVERGENCE_SSH_LOG="$FIXTURE/ssh-calls"
 ATTACH_PYTHON=$(command -v python3)
 export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
@@ -16,7 +27,11 @@ observe() {
     before=$(snapshot)
     : > "$CONVERGENCE_LOG"
     : > "$CONVERGENCE_SSH_LOG"
-    launch connection-info > "$FIXTURE/records" 2> "$FIXTURE/diagnostic" || result=$?
+    if [[ ${ATTACH_PUBLIC:-false} = true ]]; then
+        launch connection-info > "$FIXTURE/records" 2> "$FIXTURE/diagnostic" || result=$?
+    else
+        attachment_records > "$FIXTURE/records" 2> "$FIXTURE/diagnostic" || result=$?
+    fi
     [[ "$before" = "$(snapshot)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'attachment mutated resources, images, home, or credentials'
     if [[ "$expected" = allow ]]; then
         [[ "$result" = 0 ]] || { cat "$FIXTURE/diagnostic"; fail 'healthy attachment failed'; }
@@ -27,6 +42,7 @@ observe() {
         [[ "$result" != 0 && ! -s "$FIXTURE/records" ]] || fail 'refusal published connection records'
         grep -q "$diagnostic" "$FIXTURE/diagnostic" || { cat "$FIXTURE/diagnostic"; fail "missing diagnostic: $diagnostic"; }
     fi
+    [[ ${ATTACH_PUBLIC:-false} = true ]] || return 0
     result=0
     CONVERGENCE_DRAIN_STDIN=true launch exec -- cat < "$FIXTURE/exec-input" > "$FIXTURE/exec-output" 2> "$FIXTURE/exec-diagnostic" || result=$?
     [[ "$before" = "$(snapshot)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'exec mutated resources'
@@ -54,9 +70,13 @@ check_foreign_network_member() {
 }
 mkdir -p "$XDG_STATE_HOME"
 proxy=""
-observe refuse 'jailbox up'
+ATTACH_PUBLIC=true observe refuse 'jailbox up'
 expect_success
-observe allow
+ATTACH_PUBLIC=true observe allow
+# Both an early compatibility failure and a late live-health failure must stop
+# all three public consumers, with diagnostics and no success bytes/session.
+ATTACH_PUBLIC=true CONVERGENCE_BAD_PROPERTY=ReadonlyRootfs observe refuse 'jailbox stop'
+ATTACH_PUBLIC=true CONVERGENCE_SESSION_RESULT=hardening observe refuse 'jailbox stop'
 check_foreign_network_member "$PREFIX-net"
 before=$(snapshot)
 : > "$CONVERGENCE_LOG"
@@ -92,13 +112,13 @@ launch stop >/dev/null
 export JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com
 proxy=http://10.240.57.2:8888
 expect_success
-observe allow
+ATTACH_PUBLIC=true observe allow
 check_foreign_network_member "$PREFIX-net-internal"
 check_foreign_network_member "$PREFIX-net-external"
 CONVERGENCE_UPSTREAM_FAILURE=true observe allow
 if grep -q 'https://example.com/' "$CONVERGENCE_SSH_LOG"; then fail 'attachment contacted the advisory upstream website'; fi
 CONVERGENCE_PROXY_FAILURE=true observe refuse 'proxy'
-CONVERGENCE_DENIAL_TRANSPORT_FAILURE=true observe refuse 'transport failed'
+ATTACH_PUBLIC=true CONVERGENCE_DENIAL_TRANSPORT_FAILURE=true observe refuse 'transport failed'
 CONVERGENCE_DENIAL_CODE=200 observe refuse 'outside the allowlist'
 CONVERGENCE_MANAGED_SETTINGS_FAILURE=true observe refuse 'jailbox up'
 # A missing required proxy is resumable through up.
@@ -161,32 +181,6 @@ CONVERGENCE_SESSION_RESULT=project-write observe refuse 'correct host project ow
 if grep -q 'jailbox stop\|jailbox --clean' "$FIXTURE/diagnostic"; then fail 'host permission failure recommends destructive recovery'; fi
 # Missing local payloads require installation repair, not sandbox replacement.
 if (
-    # shellcheck source=src/host/core/project/hash.sh
-    source "$ROOT/src/host/core/project/hash.sh"
-    # shellcheck source=src/host/core/configuration/version.sh
-    source "$ROOT/src/host/core/configuration/version.sh"
-    # shellcheck source=src/host/core/checks/host.sh
-    source "$ROOT/src/host/core/checks/host.sh"
-    # shellcheck source=src/host/core/project/paths.sh
-    source "$ROOT/src/host/core/project/paths.sh"
-    # shellcheck source=src/host/core/configuration/load.sh
-    source "$ROOT/src/host/core/configuration/load.sh"
-    # shellcheck source=src/host/core/project/identity.sh
-    source "$ROOT/src/host/core/project/identity.sh"
-    # shellcheck source=src/host/core/resources/ssh.sh
-    source "$ROOT/src/host/core/resources/ssh.sh"
-    # shellcheck source=src/host/core/checks/attachment.sh
-    source "$ROOT/src/host/core/checks/attachment.sh"
-    # shellcheck source=src/host/core/resources/container.sh
-    source "$ROOT/src/host/core/resources/container.sh"
-    # shellcheck source=src/host/core/resources/proxy.sh
-    source "$ROOT/src/host/core/resources/proxy.sh"
-    # shellcheck source=src/host/core/resources/downloader.sh
-    source "$ROOT/src/host/core/resources/downloader.sh"
-    # shellcheck source=src/host/core/commands/connection-info.sh
-    source "$ROOT/src/host/core/commands/connection-info.sh"
-    # shellcheck source=src/host/core/checks/compatibility.sh
-    source "$ROOT/src/host/core/checks/compatibility.sh"
     SCRIPT_DIR="$FIXTURE/missing-installation"
     LAUNCH_CONVERGING=false
     EFFECTIVE_READONLY_PATHS=()

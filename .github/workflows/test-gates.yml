@@ -76,11 +76,35 @@ jobs:
           echo "$RUNNER_TEMP/shellcheck-v0.11.0" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" --version
 
+      - name: Fingerprint ShellCheck inputs
+        id: shellcheck-inputs
+        run: |
+          key=$(python3 scripts/lib/lint-cache-key.py)
+          printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+
+      - name: Restore successful ShellCheck
+        id: shellcheck-cache
+        if: steps.shellcheck-inputs.outputs.key != ''
+        uses: actions/cache/restore@v5
+        continue-on-error: true
+        with:
+          path: testlog/shellcheck-cache/success
+          key: shellcheck-v1-${{ steps.shellcheck-inputs.outputs.key }}
+
       - name: Run portable gate
         run: |
           command -v bash
           bash --version
           bash tests/run portable
+
+      # ShellCheck success is reusable even if a later portable suite fails.
+      - name: Save successful ShellCheck
+        if: ${{ !cancelled() && steps.shellcheck-inputs.outputs.key != '' && steps.shellcheck-cache.outputs.cache-hit != 'true' && hashFiles('testlog/shellcheck-cache/success') != '' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: testlog/shellcheck-cache/success
+          key: shellcheck-v1-${{ steps.shellcheck-inputs.outputs.key }}
 
       - name: Upload portable logs
         if: always()

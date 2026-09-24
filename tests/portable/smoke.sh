@@ -37,19 +37,6 @@ section() {
     printf '\n== %s ==\n' "$1"
 }
 
-syntax_check() {
-    local script
-    section "syntax"
-    for script in src/jailbox src/public-api.sh src/install.sh tests/run; do
-        bash -n "$script" || return 1
-    done
-    while IFS= read -r script; do
-        bash -n "$script" || return 1
-    done < <(find src/host scripts tests -type f -name '*.sh' -print | sort)
-    source scripts/lib/container-shells.sh
-    check_container_syntax src || return 1
-}
-
 reject_macos_system_bash() {
     local output status
 
@@ -135,7 +122,8 @@ refuse_unmanaged_update_target() {
 }
 
 main() {
-    syntax_check
+    section "syntax"
+    bash "$SCRIPT_DIR/syntax.sh"
     reject_macos_system_bash
     build_release_tarball
     smoke_install_update_uninstall

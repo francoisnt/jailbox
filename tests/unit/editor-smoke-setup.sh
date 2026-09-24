@@ -2,7 +2,8 @@
 # Test-only preferences must be seeded after up and before real editor launch.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=tests/e2e/editor-smoke.sh
+# Runner is checked separately; this fixture replaces its dependencies.
+# shellcheck source=/dev/null
 source "$ROOT/tests/e2e/editor-smoke.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -15,7 +16,6 @@ fake_cli() {
     return "${SMOKE_EXEC_STATUS:-0}"
 }
 export -f fake_editor fake_cli
-# shellcheck disable=SC2031 # Fresh fixture values, independent of the runner's subshell exports.
 export JAILBOX_TEST_EDITOR_REAL=fake_editor JAILBOX_TEST_CLI=fake_cli
 # exec requires executables, so expose the recording functions through Bash.
 printf '#!/bin/bash\nfake_editor "$@"\n' > "$tmp/editor"

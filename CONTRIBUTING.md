@@ -59,6 +59,20 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 ## Linting and tests
 
+Use `tests/run dev` during editing: syntax, generated-file checks, and the fast
+unit suites. Add affected suites explicitly, for example
+`tests/run dev attachment exec` (names may include `.sh`). The extra suites run
+once alongside the defaults, under the same resource limits and exclusive
+barriers as portable. New unit suites are discovered automatically; only the
+explicit entries in `tests/lib/dev-exclude.txt` are omitted by default.
+
+Development checks report **partial coverage**. They omit full ShellCheck,
+distribution checks, and expensive CLI/infrastructure suites. Run affected
+suites even when excluded from the defaults, and run `tests/run portable` once
+the finished change is ready for handoff. Applicable runtime, matrix, and editor
+gates remain required. CI and the no-argument `tests/run` still run the same
+acceptance gates; `dev` is not part of that sequence.
+
 Test ownership follows the behavior being asserted. The editor gate covers
 real editor integration and relies on public core readiness checks. Runtime
 and matrix own core SSH, networking, proxy enforcement, and sandbox-security
@@ -99,7 +113,16 @@ The portable lint driver (`scripts/lint.sh`) shows a single updating terminal
 progress line, occasional progress snapshots
 in redirected output, and grouped diagnostics. Detailed batch timings and output
 remain in the reported `testlog/shellcheck.*` directory. Source analysis and file
-discovery remain enabled for every run.
+discovery remain enabled on cache misses; discovery also runs before cache hits.
+Successful default invocations are cached in `testlog/shellcheck-cache` using
+the ShellCheck executable, platform, and contents and names of files under
+`src/`, `scripts/`, and `tests/`, plus the declared root version source. A hit
+records reuse in the run's `cache.log`; a miss performs the full analysis.
+Custom flags, ShellCheck configuration, and external source paths bypass reuse.
+Remove `testlog/shellcheck-cache` to force a fresh check. CI retains this success
+record even when a later portable suite fails. Mocked runner tests load the real
+runner at execution time but leave its static analysis to its own lint entry;
+extended analysis remains enabled.
 
 Portable runs lint, generated-file checks, unit suites, and distribution in
 that order. Reviewed unit suites in `tests/lib/portable-parallel.txt` run in

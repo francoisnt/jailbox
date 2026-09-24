@@ -16,31 +16,35 @@ for editor in code codium; do
     for name in "${!JAILBOX_CONFIG_EGRESS_ALLOW_@}"; do unset "$name"; done
     : > "$CONVERGENCE_LOG"
     printf 'DEV_IMAGE=localhost/convergence\nEDITOR=%s\nEGRESS_ALLOW=example.com\n' "$editor" > "$FIXTURE/project/jailbox.conf"
-    # The public file validator must delegate to core with no runtime prerequisites.
-    mkdir -p "$FIXTURE/local-bin"
-    for tool in bash dirname readlink realpath env; do
-        ln -sf "$(command -v "$tool")" "$FIXTURE/local-bin/$tool"
-    done
-    PATH="$FIXTURE/local-bin" launch --config jailbox.conf validate
-    [[ ! -s "$CONVERGENCE_LOG" ]]
-    printf 'DEV_IMAGE=selected\nEDITOR=code\n' > "$FIXTURE/project/selected.conf"
-    PATH="$FIXTURE/local-bin" launch --config selected.conf validate
-    printf 'DEV_IMAGE=selected\nREADONLY_PATHS=missing\n' > "$FIXTURE/project/selected.conf"
-    if PATH="$FIXTURE/local-bin" launch --config selected.conf validate; then fail 'selected file was ignored'; fi
-    rm "$FIXTURE/project/selected.conf"
-    # Byte rejection must happen before Bash can turn poisoned input into a
-    # valid launch or validation policy, on each public file-driven path.
-    cp "$FIXTURE/project/jailbox.conf" "$FIXTURE/valid.conf"
-    printf 'DEV_IMAGE=localhost/conver\0gence\n' > "$FIXTURE/project/jailbox.conf"
-    for mode in editor headless validate; do
-        args=()
-        case $mode in headless) args=(--no-editor) ;; validate) args=(--config jailbox.conf validate) ;; esac
-        : > "$FAKE_TRACE"
-        if launch "${args[@]}" > "$FIXTURE/out" 2> "$FIXTURE/error"; then fail 'NUL input accepted'; fi
-        grep -q 'NUL byte' "$FIXTURE/error"
-        [[ ! -s "$CONVERGENCE_LOG" && ! -s "$FAKE_TRACE" ]]
-    done
-    cp "$FIXTURE/valid.conf" "$FIXTURE/project/jailbox.conf"
+    # File validation and local init do not depend on the editor implementation;
+    # exercise them once. Both editors retain bootstrap/policy integration below.
+    if [[ "$editor" = code ]]; then
+        # The public file validator must delegate to core with no runtime prerequisites.
+        mkdir -p "$FIXTURE/local-bin"
+        for tool in bash dirname readlink realpath env; do
+            ln -sf "$(command -v "$tool")" "$FIXTURE/local-bin/$tool"
+        done
+        PATH="$FIXTURE/local-bin" launch --config jailbox.conf validate
+        [[ ! -s "$CONVERGENCE_LOG" ]]
+        printf 'DEV_IMAGE=selected\nEDITOR=code\n' > "$FIXTURE/project/selected.conf"
+        PATH="$FIXTURE/local-bin" launch --config selected.conf validate
+        printf 'DEV_IMAGE=selected\nREADONLY_PATHS=missing\n' > "$FIXTURE/project/selected.conf"
+        if PATH="$FIXTURE/local-bin" launch --config selected.conf validate; then fail 'selected file was ignored'; fi
+        rm "$FIXTURE/project/selected.conf"
+        # Byte rejection must happen before Bash can turn poisoned input into a
+        # valid launch or validation policy, on each public file-driven path.
+        cp "$FIXTURE/project/jailbox.conf" "$FIXTURE/valid.conf"
+        printf 'DEV_IMAGE=localhost/conver\0gence\n' > "$FIXTURE/project/jailbox.conf"
+        for mode in editor headless validate; do
+            args=()
+            case $mode in headless) args=(--no-editor) ;; validate) args=(--config jailbox.conf validate) ;; esac
+            : > "$FAKE_TRACE"
+            if launch "${args[@]}" > "$FIXTURE/out" 2> "$FIXTURE/error"; then fail 'NUL input accepted'; fi
+            grep -q 'NUL byte' "$FIXTURE/error"
+            [[ ! -s "$CONVERGENCE_LOG" && ! -s "$FAKE_TRACE" ]]
+        done
+        cp "$FIXTURE/valid.conf" "$FIXTURE/project/jailbox.conf"
+    fi
     # Inventory must run before any lifecycle call, including reopening.
     if FAKE_INVENTORY_STATUS=42 launch > "$FIXTURE/out" 2> "$FIXTURE/error"; then fail 'inventory failure accepted'; fi
     [[ ! -s "$CONVERGENCE_LOG" ]]
@@ -68,14 +72,10 @@ for editor in code codium; do
     export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
     # shellcheck disable=SC2016 # The decoder expands its fixture directory.
     sed 's|^cd /home/jailbox/project |cd "$CONVERGENCE_ENGINE" |' "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
-    # shellcheck disable=SC2016 # Literal argv must survive shell syntax unchanged.
-    args=('' 'space here' '"quoted"' '$literal' $'line\nend')
-    printf '%s\0' "${args[@]}" > "$FIXTURE/expected"
-    launch exec printf '%s\0' "${args[@]}" > "$FIXTURE/actual"
-    cmp "$FIXTURE/expected" "$FIXTURE/actual"
-    printf 'binary\0stdin\377\n' > "$FIXTURE/input"
-    launch exec cat < "$FIXTURE/input" > "$FIXTURE/actual"
-    cmp "$FIXTURE/input" "$FIXTURE/actual"
+    # exec.sh owns exhaustive argv/stdin fidelity. Here the contract is that
+    # file-derived bootstrap policy is accepted by each machine consumer.
+    launch exec printf '%s' attached > "$FIXTURE/actual"
+    [[ $(cat "$FIXTURE/actual") = attached ]]
     python3 "$ROOT/tests/lib/shell-terminal.py" --cwd "$FIXTURE/project" --output "$FIXTURE/shell" -- "$ROOT/src/jailbox" shell
     # Include editor hosts explicitly, reorder and repeat: both paths now agree.
     host_csv=
@@ -107,19 +107,21 @@ for editor in code codium; do
     if launch > "$FIXTURE/out" 2> "$FIXTURE/error"; then fail 'changed file policy launched'; fi
     [[ $(cat "$FAKE_TRACE") = 'inventory:code' ]]
     assert_no_mutation
-    # Init is local even with running/stopped containers, networks, or only a home.
-    for state in running stopped networks home; do
-        case $state in
-            stopped) for resource in "$PREFIX" "$PREFIX-proxy"; do podman stop "$resource" >/dev/null; done ;;
-            networks) for resource in "$PREFIX" "$PREFIX-proxy"; do podman rm -f "$resource" >/dev/null; done ;;
-            home) launch stop >/dev/null ;;
-        esac
-        before=$(snapshot)
-        : > "$CONVERGENCE_LOG"
-        rm "$FIXTURE/project/jailbox.conf"
-        launch init > "$FIXTURE/out"
-        assert_no_mutation
-    done
+    if [[ "$editor" = code ]]; then
+        # Init is local even with running/stopped containers, networks, or only a home.
+        for state in running stopped networks home; do
+            case $state in
+                stopped) for resource in "$PREFIX" "$PREFIX-proxy"; do podman stop "$resource" >/dev/null; done ;;
+                networks) for resource in "$PREFIX" "$PREFIX-proxy"; do podman rm -f "$resource" >/dev/null; done ;;
+                home) launch stop >/dev/null ;;
+            esac
+            before=$(snapshot)
+            : > "$CONVERGENCE_LOG"
+            rm "$FIXTURE/project/jailbox.conf"
+            launch init > "$FIXTURE/out"
+            assert_no_mutation
+        done
+    fi
     launch --clean >/dev/null
     unset JAILBOX_CONFIG_READONLY_PATHS_0
 done

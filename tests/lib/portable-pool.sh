@@ -5,11 +5,40 @@ source "$JAILBOX_DIR/scripts/lib/process-pool.sh"
 # shellcheck source=scripts/lib/worker-resources.sh
 source "$JAILBOX_DIR/scripts/lib/worker-resources.sh"
 
+# Discovery always owns full portable membership. Dev only filters its default
+# subset; explicit additions override exclusions without scheduling duplicates.
+portable_unit_catalog() {
+    local mode=$1 file name catalog
+    shift
+    local -A excluded=()
+    catalog=$(find "$SCRIPT_DIR/unit" -maxdepth 1 -type f -name '*.sh' -print | LC_ALL=C sort) || return 1
+    if [[ "$mode" = dev ]]; then
+        while IFS= read -r name; do
+            [[ -n "$name" && "$name" != \#* ]] || continue
+            [[ "$name" =~ ^[a-z0-9-]+\.sh$ && -f "$SCRIPT_DIR/unit/$name" && -z ${excluded[$name]-} ]] || {
+                printf 'Invalid dev exclusion: %s\n' "$name" >&2; return 1;
+            }
+            excluded[$name]=true
+        done < "$SCRIPT_DIR/lib/dev-exclude.txt" || return 1
+        for name in "$@"; do
+            [[ "$name" =~ ^[a-z0-9-]+\.sh$ && -f "$SCRIPT_DIR/unit/$name" ]] || return 1
+            unset 'excluded[$name]'
+        done
+    fi
+    while IFS= read -r file; do
+        [[ -n "$file" ]] || continue
+        name=${file##*/}
+        [[ "$name" =~ ^[a-z0-9-]+\.sh$ ]] || return 1
+        [[ -n ${excluded[$name]-} ]] || printf '%s\n' "$file"
+    done <<< "$catalog"
+}
+
 portable_unit_pool() (
     local run=$1 workers=$2 catalog file name status=0 passed=0 failed=0 completed=0 total
-    local started=$SECONDS last_progress=-15
+    local started=$SECONDS last_progress=-15 unit_gate=${GATE:-portable}
+    shift 2
     local -A parallel=()
-    catalog=$(find "$SCRIPT_DIR/unit" -maxdepth 1 -type f -name '*.sh' -print | LC_ALL=C sort) || return 1
+    catalog=$(portable_unit_catalog "$unit_gate" "$@") || return 1
     total=0
     while IFS= read -r file; do
         [[ -z "$file" ]] || total=$((total + 1))
@@ -29,7 +58,7 @@ portable_unit_pool() (
         trap '' HUP INT TERM
         process_pool_cancel || result=1
         printf '%s|%s\n' "$passed" "$failed" > "$run/summary" || result=1
-        test_progress_complete 'Portable units: %s/%s completed · %ss · logs: %s\n' "$completed" "$total" "$((SECONDS - started))" "$run"
+        test_progress_complete '%s units: %s/%s completed · %ss · logs: %s\n' "$unit_gate" "$completed" "$total" "$((SECONDS - started))" "$run"
         exit "$result"
     }
     trap portable_pool_cleanup EXIT
@@ -43,13 +72,13 @@ portable_unit_pool() (
         printf '%s|%s|%s\n' "$suite" "$result" "$elapsed" >> "$run/timings" || return 1
         if ((result == 0)); then
             passed=$((passed + 1))
-            test_log_result PASS "portable/${suite%.sh}" "$elapsed"
+            test_log_result PASS "$unit_gate/${suite%.sh}" "$elapsed"
         else
             failed=$((failed + 1))
-            test_log_result FAIL "portable/${suite%.sh}" "$elapsed"
+            test_log_result FAIL "$unit_gate/${suite%.sh}" "$elapsed"
         fi
         if ((result != 0)) || [[ ${GITHUB_ACTIONS:-false} = true ]]; then
-            test_log_group "portable/${suite%.sh}" "$run/$suite.log" || return 1
+            test_log_group "$unit_gate/${suite%.sh}" "$run/$suite.log" || return 1
         fi
         completed=$((completed + 1))
     }
@@ -58,7 +87,7 @@ portable_unit_pool() (
         local elapsed=$((SECONDS - started))
         test_progress_due "$last_progress" "$elapsed" || return 0
         last_progress=$elapsed
-        printf 'Progress: Portable: %s/%s done · %s running · %s failed · %ss\n' \
+        printf 'Progress: %s: %s/%s done · %s running · %s failed · %ss\n' "$unit_gate" \
             "$completed" "$total" "${#PROCESS_POOL_LABELS[@]}" "$failed" "$elapsed"
     }
     # shellcheck disable=SC2329 # Process-pool callbacks.
@@ -71,7 +100,7 @@ portable_unit_pool() (
         PROCESS_POOL_LAUNCHED_PID=$!
     }
     process_pool_init "$workers" portable_pool_report portable_pool_progress || return 1
-    printf 'Portable unit workers: %s · logs: %s\n' "$workers" "$run"
+    printf '%s unit workers: %s · logs: %s\n' "$unit_gate" "$workers" "$run"
     while IFS= read -r file; do
         [[ -n "$file" ]] || continue
         name=${file##*/}
@@ -92,8 +121,8 @@ run_portable_unit_suites() {
     local run workers result=0 passed=0 failed=0
     workers=$(worker_tool_budget portable) || return 1
     mkdir -p "$JAILBOX_DIR/testlog" || return 1
-    run=$(mktemp -d "$JAILBOX_DIR/testlog/portable.XXXXXXXX") || return 1
-    portable_unit_pool "$run" "$workers" || result=$?
+    run=$(mktemp -d "$JAILBOX_DIR/testlog/${GATE:-portable}.XXXXXXXX") || return 1
+    portable_unit_pool "$run" "$workers" "$@" || result=$?
     if [[ -f "$run/summary" ]]; then
         IFS='|' read -r passed failed < "$run/summary" || return 1
     fi

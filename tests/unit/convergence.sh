@@ -88,6 +88,7 @@ echo 'PASS: absent creation and running reuse preserve identities and home'
 (
     # shellcheck source=tests/lib/core.sh
     source "$ROOT/tests/lib/core.sh" "$ROOT/src"
+    # shellcheck disable=SC2030 # Each handler observation has isolated invocation state.
     PROJECT_DIR="$FIXTURE/project"
     prepare_launch
     initialize_runtime_ids
@@ -167,12 +168,39 @@ expect_success
 if grep -Eq '^(run|start|stop|rm)' "$CONVERGENCE_LOG"; then exit 1; fi
 echo 'PASS: unsafe directory metadata names a manual correction that preserves the generation and home'
 
-for property in ReadonlyRootfs SecurityOpt PortBindings Mounts NetworkSettings; do
-    before=$(snapshot); : > "$CONVERGENCE_LOG"
-    CONVERGENCE_BAD_PROPERTY=$property expect_failure 'incompatible\|unsafe authentication'
-    assert_no_mutation
-    echo "PASS: $property refusal preserves sandbox"
-done
+# Exhaust structure variations at the production validator; one actual up
+# refusal retains dispatch, ordering, recovery guidance and non-mutation proof.
+(
+    # shellcheck source=tests/lib/core.sh
+    source "$ROOT/tests/lib/core.sh" "$ROOT/src"
+    # shellcheck disable=SC2030 # Each handler observation has isolated invocation state.
+    PROJECT_DIR=$FIXTURE/project
+    prepare_launch
+    initialize_runtime_ids
+    inspect_sandbox_compatibility
+    before=$(snapshot)
+    for property in ReadonlyRootfs SecurityOpt PortBindings Mounts NetworkSettings; do
+        : > "$CONVERGENCE_LOG"
+        if (
+            export CONVERGENCE_BAD_PROPERTY=$property
+            validate_ssh_container_mount && validate_sandbox_structure
+        ) > "$FIXTURE/output" 2>&1; then exit 1; fi
+        grep -q 'incompatible\|unsafe authentication' "$FIXTURE/output"
+        assert_no_mutation
+        echo "PASS: $property refusal preserves sandbox"
+    done
+    # validation-batches.sh owns token parsing; these cases additionally prove
+    # the launch health boundary preserves real fixture state on every refusal.
+    for result in authorized-keys sockets mount:0 hardening proxy-env direct-route malformed; do
+        : > "$CONVERGENCE_LOG"
+        if (CONVERGENCE_SESSION_RESULT=$result validate_existing_sandbox_health) > "$FIXTURE/output" 2>&1; then exit 1; fi
+        grep -q 'refusing sandbox reuse' "$FIXTURE/output"
+        assert_no_mutation
+    done
+)
+before=$(snapshot); : > "$CONVERGENCE_LOG"
+CONVERGENCE_BAD_PROPERTY=ReadonlyRootfs expect_failure 'incompatible'
+assert_no_mutation
 before=$(snapshot); : > "$CONVERGENCE_LOG"
 CONVERGENCE_IMAGE=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa expect_success
 if grep -Eq '^(build|probe)' "$CONVERGENCE_LOG"; then exit 1; fi
@@ -183,11 +211,9 @@ CONVERGENCE_SSH_FAILURE=true expect_failure 'SSH validation command failed'
 grep -q 'refusing sandbox reuse' "$FIXTURE/output"
 assert_no_mutation
 
-for result in authorized-keys sockets mount:0 hardening proxy-env direct-route malformed; do
-    before=$(snapshot); : > "$CONVERGENCE_LOG"
-    CONVERGENCE_SESSION_RESULT=$result expect_failure 'refusing sandbox reuse'
-    assert_no_mutation
-done
+before=$(snapshot); : > "$CONVERGENCE_LOG"
+CONVERGENCE_SESSION_RESULT=hardening expect_failure 'refusing sandbox reuse'
+assert_no_mutation
 before=$(snapshot); : > "$CONVERGENCE_LOG"
 CONVERGENCE_SESSION_RESULT=project-write expect_failure 'correct host project ownership and permissions'
 if grep -q 'jailbox stop\|jailbox --clean' "$FIXTURE/output"; then

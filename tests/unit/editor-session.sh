@@ -3,7 +3,8 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # Source the same guarded runner used by stage workers, then install test stubs.
-# shellcheck source=tests/e2e/editor-smoke.sh
+# Runner is checked separately; this fixture replaces its dependencies.
+# shellcheck source=/dev/null
 source "$ROOT/tests/e2e/editor-smoke.sh"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 

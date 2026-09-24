@@ -1,0 +1,12 @@
+# Deliberate development defaults, not a timing filter. Full portable runs all.
+# CLI integration, real credentials, and nested scheduler/lint workloads.
+attachment.sh
+convergence.sh
+exec.sh
+frontend-cli.sh
+lifecycle-pool.sh
+lifecycle.sh
+lint-discovery.sh
+machine-inventory.sh
+portable-pool.sh
+ssh-generation.sh

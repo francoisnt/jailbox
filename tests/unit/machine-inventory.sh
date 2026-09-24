@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2329 # Production status handler invokes fixture stubs indirectly.
 # Byte formats, dependency isolation, and fail-closed inventory discovery.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -82,18 +83,51 @@ ln -s "$(command -v "$hash_tool")" "$tmp/bin/$hash_tool"
 
 resources=("$TEST_PREFIX" "$TEST_PREFIX-proxy" "$TEST_PREFIX-net" \
     "$TEST_PREFIX-net-internal" "$TEST_PREFIX-net-external" "$TEST_PREFIX-home")
-for ((mask=0; mask<64; mask++)); do
-    TEST_PRESENT=''
-    for ((i=0; i<6; i++)); do
-        if ((mask & (1 << i))); then TEST_PRESENT+=" ${resources[i]}"; fi
+# Exhaust every combination at the production status handler with an in-process
+# engine double. CLI cases below retain real dispatch, identity and tool lookup.
+(
+    # shellcheck source=src/host/core/commands/status.sh
+    source "$ROOT/src/host/core/commands/status.sh"
+    # shellcheck source=src/host/core/resources/inventory.sh
+    source "$ROOT/src/host/core/resources/inventory.sh"
+    # shellcheck source=src/host/core/resources/container.sh
+    source "$ROOT/src/host/core/resources/container.sh"
+    # shellcheck source=tests/fixtures/inventory-podman.sh
+    source "$ROOT/tests/fixtures/inventory-podman.sh"
+    die() { fail "$@"; }
+    require_command() { command -v "$1" >/dev/null; }
+    initialize_project_names() {
+        CONTAINER_NAME=$TEST_PREFIX PROXY_NAME=$TEST_PREFIX-proxy
+        NETWORK_NAME=$TEST_PREFIX-net VOLUME_NAME=$TEST_PREFIX-home
+    }
+    podman() { inventory_podman "$@"; }
+    for ((mask=0; mask<64; mask++)); do
+        TEST_PRESENT=''
+        for ((i=0; i<6; i++)); do
+            if ((mask & (1 << i))); then TEST_PRESENT+=" ${resources[i]}"; fi
+        done
+        for TEST_RUNNING in true false; do
+            expected=absent
+            if ((mask)); then expected=stopped; fi
+            if ((mask & 1)) && [[ "$TEST_RUNNING" = true ]]; then expected=running; fi
+            : > "$TEST_CALLS"
+            success "$expected" run_status
+            [[ $(wc -l < "$TEST_CALLS") -eq $((6 + (mask & 1))) ]] || fail 'incomplete inventory inspection'
+        done
     done
+)
+# Actual CLI output and inspection scope for absence, every single resource,
+# and combined inventory, with running/stopped development containers.
+for TEST_PRESENT in '' "${resources[@]}" "${resources[*]}"; do
     for TEST_RUNNING in true false; do
         expected=absent
-        if ((mask)); then expected=stopped; fi
-        if ((mask & 1)) && [[ "$TEST_RUNNING" = true ]]; then expected=running; fi
+        [[ -z "$TEST_PRESENT" ]] || expected=stopped
+        if [[ " $TEST_PRESENT " = *" $TEST_PREFIX "* && "$TEST_RUNNING" = true ]]; then expected=running; fi
         : > "$TEST_CALLS"
         success "$expected" cli status
-        [[ $(wc -l < "$TEST_CALLS") -eq $((6 + (mask & 1))) ]] || fail 'incomplete inventory inspection'
+        calls=6
+        [[ " $TEST_PRESENT " != *" $TEST_PREFIX "* ]] || calls=7
+        [[ $(wc -l < "$TEST_CALLS") = "$calls" ]] || fail 'incomplete CLI inventory inspection'
     done
 done
 

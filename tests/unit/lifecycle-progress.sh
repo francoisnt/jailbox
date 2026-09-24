@@ -49,7 +49,7 @@ done
 export SUITE_TRACE="$tmp/suites"
 for option in --help -h; do
     bash "$tmp/tree/tests/run" "$option" > "$tmp/help"
-    grep -Fxq 'Usage: run [portable|runtime|matrix|editor]' "$tmp/help" || fail 'help usage missing'
+    grep -Fxq 'Usage: run [dev [SUITE ...]|portable|runtime|matrix|editor]' "$tmp/help" || fail 'help usage missing'
     if grep -q '^\[' "$tmp/help"; then fail 'help contains timestamps'; fi
     [[ ! -s "$SUITE_TRACE" ]] || fail 'help executed a suite'
 done
@@ -109,3 +109,33 @@ if PATH="$tmp/bin:$PATH" DISPLAY=:fixture JAILBOX_EDITOR=code BASH_ENV="$tmp/mis
 grep -Fq 'setsid is required for the matrix gate' "$tmp/output" || fail 'missing prerequisite diagnosis'
 [[ ! -s "$SUITE_TRACE" ]] || fail 'gate ran before matrix prerequisite validation'
 pass 'all four gates run once in order and prerequisites fail before any suite'
+
+# Development selection uses real discovery/pool/supervision in this small tree.
+sed 's@tests/portable/smoke@tests/portable/syntax@g' "$tmp/tree/tests/portable/smoke.sh" > "$tmp/tree/tests/portable/syntax.sh"
+printf 'slow.sh\n' > "$tmp/tree/tests/lib/dev-exclude.txt"
+for suite in fast slow new; do
+    # shellcheck disable=SC2016 # The fixture expands its own environment.
+    printf '#!/bin/bash\nprintf "%%s\\n" "%s" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/tests/unit/$suite.sh"
+done
+: > "$SUITE_TRACE"
+PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev > "$tmp/output"
+printf 'tests/portable/syntax|\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\n' > "$tmp/expected"
+cmp "$tmp/expected" "$SUITE_TRACE" || fail 'dev defaults, discovery, or phase ownership'
+grep -Fq 'Development checks passed — partial coverage' "$tmp/output"
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 4 ]] || fail 'wrong dev result labels'
+: > "$SUITE_TRACE"
+PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev slow slow.sh fast > "$tmp/output"
+printf 'slow\n' >> "$tmp/expected"
+cmp "$tmp/expected" "$SUITE_TRACE" || fail 'explicit additions were omitted or duplicated'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 5 ]] || fail 'wrong explicit-suite result labels'
+: > "$SUITE_TRACE"
+if bash "$tmp/tree/tests/run" dev missing > "$tmp/output" 2>&1; then fail 'unknown dev suite accepted'; fi
+[[ ! -s "$SUITE_TRACE" ]] || fail 'dev started before validating selection'
+# A failed selected suite must fail dev and never print a success summary.
+printf '#!/bin/bash\nexit 42\n' > "$tmp/tree/tests/unit/slow.sh"
+if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev slow > "$tmp/output" 2>&1; then fail 'dev swallowed suite failure'; fi
+if grep -q 'Development checks passed' "$tmp/output"; then fail 'dev reported false success'; fi
+# Full portable ignores dev exclusions and still discovers every unit suite.
+if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" portable > "$tmp/output" 2>&1; then fail 'portable omitted excluded suite'; fi
+grep -Eq 'FAIL +portable/slow' "$tmp/output"
+pass 'dev discovery, explicit additions, failure propagation, and full portable membership'

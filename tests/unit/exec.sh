@@ -13,6 +13,18 @@ mkdir -m 700 "$TMPDIR"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 export JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com
 expect_success </dev/null
+# Payload/status permutations belong to the real exec handler and decoder.
+# Full CLI cases below separately cover attachment, stdin isolation, signals,
+# and concurrent callers. Stub only the already-tested attachment preparation.
+# shellcheck source=src/host/core/commands/exec.sh
+source "$ROOT/src/host/core/commands/exec.sh"
+transport_exec() (
+    require_command() { command -v "$1" >/dev/null; }
+    load_environment_config() { return 0; }
+    validate_attachment() { SSH_CONFIG=$GENERATION/ssh_config; CONTAINER_NAME=$PREFIX; }
+    die() { fail "$@"; }
+    run_exec "$@"
+)
 # shellcheck disable=SC2016 # Shell syntax is deliberately literal argv data.
 args=('' ' ' '"quotes"' "'" '*' $'a\nb\n' $'\377\376' --config --help -- '$(touch forbidden)' '; exit 99')
 printf '%s\0' "${args[@]}" > "$FIXTURE/expected"
@@ -26,9 +38,12 @@ expected_umask=$(umask)
 for status in 0 1 42 126 127 130 255; do
     result=0
     # shellcheck disable=SC2016 # Expanded by the command being executed.
-    launch exec bash -c 'exit "$1"' bash "$status" > "$FIXTURE/output" 2> "$FIXTURE/error" || result=$?
+    transport_exec bash -c 'exit "$1"' bash "$status" > "$FIXTURE/output" 2> "$FIXTURE/error" || result=$?
     [[ "$result" = "$status" ]] || fail "status $status became $result"
 done
+result=0
+launch exec bash -c 'exit 42' > "$FIXTURE/output" 2> "$FIXTURE/error" || result=$?
+[[ "$result" = 42 ]] || fail 'CLI lost remote failure status'
 result=0
 launch exec -c true > "$FIXTURE/output" 2> "$FIXTURE/error" || result=$?
 [[ "$result" = 127 ]] || fail 'command was interpreted as an exec builtin option'

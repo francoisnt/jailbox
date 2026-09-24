@@ -9,7 +9,7 @@ declare -F require_gate_prerequisites >/dev/null
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-for selected in portable runtime matrix editor; do
+for selected in dev portable runtime matrix editor; do
     status=0
     (
         die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -23,4 +23,4 @@ for selected in portable runtime matrix editor; do
     [[ "$status" = 1 && ! -s "$tmp/out" ]] || fail "$selected accepted missing Python"
     grep -Fxq 'Error: python3 is required for test gates' "$tmp/err" || fail "$selected missed early Python preflight"
 done
-printf 'PASS: all four gates check Python before gate-specific prerequisites\n'
+printf 'PASS: development checks and all four gates check Python before gate-specific prerequisites\n'

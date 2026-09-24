@@ -237,7 +237,13 @@ duplicate those assertions; a dependency failure can still fail an editor test.
 Portable coverage includes frontend, core, and shared-product contracts within
 one gate. Preserve core coverage when moving or removing duplicate assertions.
 
-Run `tests/run portable` for every code change. Also run `tests/run runtime`
+During development, run `tests/run dev` and the suites affected by the change.
+`tests/run dev attachment exec` adds named unit suites to the fast defaults;
+this is partial coverage, not a fifth acceptance gate. Full portable still
+includes every discovered unit suite. Run `tests/run portable` once the final
+code change is ready for handoff, rather than after every intermediate edit.
+Repeat checks when subsequent changes or failures invalidate their results.
+Also run `tests/run runtime`
 for host, container, SSH, mount, network, or lifecycle changes when Podman is
 available. Run `tests/run matrix` for lifecycle or matrix changes when its
 prerequisites are available. Run `tests/run editor` for editor integration changes. If a required

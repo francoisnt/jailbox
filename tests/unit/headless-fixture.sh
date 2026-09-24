@@ -46,7 +46,8 @@ printf 'PASS: headless fixtures reject unavailable and claimed ports with bounde
 # Status artifacts survive fixture cleanup, remain outside PATH, and retain
 # repeated observations of the same state within each parallel stage.
 (
-    # shellcheck source=tests/e2e/headless.sh
+    # Runner is checked separately; this fixture replaces its dependencies.
+    # shellcheck source=/dev/null
     source "$ROOT/tests/e2e/headless.sh"
     fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
     stub_dir="$fixture/stubs"
@@ -79,7 +80,8 @@ printf 'PASS: headless status artifacts retain each stage and observation outsid
 # Use the runtime harness's actual stubs for preflight and launch. Inventory
 # must work before a profile exists, while the headless guard rejects both.
 (
-    # shellcheck source=tests/e2e/headless.sh
+    # Runner is checked separately; this fixture replaces its dependencies.
+    # shellcheck source=/dev/null
     source "$ROOT/tests/e2e/headless.sh"
     fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
     stub_dir="$fixture/stubs"

@@ -14,6 +14,19 @@ if [[ -z ${JAILBOX_TEST_LOG_SCRIPT:-} ]]; then
     test_log_entrypoint "$SCRIPT_DIR/lint.sh" "$@"
 fi
 
+# Snapshot before discovery so files added during a run cannot be certified
+# without being included in its discovered inputs.
+lint_cache=testlog/shellcheck-cache
+lint_key=""
+if (($# == 0)); then
+    lint_key=$(python3 "$SCRIPT_DIR/lib/lint-cache-key.py") || lint_key=""
+fi
+# Invalidate before discovery too: an invalid new interpreter must not leave a
+# previous success available for CI to save under the new inputs.
+if [[ -z "$lint_key" || ! -f "$lint_cache/success" || $(cat "$lint_cache/success") != "$lint_key" ]]; then
+    rm -f "$lint_cache/success"
+fi
+
 # Standalone bash scripts. Discover repository tooling and tests so adding a
 # new suite cannot silently leave it outside ShellCheck coverage.
 bash_scripts=(src/install.sh tests/run)
@@ -33,14 +46,22 @@ done <<< "$files"
 # shellcheck source=scripts/lib/container-shells.sh
 source "$SCRIPT_DIR/lib/container-shells.sh"
 collect_container_shells src
+mkdir -p testlog
+lint_output=$(mktemp -d "$PWD/testlog/shellcheck.XXXXXXXX")
 
+# Reuse only a successful check of identical default inputs. Discovery above
+# still validates new files and interpreters before consulting the cache.
+if [[ -n "$lint_key" && -f "$lint_cache/success" && $(cat "$lint_cache/success") = "$lint_key" ]]; then
+    printf 'hit %s\n' "$lint_key" > "$lint_output/cache.log"
+    printf 'ShellCheck passed · cached identical inputs · logs: %s\n' "$lint_output"
+    exit 0
+fi
+printf 'miss %s\n' "${lint_key:-disabled}" > "$lint_output/cache.log"
 # shellcheck source=scripts/lib/process-pool.sh
 source "$SCRIPT_DIR/lib/process-pool.sh"
 # shellcheck source=scripts/lib/worker-resources.sh
 source "$SCRIPT_DIR/lib/worker-resources.sh"
 lint_workers=$(worker_tool_budget lint)
-mkdir -p testlog
-lint_output=$(mktemp -d "$PWD/testlog/shellcheck.XXXXXXXX")
 lint_started=$SECONDS
 lint_completed=0
 lint_last_progress=-15
@@ -56,6 +77,7 @@ lint_cleanup() {
     trap - EXIT
     trap '' HUP INT TERM
     process_pool_cancel 7 || status=1
+    rm -f "$lint_cache/success.$$" || true
     if [[ "$lint_finished" = false ]]; then
         test_progress_complete 'ShellCheck interrupted · %ss · logs: %s\n' "$((SECONDS - lint_started))" "$lint_output"
     fi
@@ -120,5 +142,14 @@ lint_result=0
 process_pool_wait || lint_result=1
 lint_finished=true
 if ((lint_result == 0)); then lint_summary=passed; else lint_summary=failed; fi
+if ((lint_result == 0)) && [[ -n "$lint_key" ]]; then
+    # Do not certify a worktree edited while analysis was running.
+    lint_final_key=$(python3 "$SCRIPT_DIR/lib/lint-cache-key.py") || lint_final_key=""
+    if [[ "$lint_final_key" = "$lint_key" ]]; then
+        if mkdir -p "$lint_cache" && printf '%s\n' "$lint_key" > "$lint_cache/success.$$"; then
+            mv "$lint_cache/success.$$" "$lint_cache/success" || true
+        fi
+    fi
+fi
 test_progress_complete 'ShellCheck %s · %ss · logs: %s\n' "$lint_summary" "$((SECONDS - lint_started))" "$lint_output"
 exit "$lint_result"

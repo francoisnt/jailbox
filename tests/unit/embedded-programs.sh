@@ -32,7 +32,8 @@ cmp "$tmp/settings" "$tmp/home/.vscode-server/data/Machine/settings.json"
 # runs after function locals disappear and must retain the container identity.
 result=0
 (
-    # shellcheck source=tests/integration/wrapper-images.sh
+    # Runner is checked separately; this fixture replaces its dependencies.
+    # shellcheck source=/dev/null
     source "$ROOT/tests/integration/wrapper-images.sh"
     # shellcheck disable=SC2034 # Inputs to the runner stage.
     PASSED=0 FAILED=0 JAILBOX_DIR=$ROOT BASE_IMAGE_DEBIAN=debian BASE_IMAGE_ALPINE=alpine BASE_IMAGE_FEDORA=fedora

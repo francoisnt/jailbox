@@ -1,8 +1,9 @@
 #!/bin/bash
 # Run jailbox's test gates.
 #
-# Usage: tests/run [portable|runtime|matrix|editor]
+# Usage: tests/run [dev [SUITE ...]|portable|runtime|matrix|editor]
 #
+#   dev       Fast development checks, plus explicitly named unit suites
 #   portable  ShellCheck, unit tests, and distribution/install lifecycle
 #   runtime   Container security contract and headless CLI system tests
 #   matrix    Full lifecycle state and interruption matrix
@@ -23,6 +24,7 @@ ALL_GATES=(portable runtime matrix editor)
 SUITES_PASSED=0
 SUITES_FAILED=0
 SELECTED_EDITOR=""
+DEV_SUITES=()
 
 die() { echo "Error: $*" >&2; exit 1; }
 
@@ -80,7 +82,7 @@ run_suite() {
 run_unit_suites() {
     # shellcheck source=tests/lib/portable-pool.sh
     source "$SCRIPT_DIR/lib/portable-pool.sh"
-    run_portable_unit_suites
+    run_portable_unit_suites "${DEV_SUITES[@]}"
 }
 
 print_summary() {
@@ -88,6 +90,9 @@ print_summary() {
     printf 'Gate %s: %d suite(s) passed' "$GATE" "$SUITES_PASSED"
     [[ "$SUITES_FAILED" -gt 0 ]] && printf ', %d failed' "$SUITES_FAILED"
     printf '\n'
+    if [[ "$GATE" = dev && "$SUITES_FAILED" = 0 ]]; then
+        printf 'Development checks passed — partial coverage (full portable still required).\n'
+    fi
     printf 'Elapsed gate %s: %ds\n' "$GATE" "$((SECONDS - GATE_STARTED))"
     if [[ ${GITHUB_ACTIONS:-false} = true && -n ${GITHUB_STEP_SUMMARY:-} && ${JAILBOX_TEST_LOG_SCRIPT:-} = "$SCRIPT_DIR/run" ]]; then
         printf '| %s | %s | %s | %ss |\n' "$GATE" "$SUITES_PASSED" "$SUITES_FAILED" "$((SECONDS - GATE_STARTED))" >> "$GITHUB_STEP_SUMMARY"
@@ -151,6 +156,11 @@ run_gate() {
     local -a editor_stages
 
     case "$1" in
+        dev)
+            run_suite "syntax" bash "$SCRIPT_DIR/portable/syntax.sh"
+            run_suite "generated-files" check_generated_files
+            run_unit_suites
+            ;;
         portable)
             run_suite "shellcheck" bash "$JAILBOX_DIR/scripts/lint.sh"
             run_suite "generated-files" check_generated_files
@@ -182,10 +192,14 @@ run_gate() {
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [portable|runtime|matrix|editor]
+Usage: $(basename "$0") [dev [SUITE ...]|portable|runtime|matrix|editor]
 
 Runs every gate in order when no gate is named.
 Runtime and matrix are independent gates; matrix prepares its own required images.
+
+Development checks:
+  dev [SUITE ...]  Syntax, generated files, fast suites, plus named unit suites
+                  Partial coverage; omits full ShellCheck and distribution
 
 Test gates:
   portable  ShellCheck, all unit tests, release tarball, and install lifecycle
@@ -195,17 +209,29 @@ Test gates:
 EOF
 }
 
-case "$#" in
-    0) GATES=("${ALL_GATES[@]}") ;;
-    1)
-        case "$1" in
-            portable|runtime|matrix|editor) GATES=("$1") ;;
-            --help|-h) usage; exit 0 ;;
-            *) die "unknown test gate: $1 (expected portable, runtime, matrix, or editor)" ;;
-        esac
-        ;;
-    *) usage >&2; exit 2 ;;
-esac
+if [[ ${1:-} = dev ]]; then
+    GATES=(dev)
+    shift
+    for suite in "$@"; do
+        suite=${suite%.sh}
+        [[ "$suite" =~ ^[a-z0-9-]+$ && -f "$SCRIPT_DIR/unit/$suite.sh" ]] || die "unknown unit suite: $suite"
+        DEV_SUITES+=("$suite.sh")
+    done
+    # Preserve the complete invocation when logging re-executes the entrypoint.
+    set -- dev "${DEV_SUITES[@]}"
+else
+    case "$#" in
+        0) GATES=("${ALL_GATES[@]}") ;;
+        1)
+            case "$1" in
+                portable|runtime|matrix|editor) GATES=("$1") ;;
+                --help|-h) usage; exit 0 ;;
+                *) die "unknown test gate: $1 (expected dev, portable, runtime, matrix, or editor)" ;;
+            esac
+            ;;
+        *) usage >&2; exit 2 ;;
+    esac
+fi
 
 # Help and argument validation finish before timestamped execution begins.
 test_log_entrypoint "$SCRIPT_DIR/run" "$@"
