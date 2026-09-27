@@ -178,4 +178,11 @@ unset FRONTEND_TEST_STDOUT
 printf 'DEV_IMAGE=bad value\n' > "$project/jailbox.conf"
 reject 'invalid config' validate_file_config "$TMP/core" "$project" "$project/jailbox.conf"
 [[ $(wc -l < "$TMP/calls") == 4 ]]
+# A failed prerequisite must invalidate a previously composed policy too.
+(
+    FRONTEND_POLICY_READY=1
+    require_host_realpath() { return 1; }
+    if load; then fail 'failed prerequisite accepted'; fi
+    [[ $FRONTEND_POLICY_READY == 0 ]]
+)
 printf 'PASS: prepared frontend file grammar, trust, policy, and validation\n'

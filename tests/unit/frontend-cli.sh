@@ -21,7 +21,7 @@ for editor in code codium; do
     if [[ "$editor" = code ]]; then
         # The public file validator must delegate to core with no runtime prerequisites.
         mkdir -p "$FIXTURE/local-bin"
-        for tool in bash dirname readlink realpath env; do
+        for tool in bash dirname readlink realpath sort tr env; do
             ln -sf "$(command -v "$tool")" "$FIXTURE/local-bin/$tool"
         done
         PATH="$FIXTURE/local-bin" launch --config jailbox.conf validate

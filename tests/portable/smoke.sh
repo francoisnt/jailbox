@@ -42,6 +42,7 @@ reject_macos_system_bash() {
 
     [[ "$(uname -s)" == "Darwin" ]] || return 0
     /bin/bash -n src/install.sh || return 1
+    /bin/bash -n src/host/prerequisites.sh || return 1
 
     set +e
     output="$(/bin/bash src/jailbox --help 2>&1)"

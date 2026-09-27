@@ -1,4 +1,6 @@
 # Core module loading and explicit initialization.
+# shellcheck source=src/host/prerequisites.sh
+source "$SCRIPT_DIR/host/prerequisites.sh"
 # shellcheck source=src/host/core/checks/host.sh
 source "$SCRIPT_DIR/host/core/checks/host.sh"
 # shellcheck source=src/host/core/project/hash.sh

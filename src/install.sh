@@ -139,7 +139,7 @@ assert_replaceable_target_dir() {
 # Check bundle shape; recursive copying owns the runtime file inventory.
 validate_source_tree() {
     local path
-    for path in jailbox install.sh public-api.sh; do
+    for path in jailbox install.sh public-api.sh host/prerequisites.sh; do
         [ -f "$SOURCE_DIR/$path" ] || die "installer bundle is missing required file: $path"
     done
     for path in host container; do
@@ -205,6 +205,12 @@ install_jailbox() {
     local parent_dir tmp_dir backup_dir
 
     validate_source_tree
+    # Streamed installs reach this check in the downloaded bundle's installer.
+    # Recovery/help remain available even when runtime utilities are missing.
+    # shellcheck source=src/host/prerequisites.sh
+    source "$SOURCE_DIR/host/prerequisites.sh"
+    require_host_realpath || exit 1
+    require_host_sort || exit 1
     assert_safe_target_dir
 
     mkdir -p "$BIN_DIR"

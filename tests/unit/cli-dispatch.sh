@@ -7,7 +7,7 @@ trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/tool/host" "$tmp/project"
 cp "$ROOT/src/jailbox" "$tmp/tool/jailbox"
 cp "$ROOT/src/public-api.sh" "$tmp/tool/"
-cp "$ROOT/src/host/"{api-support,cli}.sh "$tmp/tool/host/"
+cp "$ROOT/src/host/"{api-support,cli,prerequisites}.sh "$tmp/tool/host/"
 mkdir "$tmp/tool/host/core"
 mkdir -p "$tmp/tool/host/core/commands"
 cp "$ROOT/src/host/core/commands/config-schema.sh" "$tmp/tool/host/core/commands/"

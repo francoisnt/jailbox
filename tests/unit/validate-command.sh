@@ -7,7 +7,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 tmp=$(cd "$tmp" && pwd -P)
 mkdir -p "$tmp/project" "$tmp/bin"
-for tool in bash dirname basename realpath; do
+for tool in bash dirname basename realpath sort tr; do
     ln -s "$(command -v "$tool")" "$tmp/bin/$tool"
 done
 export XDG_STATE_HOME="$tmp/state"

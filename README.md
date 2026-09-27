@@ -26,6 +26,10 @@ its reach into your machine.
 
 - **Linux or macOS** with **Podman** (rootless preferred)
 - **Bash 4.4 or newer** (`brew install bash` on macOS)
+- **GNU coreutils or compatible utilities**, including `realpath` with `-e`,
+  `-m`, and `--relative-to`, and `sort -z`. Installation, launch, validation,
+  and attachment check these capabilities and refuse with setup instructions
+  if they are unavailable.
 - `podman`, `ssh`, `ssh-keygen`, and either `sha256sum` or `shasum` (project
   identity is a SHA-256 hash of the project path). Filtered launches require
   an SSH client with `SetEnv` support (OpenSSH 7.8+).
@@ -33,6 +37,18 @@ its reach into your machine.
   workflow)
 - A project with a `Containerfile`/`Dockerfile` — or any public image name
   (see [Recipes](#recipes))
+
+On macOS, install coreutils and put its commands first on `PATH` before installing
+or running jailbox:
+
+```bash
+brew install bash coreutils
+export PATH="$(brew --prefix bash)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+```
+
+Add that `export` line to your shell startup file to retain it in new terminals.
+On Linux, install your distribution's `coreutils` package if it is missing.
+The installer does not install system packages or edit shell startup files.
 
 ## Quick Start
 

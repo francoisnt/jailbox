@@ -27,6 +27,7 @@ frontend-init.sh
 frontend-settings.sh
 gate-prerequisites.sh
 headless-fixture.sh
+host-prerequisites.sh
 init-config.sh
 lifecycle-git.sh
 lifecycle-matrix.sh

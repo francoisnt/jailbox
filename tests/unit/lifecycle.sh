@@ -611,7 +611,7 @@ test_identity_requires_a_sha256_tool() {
 
     restricted=$(make_restricted_bin no-hash-bin \
         bash sh dirname basename tr cut sed awk grep cat id mktemp rm find \
-        realpath ssh ssh-keygen cksum)
+        realpath sort ssh ssh-keygen cksum)
     if [ ! -e "$restricted/sha256sum" ] && [ ! -e "$restricted/shasum" ]; then
         pass "restricted PATH has neither sha256sum nor shasum"
     else

@@ -1,7 +1,8 @@
 # commands — validate
 
 run_validate() {
-    require_command realpath
+    require_host_realpath || return 1
+    require_host_sort || return 1
     load_environment_config || return 1
     validate_project_boundary || return 1
     validate_configured_readonly_paths || return 1

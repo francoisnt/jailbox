@@ -18,7 +18,7 @@ prepare_launch() {
     initialize_project_names
     require_command podman
     load_environment_config
-    host_preflight
+    host_preflight || return 1
     validate_project_boundary || return 1
     initialize_launch_state
 }

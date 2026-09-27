@@ -21,9 +21,10 @@ check_local_port_available() {
 }
 
 host_preflight() {
-    require_command podman
-    require_command cksum
-    require_command ssh
-    require_command ssh-keygen
-    require_command realpath
+    require_command podman || return 1
+    require_command cksum || return 1
+    require_command ssh || return 1
+    require_command ssh-keygen || return 1
+    require_host_realpath || return 1
+    require_host_sort || return 1
 }

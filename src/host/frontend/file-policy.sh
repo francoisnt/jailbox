@@ -5,6 +5,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/public-api.sh"
 # shellcheck source=src/host/api-support.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/api-support.sh"
 initialize_public_api_lookups
+# shellcheck source=src/host/prerequisites.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/prerequisites.sh"
 
 declare -A FRONTEND_VALUES=()
 FRONTEND_PROJECT=""
@@ -233,6 +235,7 @@ load_file_policy() {
     FRONTEND_VALUES=()
     FRONTEND_ANCHORS=()
     FRONTEND_ENVIRONMENT=()
+    require_host_realpath || return 1
     FRONTEND_PROJECT=$(cd -- "$project" && pwd -P) || die 'cannot resolve project directory'
     check_config_path "$FRONTEND_PROJECT" || return $?
     default=$FRONTEND_PROJECT/jailbox.conf
