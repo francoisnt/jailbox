@@ -1,7 +1,8 @@
 #!/bin/bash
-# Prepare an Intel CI runner or physical Mac for the Podman Machine smoke test.
-# GitHub's ARM runners cannot run the VM; CI selects macos-26-intel explicitly.
-# Editor installs here are
+# Prepare a macOS host for jailbox tests — manual local-Mac convenience only.
+#
+# Not run in CI: GitHub macOS runners lack the hypervisor entitlement, so
+# podman machine cannot start (see 999d314). Editor installs here are
 # intentionally floating (brew latest), unlike the pinned Linux CI path;
 # the setup-common.sh verifiers only check presence when pins are unset.
 set -euo pipefail
@@ -9,13 +10,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PODMAN_MACHINE_NAME="${PODMAN_MACHINE_NAME:-jailbox-ci}"
-export CONTAINERS_MACHINE_PROVIDER=applehv
 
 # shellcheck source=tests/ci/setup-portable.sh
 source "$SCRIPT_DIR/setup-portable.sh"
 
 install_base_tools() {
-    HOMEBREW_NO_AUTO_UPDATE=1 brew install podman
+    HOMEBREW_NO_AUTO_UPDATE=1 brew install podman qemu
 }
 
 wait_for_podman_machine() {
@@ -31,25 +31,15 @@ wait_for_podman_machine() {
 }
 
 start_podman_machine() {
-    local machines state
-    [[ "$PODMAN_MACHINE_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] || return 1
-    machines=$(podman machine list --format '{{.Name}}') || return 1
-    if ! grep -Fxq "$PODMAN_MACHINE_NAME" <<< "$machines"; then
-        podman machine init --rootful=false --cpus 2 --memory 6144 --disk-size 30 \
-            --volume "$HOME:$HOME" "$PODMAN_MACHINE_NAME" || return 1
+    if ! podman machine inspect "$PODMAN_MACHINE_NAME" >/dev/null 2>&1; then
+        CONTAINERS_MACHINE_PROVIDER=qemu podman machine init --cpus 2 --memory 4096 --disk-size 30 "$PODMAN_MACHINE_NAME"
     fi
 
-    # Target this machine's rootless connection without changing the user's
-    # default connection or accidentally testing another running engine.
-    export CONTAINER_CONNECTION="$PODMAN_MACHINE_NAME"
-    if [[ -n "${GITHUB_ENV:-}" ]]; then
-        printf 'CONTAINER_CONNECTION=%s\nCONTAINERS_MACHINE_PROVIDER=applehv\n' \
-            "$PODMAN_MACHINE_NAME" >> "$GITHUB_ENV" || return 1
+    if podman machine inspect "$PODMAN_MACHINE_NAME" --format '{{.State}}' 2>/dev/null | grep -qi running; then
+        return 0
     fi
-    state=$(podman machine inspect "$PODMAN_MACHINE_NAME" --format '{{.State}}') || return 1
-    if [[ "$state" != running ]]; then
-        podman machine start --update-connection=false "$PODMAN_MACHINE_NAME" || return 1
-    fi
+
+    podman machine start "$PODMAN_MACHINE_NAME"
     wait_for_podman_machine
 }
 
@@ -81,4 +71,4 @@ main() {
     fi
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
+main "$@"

@@ -217,12 +217,12 @@ the first failing suite. It validates every selected gate's prerequisites
 before the first suite, so an environment missing Podman, an editor, or a
 display fails immediately instead of after the portable gate.
 
-The shared CI workflow also runs a focused Podman Machine smoke test on
-`macos-26-intel`. Keep it distinct from full runtime/matrix coverage. Use the
-same smoke script for occasional physical Apple Silicon checks with native
-ARM64 images, recording the date and host/engine/image versions. Intel success
-does not establish Apple Silicon runtime support; do not claim manual verification
-until it has actually run. This adds no `tests/run` mode.
+Keep platform coverage claims explicit and evidence-based. macOS CI currently
+runs only portable tests; runtime, matrix, and editor CI run on Linux. Explain
+the hosted Mac virtualization limitation in user documentation, and do not
+present portable tests, Linux results, or Intel results as Apple Silicon runtime
+verification. Record actual checks and platform/tool versions before claiming
+manual Mac coverage; distinguish a smoke check from a full gate.
 
 - `portable`: ShellCheck, generated-file checks, every suite in `tests/unit/`,
   `tests/harness/parallel/`, and `tests/harness/exclusive/`,
