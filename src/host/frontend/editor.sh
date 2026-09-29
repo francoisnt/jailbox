@@ -12,18 +12,24 @@ EDITOR_EXTENSIONS_DIR=""
 EDITOR_BOOTSTRAP_HOSTS=()
 
 warn_low_inotify_watch_limit() {
-    local limit_file limit recommended
+    local limit recommended=524288
 
-    recommended=524288
-    limit_file="${JAILBOX_INOTIFY_MAX_USER_WATCHES_FILE:-/proc/sys/fs/inotify/max_user_watches}"
-    [ -r "$limit_file" ] || return 0
+    # Advisory only: use the public connection to inspect the kernel actually
+    # running the editor server, including when Podman runs inside a VM.
+    [[ -n "${EDITOR_CONNECTION[ssh_config]-}" && -n "${EDITOR_CONNECTION[ssh_host]-}" ]] || return 0
+    # Keepalives cannot stop a hung remote command on a responsive server.
+    # If the deadline utility is unavailable, skip this optional diagnostic.
+    command -v timeout >/dev/null 2>&1 || return 0
+    limit=$(timeout --kill-after=1s 5s ssh -n -F "${EDITOR_CONNECTION[ssh_config]}" \
+        -o BatchMode=yes -o ConnectTimeout=3 \
+        -o ServerAliveInterval=3 -o ServerAliveCountMax=1 \
+        "${EDITOR_CONNECTION[ssh_host]}" \
+        'cat /proc/sys/fs/inotify/max_user_watches' 2>/dev/null) || return 0
+    [[ "$limit" =~ ^[0-9]{1,10}$ ]] || return 0
+    ((10#$limit < recommended)) || return 0
 
-    limit=$(cat "$limit_file" 2>/dev/null || true)
-    [[ "$limit" =~ ^[0-9]+$ ]] || return 0
-    [ "$limit" -ge "$recommended" ] && return 0
-
-    echo "⚠️  fs.inotify.max_user_watches is $limit; VSCodium/VS Code Remote SSH may be unable to watch workspace file changes." >&2
-    echo "   Fix on the Linux host: echo 'fs.inotify.max_user_watches=$recommended' | sudo tee /etc/sysctl.d/60-jailbox-inotify.conf && sudo sysctl --system" >&2
+    echo "⚠️  fs.inotify.max_user_watches is $limit in the container; VSCodium/VS Code Remote SSH may be unable to watch workspace file changes." >&2
+    echo "   On the Linux host running Podman (the Podman VM on macOS), set fs.inotify.max_user_watches=$recommended in /etc/sysctl.d/60-jailbox-inotify.conf and run sudo sysctl --system." >&2
 }
 
 editor_preflight() {
@@ -119,7 +125,6 @@ launch_file_editor() (
     trap 'exit 129' HUP
     load_file_policy "$project" "$selected" || return $?
     editor_preflight || return $?
-    warn_low_inotify_watch_limit
     compose_machine_environment "${EDITOR_BOOTSTRAP_HOSTS[@]}" || return $?
     run_core_command "$executable" up || return $?
     connection_file=$(mktemp "${TMPDIR:-/tmp}/jailbox-connection.XXXXXX") || return 1
@@ -127,5 +132,6 @@ launch_file_editor() (
     parse_connection_records "$connection_file" || return $?
     rm -f -- "$connection_file" || return 1
     connection_file=""
+    warn_low_inotify_watch_limit
     launch_editor_remote || return $?
 )

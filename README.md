@@ -800,7 +800,7 @@ of these certifies attachment health.
 | VS Code cannot connect to an Alpine-based container | VS Code Remote SSH does not support Alpine hosts; set `EDITOR=codium` |
 | Editor preflight reports missing binary or Remote SSH extension | Install the named requirement; select `EDITOR=codium` or `EDITOR=code` in `jailbox.conf` |
 | `sshd did not become ready in time` | Inspect the container log: `podman logs <container-name>` (printed in the error) |
-| Editor shows `Unable to watch for file changes` | Host `fs.inotify.max_user_watches` is too low (jailbox warns below 524288); raise it persistently: `echo 'fs.inotify.max_user_watches=524288' \| sudo tee /etc/sysctl.d/60-jailbox-inotify.conf` then `sudo sysctl --system` |
+| Editor shows `Unable to watch for file changes` | The Linux kernel running the container has a low `fs.inotify.max_user_watches` limit (jailbox warns below 524288). On the Linux host running Podman — or inside its VM on macOS — raise it persistently: `echo 'fs.inotify.max_user_watches=524288' \| sudo tee /etc/sysctl.d/60-jailbox-inotify.conf` then `sudo sysctl --system`. On macOS, first enter the VM with `podman machine ssh` and run those commands there. Reapply the setting if you remove and recreate the VM. |
 
 ---
 

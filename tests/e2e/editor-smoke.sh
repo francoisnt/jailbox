@@ -294,7 +294,7 @@ editor_cache_archive_valid() {
 
 seed_editor_server_cache() {
     local project_dir="$1" stage="$2"
-    local archive volume volume_path image relative cli helper
+    local archive volume image relative cli helper
 
     EDITOR_CACHE_SEEDED=0
     [[ "${JAILBOX_EDITOR_COLD_BOOTSTRAP:-}" != "1" ]] || {
@@ -321,9 +321,7 @@ seed_editor_server_cache() {
     ledger_record volume "$volume" || return 1
     ledger_record container "$helper" || return 1
 
-    podman volume create "$volume" >/dev/null || return 1
-    volume_path=$(podman volume inspect "$volume" --format '{{.Mountpoint}}') || return 1
-    podman unshare chown 0:0 "$volume_path" || return 1
+    podman volume create --opt o=uid=0,gid=0 "$volume" >/dev/null || return 1
 
     if ! podman run --rm -i \
         --name "$helper" \

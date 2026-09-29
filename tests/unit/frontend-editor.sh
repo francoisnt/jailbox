@@ -10,7 +10,7 @@ TMP=$(cd "$TMP" && pwd -P)
 trap 'rm -rf -- "$TMP"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 mkdir -p "$TMP/bin" "$TMP/project" "$TMP/home" "$TMP/staging"
-for tool in realpath mktemp rm dirname cat chmod mv env mkdir; do
+for tool in realpath mktemp rm dirname cat chmod mv env mkdir sleep; do
     ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
 done
 for editor in code codium; do
@@ -19,7 +19,12 @@ for editor in code codium; do
 done
 cp "$ROOT/tests/fixtures/editor-client/core.sh" "$TMP/core"
 chmod 700 "$TMP/core"
-export JAILBOX_INOTIFY_MAX_USER_WATCHES_FILE=$TMP/absent
+export WATCHER_TIMEOUT_REAL
+WATCHER_TIMEOUT_REAL=$(command -v timeout)
+cp "$ROOT/tests/fixtures/editor-client/watcher-timeout.sh" "$TMP/bin/timeout"
+chmod 700 "$TMP/bin/timeout"
+cp "$ROOT/tests/fixtures/editor-client/watcher-ssh.sh" "$TMP/bin/ssh"
+chmod 700 "$TMP/bin/ssh"
 export HOME=$TMP/home TMPDIR=$TMP/staging FAKE_TRACE=$TMP/trace FAKE_RECORDS=$TMP/records
 export JAILBOX_EDITOR=invalid EDITOR=invalid
 unset XDG_STATE_HOME
@@ -53,7 +58,18 @@ settings=$HOME/.local/state/jailbox/editor-profiles/012345abcdef/User/settings.j
 write_records http://10.0.0.2:8888
 printf 'EDITOR=code\nEGRESS_ALLOW=example.org\n' > "$TMP/project/jailbox.conf"
 launch || { cat "$TMP/err" >&2; exit 1; }
-[[ $(cat "$FAKE_TRACE") == $'inventory:code\ncore:up\ncore:connection-info\nlaunch:code' ]]
+[[ $(cat "$FAKE_TRACE") == $'inventory:code\ncore:up\ncore:connection-info\nwatcher-check\nlaunch:code' ]]
+# The timeout fixture validates production deadlines, shortening only this
+# hang scenario while retaining real TERM/KILL enforcement.
+export WATCHER_HANG_PID="$TMP/watcher-pid"
+started=$SECONDS
+launch || { cat "$TMP/err" >&2; fail 'hung diagnostic blocked launch'; }
+[[ $((SECONDS - started)) -lt 12 ]]
+mapfile -t timeout_args < "$WATCHER_HANG_PID.timeout-args"
+[[ ${timeout_args[0]} == --kill-after=0.2s && ${timeout_args[1]} == 0.5s && ${timeout_args[2]} == ssh ]]
+[[ $(cat "$FAKE_TRACE") == $'inventory:code\ncore:up\ncore:connection-info\nwatcher-check\nlaunch:code' ]]
+if kill -0 "$(cat "$WATCHER_HANG_PID")" 2>/dev/null; then fail 'diagnostic process survived deadline'; fi
+unset WATCHER_HANG_PID
 cmp "$FAKE_TRACE.up.env" "$FAKE_TRACE.connection-info.env"
 for expected in '0=example.org' '1=update.code.visualstudio.com' '2=vscode.download.prss.microsoft.com' '3=main.vscode-cdn.net' '4=vo.msecnd.net'; do
     child_has "JAILBOX_CONFIG_EGRESS_ALLOW_$expected"
@@ -69,7 +85,7 @@ printf 'future_field\topaque\tvalue\n\377\0' >> "$FAKE_RECORDS"
 launch
 cmp "$TMP/expected-argv" "$FAKE_TRACE.argv"
 cmp "$TMP/expected-settings" "$settings"
-[[ $(cat "$FAKE_TRACE") == $'inventory:code\ncore:up\ncore:connection-info\nlaunch:code' ]]
+[[ $(cat "$FAKE_TRACE") == $'inventory:code\ncore:up\ncore:connection-info\nwatcher-check\nlaunch:code' ]]
 write_records http://10.0.0.2:8888
 # Relocation changes both publication and the editor argument, including spaces.
 # shellcheck disable=SC2030 # Each scenario intentionally isolates its state home.
