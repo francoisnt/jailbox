@@ -123,15 +123,15 @@ for suite in fast slow new harness-fast harness-slow; do
 done
 : > "$SUITE_TRACE"
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev > "$tmp/output"
-printf 'tests/portable/syntax|\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nharness-fast\n' > "$tmp/expected"
+printf 'tests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nharness-fast\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'dev defaults, discovery, or phase ownership'
 grep -Fq 'Development checks passed — partial coverage' "$tmp/output"
-[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 5 ]] || fail 'wrong dev result labels'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 6 ]] || fail 'wrong dev result labels'
 : > "$SUITE_TRACE"
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev slow slow.sh fast harness-slow > "$tmp/output"
-printf 'tests/portable/syntax|\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nslow\nharness-fast\nharness-slow\n' > "$tmp/expected"
+printf 'tests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nslow\nharness-fast\nharness-slow\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'explicit additions were omitted or duplicated'
-[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 7 ]] || fail 'wrong explicit-suite result labels'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 8 ]] || fail 'wrong explicit-suite result labels'
 : > "$SUITE_TRACE"
 if bash "$tmp/tree/tests/run" dev missing > "$tmp/output" 2>&1; then fail 'unknown dev suite accepted'; fi
 [[ ! -s "$SUITE_TRACE" ]] || fail 'dev started before validating selection'

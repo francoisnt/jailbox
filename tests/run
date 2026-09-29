@@ -91,7 +91,7 @@ print_summary() {
     [[ "$SUITES_FAILED" -gt 0 ]] && printf ', %d failed' "$SUITES_FAILED"
     printf '\n'
     if [[ "$GATE" = dev && "$SUITES_FAILED" = 0 ]]; then
-        printf 'Development checks passed — partial coverage (full portable still required).\n'
+        printf 'Development checks passed — partial coverage (CI runs full portable).\n'
     fi
     printf 'Elapsed gate %s: %ds\n' "$GATE" "$((SECONDS - GATE_STARTED))"
     if [[ ${GITHUB_ACTIONS:-false} = true && -n ${GITHUB_STEP_SUMMARY:-} && ${JAILBOX_TEST_LOG_SCRIPT:-} = "$SCRIPT_DIR/run" ]]; then
@@ -117,6 +117,10 @@ require_gate_prerequisites() {
     command -v python3 >/dev/null 2>&1 || die "python3 is required for test gates"
     if gate_selected portable; then
         command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the portable gate"
+    fi
+    if gate_selected dev; then
+        command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for development checks"
+        command -v git >/dev/null 2>&1 || die "git is required for worktree ShellCheck"
     fi
     if gate_selected runtime; then
         command -v podman >/dev/null 2>&1 || die "podman is required for the runtime gate"
@@ -158,6 +162,7 @@ run_gate() {
     case "$1" in
         dev)
             run_suite "syntax" bash "$SCRIPT_DIR/portable/syntax.sh"
+            run_suite "shellcheck-worktree" bash "$JAILBOX_DIR/scripts/lint.sh" --worktree
             run_suite "generated-files" check_generated_files
             run_portable_tests
             ;;
@@ -198,7 +203,7 @@ Runs every gate in order when no gate is named.
 Runtime and matrix are independent gates; matrix prepares its own required images.
 
 Development checks:
-  dev [SUITE ...]  Syntax, generated files, fast suites, plus named portable suites
+  dev [SUITE ...]  Syntax, worktree ShellCheck, generated files, fast and named suites
                   Partial coverage; omits full ShellCheck and distribution
 
 Test gates:

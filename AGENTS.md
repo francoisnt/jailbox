@@ -258,11 +258,15 @@ across them.
 All three directories remain part of portable, not separate user-facing gates.
 
 During development, run `tests/run dev` and the suites affected by the change.
+The dev gate includes ShellCheck of staged, unstaged, and untracked shell files
+using their current worktree contents. Full ShellCheck and portable coverage
+belong to CI; do not run full portable routinely after each local change.
 `tests/run dev attachment exec` adds named product or harness suites to the fast defaults;
 this is partial coverage, not a fifth acceptance gate. Full portable still
-includes every discovered product and harness suite. Run `tests/run portable` once the final
-code change is ready for handoff, rather than after every intermediate edit.
-Repeat checks when subsequent changes or failures invalidate their results.
+includes every discovered product and harness suite. Run it locally only when
+explicitly requested or when a specific failure or coverage gap justifies it;
+state that reason before running it. Repeat affected checks when subsequent
+changes or failures invalidate their results.
 Also run `tests/run runtime`
 for host, container, SSH, mount, network, or lifecycle changes when Podman is
 available. Run `tests/run matrix` for lifecycle or matrix changes when its

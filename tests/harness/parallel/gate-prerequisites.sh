@@ -23,4 +23,16 @@ for selected in dev portable runtime matrix editor; do
     [[ "$status" = 1 && ! -s "$tmp/out" ]] || fail "$selected accepted missing Python"
     grep -Fxq 'Error: python3 is required for test gates' "$tmp/err" || fail "$selected missed early Python preflight"
 done
+for missing in shellcheck git; do
+    if (
+        die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+        gate_selected() { [[ "$1" = dev ]]; }
+        command() {
+            [[ "$*" != "-v $missing" ]] || return 1
+            builtin command "$@"
+        }
+        require_gate_prerequisites
+    ) > "$tmp/out" 2> "$tmp/err"; then fail "dev accepted missing $missing"; fi
+    grep -Fq "$missing is required" "$tmp/err"
+done
 printf 'PASS: development checks and all four gates check Python before gate-specific prerequisites\n'

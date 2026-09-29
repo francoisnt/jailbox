@@ -59,8 +59,8 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 ## Linting and tests
 
-Use `tests/run dev` during editing: syntax, generated-file checks, and the fast
-product and harness suites. Add affected suites explicitly, for example
+Use `tests/run dev` during editing: syntax, worktree ShellCheck, generated-file
+checks, and the fast product and harness suites. Add affected suites explicitly, for example
 `tests/run dev attachment exec` (names may include `.sh`). The extra suites run
 once alongside the defaults, under the same resource limits and scheduling
 as portable. All suite directories are discovered automatically; only the
@@ -68,10 +68,18 @@ explicit entries in `tests/lib/dev-exclude.txt` are omitted by default.
 
 Development checks report **partial coverage**. They omit full ShellCheck,
 distribution checks, and expensive CLI/infrastructure suites. Run affected
-suites even when excluded from the defaults, and run `tests/run portable` once
-the finished change is ready for handoff. Applicable runtime, matrix, and editor
-gates remain required. CI and the no-argument `tests/run` still run the same
-acceptance gates; `dev` is not part of that sequence.
+suites even when excluded from the defaults. CI runs full portable; local full
+portable runs are reserved for explicit requests or a specific failure or coverage
+gap. Applicable runtime, matrix, and editor gates remain required. CI and the
+no-argument `tests/run` still run the same acceptance gates; `dev` is not part
+of that sequence.
+
+Worktree ShellCheck checks the current contents of staged, unstaged, and
+untracked shell files, skipping deleted files and ignored untracked files.
+Run it separately with `bash scripts/lint.sh --worktree`. A clean worktree has
+no files to check; committed changes are covered by CI. Changed host modules
+are checked individually; full entrypoint/source-context coverage remains in
+CI. This check neither reads nor publishes the full-lint success cache.
 
 Test ownership follows the behavior being asserted. The editor gate covers
 real editor integration and relies on public core readiness checks. Runtime

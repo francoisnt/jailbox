@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Run shellcheck on all shell scripts in the repository.
 #
-# Usage: scripts/lint.sh [--format <fmt>]
-# Flags are forwarded to shellcheck.
+# Usage: scripts/lint.sh [--worktree] [--format <fmt>]
+# --worktree checks changed shell files only; other flags go to ShellCheck.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$(dirname "$SCRIPT_DIR")"
+if [[ ${1:-} = --worktree ]]; then
+    shift
+    exec python3 "$SCRIPT_DIR/lib/lint-worktree.py" "$@"
+fi
 # The gate already owns rendering; direct invocations use that same renderer.
 # shellcheck source=tests/lib/logging.sh
 source "$SCRIPT_DIR/../tests/lib/logging.sh"
