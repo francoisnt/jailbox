@@ -49,16 +49,16 @@ require_compatible_home() {
 }
 
 ensure_home_volume() {
-    local volume_path
     local -a present=()
 
     resolve_present_resources present "volume:$VOLUME_NAME" || return 1
     if [ -z "${present[*]-}" ]; then
-        podman volume create --label "jailbox.ephemeral-home=$EPHEMERAL_HOME" "$VOLUME_NAME" || return 1
-        volume_path=$(podman volume inspect "$VOLUME_NAME" --format '{{.Mountpoint}}') || return 1
         # In Podman's rootless parent namespace, 0:0 is the invoking host
         # user/group. The runtime maps those owners to its selected managed ID.
-        # Only initialize the new volume root; retained home contents are untouched.
-        podman unshare chown 0:0 "$volume_path" || return 1
+        # Set ownership on the engine during creation: macOS's remote client
+        # cannot run unshare or access the VM's volume mountpoint. Existing
+        # volumes and their contents are never chowned or relabeled here.
+        podman volume create --label "jailbox.ephemeral-home=$EPHEMERAL_HOME" \
+            --opt o=uid=0,gid=0 "$VOLUME_NAME" || return 1
     fi
 }

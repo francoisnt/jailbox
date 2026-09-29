@@ -41,8 +41,9 @@ case "$1 $2" in
         ;;
     "volume create")
         [ "$3" = --label ] || exit 1
-        printf '%s' "$4" > "$(resource_file volume "$5")"
-        printf 'volume create %s\n' "$5" >> "$state/actions"
+        [ "$5" = --opt ] && [ "$6" = o=uid=0,gid=0 ] || exit 1
+        printf '%s' "$4" > "$(resource_file volume "$7")"
+        printf 'volume create %s\n' "$7" >> "$state/actions"
         ;;
     "volume rm"|"network rm"|"image rm")
         if [ "${FAKE_PODMAN_VANISH_NAME:-}" = "$3" ]; then

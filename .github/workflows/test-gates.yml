@@ -142,6 +142,41 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  macos-smoke:
+    name: runtime smoke (macOS Intel)
+    # ARM hosted runners lack nested virtualization; keep this label explicit.
+    runs-on: macos-26-intel
+    timeout-minutes: 45
+    env:
+      PODMAN_MACHINE_NAME: jailbox-ci
+      CONTAINERS_MACHINE_PROVIDER: applehv
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Podman Machine
+        run: bash tests/ci/setup-macos.sh
+
+      - name: Run macOS runtime smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p testlog
+          bash tests/e2e/macos-smoke.sh 2>&1 | tee testlog/macos-smoke.console.log
+
+      - name: Stop test machine
+        if: always()
+        run: podman machine stop "$PODMAN_MACHINE_NAME"
+
+      - name: Upload macOS smoke logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-smoke-logs
+          path: testlog/macos-smoke*
+          if-no-files-found: ignore
+          retention-days: 7
+
   matrix:
     name: matrix
     runs-on: ubuntu-24.04

@@ -859,23 +859,15 @@ test_home_creation_and_generation() {
         source "$JAILBOX_DIR/src/host/core/resources/home.sh"
         VOLUME_NAME=test-home EPHEMERAL_HOME=false
         resolve_present_resources() { local -n result=$1; result=(); }
-        for fault in create inspect chown; do
-            : > "$FIXTURE/home-calls"
-            podman() {
-                printf '%s %s\n' "$1" "$2" >> "$FIXTURE/home-calls"
-                case "$fault:$1 $2" in
-                    'create:volume create'|'inspect:volume inspect'|'chown:unshare chown') return 42 ;;
-                esac
-                [[ "$1 $2" != 'volume inspect' ]] || printf '/home-volume\n'
-            }
-            if ensure_home_volume; then echo "Accepted home failure: $fault" >&2; exit 1; fi
-            case "$fault" in
-                create) [[ $(cat "$FIXTURE/home-calls") == 'volume create' ]] ;;
-                inspect) if grep -q 'unshare chown' "$FIXTURE/home-calls"; then exit 1; fi ;;
-            esac
-        done
+        : > "$FIXTURE/home-calls"
+        podman() {
+            printf '%s\n' "$*" >> "$FIXTURE/home-calls"
+            return 42
+        }
+        if ensure_home_volume; then echo 'Accepted home creation failure' >&2; exit 1; fi
+        [[ $(cat "$FIXTURE/home-calls") = 'volume create --label jailbox.ephemeral-home=false --opt o=uid=0,gid=0 test-home' ]]
     )
-    pass 'conditional home setup stops after failed creation or inspection'
+    pass 'conditional home setup propagates engine creation/ownership failure'
 
     for mode in true false; do
         new_project

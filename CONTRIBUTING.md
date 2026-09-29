@@ -89,6 +89,42 @@ The macOS portable gate also needs GNU coreutils and findutils. Run
 `bash tests/ci/setup-portable.sh` to install the test dependencies; for local
 runs, put their Homebrew `libexec/gnubin` directories on `PATH`.
 
+The shared CI workflow additionally runs `tests/e2e/macos-smoke.sh` on
+`macos-26-intel`, using a rootless Apple Virtualization Framework Podman
+Machine. It is a focused runtime smoke test, not another `tests/run` mode or
+a replacement for the Linux runtime/matrix gates. GitHub's ARM macOS runners
+cannot provide the nested virtualization needed for this VM.
+
+For occasional Apple Silicon verification, run the same script on a physical
+Mac. Setup installs floating Homebrew Podman and creates or reuses the named
+`jailbox-ci` machine; it does not stop other machines or change the default
+connection on start. Stop any other Podman Machine yourself before setup.
+
+```bash
+bash tests/ci/setup-macos.sh
+export PATH="$(brew --prefix bash)/bin:$(brew --prefix coreutils)/libexec/gnubin:$(brew --prefix findutils)/libexec/gnubin:$PATH"
+export CONTAINER_CONNECTION=jailbox-ci CONTAINERS_MACHINE_PROVIDER=applehv
+mkdir -p testlog
+set -o pipefail
+bash tests/e2e/macos-smoke.sh 2>&1 | tee testlog/macos-smoke.console.log
+podman machine stop jailbox-ci
+```
+
+The smoke test runs jailbox on the Mac, uses the pinned Debian base image, and
+requires its architecture to match the host (`arm64` on Apple Silicon).
+It allocates an isolated project and state directory beneath the shared home,
+uses a dummy Git identity, and cleans only that project's resources. Failed
+cleanup retains the fixture for recovery. The VM and downloaded base image
+remain available for later runs. It checks home retention through stop/relaunch
+as well as project sharing, protected-file refusal, SSH and final cleanup;
+it does not verify egress filtering or actual editor integration.
+
+Retain `testlog/macos-smoke*` with the result: the logs record the date, source
+revision, macOS version/architecture, Podman client/server versions, engine
+information, and resolved image. Record successful Apple Silicon runs and their
+date/version evidence in the handoff before describing that platform as manually
+verified. Merely adding the job or passing Intel CI does not establish a result.
+
 All four gates require Python 3: portable, runtime, and matrix use it for
 bounded pseudoterminal tests, and editor uses it to package the proof extension.
 The CI setup scripts install it; jailbox itself does not require Python.
