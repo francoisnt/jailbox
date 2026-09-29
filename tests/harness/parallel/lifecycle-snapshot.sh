@@ -1,7 +1,7 @@
 #!/bin/bash
 # Snapshot batching preserves bytes and rejects failed data producers.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/lib/lifecycle-runtime.sh
 source "$ROOT/tests/lib/lifecycle-runtime.sh"
 tmp=$(mktemp -d)

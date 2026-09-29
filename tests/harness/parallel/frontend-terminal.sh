@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 mkdir -p "$fixture/tree/tests/lib/sandbox" "$fixture/tree/tests/fixtures/shell" "$fixture/tree/src" "$fixture/bin" "$fixture/project"

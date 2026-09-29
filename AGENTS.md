@@ -217,7 +217,8 @@ the first failing suite. It validates every selected gate's prerequisites
 before the first suite, so an environment missing Podman, an editor, or a
 display fails immediately instead of after the portable gate.
 
-- `portable`: ShellCheck, generated-file checks, every `tests/unit/*.sh` suite,
+- `portable`: ShellCheck, generated-file checks, every suite in `tests/unit/`,
+  `tests/harness/parallel/`, and `tests/harness/exclusive/`,
   syntax checks, release packaging, and the install/update/uninstall lifecycle.
 - `runtime`: wrapper-image/container security assertions and the headless CLI
   system test. Requires Linux and Podman.
@@ -237,10 +238,22 @@ duplicate those assertions; a dependency failure can still fail an editor test.
 Portable coverage includes frontend, core, and shared-product contracts within
 one gate. Preserve core coverage when moving or removing duplicate assertions.
 
+Product and release behavior tests belong in `tests/unit/` and run in a
+bounded parallel pool. Keep their mutable fixtures isolated; do not depend on
+shared paths, ports, or execution order. Tests of test runners, fixtures,
+observers, and scheduling belong in `tests/harness/parallel/` and share that
+pool. Suites that cannot safely share the pool belong in
+`tests/harness/exclusive/` and run individually after the pool drains. Each
+exclusive suite must explain its concrete constraint in a comment; bounded
+child workers alone do not require exclusivity. Discover all three directories
+automatically without a per-suite scheduling list. Keep suite basenames unique
+across them.
+All three directories remain part of portable, not separate user-facing gates.
+
 During development, run `tests/run dev` and the suites affected by the change.
-`tests/run dev attachment exec` adds named unit suites to the fast defaults;
+`tests/run dev attachment exec` adds named product or harness suites to the fast defaults;
 this is partial coverage, not a fifth acceptance gate. Full portable still
-includes every discovered unit suite. Run `tests/run portable` once the final
+includes every discovered product and harness suite. Run `tests/run portable` once the final
 code change is ready for handoff, rather than after every intermediate edit.
 Repeat checks when subsequent changes or failures invalidate their results.
 Also run `tests/run runtime`
@@ -255,7 +268,7 @@ changes under both `0022` and `0002`.
 Tests that consume a Git identity must create an isolated dummy identity rather
 than rely on or modify the developer's or CI runner's Git configuration.
 
-Do not add another user-facing test mode without explicit agreement. New unit
+Do not add another user-facing test mode without explicit agreement. New product and harness
 scripts are discovered automatically. Keep `scripts/lint.sh` discovery-based so
 new test scripts cannot silently escape ShellCheck.
 

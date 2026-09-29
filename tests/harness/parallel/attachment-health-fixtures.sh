@@ -2,7 +2,7 @@
 # Health variants must all execute, actually damage their target property, and
 # retain their recovery assertions even when a child consumes standard input.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/lib/lifecycle-runtime.sh
 source "$ROOT/tests/lib/lifecycle-runtime.sh"
 tmp=$(mktemp -d)

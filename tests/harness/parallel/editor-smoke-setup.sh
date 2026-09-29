@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test-only preferences must be seeded after up and before real editor launch.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # Runner is checked separately; this fixture replaces its dependencies.
 # shellcheck source=/dev/null
 source "$ROOT/tests/e2e/editor-smoke.sh"

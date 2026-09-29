@@ -3,8 +3,8 @@
 #
 # Usage: tests/run [dev [SUITE ...]|portable|runtime|matrix|editor]
 #
-#   dev       Fast development checks, plus explicitly named unit suites
-#   portable  ShellCheck, unit tests, and distribution/install lifecycle
+#   dev       Fast development checks, plus explicitly named portable suites
+#   portable  ShellCheck, product/harness tests, and distribution/install lifecycle
 #   runtime   Container security contract and headless CLI system tests
 #   matrix    Full lifecycle state and interruption matrix
 #   editor    Real VS Code/VSCodium Remote SSH and task execution
@@ -79,10 +79,10 @@ run_suite() {
     fi
 }
 
-run_unit_suites() {
+run_portable_tests() {
     # shellcheck source=tests/lib/portable-pool.sh
     source "$SCRIPT_DIR/lib/portable-pool.sh"
-    run_portable_unit_suites "${DEV_SUITES[@]}"
+    run_portable_suites "${DEV_SUITES[@]}"
 }
 
 print_summary() {
@@ -159,12 +159,12 @@ run_gate() {
         dev)
             run_suite "syntax" bash "$SCRIPT_DIR/portable/syntax.sh"
             run_suite "generated-files" check_generated_files
-            run_unit_suites
+            run_portable_tests
             ;;
         portable)
             run_suite "shellcheck" bash "$JAILBOX_DIR/scripts/lint.sh"
             run_suite "generated-files" check_generated_files
-            run_unit_suites
+            run_portable_tests
             run_suite "distribution" bash "$SCRIPT_DIR/portable/smoke.sh"
             ;;
         runtime)
@@ -198,11 +198,11 @@ Runs every gate in order when no gate is named.
 Runtime and matrix are independent gates; matrix prepares its own required images.
 
 Development checks:
-  dev [SUITE ...]  Syntax, generated files, fast suites, plus named unit suites
+  dev [SUITE ...]  Syntax, generated files, fast suites, plus named portable suites
                   Partial coverage; omits full ShellCheck and distribution
 
 Test gates:
-  portable  ShellCheck, all unit tests, release tarball, and install lifecycle
+  portable  ShellCheck, all product/harness tests, release tarball, and install lifecycle
   runtime   Wrapper/container security contract and headless jailbox CLI system tests
   matrix    Full lifecycle state and interruption matrix with required image preparation
   editor    Build test images and verify a real Remote SSH editor session and task
@@ -214,7 +214,8 @@ if [[ ${1:-} = dev ]]; then
     shift
     for suite in "$@"; do
         suite=${suite%.sh}
-        [[ "$suite" =~ ^[a-z0-9-]+$ && -f "$SCRIPT_DIR/unit/$suite.sh" ]] || die "unknown unit suite: $suite"
+        [[ "$suite" =~ ^[a-z0-9-]+$ ]] &&
+            [[ -f "$SCRIPT_DIR/unit/$suite.sh" || -f "$SCRIPT_DIR/harness/parallel/$suite.sh" || -f "$SCRIPT_DIR/harness/exclusive/$suite.sh" ]] || die "unknown portable suite: $suite"
         DEV_SUITES+=("$suite.sh")
     done
     # Preserve the complete invocation when logging re-executes the entrypoint.

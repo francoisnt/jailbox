@@ -2,7 +2,7 @@
 # File redirection, unlike a pipeline, exposes Bash's async stdin substitution.
 set -euo pipefail
 set +m
-REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/lib/resource-ledger.sh
 source "$REPO_ROOT/tests/lib/resource-ledger.sh"
 # shellcheck source=tests/lib/lifecycle-runtime.sh

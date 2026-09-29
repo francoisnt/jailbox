@@ -1,7 +1,7 @@
 #!/bin/bash
 # macOS setup must install and select GNU find, not the system BSD find.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/ci/setup-portable.sh
 source "$ROOT/tests/ci/setup-portable.sh"
 tmp=$(mktemp -d)

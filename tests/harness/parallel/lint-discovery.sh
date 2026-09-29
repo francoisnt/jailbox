@@ -1,11 +1,11 @@
 #!/bin/bash
 # Exercise the real lint driver against future nested and extensionless scripts.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-mkdir -p "$tmp/scripts/lib" "$tmp/tests/lib" "$tmp/src/container/checks" "$tmp/src/container/runtime/bin" "$tmp/src/host/frontend" "$tmp/src/host/core"
+mkdir -p "$tmp/scripts/lib" "$tmp/tests/lib" "$tmp/tests/harness/parallel" "$tmp/tests/harness/exclusive" "$tmp/src/container/checks" "$tmp/src/container/runtime/bin" "$tmp/src/host/frontend" "$tmp/src/host/core"
 cp "$ROOT/scripts/lint.sh" "$tmp/scripts/"
 cp "$ROOT/scripts/build-tarball.sh" "$tmp/scripts/"
 cp "$ROOT/scripts/lib/container-shells.sh" "$tmp/scripts/lib/"
@@ -24,7 +24,7 @@ mkdir "$tmp/bin"
 export LINT_INVOCATIONS="$tmp/invocations"
 cp "$ROOT/tests/fixtures/lint-shellcheck.sh" "$tmp/bin/shellcheck"
 chmod 755 "$tmp/bin/shellcheck"
-for script in src/host/core/future.sh src/host/frontend/future.sh \
+for script in tests/harness/parallel/future.sh tests/harness/exclusive/future.sh src/host/core/future.sh src/host/frontend/future.sh \
     src/container/checks/future.sh src/container/checks/extensionless; do
     printf '#!/bin/bash\ntrue\n' > "$tmp/$script"
 done
@@ -33,7 +33,7 @@ for index in {1..9}; do
 done
 printf '#!/bin/sh\ntrue\n' > "$tmp/src/container/checks/portable.sh"
 PATH="$tmp/bin:$PATH" bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1
-for script in src/host/core/future.sh src/host/frontend/future.sh \
+for script in tests/harness/parallel/future.sh tests/harness/exclusive/future.sh src/host/core/future.sh src/host/frontend/future.sh \
     src/container/checks/future.sh src/container/checks/extensionless tests/future-9.sh; do
     grep -Eq -- "--shell=bash .*${script//./\\.}($| )" "$LINT_INVOCATIONS" || fail "missed Bash source $script"
 done

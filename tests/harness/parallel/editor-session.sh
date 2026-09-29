@@ -1,7 +1,7 @@
 #!/bin/bash
 # Exercise editor lifecycle guards without a display or remote server.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # Source the same guarded runner used by stage workers, then install test stubs.
 # Runner is checked separately; this fixture replaces its dependencies.
 # shellcheck source=/dev/null

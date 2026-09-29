@@ -22,14 +22,36 @@ signal.signal(signal.SIGTERM, interrupted)
 (root / f"{name}.start").write_text(json.dumps([time.monotonic(), os.getpid()]))
 child = None
 try:
-    if mode == "cancel":
+    if (mode == "cancel" or (mode == "parallel-cancel" and name == "d")
+            or (mode == "harness-cancel" and name == "c-exclusive")):
         child = subprocess.Popen(["sleep", "30"])
         (root / f"{name}.child").write_text(str(child.pid))
         child.wait()
+    elif mode == "pass":
+        # The checker releases workers only after observing the expected batch.
+        marker = root / f"{name}.release"
+        deadline = time.monotonic() + 10
+        while not marker.exists():
+            assert time.monotonic() < deadline, f"missing barrier: {marker.name}"
+            time.sleep(0.02)
+        print(f"diagnostic for {name}")
+    elif mode == "fail" and name in ("a", "b"):
+        # Start both workers before failing. Keep b active until the checker
+        # observes the coordinator reporting a's failure, then permit cleanup.
+        marker = root / ("b.start" if name == "a" else "release-b")
+        deadline = time.monotonic() + 10
+        while not marker.exists():
+            assert time.monotonic() < deadline, f"missing barrier: {marker.name}"
+            time.sleep(0.02)
+        print(f"diagnostic for {name}")
+        if name == "a":
+            sys.exit(7)
     else:
         time.sleep(0.15)
         print(f"diagnostic for {name}")
-        if mode == "fail" and name == "a":
+        if mode == "parallel-fail" and name == "d":
+            sys.exit(7)
+        if mode == "harness-fail" and name == "c-exclusive":
             sys.exit(7)
 finally:
     if child is not None:

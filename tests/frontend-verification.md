@@ -7,32 +7,35 @@ a platform or complete gate has passed. Run results belong in the handoff.
 
 ## Portable contracts
 
+Portable suites are identified by globally unique basenames; find their files
+under `tests/unit/` or recursively under `tests/harness/`.
+
 | Contract | Regression evidence |
 |---|---|
-| Strict file grammar, controls/NUL, anchors, deduplication, inherited-policy removal, unrelated environment preservation, value-free notices | `unit/frontend-file-policy.sh`, value-free names/order in `unit/attachment-digest-context.sh`; public launch/headless/file-validation NUL refusals in `unit/frontend-cli.sh` |
-| Real public file validation without engine/SSH/editor prerequisites; file-only keys and selected-file failures | `unit/frontend-cli.sh`, `unit/validate-command.sh`; failed child validation with plausible stdout in `unit/frontend-file-policy.sh` |
-| Identical up/connection-info environments, command order, current validation after successful up, failure status and prevention of editor launch | `unit/frontend-editor.sh` with `fixtures/editor-client/core.sh` |
-| Both editors' exact bootstrap sets reach the digest gate and rendered filter; machine/frontend/headless equivalent reuse; actual policy changes refuse without mutation | `unit/frontend-cli.sh` with the existing convergence engine/transport fixture; `unit/network.sh`, `unit/config-digest.sh` retain core set semantics |
-| Default/selected anchors reach digest and read-only mount arguments; external selection adds no anchor; prelisted anchors allow equivalent selection | `unit/frontend-cli.sh`; actual mount immutability remains in runtime `e2e/headless.sh` |
-| File-only editor selection, automatic Codium/Code fallback, ignored inherited editor variables, complete preflight refusals, inventory failures, versions differing from pins | `unit/frontend-editor.sh` |
-| Required connection values/order, NUL framing, duplicates, truncation, malformed input, opaque trailing fields | `unit/frontend-connection.sh`; launch refusal after malformed records in `unit/frontend-editor.sh` |
-| Independent JSON round trips for spaces, quotes, backslashes and Unicode; optional proxy; no terminal proxy block | `unit/frontend-settings.sh`, `lib/editor/check-settings.py`, `unit/frontend-editor.sh` |
-| Safe settings preparation/publication/cleanup; caller traps and settings; prior data preserved; no editor after publication failure | `unit/frontend-settings.sh`, `lib/file-publication.sh`, `unit/frontend-editor.sh`; fixtures cover both umasks |
-| Profile relocation and empty/unset fallback; invalid paths refuse before core calls | `unit/frontend-editor.sh` |
-| Init suggestions, stable ordering, one live assignment, applying multiple suggestions, no-overwrite and safe publication | `unit/frontend-init.sh`; no runtime prerequisites in `unit/init-config.sh`; running/stopped/network/home inventories preserved in `unit/frontend-cli.sh` |
-| Declaration-driven dispatch and config-selection restrictions; machine commands have no editor/file dependency | `unit/cli-dispatch.sh`, `unit/public-api.sh`, `unit/validate-command.sh`, `unit/exec.sh`, `unit/shell.sh` |
-| Private functions/globals/state paths and engine access forbidden across the boundary | `unit/frontend-boundary.sh`, `scripts/check-frontend-boundary.py` |
-| Migrated runtime layout, installer paths, release packaging, generated references, discovery-based lint/syntax | Existing portable gate, `unit/release.sh`, `unit/runtime-install.sh`, `unit/embedded-programs.sh`, `unit/lint-discovery.sh`, `portable/smoke.sh` |
-| Reopen/resume requires fresh task proof; frontend failure prevents readiness/task checks; switch launches do not seed using stale machine policy | `unit/editor-smoke-setup.sh`, `unit/editor-session.sh` |
-| Human SSH instructions quote the identity-derived path even under symlinked temporary roots | `unit/ssh-instructions.sh`; fixture uses physical paths like the CLI |
+| Strict file grammar, controls/NUL, anchors, deduplication, inherited-policy removal, unrelated environment preservation, value-free notices | `frontend-file-policy.sh`, value-free names/order in `attachment-digest-context.sh`; public launch/headless/file-validation NUL refusals in `frontend-cli.sh` |
+| Real public file validation without engine/SSH/editor prerequisites; file-only keys and selected-file failures | `frontend-cli.sh`, `validate-command.sh`; failed child validation with plausible stdout in `frontend-file-policy.sh` |
+| Identical up/connection-info environments, command order, current validation after successful up, failure status and prevention of editor launch | `frontend-editor.sh` with `fixtures/editor-client/core.sh` |
+| Both editors' exact bootstrap sets reach the digest gate and rendered filter; machine/frontend/headless equivalent reuse; actual policy changes refuse without mutation | `frontend-cli.sh` with the existing convergence engine/transport fixture; `network.sh`, `config-digest.sh` retain core set semantics |
+| Default/selected anchors reach digest and read-only mount arguments; external selection adds no anchor; prelisted anchors allow equivalent selection | `frontend-cli.sh`; actual mount immutability remains in runtime `e2e/headless.sh` |
+| File-only editor selection, automatic Codium/Code fallback, ignored inherited editor variables, complete preflight refusals, inventory failures, versions differing from pins | `frontend-editor.sh` |
+| Required connection values/order, NUL framing, duplicates, truncation, malformed input, opaque trailing fields | `frontend-connection.sh`; launch refusal after malformed records in `frontend-editor.sh` |
+| Independent JSON round trips for spaces, quotes, backslashes and Unicode; optional proxy; no terminal proxy block | `frontend-settings.sh`, `lib/editor/check-settings.py`, `frontend-editor.sh` |
+| Safe settings preparation/publication/cleanup; caller traps and settings; prior data preserved; no editor after publication failure | `frontend-settings.sh`, `lib/file-publication.sh`, `frontend-editor.sh`; fixtures cover both umasks |
+| Profile relocation and empty/unset fallback; invalid paths refuse before core calls | `frontend-editor.sh` |
+| Init suggestions, stable ordering, one live assignment, applying multiple suggestions, no-overwrite and safe publication | `frontend-init.sh`; no runtime prerequisites in `init-config.sh`; running/stopped/network/home inventories preserved in `frontend-cli.sh` |
+| Declaration-driven dispatch and config-selection restrictions; machine commands have no editor/file dependency | `cli-dispatch.sh`, `public-api.sh`, `validate-command.sh`, `exec.sh`, `shell.sh` |
+| Private functions/globals/state paths and engine access forbidden across the boundary | `frontend-boundary.sh`, `scripts/check-frontend-boundary.py` |
+| Migrated runtime layout, installer paths, release packaging, generated references, discovery-based lint/syntax | Existing portable gate, `release.sh`, `runtime-install.sh`, `embedded-programs.sh`, `lint-discovery.sh`, `portable/smoke.sh` |
+| Reopen/resume requires fresh task proof; frontend failure prevents readiness/task checks; switch launches do not seed using stale machine policy | `editor-smoke-setup.sh`, `editor-session.sh` |
+| Human SSH instructions quote the identity-derived path even under symlinked temporary roots | `ssh-instructions.sh`; fixture uses physical paths like the CLI |
 
 ## Real runtime and lifecycle evidence
 
 `e2e/headless.sh` retains core assertions for SSH, mounts, proxy enforcement,
 resource reuse and cleanup. A copy of the generated SSH configuration with
 client `SetEnv` removed checks server delivery of all six proxy variables;
-`unit/ssh-generation.sh` checks refusal of missing or inconsistent container
-proxy input, and `unit/ssh-session.sh` checks startup validation and failure
+`ssh-generation.sh` checks refusal of missing or inconsistent container
+proxy input, and `ssh-session.sh` checks startup validation and failure
 propagation. The real editor task remains the proof that
 these variables reach editor-launched tools.
 
@@ -81,10 +84,10 @@ is not implemented by jailbox and needs no duplicate consumer fixture here.
 
 | Boundary | Existing evidence and focused integration coverage |
 |---|---|
-| Version framing, invalid stamps, source and installed version identity | `unit/version.sh`, `portable/smoke.sh` |
-| Schema framing, new declarations, invalid declarations and dependency isolation | `unit/machine-inventory.sh`, `unit/public-api.sh` |
-| File-to-environment composition, identical up/connection-info inputs, command order and failed producers with plausible stdout | `unit/frontend-file-policy.sh`, `unit/frontend-editor.sh`, `unit/frontend-cli.sh` |
-| Required connection framing and semantics, missing/duplicate/truncated records, opaque future values | `unit/frontend-connection.sh`; `unit/frontend-editor.sh` proves a future field preserves launch arguments/settings and duplicate or invalid required values prevent launch and settings publication |
+| Version framing, invalid stamps, source and installed version identity | `version.sh`, `portable/smoke.sh` |
+| Schema framing, new declarations, invalid declarations and dependency isolation | `machine-inventory.sh`, `public-api.sh` |
+| File-to-environment composition, identical up/connection-info inputs, command order and failed producers with plausible stdout | `frontend-file-policy.sh`, `frontend-editor.sh`, `frontend-cli.sh` |
+| Required connection framing and semantics, missing/duplicate/truncated records, opaque future values | `frontend-connection.sh`; `frontend-editor.sh` proves a future field preserves launch arguments/settings and duplicate or invalid required values prevent launch and settings publication |
 | Real public CLI composition, filtered exec/shell attachment and changed-policy refusal | `e2e/headless.sh`, `lib/frontend-attachment.sh` |
 | Real editor attachment, settings, reopen and policy switching | `e2e/editor-smoke.sh` |
 

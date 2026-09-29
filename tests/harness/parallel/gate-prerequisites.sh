@@ -2,7 +2,7 @@
 # Every gate must reject missing Python before starting its suite-specific work.
 # shellcheck disable=SC2329 # Stubs are invoked by the extracted prerequisite function.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck disable=SC1090
 source <(sed -n '/^require_gate_prerequisites() {/,/^}/p' "$ROOT/tests/run")
 declare -F require_gate_prerequisites >/dev/null

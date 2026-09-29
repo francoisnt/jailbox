@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=scripts/lib/worker-resources.sh
 source "$ROOT/scripts/lib/worker-resources.sh"
 unset JAILBOX_TEST_JOB_LIMIT

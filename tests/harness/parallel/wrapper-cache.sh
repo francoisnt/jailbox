@@ -2,7 +2,7 @@
 # Both preparation modes retain canonical inputs; runtime still checks the
 # restrictive installation scenario before publishing the canonical wrapper.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 for cache_scenario in prepare contract failure; do

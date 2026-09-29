@@ -5,7 +5,7 @@ set -Eeuo pipefail
 TEST_CASE=setup
 trap 'printf "FAIL [%s] line %s: %s\n" "$TEST_CASE" "$LINENO" "$BASH_COMMAND" >&2' ERR
 pass() { printf 'PASS: %s\n' "$TEST_CASE"; }
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 FIXTURE=$(mktemp -d)
 trap 'rm -rf "$FIXTURE"' EXIT
 mkdir -p "$FIXTURE/bin" "$FIXTURE/real" "$FIXTURE/state"

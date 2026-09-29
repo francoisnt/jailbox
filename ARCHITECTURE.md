@@ -455,7 +455,7 @@ prove that mount while still missing an editor-specific startup failure.
 
 | Gate | Main question | Approach and scope |
 |---|---|---|
-| `portable` | Do local contracts, failure handling, and the distributed installation work? | ShellCheck, generated-file checks, every unit suite, syntax, packaging, install/update/uninstall; fake external tools exercise controlled failures |
+| `portable` | Do local contracts, failure handling, and the distributed installation work? | ShellCheck, generated-file checks, every product and harness suite, syntax, packaging, install/update/uninstall; fake external tools exercise controlled failures |
 | `runtime` | Does the actual container enforce security and support headless use? | Real wrapper images, hardening and negative-image checks, headless CLI end-to-end tests |
 | `matrix` | What happens across partial, damaged, and interrupted lifecycle states? | Independently prepared Debian images, constructed inventories, injected failures and interruptions, observed survivors, explicit recovery |
 | `editor` | Can the supported editor actually attach and operate? | Real editor and Remote SSH, profiles, task/proof behavior, supported image combinations and network modes |

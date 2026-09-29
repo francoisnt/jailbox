@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sharing a relaunch proof requires an independently verified repaired baseline.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/lib/lifecycle-matrix.sh
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh

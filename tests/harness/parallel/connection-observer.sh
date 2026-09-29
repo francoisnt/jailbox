@@ -2,7 +2,7 @@
 # Verify the real matrix connection observer rejects partial/misleading streams
 # and treats attempted writes as failures even when the command itself refused.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/lib/lifecycle-runtime.sh
 source "$ROOT/tests/lib/lifecycle-runtime.sh"
 tmp=$(mktemp -d)

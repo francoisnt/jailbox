@@ -60,10 +60,10 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 ## Linting and tests
 
 Use `tests/run dev` during editing: syntax, generated-file checks, and the fast
-unit suites. Add affected suites explicitly, for example
+product and harness suites. Add affected suites explicitly, for example
 `tests/run dev attachment exec` (names may include `.sh`). The extra suites run
-once alongside the defaults, under the same resource limits and exclusive
-barriers as portable. New unit suites are discovered automatically; only the
+once alongside the defaults, under the same resource limits and scheduling
+as portable. All suite directories are discovered automatically; only the
 explicit entries in `tests/lib/dev-exclude.txt` are omitted by default.
 
 Development checks report **partial coverage**. They omit full ShellCheck,
@@ -92,7 +92,7 @@ runs, put their Homebrew `libexec/gnubin` directories on `PATH`.
 All four gates require Python 3: portable, runtime, and matrix use it for
 bounded pseudoterminal tests, and editor uses it to package the proof extension.
 The CI setup scripts install it; jailbox itself does not require Python.
-Lint, portable unit suites, runtime stages, editor stages, and the lifecycle
+Lint, portable suites, runtime stages, editor stages, and the lifecycle
 matrix share a Bash process pool
 and resource detection. Worker counts adapt to available CPUs and memory,
 including Linux affinity/cgroup limits and macOS available-page estimates.
@@ -124,13 +124,19 @@ record even when a later portable suite fails. Mocked runner tests load the real
 runner at execution time but leave its static analysis to its own lint entry;
 extended analysis remains enabled.
 
-Portable runs lint, generated-file checks, unit suites, and distribution in
-that order. Reviewed unit suites in `tests/lib/portable-parallel.txt` run in
-parallel, with separate logs and timings under `testlog/portable.*`. New or
-unlisted suites run exclusively until their shared paths, ports, external
-effects, and nested concurrency have been reviewed. Pool tests run exclusively
-because they deliberately create nested workers; distribution remains sequential
-because it writes fixed release-artifact paths. A failed suite stops new
+Portable runs lint, generated-file checks, pooled suites, exclusive suites, and
+distribution in that order. Product tests in `tests/unit/` run in a bounded
+worker pool, with separate logs and timings under `testlog/portable.*`. They
+must isolate mutable fixtures and avoid shared paths, ports, and external
+effects. Tests of runners, fixtures, observers, and scheduling belong in
+`tests/harness/parallel/` and share the product worker pool. Suites that cannot
+safely share the pool belong in `tests/harness/exclusive/`; these run individually
+after the pool drains. Each exclusive suite must explain its concrete constraint
+in a comment. Bounded child workers alone do not require exclusive execution.
+All three directories discover new suites automatically, without a scheduling list.
+Suite basenames must be unique across all three directories so development commands
+remain unambiguous. Distribution remains sequential because it writes fixed
+release-artifact paths. A failed suite stops new
 scheduling, joins active suites, and prevents subsequent gate phases. Nested
 auto-sized tools inherit `JAILBOX_TEST_JOB_LIMIT=1`; that test-only variable can
 also cap lint, portable, runtime, or editor concurrency for diagnosis without changing gate modes.
@@ -176,7 +182,7 @@ their errexit behavior. Cancellation joins workers before the coordinator releas
 
 ```bash
 tests/run            # Every gate in order
-tests/run portable   # ShellCheck, unit tests, packaging, and installer lifecycle
+tests/run portable   # ShellCheck, product/harness tests, packaging, installer lifecycle
 tests/run runtime    # Container security and headless CLI behavior (Podman)
 tests/run matrix     # Full lifecycle state and interruption matrix (Linux + Podman)
 tests/run editor     # Real Remote SSH editor behavior (Podman + GUI/xvfb)

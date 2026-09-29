@@ -1,6 +1,6 @@
 #!/bin/bash
 set -Eeuo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/lib/logging.sh
 source "$ROOT/tests/lib/logging.sh"
 FIXTURE=$(mktemp -d)

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JAILBOX_DIR="$(cd "$TEST_DIR/../.." && pwd)"
+JAILBOX_DIR="$(cd "$TEST_DIR/../../.." && pwd)"
 
 # shellcheck disable=SC1091
 source "$JAILBOX_DIR/src/public-api.sh"

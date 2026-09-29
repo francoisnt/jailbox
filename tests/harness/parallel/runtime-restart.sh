@@ -1,7 +1,7 @@
 #!/bin/bash
 # A bind-release race can recover; unrelated errors and lasting conflicts fail.
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/integration/runtime-security.sh
 source "$ROOT/tests/integration/runtime-security.sh"
 FIXTURE=$(mktemp -d)

@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 test_root=$(mktemp -d /tmp/jailbox-e2e-git.XXXXXXXX)
 trap 'rm -rf "$test_root"' EXIT
 # shellcheck source=tests/lib/logging.sh

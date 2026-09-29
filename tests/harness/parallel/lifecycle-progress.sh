@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck source=tests/lib/lifecycle-matrix.sh
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh
@@ -29,13 +29,14 @@ if lifecycle_case_label "$tmp" nonexistent >/dev/null; then fail 'unknown case a
 pass 'numbered case types and dynamic completion totals across workers'
 
 # Exercise the real gate dispatcher with stand-ins for expensive suites.
+# Scheduling is tested separately; keep this dispatch trace deterministic.
+export JAILBOX_TEST_JOB_LIMIT=1
 mkdir -p "$tmp/tree/tests/lib" "$tmp/tree/tests/integration" "$tmp/tree/tests/e2e" "$tmp/bin"
 cp "$ROOT/tests/run" "$tmp/tree/tests/run"
 cp "$ROOT/tests/lib/logging.sh" "$tmp/tree/tests/lib/"
 cp "$ROOT/tests/lib/portable-pool.sh" "$ROOT/tests/lib/run-suite.py" "$tmp/tree/tests/lib/"
 mkdir -p "$tmp/tree/scripts/lib"
 cp "$ROOT/scripts/lib/"{process-pool,worker-resources}.sh "$tmp/tree/scripts/lib/"
-: > "$tmp/tree/tests/lib/portable-parallel.txt"
 printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/podman"
 chmod +x "$tmp/bin/podman"
 cp "$tmp/bin/podman" "$tmp/bin/setsid"
@@ -76,7 +77,7 @@ pass 'CI gate summary and compact UTC console timestamps'
 
 
 # The default dispatch includes every gate once, with matrix before editor.
-mkdir -p "$tmp/tree/scripts" "$tmp/tree/tests/unit" "$tmp/tree/tests/portable"
+mkdir -p "$tmp/tree/scripts" "$tmp/tree/tests/unit" "$tmp/tree/tests/harness/parallel" "$tmp/tree/tests/harness/exclusive" "$tmp/tree/tests/portable"
 for suite in scripts/lint scripts/gen-tested-matrix scripts/gen-public-api tests/portable/smoke tests/e2e/editor-smoke; do
     # shellcheck disable=SC2016 # Generated fixture expands its own environment.
     printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/$suite.sh"
@@ -112,22 +113,25 @@ pass 'all four gates run once in order and prerequisites fail before any suite'
 
 # Development selection uses real discovery/pool/supervision in this small tree.
 sed 's@tests/portable/smoke@tests/portable/syntax@g' "$tmp/tree/tests/portable/smoke.sh" > "$tmp/tree/tests/portable/syntax.sh"
-printf 'slow.sh\n' > "$tmp/tree/tests/lib/dev-exclude.txt"
-for suite in fast slow new; do
+printf 'slow.sh\nharness-slow.sh\n' > "$tmp/tree/tests/lib/dev-exclude.txt"
+for suite in fast slow new harness-fast harness-slow; do
+    group=unit
+    [[ $suite != harness-* ]] || group=harness/parallel
+    [[ $suite != harness-slow ]] || group=harness/exclusive
     # shellcheck disable=SC2016 # The fixture expands its own environment.
-    printf '#!/bin/bash\nprintf "%%s\\n" "%s" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/tests/unit/$suite.sh"
+    printf '#!/bin/bash\nprintf "%%s\\n" "%s" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/tests/$group/$suite.sh"
 done
 : > "$SUITE_TRACE"
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev > "$tmp/output"
-printf 'tests/portable/syntax|\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\n' > "$tmp/expected"
+printf 'tests/portable/syntax|\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nharness-fast\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'dev defaults, discovery, or phase ownership'
 grep -Fq 'Development checks passed — partial coverage' "$tmp/output"
-[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 4 ]] || fail 'wrong dev result labels'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 5 ]] || fail 'wrong dev result labels'
 : > "$SUITE_TRACE"
-PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev slow slow.sh fast > "$tmp/output"
-printf 'slow\n' >> "$tmp/expected"
+PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev slow slow.sh fast harness-slow > "$tmp/output"
+printf 'tests/portable/syntax|\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nslow\nharness-fast\nharness-slow\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'explicit additions were omitted or duplicated'
-[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 5 ]] || fail 'wrong explicit-suite result labels'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 7 ]] || fail 'wrong explicit-suite result labels'
 : > "$SUITE_TRACE"
 if bash "$tmp/tree/tests/run" dev missing > "$tmp/output" 2>&1; then fail 'unknown dev suite accepted'; fi
 [[ ! -s "$SUITE_TRACE" ]] || fail 'dev started before validating selection'
@@ -135,7 +139,14 @@ if bash "$tmp/tree/tests/run" dev missing > "$tmp/output" 2>&1; then fail 'unkno
 printf '#!/bin/bash\nexit 42\n' > "$tmp/tree/tests/unit/slow.sh"
 if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev slow > "$tmp/output" 2>&1; then fail 'dev swallowed suite failure'; fi
 if grep -q 'Development checks passed' "$tmp/output"; then fail 'dev reported false success'; fi
-# Full portable ignores dev exclusions and still discovers every unit suite.
+# Full portable ignores dev exclusions and still discovers both groups.
 if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" portable > "$tmp/output" 2>&1; then fail 'portable omitted excluded suite'; fi
-grep -Eq 'FAIL +portable/slow' "$tmp/output"
+grep -Eq 'FAIL +portable/unit/slow' "$tmp/output"
+# Harness failures also fail the gate before distribution starts.
+printf '#!/bin/bash\nexit 0\n' > "$tmp/tree/tests/unit/slow.sh"
+printf '#!/bin/bash\nexit 42\n' > "$tmp/tree/tests/harness/exclusive/harness-slow.sh"
+: > "$SUITE_TRACE"
+if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" portable > "$tmp/output" 2>&1; then fail 'portable omitted excluded harness suite'; fi
+grep -Eq 'FAIL +portable/harness/exclusive/harness-slow' "$tmp/output"
+if grep -Fq 'tests/portable/smoke' "$SUITE_TRACE"; then fail 'distribution ran after harness failure'; fi
 pass 'dev discovery, explicit additions, failure propagation, and full portable membership'
