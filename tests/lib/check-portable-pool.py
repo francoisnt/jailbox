@@ -201,17 +201,20 @@ for mode, group, names in (("cancel", "unit", ("a", "b")),
                 os.killpg(process.pid, signal.SIGTERM)
                 process.wait(timeout=10)
                 events.append(f"{time.monotonic():.6f} coordinator reaped status={process.returncode}")
-                deadline = time.monotonic() + 10
-                # Worker cleanup markers precede the supervisor's final log
-                # flush. Both must arrive before inspecting captured output.
-                while not all(
+                # Reaping the wrapper must imply the pool finished cleanup,
+                # including every supervisor's final diagnostic writes.
+                assert process.returncode == 143, process.returncode
+                assert (Path(directory) / "run/summary").exists(), "pool cleanup did not finish"
+                traces = list(Path(directory).glob("supervisor-*.trace"))
+                assert len(traces) >= len(names), "missing supervisor traces"
+                assert all(" joined " in trace.read_text().splitlines()[-1] for trace in traces), \
+                    "supervisor outlived coordinator"
+                assert all(
                     (Path(directory) / f"{name}.end").exists()
                     and "cleanup for " + name in
                     (Path(directory) / f"run/{group}/{name}.sh.log").read_text()
                     for name in names
-                ):
-                    assert time.monotonic() < deadline, "suite cleanup or log capture did not finish"
-                    time.sleep(.02)
+                ), "suite cleanup or log capture did not finish"
                 events.append(f"{time.monotonic():.6f} cleanup markers observed")
                 assert not (Path(directory) / "z-new.start").exists()
                 for name in names:

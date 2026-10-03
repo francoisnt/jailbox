@@ -94,7 +94,7 @@ lifecycle_fault_requirements() {
             )
             if [[ "$policy" != false ]]; then
                 requirements+=(
-                    'home-creation-and-ownership|1|^podman volume create .* --opt o=uid=0,gid=0 '
+                    'home-creation-and-ownership|1|^podman volume create .* --opt o=uid=0\\,gid=0 '
                 )
             fi
             ;;

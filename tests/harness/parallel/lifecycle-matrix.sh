@@ -182,7 +182,8 @@ for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network sto
     elif [[ "$command" = up ]]; then
         cp "$FIXTURE/up-trace" "$FIXTURE/coverage"
         if [[ "$policy" != false ]]; then
-            printf '%s\n' 'podman volume create --label policy --opt o=uid=0,gid=0 home' >> "$FIXTURE/coverage"
+            LIFECYCLE_EVENTS="$FIXTURE/coverage" "$FIXTURE/bin/podman" volume create \
+                --label policy --opt o=uid=0,gid=0 home
         fi
     else
         cp "$FIXTURE/cleanup-trace" "$FIXTURE/coverage"
