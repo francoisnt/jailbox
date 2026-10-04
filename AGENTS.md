@@ -291,6 +291,10 @@ new test scripts cannot silently escape ShellCheck.
   another; README.md continues to ship with the installed package.
 - Pull requests use portable, runtime, and matrix gates.
 - Releases and canary runs use all four gates: portable, runtime, matrix, editor.
+  Releases may reuse a verified complete passing result from the shared gate
+  workflow for the exact commit, dependency combination, and required coverage,
+  provided no later failure remains unresolved. Otherwise run fresh gates.
+  Always build and validate the versioned release package before publication.
   Runtime and matrix are independent jobs with no duplicated assertions.
 - Keep shared gate implementation in `.github/workflows/test-gates.yml`; caller
   workflows should pass inputs instead of duplicating test jobs.
@@ -317,6 +321,12 @@ it happens.
 
 ## Plan authoring
 
+- Keep plans as short as possible, close to a concise summary when the task
+  allows it. State each requirement once. Add detail only when needed to define
+  behavior, constraints, acceptance criteria, or changes to existing code that
+  an implementer could otherwise miss. Avoid exhaustive edge-case lists,
+  repeated safeguards, and routine implementation steps. Required structure
+  does not require long sections.
 - New plans must use numbers not already used by active or archived plans.
   Check both inventories before assigning a number; preserve filename
   implementation order with an unused number or dotted insertion number.
@@ -424,6 +434,9 @@ it happens.
 
 ## User interaction
 
+- Use simple terms and keep replies and repository documents direct and to the
+  point. Be as short as possible without losing relevant details or clarity.
+  Avoid repetition.
 - Print repository paths relative to the repository root in human-readable
   logs, including captured command output and CI logs. Preserve actual command
   arguments and machine-readable records; display formatting must not change

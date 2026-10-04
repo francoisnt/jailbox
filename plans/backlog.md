@@ -473,8 +473,10 @@ should not. Do not add another user-facing test mode.
 Define and document a minimum supported Podman version, backed by runtime-gate
 verification. The README currently requires Podman without a minimum, while
 runtime CI exercises Ubuntu 24.04's packaged version. Run the existing runtime
-gate against both the supported minimum and a current stable release, without
-adding a new user-facing test gate.
+gate against the supported minimum without adding a new user-facing test gate.
+06.1-release-compatibility-evidence-plan.md takes over the scheduled current-stable
+coverage and host/engine result recording previously assigned here. Minimum-version
+selection, enforcement, and verification, and broader host coverage remain here.
 
 Keep focused regression tests for known inspection-output differences, such as
 network names versus hashes in `NetworkID`. Prefer accepting verified output
@@ -483,9 +485,8 @@ incompatible values and preserving the security checks. Support claims should
 follow tested evidence rather than imply compatibility with every historical
 release.
 
-Keep the current Ubuntu baseline while adding deliberate minimum/current engine
-coverage. Start with scheduled compatibility runs and record the tested host
-and engine versions. Container distribution coverage does not establish host
+Keep the current Ubuntu baseline while adding minimum-engine coverage alongside
+the current-engine work assigned above. Container distribution coverage does not establish host
 networking, filesystem, or engine compatibility. Add other host configurations
 only for explicit support goals; macOS portable checks alone must not imply
 verified macOS runtime support. Track test-host availability and maintenance
