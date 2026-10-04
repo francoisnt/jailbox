@@ -33,7 +33,7 @@ failure() {
     [[ ! -s "$tmp/out" && -s "$tmp/err" ]] || fail "wrong failure streams: $*"
 }
 
-schema=$'DEV_IMAGE\tscalar\nDEV_CONTAINERFILE\tscalar\nDEV_BUILD_CONTEXT\tscalar\nDEV_TARGET_STAGE\tscalar\nMEMORY_LIMIT\tscalar\nCPU_LIMIT\tscalar\nPIDS_LIMIT\tscalar\nEPHEMERAL_HOME\tscalar\nEGRESS_ALLOW\tarray\nREADONLY_PATHS\tarray'
+schema=$'DEV_IMAGE\tscalar\nDEV_CONTAINERFILE\tscalar\nDEV_BUILD_CONTEXT\tscalar\nDEV_TARGET_STAGE\tscalar\nMEMORY_LIMIT\tscalar\nCPU_LIMIT\tscalar\nPIDS_LIMIT\tscalar\nEPHEMERAL_HOME\tscalar\nEGRESS_ALLOW\tarray\nREADONLY_PATHS\tarray\nWRITABLE_PATHS\tarray'
 success "$schema" cli config-schema
 failure cli status # Podman is required, even for absence.
 for command in config-schema status; do

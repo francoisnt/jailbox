@@ -56,13 +56,16 @@ Every grouped defect must independently establish absence of containers,
 networks, and credentials, preserved home contents and labels, and retained
 unrelated runtime content. The representative must be selected and have the
 same complete row contract; missing or non-equivalent representatives fail.
-The 50-case sample contains no grouped SSH rows and its workload is unchanged.
+The 50-case sample contains no grouped SSH rows. Its running and stopped rows
+now exercise directory and file-only writable policies, and running.up includes
+writable-permission and undeclared-overlay health variants. Both samples need
+a new performance baseline for this workload.
 The 150-case sample includes them and now has a changed workload: establish a
 new baseline or compare exactly shared work, not just identical case names.
 
 ## Measurement and acceptance
 
-Compare the unchanged 50-case workload with worker count, host limits, and image
+Compare the same 50-case workload revision with worker count, host limits, and image
 preparation held fixed. Measure bounded fault jobs separately for the changed
 interruption workload. Use a warm-up and repeated runs to report the spread and
 work avoided. The 150-case sample needs a new baseline or an exact shared-work
@@ -73,3 +76,14 @@ permission-sensitive checks under both `0022` and `0002`, the runtime and matrix
 gates, and both real editor clients. Coverage listed here is not a claim that a
 gate or platform passed. Run results, environment limitations, timing evidence,
 and local log locations belong in the handoff.
+
+Writable-path coverage uses existing matrix row names: running exercises a
+directory lane with a protected child, stopped resumes a file-only lane, and
+mismatched-digest changes writable policy before explicit recovery. The retained
+home launch fault fixture uses a directory lane; its SSH launch probe is a
+required fault boundary. Snapshot selection stays bounded: the two new health
+variants add four comparisons, increasing the fixed total from 36 to 40. Selected
+snapshots include the small project fixture to catch attachment mutations.
+Portable `writable-paths`, `validation-batches`, `attachment`, and schema-consumer
+checks cover rejection and read-only observation; runtime wrapper checks prove
+kernel enforcement, regular-file writes and protected Git commits.

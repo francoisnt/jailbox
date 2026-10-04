@@ -119,20 +119,28 @@ compose_machine_environment example.org 2> "$TMP/notice"
 policy_has JAILBOX_CONFIG_EGRESS_ALLOW=
 policy_lacks_prefix JAILBOX_CONFIG_EGRESS_ALLOW_0=
 
-# Declaration-driven generic mapping, plus explicit coverage for file-only keys.
+# New scalars propagate; arrays require an explicit composition decision.
 (
     CONFIG_SCALAR_KEYS+=(FUTURE_SCALAR)
-    CONFIG_ARRAY_KEYS+=(FUTURE_ARRAY)
-    CONFIG_DEFAULTS+=(FUTURE_SCALAR= FUTURE_ARRAY=)
+    CONFIG_DEFAULTS+=(FUTURE_SCALAR=)
     initialize_public_api_lookups
-    printf 'FUTURE_SCALAR=value\nFUTURE_ARRAY=one,two,one\n' > "$project/jailbox.conf"
+    printf 'FUTURE_SCALAR=value\n' > "$project/jailbox.conf"
     load
     compose_machine_environment 2> "$TMP/notice"
     policy_has JAILBOX_CONFIG_FUTURE_SCALAR=value
-    policy_has JAILBOX_CONFIG_FUTURE_ARRAY_0=one
-    policy_has JAILBOX_CONFIG_FUTURE_ARRAY_1=two
-    policy_lacks_prefix JAILBOX_CONFIG_FUTURE_ARRAY_2=
+    CONFIG_ARRAY_KEYS+=(FUTURE_ARRAY)
+    CONFIG_DEFAULTS+=(FUTURE_ARRAY=)
+    initialize_public_api_lookups
+    printf 'FUTURE_ARRAY=one,two,one\n' > "$project/jailbox.conf"
+    load
+    [[ ${FRONTEND_VALUES[FUTURE_ARRAY]} == one,two,one ]]
+    reject "missing mapping 'FUTURE_ARRAY'" compose_machine_environment
+    # Even an omitted value cannot silently inherit array semantics.
+    printf 'DEV_IMAGE=alpine\n' > "$project/jailbox.conf"
+    load
+    reject "missing mapping 'FUTURE_ARRAY'" compose_machine_environment
 )
+
 missing_validator() {
     FRONTEND_SCALAR_KEYS+=(FUTURE_FRONTEND)
     FRONTEND_DEFAULTS+=(FUTURE_FRONTEND=)
@@ -185,4 +193,11 @@ reject 'invalid config' validate_file_config "$TMP/core" "$project" "$project/ja
     if load; then fail 'failed prerequisite accepted'; fi
     [[ $FRONTEND_POLICY_READY == 0 ]]
 )
+printf 'DEV_IMAGE=alpine\nWRITABLE_PATHS=src,build,src\n' > "$project/jailbox.conf"
+load
+compose_machine_environment 2> "$TMP/notice"
+policy_has JAILBOX_CONFIG_WRITABLE_PATHS_0=src
+policy_has JAILBOX_CONFIG_WRITABLE_PATHS_1=build
+policy_has JAILBOX_CONFIG_WRITABLE_PATHS_2=src
+policy_has JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
 printf 'PASS: prepared frontend file grammar, trust, policy, and validation\n'

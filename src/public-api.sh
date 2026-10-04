@@ -25,6 +25,7 @@ CONFIG_SCALAR_KEYS=(
 CONFIG_ARRAY_KEYS=(
     EGRESS_ALLOW
     READONLY_PATHS
+    WRITABLE_PATHS
 )
 
 # Frontend-only keys: accepted in jailbox.conf for the human editor workflow,
@@ -47,6 +48,7 @@ CONFIG_DEFAULTS=(
     "EPHEMERAL_HOME=false"
     "EGRESS_ALLOW="
     "READONLY_PATHS="
+    "WRITABLE_PATHS="
 )
 
 # shellcheck disable=SC2034 # Mapping validated through its declared name.

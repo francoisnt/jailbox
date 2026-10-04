@@ -70,7 +70,7 @@ bring_up_sandbox() {
     fi
     wait_for_ssh
     validate_sandbox_structure
-    validate_running_development
+    validate_development_session launch
     validate_proxy_ready
     configure_downloader_proxy
     post_start_validation

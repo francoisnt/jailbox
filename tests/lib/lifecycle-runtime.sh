@@ -125,7 +125,7 @@ filesystem_snapshot() {
 }
 snapshot() {
     local kind name home_path inventory home_present=false
-    local -a roots=("$XDG_STATE_HOME")
+    local -a roots=("$XDG_STATE_HOME" "$PROJECT")
     for kind in container network volume; do
         # List once per kind, including stopped containers. Match exact names
         # locally, retaining all six names under every kind (even collisions).
@@ -317,6 +317,20 @@ construct() {
         chmod 644 "$PROJECT/attachment-policy"
         export JAILBOX_CONFIG_READONLY_PATHS_0=attachment-policy
     fi
+    case "$key" in
+        running|stopped|health-writable-mount|health-undeclared-overlay)
+            mkdir -p "$PROJECT/writable-lane/protected"
+            printf 'file lane\n' > "$PROJECT/writable-file"
+            chmod 755 "$PROJECT/writable-lane" "$PROJECT/writable-lane/protected"
+            chmod 644 "$PROJECT/writable-file"
+            if [[ "$key" != stopped ]]; then
+                export JAILBOX_CONFIG_WRITABLE_PATHS_0=writable-lane
+                export JAILBOX_CONFIG_READONLY_PATHS_0=writable-lane/protected
+            else
+                export JAILBOX_CONFIG_WRITABLE_PATHS_0=writable-file
+            fi
+            ;;
+    esac
     case "$policy" in true|false) export JAILBOX_CONFIG_EPHEMERAL_HOME="$policy" ;; esac
     case "$key" in
         absent) ;;
@@ -377,7 +391,10 @@ construct() {
                     local -a labels=()
                     if [[ "$key" = inconsistent-digest ]]; then labels=(--label "jailbox.config-digest=$(printf '%064d' 0)"); fi
                     podman network create "${labels[@]}" "$NETWORK" >/dev/null ;;
-                mismatched-digest) export JAILBOX_CONFIG_MEMORY_LIMIT=3g ;;
+                mismatched-digest)
+                    mkdir -p "$PROJECT/writable-lane"
+                    chmod 755 "$PROJECT/writable-lane"
+                    export JAILBOX_CONFIG_WRITABLE_PATHS_0=writable-lane ;;
                 mode-and-ssh) chmod 644 "$GENERATION/key" ;;
                 managed-blocks)
                     podman exec "$PREFIX" sh -c 'printf "# user curl preference\n" > "$HOME/.curlrc"; printf "# user wget preference\n" > "$HOME/.wgetrc"'
@@ -568,7 +585,7 @@ run_row() {
 }
 
 attachment_health_cases() {
-    printf '%s\n' rootfs capabilities privileges protected-mount socket-mount ssh proxy upstream
+    printf '%s\n' rootfs capabilities privileges protected-mount socket-mount writable-mount undeclared-overlay ssh proxy upstream
 }
 
 # Each variant starts from a healthy, independently constructed fixture. These
@@ -582,7 +599,7 @@ observe_health_variants() {
         case "$variant" in proxy|upstream) mode=egress ;; esac
         construct "health-$variant" "$mode" false false
         case "$variant" in
-            rootfs|capabilities|privileges|protected-mount|socket-mount)
+            rootfs|capabilities|privileges|protected-mount|socket-mount|writable-mount|undeclared-overlay)
                 # Replay the fixture's actual creation argv, altering precisely
                 # one property. All paths in this fixture are newline-free.
                 command_text=$(podman container inspect "$PREFIX" --format '{{range .Config.CreateCommand}}{{printf "%s\n" .}}{{end}}') || matrix_die 'cannot read fixture creation argv'
@@ -594,6 +611,8 @@ observe_health_variants() {
                         rootfs:--read-only) argument=--read-only=false; modified=true ;;
                         capabilities:--cap-drop=ALL) argument=--cap-drop=CHOWN; modified=true ;;
                         privileges:--security-opt=no-new-privileges) modified=true; continue ;;
+                        writable-mount:*:/home/jailbox/project/writable-lane:Z,rw)
+                            argument=${argument%:Z,rw}:Z,ro; modified=true ;;
                         protected-mount:*:/home/jailbox/project/attachment-policy:Z,ro)
                             argument=${argument%:Z,ro}:Z,rw; modified=true ;;
                     esac
@@ -604,6 +623,11 @@ observe_health_variants() {
                     # mount inventory even if its source is an ordinary file.
                     printf fixture > "$FIXTURE/socket-source"
                     changed=(run -v "$FIXTURE/socket-source:/run/podman/podman.sock:ro,Z" "${changed[@]:1}")
+                    modified=true
+                fi
+                if [[ "$variant" = undeclared-overlay ]]; then
+                    mkdir -p "$PROJECT/writable-lane/protected/extra"
+                    changed=(run -v "$PROJECT/writable-lane/protected/extra:/home/jailbox/project/writable-lane/protected/extra:Z,rw" "${changed[@]:1}")
                     modified=true
                 fi
                 [[ "$modified" = true ]] || matrix_die 'health fixture did not alter its target property'

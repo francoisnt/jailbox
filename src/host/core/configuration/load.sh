@@ -131,6 +131,7 @@ validate_machine_config() {
     esac
     validate_egress_allow
     validate_readonly_paths_lexical
+    validate_writable_paths_lexical
 }
 
 validate_egress_allow() {
@@ -153,6 +154,20 @@ validate_readonly_paths_lexical() {
             die "invalid READONLY_PATHS path '$path' (use a non-empty project-relative path without dot segments, colons, or a trailing slash)"
         [[ ! -v seen[$path] ]] || die "duplicate READONLY_PATHS path: $path"
         seen["$path"]=1
+    done
+}
+
+validate_writable_paths_lexical() {
+    local path previous
+    local -a lanes=()
+    for path in "${WRITABLE_PATHS[@]}"; do
+        validate_project_mount_path_lexical "$path" || die "invalid WRITABLE_PATHS path '$path'"
+        for previous in "${lanes[@]}"; do
+            if project_paths_overlap "$path" "$previous"; then
+                die "overlapping WRITABLE_PATHS paths: $previous and $path"
+            fi
+        done
+        lanes+=("$path")
     done
 }
 

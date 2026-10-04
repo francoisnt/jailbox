@@ -274,6 +274,7 @@ run_case() {
     [[ "$managed_id" =~ ^[1-9][0-9]{0,4}$ ]] || return 1
     test_phase_begin container-contract || return 1
     assert_probe_hardening "$test_image"
+    assert_writable_lanes "$wrapper_image" "$managed_id" || return 1
 
     setup_ssh_keys "$ssh_dir" "$port"
     prepare_server_keys "$ssh_dir" "$port" "$sshd_runtime_dir"

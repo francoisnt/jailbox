@@ -90,6 +90,7 @@ lifecycle_fault_requirements() {
                 'ssh-public-permissions|1|^chmod 644 .*/server/ssh_host_ed25519_key[.]pub$'
                 'ssh-publication|1|^mv .*/[.]ssh-generation[.].* /.*ssh-generation$'
                 'ssh-staging-cleanup|1|^rm .*/[.]ssh-generation[.][^ /]+$'
+                'launch-write-probes|1|^ssh .*bash.*-s.*--.*launch'
                 'proxy-session-configuration|1|^ssh .*jailbox-manage-proxy.*enable'
             )
             if [[ "$policy" != false ]]; then

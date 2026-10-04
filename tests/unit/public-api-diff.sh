@@ -51,6 +51,9 @@ delete_line() {
 }
 
 assert_result "unchanged public API detected" unchanged
+delete_line '    WRITABLE_PATHS'
+assert_result "writable configuration removal detected" removed
+git -C "$FIXTURE" checkout -q -- src/public-api.sh
 insert_after_line 'CONFIG_SCALAR_KEYS=(' '    TEST_CONFIG'
 assert_result "added configuration detected" added
 git -C "$FIXTURE" checkout -q -- src/public-api.sh

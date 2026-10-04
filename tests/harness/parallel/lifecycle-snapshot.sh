@@ -53,7 +53,7 @@ podman() {
         *) return 99 ;;
     esac
 }
-# Frozen reference for the original snapshot ordering and filesystem format.
+# Independent reference for snapshot ordering and filesystem format.
 reference_filesystem() {
     [[ -e "$1" ]] || return 0
     (
@@ -73,6 +73,7 @@ reference_snapshot() {
         done
     done
     reference_filesystem "$XDG_STATE_HOME"
+    reference_filesystem "$PROJECT"
     if podman volume exists "$HOME_VOLUME"; then reference_filesystem "$tmp/home"; fi
     sha256sum "$PROJECT/jailbox.conf"
 }

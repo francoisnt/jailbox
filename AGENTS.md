@@ -258,6 +258,9 @@ across them.
 All three directories remain part of portable, not separate user-facing gates.
 
 During development, run `tests/run dev` and the suites affected by the change.
+For plans written before the dev suite existed, use dev and affected suites
+instead of their blanket local portable requirement, unless the user explicitly
+requests the full portable gate.
 The dev gate includes ShellCheck of staged, unstaged, and untracked shell files
 using their current worktree contents. Full ShellCheck and portable coverage
 belong to CI; do not run full portable routinely after each local change.

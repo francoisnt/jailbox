@@ -32,7 +32,7 @@ case "$name" in
         case " $* " in *"$XDG_STATE_HOME/"*) mutation=true ;; esac
         ;;
     ssh)
-        case " $* " in *'jailbox-manage-proxy enable'*|*'jailbox-manage-proxy disable'*) mutation=true ;; esac
+        case " $* " in *'bash -s -- launch '*|*'jailbox-manage-proxy enable'*|*'jailbox-manage-proxy disable'*) mutation=true ;; esac
         if [[ ${LIFECYCLE_FAIL_SSH:-false} = true ]]; then exit 255; fi
         ;;
 esac

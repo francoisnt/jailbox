@@ -39,6 +39,18 @@ for partial in '' plausible; do
 done
 rm "$FIXTURE/bin/tr"
 
+# Invalid writable policies must refuse before builds or resource mutations.
+mkdir -p "$XDG_STATE_HOME" "$FIXTURE/project/writable/protected"
+for lane in ../outside missing-lane writable/protected; do
+    before=$(snapshot)
+    : > "$CONVERGENCE_LOG"
+    JAILBOX_CONFIG_WRITABLE_PATHS_0="$lane" \
+        JAILBOX_CONFIG_READONLY_PATHS_0=writable/protected expect_failure WRITABLE_PATHS
+    assert_no_mutation
+    [[ ! -s "$CONVERGENCE_LOG" && ! -e "$GENERATION" ]]
+done
+echo 'PASS: invalid writable paths refuse up before build or resource mutation'
+
 # A writer failure after allocation must stop launch and leave no staging file.
 export CONVERGENCE_REAL_GIT
 CONVERGENCE_REAL_GIT=$(command -v git)

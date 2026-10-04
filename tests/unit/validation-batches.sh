@@ -159,7 +159,7 @@ healthy() {
     printf 'Iface Destination\neth0 01000000\n' > "$tmp/route"
     : > "$tmp/ipv6"
 }
-remote() { PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" '' "${paths[@]}" < "$tmp/remote"; }
+remote() { PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" '' 0 "${paths[@]}" < "$tmp/remote"; }
 healthy
 result=$(remote)
 [[ "$result" = ok ]] || fail "healthy remote payload rejected: $result"
@@ -196,15 +196,78 @@ proxy=http://10.0.0.2:8888
 proxy_remote() {
     HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy" http_proxy="$proxy" https_proxy="$proxy" \
         NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1 \
-        PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" "$proxy" "${paths[@]}" < "$tmp/remote"
+        PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" "$proxy" 0 "${paths[@]}" < "$tmp/remote"
 }
 [[ $(proxy_remote) = ok ]] || fail 'healthy proxy session rejected'
-[[ $(PATH="$tmp/bin:$PATH" HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'
+[[ $(PATH="$tmp/bin:$PATH" HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" 0 "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'
 printf 'eth0 00000000\n' >> "$tmp/route"
 [[ $(proxy_remote) = direct-route ]] || fail 'direct IPv4 route accepted'
 healthy
 printf '00000000000000000000000000000000 00 unused eth0\n' > "$tmp/ipv6"
 [[ $(proxy_remote) = direct-route ]] || fail 'direct IPv6 route accepted'
+healthy
+# The same payload observes lanes without mutation for attachment, and only
+# launch probes directories. File-only policies must never create a sibling.
+mkdir "$tmp/project/lane"
+printf original > "$tmp/project/file"
+chmod 755 "$tmp/project/lane"
+chmod 644 "$tmp/project/file"
+healthy
+printf '2 0 0:1 / %s ro - tmpfs tmpfs ro\n' "$tmp/project" >> "$tmp/mountinfo"
+printf '3 0 0:1 / %s rw - tmpfs tmpfs rw\n' "$tmp/project/lane" "$tmp/project/file" >> "$tmp/mountinfo"
+lane_remote() {
+    PATH="$tmp/bin:$PATH" bash "$tmp/remote" "$1" "$tmp/project" '' 2 \
+        "$tmp/project/lane" "$tmp/project/file" / "$tmp/project"
+}
+[[ $(lane_remote full) = ok ]] || fail 'read-only base produced false project-write refusal'
+[[ $(lane_remote launch) = ok ]] || fail 'directory launch probe failed'
+[[ -z $(find "$tmp/project/lane" -mindepth 1 -print) ]] || fail 'launch marker leaked'
+[[ $(cat "$tmp/project/file") = original ]] || fail 'validator modified a user file'
+(
+    # A failing allocation must never run during attachment or file-only launch.
+    # shellcheck disable=SC2329
+    mktemp() { return 42; }
+    export -f mktemp
+    [[ $(lane_remote full) = ok ]] || fail 'attachment attempted marker allocation'
+    [[ $(lane_remote launch) = lane-write ]] || fail 'failed marker allocation accepted'
+    [[ $(PATH="$tmp/bin:$PATH" bash "$tmp/remote" launch "$tmp/project" '' 1 \
+        "$tmp/project/file" / "$tmp/project") = ok ]] || fail 'file-only launch attempted a marker'
+)
+(
+    # Failure with plausible output must still clean up only its own marker.
+    # shellcheck disable=SC2329
+    mktemp() { command mktemp "$@"; return 42; }
+    export -f mktemp
+    [[ $(lane_remote launch) = lane-write ]] || fail 'failed marker producer accepted'
+)
+[[ -z $(find "$tmp/project/lane" -mindepth 1 -print) ]] || fail 'failed allocation leaked marker'
+for failure in status signal; do
+    (
+        export PROBE_FAIL_ONCE="$tmp/probe-failed-$failure" PROBE_FAILURE="$failure"
+        # shellcheck disable=SC2329
+        rm() {
+            if [[ ! -e "$PROBE_FAIL_ONCE" ]]; then
+                : > "$PROBE_FAIL_ONCE"
+                if [[ "$PROBE_FAILURE" = signal ]]; then kill -TERM "$BASHPID"; fi
+                return 42
+            fi
+            command rm "$@"
+        }
+        export -f rm
+        if [[ "$failure" = status ]]; then
+            [[ $(lane_remote launch) = probe-cleanup ]] || fail 'failed marker removal accepted'
+        elif lane_remote launch; then
+            fail 'interrupted probe succeeded'
+        fi
+    )
+    [[ -z $(find "$tmp/project/lane" -mindepth 1 -print) ]] || fail 'failed or interrupted removal leaked marker'
+done
+printf existing > "$tmp/project/lane/.jailbox-write.preexisting"
+[[ $(lane_remote launch) = ok ]] || fail 'launch with existing marker failed'
+[[ $(cat "$tmp/project/lane/.jailbox-write.preexisting") = existing ]] || fail 'probe removed a pre-existing file'
+sed 's/ rw / ro /' "$tmp/mountinfo" > "$tmp/changed"
+mv "$tmp/changed" "$tmp/mountinfo"
+[[ $(lane_remote full) = lane-mount ]] || fail 'read-only lane accepted'
 healthy
 cat > "$tmp/bin/awk" <<'STUB'
 #!/bin/bash

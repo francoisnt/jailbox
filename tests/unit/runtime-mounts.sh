@@ -179,6 +179,27 @@ test_resource_limit_flags() {
     assert_argv_line "container carries the configuration digest label" "$argv_file" \
         "$CONFIG_DIGEST_LABEL=$TEST_CONFIG_DIGEST"
 
+    assert_argv_line "empty writable policy preserves base spelling" "$argv_file" "$PROJECT_DIR:$REMOTE_PATH:Z"
+    SELECTED_DEV_CONTAINERFILE_INPUT=""
+    mkdir -p "$PROJECT_DIR/lane/protected"
+    WRITABLE_PATHS=(lane)
+    READONLY_PATHS=(lane/protected)
+    build_readonly_mounts
+    run_launch_with_stub_podman "$stub_dir" "$argv_file"
+    assert_argv_line "nonempty writable policy makes base read-only" "$argv_file" "$PROJECT_DIR:$REMOTE_PATH:Z,ro"
+    assert_argv_line "declared lane is read-write" "$argv_file" "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,rw"
+    local base_line lane_line protected_line
+    base_line=$(grep -nFx "$PROJECT_DIR:$REMOTE_PATH:Z,ro" "$argv_file")
+    lane_line=$(grep -nFx "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,rw" "$argv_file")
+    protected_line=$(grep -nFx "$PROJECT_DIR/lane/protected:$REMOTE_PATH/lane/protected:Z,ro" "$argv_file")
+    if (( ${base_line%%:*} < ${lane_line%%:*} && ${lane_line%%:*} < ${protected_line%%:*} )); then
+        pass 'base, writable lanes, protected overlays mount in that order'
+    else
+        fail 'incorrect writable mount ordering'
+    fi
+    apply_config_defaults
+    build_readonly_mounts
+
     MEMORY_LIMIT="1.5g"
     NETWORK_STATE[proxy_url]=http://10.240.32.2:8888
     CPU_LIMIT="0.5"
@@ -195,6 +216,7 @@ test_initialize_container_runtime_state_clears_outputs() {
     READONLY_PATHS=(stale)
     EFFECTIVE_READONLY_PATHS=(stale)
     READONLY_MOUNTS=(stale)
+    WRITABLE_MOUNTS=(stale)
     GITCONFIG_MOUNT=(stale)
     ROOTFS_FLAG=(stale)
 
@@ -202,6 +224,7 @@ test_initialize_container_runtime_state_clears_outputs() {
 
     if [[ "${READONLY_PATHS[*]}" = stale && "${#EFFECTIVE_READONLY_PATHS[@]}" -eq 0 && \
         "${#READONLY_MOUNTS[@]}" -eq 0 && \
+        "${#WRITABLE_MOUNTS[@]}" -eq 0 && \
         "${#GITCONFIG_MOUNT[@]}" -eq 0 && "${#ROOTFS_FLAG[@]}" -eq 0 ]]; then
         pass "runtime initialization preserves config and clears outputs"
     else

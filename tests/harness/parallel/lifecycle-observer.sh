@@ -59,7 +59,7 @@ MUTATE=''
 # All selected observations must be reachable through the shared row catalog.
 # The original 21 full comparisons cover initial states, support recovery, and both
 # cleanup outcomes for every stored home-label class, independent of faults.
-# Fifteen health-variant observations bring the bounded total to 36.
+# Nineteen health-variant observations bring the bounded total to 40.
 # shellcheck source=tests/lib/lifecycle-matrix.sh
 source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-contracts.sh
@@ -86,7 +86,7 @@ while IFS= read -r variant; do
         selected=$((selected + 1))
     done
 done < <(attachment_health_cases)
-[[ "$selected" = 36 ]] || fail 'bounded snapshot cases are missing or unexpectedly expanded'
+[[ "$selected" = 40 ]] || fail 'bounded snapshot cases are missing or unexpectedly expanded'
 
 # Increasing interruption cases preserves every classification assertion and
 # produces no extra engine/filesystem snapshots, including recovered phases.

@@ -269,9 +269,15 @@ load_file_policy() {
 # Optional arguments come from the editor frontend; headless callers pass none.
 # shellcheck disable=SC2120
 compose_machine_environment() {
-    local entry key value item index complete=0
+    local entry key value item index deduplicate complete=0
     local -a environment=() ignored=() items=() unique=()
+    local -A composition=(
+        [EGRESS_ALLOW]=egress
+        [READONLY_PATHS]=protected
+        [WRITABLE_PATHS]=writable
+    )
     FRONTEND_POLICY_READY=0
+    public_api_validate_mapping 'frontend array composition' CONFIG_ARRAY_KEYS composition
     [[ -n "$FRONTEND_CONFIG" && -n "${FRONTEND_ANCHORS[*]-}" ]] || die 'file policy has not been loaded'
     # env's success sentinel is checked: process-substitution status alone
     # cannot establish that the complete environment was read successfully.
@@ -294,16 +300,20 @@ compose_machine_environment() {
         value=${FRONTEND_VALUES[$key]-}
         items=()
         [[ -z "$value" ]] || IFS=, read -ra items <<< "$value"
-        case "$key" in
-            EGRESS_ALLOW) [[ -z "$value" ]] || items+=("$@") ;;
-            READONLY_PATHS) items+=("${FRONTEND_ANCHORS[@]}") ;;
+        case "${composition[$key]}" in
+            egress) deduplicate=true; [[ -z "$value" ]] || items+=("$@") ;;
+            protected) deduplicate=true; items+=("${FRONTEND_ANCHORS[@]}") ;;
+            writable) deduplicate=false ;;
+            *) public_api_error "unknown frontend array composition for '$key'" ;;
         esac
         unique=()
         for item in "${items[@]}"; do
-            # Exact comparisons avoid associative subscripts from file data.
-            for value in "${unique[@]}"; do
-                [[ "$item" != "$value" ]] || continue 2
-            done
+            if [[ "$deduplicate" = true ]]; then
+                # Exact comparisons avoid associative subscripts from file data.
+                for value in "${unique[@]}"; do
+                    [[ "$item" != "$value" ]] || continue 2
+                done
+            fi
             unique+=("$item")
         done
         index=0

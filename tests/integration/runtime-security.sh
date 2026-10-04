@@ -314,3 +314,40 @@ assert_generation_restart() {
     start_runtime_fixture "$ctr" "$config" || return 1
     wait_for_ssh "$config" || { fail 'restored fixture restarts'; return 1; }
 }
+
+# Real kernel mount enforcement: nested RW lane over RO base, then RO children.
+assert_writable_lanes() (
+    local image="$1" managed_id="$2" project probe_container
+    project=$(mktemp -d) || return 1
+    probe_container="jailbox-writable-${project##*/}"
+    # shellcheck disable=SC2329 # Invoked by the subshell EXIT trap.
+    cleanup_writable_fixture() {
+        podman rm -f --ignore "$probe_container" >/dev/null || return 1
+        rm -rf -- "$project"
+    }
+    trap cleanup_writable_fixture EXIT
+    trap 'exit 1' HUP INT TERM
+    mkdir -p "$project/lane/protected" || return 1
+    printf original > "$project/single" || return 1
+    printf protected > "$project/lane/policy" || return 1
+    git -C "$project" init -q || return 1
+    chmod 755 "$project" "$project/lane" "$project/lane/protected" "$project/.git/hooks" || return 1
+    chmod 644 "$project/single" "$project/lane/policy" "$project/.git/config" || return 1
+    if podman run --name "$probe_container" --rm -i --network none --read-only \
+        --userns="keep-id:uid=$managed_id,gid=$managed_id" --user "$managed_id:$managed_id" \
+        --cap-drop=ALL --security-opt=no-new-privileges --entrypoint bash \
+        -v "$project:/project:Z,ro" \
+        -v "$project/lane:/project/lane:Z,rw" \
+        -v "$project/single:/project/single:Z,rw" \
+        -v "$project/.git:/project/.git:Z,rw" \
+        -v "$project/lane/protected:/project/lane/protected:Z,ro" \
+        -v "$project/lane/policy:/project/lane/policy:Z,ro" \
+        -v "$project/.git/config:/project/.git/config:Z,ro" \
+        -v "$project/.git/hooks:/project/.git/hooks:Z,ro" \
+        "$image" -s < "$JAILBOX_DIR/tests/lib/sandbox/check-writable-paths.sh"; then
+        pass 'writable lanes, regular-file semantics, nested protection and Git commits'
+    else
+        fail 'writable lane kernel enforcement'
+        return 1
+    fi
+)

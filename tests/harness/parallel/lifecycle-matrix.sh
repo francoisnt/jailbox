@@ -90,11 +90,7 @@ pass
 TEST_CASE='failed removal is logged without reaching the engine'
 unset LIFECYCLE_FAULT_MODE LIFECYCLE_FAULT_AT
 export LIFECYCLE_BACKEND_LOG="$FIXTURE/backend"
-cat > "$FIXTURE/real/podman" <<'ENGINE'
-#!/bin/bash
-set -euo pipefail
-printf '%s\n' "$*" >> "$LIFECYCLE_BACKEND_LOG"
-ENGINE
+cp "$ROOT/tests/fixtures/lifecycle-matrix/podman.sh" "$FIXTURE/real/podman"
 chmod 755 "$FIXTURE/real/podman"
 ln -s "$ROOT/tests/lib/lifecycle-fault.sh" "$FIXTURE/bin/podman"
 : > "$LIFECYCLE_EVENTS"
@@ -140,39 +136,8 @@ pass
 TEST_CASE='independent fault coverage rejects each missing operation'
 # Deliberately authored fixtures, never generated from the coverage requirements.
 # Paths, hashes and allocation suffixes are irrelevant to operation membership.
-cat > "$FIXTURE/up-trace" <<'TRACE'
-podman network create --internal jailbox-project-abc-net-internal
-podman network create --label digest=abc jailbox-project-abc-net-external
-mkdir -p -- /state/jailbox/projects/abc
-mkdir -p /state/jailbox/projects/abc
-mkdir -p /state/jailbox/projects/abc
-mkdir -p -- /state/jailbox/projects/abc
-chmod 644 /state/jailbox/projects/abc/tinyproxy-filter
-chmod 644 /state/jailbox/projects/abc/tinyproxy.conf
-podman run -d --name jailbox-project-abc-proxy --read-only
-mktemp /state/jailbox/projects/abc/gitconfig.tmp.XXXXXX
-chmod 600 /state/jailbox/projects/abc/gitconfig.tmp.random
-mv /state/jailbox/projects/abc/gitconfig.tmp.random /state/jailbox/projects/abc/gitconfig
-mktemp -d /state/jailbox/projects/abc/.ssh-generation.XXXXXXXX
-mkdir /state/jailbox/projects/abc/.ssh-generation.random/server
-ssh-keygen -t ed25519 -f /state/key -N '' -C jailbox-client -q
-ssh-keygen -t ed25519 -f /state/server/key -N '' -C jailbox-server -q
-cp /state/key.pub /state/server/authorized_keys
-chmod 600 /state/key /state/server/authorized_keys
-chmod 644 /state/key.pub /state/server/ssh_host_ed25519_key.pub
-mv -- /state/.ssh-generation.random /state/ssh-generation
-rm -rf -- /state/.ssh-generation.random
-podman run -d --name jailbox-project-abc --cidfile /state/ssh-generation/container-id
-ssh -F /state/config jailbox-project-abc jailbox-manage-proxy\ enable\ http://proxy
-TRACE
-cat > "$FIXTURE/cleanup-trace" <<'TRACE'
-podman stop jailbox-project-abc
-podman rm jailbox-project-abc
-podman stop jailbox-project-abc-proxy
-podman rm jailbox-project-abc-proxy
-podman network rm jailbox-project-abc-net-internal
-podman network rm jailbox-project-abc-net-external
-TRACE
+cp "$ROOT/tests/fixtures/lifecycle-matrix/up.trace" "$FIXTURE/up-trace"
+cp "$ROOT/tests/fixtures/lifecycle-matrix/cleanup.trace" "$FIXTURE/cleanup-trace"
 for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network stop:false stop:true --clean:false --clean:true; do
     command=${scenario%:*}; policy=${scenario#*:}
     if [[ "$policy" = resume ]]; then

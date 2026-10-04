@@ -155,7 +155,8 @@ check_project_mount_path() {
 
     path="$1"
     validate_project_mount_path_lexical "$path" || return 1
-    candidate="$(realpath -- "$PROJECT_DIR" 2>/dev/null)/$path"
+    candidate=$(realpath -- "$PROJECT_DIR" 2>/dev/null) || return 4
+    candidate+="/$path"
     check_project_path_no_symlinks "$path" || return 3
     [ -e "$candidate" ] || return 2
     relative=$(canonical_project_relative_path "$candidate") || return 4
@@ -165,9 +166,18 @@ check_project_mount_path() {
 }
 
 check_readonly_path() {
-    local path result status
+    check_configured_project_path "$1" READONLY_PATHS
+}
+
+check_writable_path() {
+    check_configured_project_path "$1" WRITABLE_PATHS
+}
+
+check_configured_project_path() {
+    local path key result status
 
     path="$1"
+    key="$2"
     status=0
     result=$(check_project_mount_path "$path") || status=$?
     if [ "$status" -eq 0 ]; then
@@ -175,11 +185,11 @@ check_readonly_path() {
         return 0
     fi
     case "$status" in
-        1) die "invalid READONLY_PATHS path '$path' (use a non-empty project-relative path without dot segments, colons, or a trailing slash)" ;;
-        2) die "READONLY_PATHS path does not exist: $path" ;;
-        3) die "READONLY_PATHS path contains a symlink: $path" ;;
-        4) die "READONLY_PATHS path resolves outside the project: $path" ;;
-        5) die "READONLY_PATHS path is not a regular file or directory: $path" ;;
+        1) die "invalid $key path '$path' (use a non-empty project-relative path without dot segments, colons, or a trailing slash)" ;;
+        2) die "$key path does not exist: $path" ;;
+        3) die "$key path contains a symlink: $path" ;;
+        4) die "$key path resolves outside the project: $path" ;;
+        5) die "$key path is not a regular file or directory: $path" ;;
     esac
 }
 
@@ -263,4 +273,14 @@ classify_trusted_directory() {
     canonical=$(realpath -- "$path") || die "cannot canonicalize $description path: $path"
     reject_control_characters "canonical $description" "$canonical"
     printf '%s\n' "$canonical"
+}
+
+# Explicit inputs keep overlap decisions independent of filesystem inspection.
+project_paths_overlap() {
+    [[ "$1" = "$2" || "$1" = "$2/"* || "$2" = "$1/"* ]]
+}
+
+# A writable lane at or below a protected path would weaken that protection.
+writable_path_conflicts_with_protection() {
+    [[ "$1" = "$2" || "$1" = "$2/"* ]]
 }

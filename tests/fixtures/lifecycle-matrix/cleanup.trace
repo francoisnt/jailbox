@@ -1,0 +1,6 @@
+podman stop jailbox-project-abc
+podman rm jailbox-project-abc
+podman stop jailbox-project-abc-proxy
+podman rm jailbox-project-abc-proxy
+podman network rm jailbox-project-abc-net-internal
+podman network rm jailbox-project-abc-net-external

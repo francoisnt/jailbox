@@ -24,7 +24,7 @@ printf 'attachment\0input\377\n' > "$FIXTURE/exec-input"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 observe() {
     local expected="$1" diagnostic="${2:-}" before result=0
-    before=$(snapshot)
+    before=$(snapshot; find "$FIXTURE/project" -type f -exec cksum {} + | LC_ALL=C sort)
     : > "$CONVERGENCE_LOG"
     : > "$CONVERGENCE_SSH_LOG"
     if [[ ${ATTACH_PUBLIC:-false} = true ]]; then
@@ -32,7 +32,7 @@ observe() {
     else
         attachment_records > "$FIXTURE/records" 2> "$FIXTURE/diagnostic" || result=$?
     fi
-    [[ "$before" = "$(snapshot)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'attachment mutated resources, images, home, or credentials'
+    [[ "$before" = "$(snapshot; find "$FIXTURE/project" -type f -exec cksum {} + | LC_ALL=C sort)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'attachment mutated resources, images, home, or credentials'
     if [[ "$expected" = allow ]]; then
         [[ "$result" = 0 ]] || { cat "$FIXTURE/diagnostic"; fail 'healthy attachment failed'; }
         printf 'ssh_config\t%s\0ssh_host\t%s\0remote_path\t%s\0project_id\t%s\0proxy_url\t%s\0' \
@@ -45,7 +45,7 @@ observe() {
     [[ ${ATTACH_PUBLIC:-false} = true ]] || return 0
     result=0
     CONVERGENCE_DRAIN_STDIN=true launch exec -- cat < "$FIXTURE/exec-input" > "$FIXTURE/exec-output" 2> "$FIXTURE/exec-diagnostic" || result=$?
-    [[ "$before" = "$(snapshot)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'exec mutated resources'
+    [[ "$before" = "$(snapshot; find "$FIXTURE/project" -type f -exec cksum {} + | LC_ALL=C sort)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'exec mutated resources'
     if [[ "$expected" = allow ]]; then
         [[ "$result" = 0 ]] || fail 'exec attachment failed'
         cmp "$FIXTURE/exec-input" "$FIXTURE/exec-output" || fail 'exec attachment lost command input'
@@ -57,7 +57,7 @@ observe() {
         --cwd "$FIXTURE/project" --output "$FIXTURE/shell" --expect "$expected" -- "$ROOT/src/jailbox" shell || {
         cat "$FIXTURE/shell.stderr"; fail 'shell attachment decision failed';
     }
-    [[ "$before" = "$(snapshot)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'shell mutated resources'
+    [[ "$before" = "$(snapshot; find "$FIXTURE/project" -type f -exec cksum {} + | LC_ALL=C sort)" && ! -s "$CONVERGENCE_LOG" ]] || fail 'shell mutated resources'
     if [[ "$expected" = refuse ]]; then
         grep -q "$diagnostic" "$FIXTURE/shell.stderr" || fail 'shell lost refusal diagnostic'
     fi
@@ -78,10 +78,10 @@ ATTACH_PUBLIC=true observe allow
 ATTACH_PUBLIC=true CONVERGENCE_BAD_PROPERTY=ReadonlyRootfs observe refuse 'jailbox stop'
 ATTACH_PUBLIC=true CONVERGENCE_SESSION_RESULT=hardening observe refuse 'jailbox stop'
 check_foreign_network_member "$PREFIX-net"
-before=$(snapshot)
+before=$(snapshot; find "$FIXTURE/project" -type f -exec cksum {} + | LC_ALL=C sort)
 : > "$CONVERGENCE_LOG"
 if launch --config jailbox.conf connection-info > "$FIXTURE/records" 2> "$FIXTURE/diagnostic"; then fail 'connection-info accepted --config'; fi
-[[ ! -s "$FIXTURE/records" && ! -s "$CONVERGENCE_LOG" && "$before" = "$(snapshot)" ]] || fail '--config refusal published records or mutated state'
+[[ ! -s "$FIXTURE/records" && ! -s "$CONVERGENCE_LOG" && "$before" = "$(snapshot; find "$FIXTURE/project" -type f -exec cksum {} + | LC_ALL=C sort)" ]] || fail '--config refusal published records or mutated state'
 grep -q -- '--config cannot be used with connection-info' "$FIXTURE/diagnostic" || fail 'missing --config rejection diagnostic'
 for property in UsernsMode ReadonlyRootfs EffectiveCaps SecurityOpt Privileged PortBindings Mounts .Config.Env; do
     CONVERGENCE_BAD_PROPERTY="$property" observe refuse 'jailbox stop'
@@ -235,3 +235,23 @@ PATH="$FIXTURE/attach-only" launch exec bash -c 'printf %s attached' > "$FIXTURE
 }
 [[ $(cat "$FIXTURE/exec-output") = attached ]] || fail 'exec without build tools lost output'
 printf 'PASS: healthy exec needs no cksum or editor\n'
+
+# Public transport consumers and healthy reuse share both writable policy forms.
+unset JAILBOX_CONFIG_READONLY_PATHS
+for lane in writable-directory writable-file; do
+    launch stop >/dev/null
+    mkdir -p "$FIXTURE/project/writable-directory/protected"
+    printf original > "$FIXTURE/project/writable-file"
+    chmod 755 "$FIXTURE/project/writable-directory" "$FIXTURE/project/writable-directory/protected"
+    chmod 644 "$FIXTURE/project/writable-file"
+    export JAILBOX_CONFIG_WRITABLE_PATHS_0="$lane"
+    export JAILBOX_CONFIG_READONLY_PATHS_0=writable-directory/protected
+    expect_success
+    expect_success
+    ATTACH_PUBLIC=true observe allow
+    ATTACH_PUBLIC=true CONVERGENCE_BAD_PROPERTY='.Destination "/home/jailbox/project/'"$lane"'"' observe refuse 'jailbox stop'
+    ATTACH_PUBLIC=true CONVERGENCE_SESSION_RESULT=lane-mount observe refuse 'jailbox stop'
+    unset JAILBOX_CONFIG_WRITABLE_PATHS_0
+    ATTACH_PUBLIC=true observe refuse 'jailbox stop'
+done
+printf 'PASS: writable directory and file policies support reuse and every attachment consumer without mutations\n'

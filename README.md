@@ -335,10 +335,10 @@ contents never change it; the configured values and the Containerfile's path
 do. `jailbox.conf` formatting — quoting, spacing, comments, an explicitly
 spelled default — does not change it either, because the digest is taken over
 effective values. A path is not formatting: it reaches the digest when it is
-listed in `READONLY_PATHS`, so the same content mounted from a different
-project path is a different sandbox. Reordering `EGRESS_ALLOW` is stable,
-because that allowlist is a set; reordering `READONLY_PATHS` is not, because
-mount order can matter.
+listed in `READONLY_PATHS` or `WRITABLE_PATHS`, so the same content mounted
+from a different project path is a different sandbox. Reordering `EGRESS_ALLOW`
+is stable because that allowlist is a set. Both path arrays are serialized in
+declared order, so reordering either changes the digest.
 
 **Version binding is deliberately conservative.** It stops a new release from
 resuming containers whose immutable Podman settings were created under older
@@ -593,6 +593,7 @@ external config directly rather than a symlinked spelling.
 | `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`); frontend-only, file-exclusive key |
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
 | `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |
+| `WRITABLE_PATHS` | — | Comma-separated existing project paths allowed to remain writable; non-empty makes the project base read-only |
 
 Resource-limit values are passed to Podman verbatim; Podman validates them
 when the development container starts, so an unsupported value fails at
@@ -672,8 +673,10 @@ unrestricted outbound internet access.
 - Launch and attachment refuse projects that equal or contain the host home
   directory or jailbox runtime-state directory. Normal projects beneath the
   home directory remain supported.
-- Project files are mounted writable. Core automatically overlays the exact
-  in-project Containerfile used for the build read-only. File-driven launches
+- Project files are mounted writable by default. With non-empty `WRITABLE_PATHS`,
+  the project base is read-only and only the declared lanes are writable.
+  Core automatically overlays the exact in-project Containerfile used for the
+  build read-only. File-driven launches
   also protect the default `jailbox.conf` and selected in-project config.
   Selecting an external config does not remove protection from the default.
 - File-driven launch requires that default config even when an external config is selected.
@@ -682,8 +685,24 @@ unrestricted outbound internet access.
 - Only additional paths explicitly listed in `READONLY_PATHS` receive
   read-only overlays. They must already exist as regular files or directories;
   missing paths are rejected and no stubs are created. Other project paths,
-  including unused Containerfile candidates, remain writable unless included
-  by the symlink-target protection below.
+  including unused Containerfile candidates, follow the base or writable-lane
+  policy unless included by the symlink-target protection below.
+- Writable lanes must be existing project-relative regular files or directories,
+  without dot segments, colons, trailing slashes, symlink components, duplicate
+  or nested lanes. A lane cannot equal or lie beneath a protected path; a
+  protected path inside a writable directory remains read-only. Control
+  characters cannot be represented by either configuration interface. Indexed
+  environment members support literal commas; file configuration uses commas
+  as separators.
+- For example, `WRITABLE_PATHS=src,build` allows changes in those directories
+  while other project paths stay read-only. A regular-file lane supports
+  in-place writes, but its read-only parent prevents sibling temporary files
+  and atomic replacement. List its parent directory if those operations are needed.
+- Allowing `.git` is explicit. Protecting `.git/config` and `.git/hooks` can
+  coexist with commits that write objects and refs. Agent-authored commits are
+  still untrusted, and multiple sandboxes must not share a writable Git directory.
+- Changing writable policy requires explicit `jailbox stop` then `jailbox up`;
+  existing resources refuse reuse or attachment under a different policy.
 - Symlinks inside protected directories also protect their in-project targets,
   recursively. Intermediate symlinks require protecting their containing
   directories against retargeting. Broken links, cycles, unsupported targets,
@@ -740,7 +759,7 @@ jailbox follows a clean layered approach:
 
 1. **Dev Image** — Uses or builds from your existing `Containerfile`/`Dockerfile`
 2. **Wrapper Image** — Adds OpenSSH server, creates the managed `jailbox` user, and installs hardened sshd config
-3. **Runtime** — Project mounted at `/home/jailbox/project` (writable) with selected paths overlaid read-only, plus a home volume that is persistent by default
+3. **Runtime** — Project mounted at `/home/jailbox/project` with the configured writable lanes and read-only protections, plus a home volume that is persistent by default
 4. **SSH & Editor** — Generates project-specific SSH state under
    `~/.local/state/jailbox/projects/` and VS Code/VSCodium user profiles under
    `~/.local/state/jailbox/editor-profiles/`. Both use `XDG_STATE_HOME` instead
