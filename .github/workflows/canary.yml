@@ -111,3 +111,25 @@ jobs:
           else
             bash scripts/canary-report.sh failure
           fi
+
+  record-compatibility:
+    needs: [resolve, codium-commit, test-gate, report]
+    if: always() && needs.test-gate.result == 'success' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Append successful tested combination
+        env:
+          TARGET: master
+          RUNTIME_BASH_VERSION: ${{ needs.test-gate.outputs.runtime_bash_version }}
+          RUNTIME_PODMAN_VERSION: ${{ needs.test-gate.outputs.runtime_podman_version }}
+          TESTED_AT: ${{ needs.test-gate.outputs.tested_at }}
+          TEST_RUN_URL: ${{ needs.test-gate.outputs.test_run_url }}
+          JAILBOX_CODE_VERSION: ${{ needs.resolve.outputs.code_version }}
+          JAILBOX_CODIUM_VERSION: ${{ needs.resolve.outputs.codium_version }}
+          JAILBOX_CODIUM_COMMIT: ${{ needs.codium-commit.outputs.codium_commit }}
+          JAILBOX_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.remote_ssh_version }}
+          JAILBOX_OPEN_REMOTE_SSH_VERSION: ${{ needs.resolve.outputs.open_remote_ssh_version }}
+        run: bash scripts/record-compatibility.sh "$TARGET"

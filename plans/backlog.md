@@ -474,9 +474,9 @@ Define and document a minimum supported Podman version, backed by runtime-gate
 verification. The README currently requires Podman without a minimum, while
 runtime CI exercises Ubuntu 24.04's packaged version. Run the existing runtime
 gate against the supported minimum without adding a new user-facing test gate.
-06.1-release-compatibility-evidence-plan.md takes over the scheduled current-stable
-coverage and host/engine result recording previously assigned here. Minimum-version
-selection, enforcement, and verification, and broader host coverage remain here.
+Scheduled current-stable Podman testing, minimum-version selection, enforcement,
+and verification, and broader host coverage remain future work here. The tested
+version lists record the engine used by existing tests; they do not add coverage.
 
 Keep focused regression tests for known inspection-output differences, such as
 network names versus hashes in `NetworkID`. Prefer accepting verified output

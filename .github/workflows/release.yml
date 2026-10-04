@@ -121,3 +121,19 @@ jobs:
 
       - name: Delete release-request tag
         run: git push origin ":refs/tags/${{ github.ref_name }}"
+
+  record-compatibility:
+    needs: [select-version, test-gates, publish]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Append successful tested combination
+        env:
+          TARGET: ${{ needs.select-version.outputs.version }}
+          RUNTIME_BASH_VERSION: ${{ needs.test-gates.outputs.runtime_bash_version }}
+          RUNTIME_PODMAN_VERSION: ${{ needs.test-gates.outputs.runtime_podman_version }}
+          TESTED_AT: ${{ needs.test-gates.outputs.tested_at }}
+          TEST_RUN_URL: ${{ needs.test-gates.outputs.test_run_url }}
+        run: bash scripts/record-compatibility.sh "$TARGET"

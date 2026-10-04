@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 workflow=${1:-"$ROOT/.github/workflows/release.yml"}
+canary=${2:-"$ROOT/.github/workflows/canary.yml"}
 
 for tag in release-request release-request-first-major \
     release-request-bump-patch release-request-bump-minor release-request-bump-major; do
@@ -25,4 +26,20 @@ awk -f "$ROOT/tests/lib/release-order.awk" "$workflow"
 # shellcheck disable=SC2016 # Match the validator invocation literally.
 grep -Fq 'bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$DIST_DIR"' "$ROOT/scripts/build-tarball.sh"
 grep -Fq 'git push origin ":refs/tags/' "$workflow"
+# Scope assertions to the recorder jobs: unrelated success guards do not count.
+release_record=$(awk '/^  record-compatibility:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$workflow")
+canary_record=$(awk '/^  record-compatibility:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$canary")
+grep -Fxq '    needs: [select-version, test-gates, publish]' <<< "$release_record"
+grep -Fxq "    if: always() && needs.test-gate.result == 'success' && github.ref == 'refs/heads/master'" <<< "$canary_record"
+grep -Fxq '    needs: [resolve, codium-commit, test-gate, report]' <<< "$canary_record"
+# shellcheck disable=SC2016 # Literal GitHub Actions expressions.
+grep -Fq 'JAILBOX_CODIUM_COMMIT: ${{ needs.codium-commit.outputs.codium_commit }}' <<< "$canary_record"
+for job in "$release_record" "$canary_record"; do
+    # shellcheck disable=SC2016 # Checkout must not depend on the ephemeral request tag.
+    grep -Fxq '          ref: ${{ github.sha }}' <<< "$job"
+    if grep -Fq '    concurrency:' <<< "$job"; then
+        echo 'Compatibility recorder must not cancel queued results.' >&2
+        exit 1
+    fi
+done
 echo 'Release workflow contract passed'

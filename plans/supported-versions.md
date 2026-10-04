@@ -109,10 +109,10 @@ forwards an SSH port to `127.0.0.1` and depends on that behavior directly, so
 Podman is a dependency where the **newest** version deserves a test job as much
 as the oldest. This is a testing obligation, not a floor.
 
-06.1-release-compatibility-evidence-plan.md owns the scheduled current-version
-testing and host/engine result recording. Minimum-version investigation and
-enforcement remain here; backlog.md retains minimum-version verification and
-broader host coverage.
+Scheduled current-version testing remains future work in backlog.md, alongside
+minimum-version verification and broader host coverage. The tested version lists
+record the engine used by existing tests. Minimum-version investigation and
+enforcement remain here.
 
 ## Dev image glibc — 2.28, warn only
 

@@ -29,6 +29,19 @@ on:
         description: Open Remote SSH version override; empty uses versions.env
         type: string
         default: ""
+    outputs:
+      runtime_bash_version:
+        description: Bash observed by the successful Linux runtime gate
+        value: ${{ jobs.runtime.outputs.bash_version }}
+      runtime_podman_version:
+        description: Podman observed by the successful Linux runtime gate
+        value: ${{ jobs.runtime.outputs.podman_version }}
+      tested_at:
+        description: UTC time of the runtime check
+        value: ${{ jobs.runtime.outputs.tested_at }}
+      test_run_url:
+        description: Original test run and attempt
+        value: ${{ jobs.runtime.outputs.run_url }}
 
 jobs:
   portable:
@@ -119,6 +132,11 @@ jobs:
 
   runtime:
     name: runtime
+    outputs:
+      bash_version: ${{ steps.versions.outputs.bash_version }}
+      podman_version: ${{ steps.versions.outputs.podman_version }}
+      tested_at: ${{ steps.versions.outputs.tested_at }}
+      run_url: ${{ steps.versions.outputs.run_url }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -130,6 +148,17 @@ jobs:
 
       - name: Run runtime gate
         run: bash tests/run runtime
+
+      - name: Record runtime versions
+        id: versions
+        run: |
+          podman_version=$(podman version --format '{{.Client.Version}}') || exit 1
+          tested_at=$(date -u +%Y-%m-%dT%H:%M:%SZ) || exit 1
+          {
+            printf 'bash_version=%s.%s.%s\n' "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}" "${BASH_VERSINFO[2]}"
+            printf 'podman_version=%s\ntested_at=%s\n' "$podman_version" "$tested_at"
+            printf 'run_url=%s/%s/actions/runs/%s/attempts/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload runtime logs
         if: always()

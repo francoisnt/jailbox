@@ -875,6 +875,15 @@ VSCodium REH server: 1.135.06055 (commit `1a46a584725d5dd330e0bcd7f5510f24990efc
 Last verified: 2026-10-04
 <!-- END GENERATED: tested-matrix -->
 
+Successful full test runs are listed in the
+[master history](https://github.com/francoisnt/jailbox/blob/master/compatibility/master.csv)
+and [release history](https://github.com/francoisnt/jailbox/blob/master/compatibility/releases.csv).
+Each row identifies the tested commit, editor/extension versions, VSCodium server
+commit, development image tags, and the Bash/Podman versions observed by the Linux
+runtime gate.
+These are historical results, not proof for other mixtures or today's master.
+macOS coverage remains portable only.
+
 ---
 
 ## Contributing
