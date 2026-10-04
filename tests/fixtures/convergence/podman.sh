@@ -106,6 +106,7 @@ case "$kind $action" in
                     exit 0
                 fi
                 printf 'run %s\n' "$*" >> "$log"
+                if [[ ${CONVERGENCE_REJECT_MASK:-false} = true && " $* " = *' mask='* ]]; then exit 125; fi
                 label=""; receipt=""; name=""
                 while (($#)); do
                     case "$1" in

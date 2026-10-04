@@ -141,6 +141,7 @@ expected_stream=$(printf '%s\n' \
     $'value\tz' \
     $'value\ta' \
     $'array\tWRITABLE_PATHS\t0' \
+    $'array\tHIDDEN_PATHS\t0' \
     $'containerfile\tnone')
 
 assert_eq "canonical stream is byte-exact" \
@@ -149,7 +150,7 @@ assert_eq "canonical stream is byte-exact" \
 # Golden digest for the stream above. Regenerate it deliberately whenever the
 # digest inputs or encoding change; a change here is an ordinary within-release
 # digest change, not a compatibility break, because the exact version is hashed.
-GOLDEN_DIGEST="5e27134ef1b5f648d6a7aa0cf5e1cf948224c2f9473cfeb85a5935177e241d7e"
+GOLDEN_DIGEST="2ce4b7a23d65a3b7a84331cae38666a5ad9e6cba5c61375ca712b67665608e8b"
 assert_eq "golden digest vector" \
     "$GOLDEN_DIGEST" "$(digest_of "$VECTOR_DIR" launch "${VECTOR_ENV[@]}")"
 
@@ -215,6 +216,12 @@ assert_ne "reordered WRITABLE_PATHS change the digest" \
         JAILBOX_CONFIG_WRITABLE_PATHS_0=src JAILBOX_CONFIG_WRITABLE_PATHS_1=build)" \
     "$(digest_of "$VECTOR_DIR" launch "${VECTOR_ENV[@]}" \
         JAILBOX_CONFIG_WRITABLE_PATHS_0=build JAILBOX_CONFIG_WRITABLE_PATHS_1=src)"
+
+assert_ne "hidden path changes the digest" "$GOLDEN_DIGEST" \
+    "$(digest_of "$VECTOR_DIR" launch "${VECTOR_ENV[@]}" JAILBOX_CONFIG_HIDDEN_PATHS_0='dir,with,commas')"
+assert_ne "reordered HIDDEN_PATHS change the digest" \
+    "$(digest_of "$VECTOR_DIR" launch "${VECTOR_ENV[@]}" JAILBOX_CONFIG_HIDDEN_PATHS_0=src JAILBOX_CONFIG_HIDDEN_PATHS_1=build)" \
+    "$(digest_of "$VECTOR_DIR" launch "${VECTOR_ENV[@]}" JAILBOX_CONFIG_HIDDEN_PATHS_0=build JAILBOX_CONFIG_HIDDEN_PATHS_1=src)"
 
 echo "── version binding ──"
 

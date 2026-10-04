@@ -159,7 +159,7 @@ healthy() {
     printf 'Iface Destination\neth0 01000000\n' > "$tmp/route"
     : > "$tmp/ipv6"
 }
-remote() { PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" '' 0 "${paths[@]}" < "$tmp/remote"; }
+remote() { PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" '' true 0 0 "${paths[@]}" < "$tmp/remote"; }
 healthy
 result=$(remote)
 [[ "$result" = ok ]] || fail "healthy remote payload rejected: $result"
@@ -196,10 +196,10 @@ proxy=http://10.0.0.2:8888
 proxy_remote() {
     HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy" http_proxy="$proxy" https_proxy="$proxy" \
         NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1 \
-        PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" "$proxy" 0 "${paths[@]}" < "$tmp/remote"
+        PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" "$proxy" true 0 0 "${paths[@]}" < "$tmp/remote"
 }
 [[ $(proxy_remote) = ok ]] || fail 'healthy proxy session rejected'
-[[ $(PATH="$tmp/bin:$PATH" HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" 0 "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'
+[[ $(PATH="$tmp/bin:$PATH" HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" true 0 0 "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'
 printf 'eth0 00000000\n' >> "$tmp/route"
 [[ $(proxy_remote) = direct-route ]] || fail 'direct IPv4 route accepted'
 healthy
@@ -216,7 +216,7 @@ healthy
 printf '2 0 0:1 / %s ro - tmpfs tmpfs ro\n' "$tmp/project" >> "$tmp/mountinfo"
 printf '3 0 0:1 / %s rw - tmpfs tmpfs rw\n' "$tmp/project/lane" "$tmp/project/file" >> "$tmp/mountinfo"
 lane_remote() {
-    PATH="$tmp/bin:$PATH" bash "$tmp/remote" "$1" "$tmp/project" '' 2 \
+    PATH="$tmp/bin:$PATH" bash "$tmp/remote" "$1" "$tmp/project" '' false 2 0 \
         "$tmp/project/lane" "$tmp/project/file" / "$tmp/project"
 }
 [[ $(lane_remote full) = ok ]] || fail 'read-only base produced false project-write refusal'
@@ -230,7 +230,7 @@ lane_remote() {
     export -f mktemp
     [[ $(lane_remote full) = ok ]] || fail 'attachment attempted marker allocation'
     [[ $(lane_remote launch) = lane-write ]] || fail 'failed marker allocation accepted'
-    [[ $(PATH="$tmp/bin:$PATH" bash "$tmp/remote" launch "$tmp/project" '' 1 \
+    [[ $(PATH="$tmp/bin:$PATH" bash "$tmp/remote" launch "$tmp/project" '' false 1 0 \
         "$tmp/project/file" / "$tmp/project") = ok ]] || fail 'file-only launch attempted a marker'
 )
 (
@@ -268,6 +268,53 @@ printf existing > "$tmp/project/lane/.jailbox-write.preexisting"
 sed 's/ rw / ro /' "$tmp/mountinfo" > "$tmp/changed"
 mv "$tmp/changed" "$tmp/mountinfo"
 [[ $(lane_remote full) = lane-mount ]] || fail 'read-only lane accepted'
+# Exercise native mask observation with synthetic mount records and real
+# empty-directory/null-device shapes. No write probe is permitted here.
+mkdir "$tmp/masked-directory"
+chmod 755 "$tmp/masked-directory"
+mask_remote() {
+    PATH="$tmp/bin:$PATH" bash "$tmp/remote" mounts "$tmp/project" '' false 0 4 \
+        file "$mask_file" directory "$tmp/masked-directory" / "$tmp/project"
+}
+mask_mounts() {
+    healthy
+    {
+        printf '2 0 0:1 / %s ro - tmpfs tmpfs ro\n' "$tmp/project"
+        printf '3 0 0:2 /null %s rw - tmpfs tmpfs rw\n' "$mask_file"
+        printf '4 0 0:3 / %s ro - tmpfs tmpfs ro\n' "$tmp/masked-directory"
+    } >> "$tmp/mountinfo"
+}
+mask_file=/dev/null
+mask_mounts
+[[ $(mask_remote) = ok ]] || fail 'valid native mask representations rejected'
+for mask_file in "$tmp/project/file" /dev/zero; do
+    mask_mounts
+    [[ $(mask_remote) = hidden-mask ]] || fail 'mask with wrong inode/device accepted'
+done
+mask_file=/dev/null
+for defect in missing duplicate writable wrong-type shared child contents; do
+    mask_mounts
+    case "$defect" in
+        missing) sed '$d' "$tmp/mountinfo" > "$tmp/changed"; mv "$tmp/changed" "$tmp/mountinfo" ;;
+        duplicate) tail -1 "$tmp/mountinfo" >> "$tmp/changed"; cat "$tmp/changed" >> "$tmp/mountinfo" ;;
+        writable|wrong-type|shared)
+            case "$defect" in writable) rule='s/ ro / rw /' ;; wrong-type) rule='s/- tmpfs/- ext4/' ;; shared) rule='s/ - / shared:4 - /' ;; esac
+            sed "\$ $rule" "$tmp/mountinfo" > "$tmp/changed"; mv "$tmp/changed" "$tmp/mountinfo" ;;
+        child) printf '5 4 0:4 / %s/child rw - tmpfs tmpfs rw\n' "$tmp/masked-directory" >> "$tmp/mountinfo" ;;
+        contents) printf exposed > "$tmp/masked-directory/exposed" ;;
+    esac
+    [[ $(mask_remote) = hidden-mask ]] || fail "ineffective mask accepted: $defect"
+done
+rm "$tmp/masked-directory/exposed"
+mask_mounts
+for producer in stat find; do
+    partial=''
+    [[ "$producer" != stat ]] || partial=1:3
+    printf '#!/bin/bash\nprintf "%%s" %q\nexit 42\n' "$partial" > "$tmp/bin/$producer"
+    chmod 755 "$tmp/bin/$producer"
+    [[ $(mask_remote) = hidden-mask ]] || fail "failed mask $producer producer accepted"
+    rm "$tmp/bin/$producer"
+done
 healthy
 cat > "$tmp/bin/awk" <<'STUB'
 #!/bin/bash

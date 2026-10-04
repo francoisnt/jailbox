@@ -87,3 +87,15 @@ snapshots include the small project fixture to catch attachment mutations.
 Portable `writable-paths`, `validation-batches`, `attachment`, and schema-consumer
 checks cover rejection and read-only observation; runtime wrapper checks prove
 kernel enforcement, regular-file writes and protected Git commits.
+
+Hidden-path coverage extends the same running/stopped rows with native file and
+ancestor masks. Three health variants remove masks or add unauthorized overlays
+at/below masked destinations, including a foreign source at an exact file mask.
+Their six before/after comparisons bring the bounded snapshot total to 46.
+Fresh-home and retained-home launch interruption fixtures include masks, so
+native creation failure and subsequent cleanup use the existing fault sweep without new rows.
+The 50- and 150-case samples retain their selections but need new performance
+baselines for this expanded workload. Portable hidden-path and attachment checks
+cover policy/refusal and batched inspection; runtime fixtures build selected
+Containerfiles before masking and assert hidden contents, denied deletion and
+replacement, writable siblings, readable aliases, and unchanged host contents.

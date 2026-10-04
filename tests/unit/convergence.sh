@@ -50,6 +50,14 @@ for lane in ../outside missing-lane writable/protected; do
     [[ ! -s "$CONVERGENCE_LOG" && ! -e "$GENERATION" ]]
 done
 echo 'PASS: invalid writable paths refuse up before build or resource mutation'
+for hidden in ../outside missing-mask; do
+    before=$(snapshot)
+    : > "$CONVERGENCE_LOG"
+    JAILBOX_CONFIG_HIDDEN_PATHS_0="$hidden" expect_failure HIDDEN_PATHS
+    assert_no_mutation
+    [[ ! -s "$CONVERGENCE_LOG" && ! -e "$GENERATION" ]]
+done
+
 
 # A writer failure after allocation must stop launch and leave no staging file.
 export CONVERGENCE_REAL_GIT

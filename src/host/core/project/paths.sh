@@ -169,6 +169,10 @@ check_readonly_path() {
     check_configured_project_path "$1" READONLY_PATHS
 }
 
+check_hidden_path() {
+    check_configured_project_path "$1" HIDDEN_PATHS
+}
+
 check_writable_path() {
     check_configured_project_path "$1" WRITABLE_PATHS
 }

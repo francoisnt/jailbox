@@ -318,11 +318,19 @@ construct() {
         export JAILBOX_CONFIG_READONLY_PATHS_0=attachment-policy
     fi
     case "$key" in
-        running|stopped|health-writable-mount|health-undeclared-overlay)
+        running|stopped|health-writable-mount|health-undeclared-overlay|health-missing-mask|health-mask-overlay|health-mask-socket)
             mkdir -p "$PROJECT/writable-lane/protected"
             printf 'file lane\n' > "$PROJECT/writable-file"
             chmod 755 "$PROJECT/writable-lane" "$PROJECT/writable-lane/protected"
             chmod 644 "$PROJECT/writable-file"
+            mkdir -p "$PROJECT/writable-lane/hidden"
+            printf secret > "$PROJECT/writable-lane/hidden/data"
+            chmod 755 "$PROJECT/writable-lane/hidden"
+            chmod 644 "$PROJECT/writable-lane/hidden/data"
+            export JAILBOX_CONFIG_HIDDEN_PATHS_0=writable-lane/hidden
+            if [[ "$key" != stopped ]]; then
+                export JAILBOX_CONFIG_HIDDEN_PATHS_1=writable-file
+            fi
             if [[ "$key" != stopped ]]; then
                 export JAILBOX_CONFIG_WRITABLE_PATHS_0=writable-lane
                 export JAILBOX_CONFIG_READONLY_PATHS_0=writable-lane/protected
@@ -585,7 +593,7 @@ run_row() {
 }
 
 attachment_health_cases() {
-    printf '%s\n' rootfs capabilities privileges protected-mount socket-mount writable-mount undeclared-overlay ssh proxy upstream
+    printf '%s\n' rootfs capabilities privileges protected-mount socket-mount writable-mount undeclared-overlay missing-mask mask-overlay mask-socket ssh proxy upstream
 }
 
 # Each variant starts from a healthy, independently constructed fixture. These
@@ -599,7 +607,7 @@ observe_health_variants() {
         case "$variant" in proxy|upstream) mode=egress ;; esac
         construct "health-$variant" "$mode" false false
         case "$variant" in
-            rootfs|capabilities|privileges|protected-mount|socket-mount|writable-mount|undeclared-overlay)
+            rootfs|capabilities|privileges|protected-mount|socket-mount|writable-mount|undeclared-overlay|missing-mask|mask-overlay|mask-socket)
                 # Replay the fixture's actual creation argv, altering precisely
                 # one property. All paths in this fixture are newline-free.
                 command_text=$(podman container inspect "$PREFIX" --format '{{range .Config.CreateCommand}}{{printf "%s\n" .}}{{end}}') || matrix_die 'cannot read fixture creation argv'
@@ -608,13 +616,14 @@ observe_health_variants() {
                 changed=(); modified=false
                 for argument in "${original[@]:1}"; do
                     case "$variant:$argument" in
+                        missing-mask:mask=*) argument=mask=/proc/kcore; modified=true ;;
                         rootfs:--read-only) argument=--read-only=false; modified=true ;;
                         capabilities:--cap-drop=ALL) argument=--cap-drop=CHOWN; modified=true ;;
                         privileges:--security-opt=no-new-privileges) modified=true; continue ;;
-                        writable-mount:*:/home/jailbox/project/writable-lane:Z,rw)
-                            argument=${argument%:Z,rw}:Z,ro; modified=true ;;
-                        protected-mount:*:/home/jailbox/project/attachment-policy:Z,ro)
-                            argument=${argument%:Z,ro}:Z,rw; modified=true ;;
+                        writable-mount:*:/home/jailbox/project/writable-lane:Z,rw,rprivate)
+                            argument=${argument%:Z,rw,rprivate}:Z,ro,rprivate; modified=true ;;
+                        protected-mount:*:/home/jailbox/project/attachment-policy:Z,ro,rprivate)
+                            argument=${argument%:Z,ro,rprivate}:Z,rw,rprivate; modified=true ;;
                     esac
                     changed+=("$argument")
                 done
@@ -627,7 +636,18 @@ observe_health_variants() {
                 fi
                 if [[ "$variant" = undeclared-overlay ]]; then
                     mkdir -p "$PROJECT/writable-lane/protected/extra"
-                    changed=(run -v "$PROJECT/writable-lane/protected/extra:/home/jailbox/project/writable-lane/protected/extra:Z,rw" "${changed[@]:1}")
+                    changed=(run -v "$PROJECT/writable-lane/protected/extra:/home/jailbox/project/writable-lane/protected/extra:Z,rw,rprivate" "${changed[@]:1}")
+                    modified=true
+                fi
+                if [[ "$variant" = mask-overlay ]]; then
+                    # A configured overlay is forbidden even if the runtime's
+                    # native mask subsequently obscures it.
+                    changed=(run -v "$PROJECT/writable-lane/hidden/data:/home/jailbox/project/writable-lane/hidden/data:Z,rw,rprivate" "${changed[@]:1}")
+                    modified=true
+                fi
+                if [[ "$variant" = mask-socket ]]; then
+                    printf fixture > "$FIXTURE/socket-source"
+                    changed=(run -v "$FIXTURE/socket-source:/home/jailbox/project/writable-file:ro,Z,rprivate" "${changed[@]:1}")
                     modified=true
                 fi
                 [[ "$modified" = true ]] || matrix_die 'health fixture did not alter its target property'

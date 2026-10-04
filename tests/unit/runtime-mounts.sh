@@ -179,24 +179,31 @@ test_resource_limit_flags() {
     assert_argv_line "container carries the configuration digest label" "$argv_file" \
         "$CONFIG_DIGEST_LABEL=$TEST_CONFIG_DIGEST"
 
-    assert_argv_line "empty writable policy preserves base spelling" "$argv_file" "$PROJECT_DIR:$REMOTE_PATH:Z"
+    assert_argv_line "empty writable policy preserves base spelling" "$argv_file" "$PROJECT_DIR:$REMOTE_PATH:Z,rprivate"
     SELECTED_DEV_CONTAINERFILE_INPUT=""
     mkdir -p "$PROJECT_DIR/lane/protected"
     WRITABLE_PATHS=(lane)
     READONLY_PATHS=(lane/protected)
     build_readonly_mounts
     run_launch_with_stub_podman "$stub_dir" "$argv_file"
-    assert_argv_line "nonempty writable policy makes base read-only" "$argv_file" "$PROJECT_DIR:$REMOTE_PATH:Z,ro"
-    assert_argv_line "declared lane is read-write" "$argv_file" "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,rw"
+    assert_argv_line "nonempty writable policy makes base read-only" "$argv_file" "$PROJECT_DIR:$REMOTE_PATH:Z,ro,rprivate"
+    assert_argv_line "declared lane is read-write" "$argv_file" "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,rw,rprivate"
     local base_line lane_line protected_line
-    base_line=$(grep -nFx "$PROJECT_DIR:$REMOTE_PATH:Z,ro" "$argv_file")
-    lane_line=$(grep -nFx "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,rw" "$argv_file")
-    protected_line=$(grep -nFx "$PROJECT_DIR/lane/protected:$REMOTE_PATH/lane/protected:Z,ro" "$argv_file")
+    base_line=$(grep -nFx "$PROJECT_DIR:$REMOTE_PATH:Z,ro,rprivate" "$argv_file")
+    lane_line=$(grep -nFx "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,rw,rprivate" "$argv_file")
+    protected_line=$(grep -nFx "$PROJECT_DIR/lane/protected:$REMOTE_PATH/lane/protected:Z,ro,rprivate" "$argv_file")
     if (( ${base_line%%:*} < ${lane_line%%:*} && ${lane_line%%:*} < ${protected_line%%:*} )); then
         pass 'base, writable lanes, protected overlays mount in that order'
     else
         fail 'incorrect writable mount ordering'
     fi
+    HIDDEN_PATHS=(lane/protected)
+    build_readonly_mounts
+    run_launch_with_stub_podman "$stub_dir" "$argv_file"
+    assert_argv_line "native masks form one literal option" "$argv_file" "mask=$REMOTE_PATH/lane/protected"
+    assert_not_contains "hidden path has no overlay" "$argv_file" "$PROJECT_DIR/lane/protected:"
+    HIDDEN_MASK_OPTIONS=()
+    assert_launch_state_rejects 'missing mask state rejected' 'initialized hidden masks'
     apply_config_defaults
     build_readonly_mounts
 
@@ -217,10 +224,12 @@ test_initialize_container_runtime_state_clears_outputs() {
     EFFECTIVE_READONLY_PATHS=(stale)
     READONLY_MOUNTS=(stale)
     WRITABLE_MOUNTS=(stale)
+    HIDDEN_MASK_OPTIONS=(stale)
     GITCONFIG_MOUNT=(stale)
     ROOTFS_FLAG=(stale)
 
     initialize_container_runtime_state
+    [[ -z ${HIDDEN_MASK_OPTIONS[*]-} ]] || fail 'hidden mask state was not cleared'
 
     if [[ "${READONLY_PATHS[*]}" = stale && "${#EFFECTIVE_READONLY_PATHS[@]}" -eq 0 && \
         "${#READONLY_MOUNTS[@]}" -eq 0 && \

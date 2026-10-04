@@ -255,3 +255,29 @@ for lane in writable-directory writable-file; do
     ATTACH_PUBLIC=true observe refuse 'jailbox stop'
 done
 printf 'PASS: writable directory and file policies support reuse and every attachment consumer without mutations\n'
+
+# Native masks share healthy reuse, inventory refusal and all public transports.
+unset JAILBOX_CONFIG_READONLY_PATHS_0
+for hidden in writable-file writable-directory; do
+    launch stop >/dev/null
+    export JAILBOX_CONFIG_HIDDEN_PATHS_0="$hidden"
+    expect_success
+    expect_success
+    ATTACH_PUBLIC=true observe allow
+    ATTACH_PUBLIC=true CONVERGENCE_BAD_PROPERTY=CreateCommand observe refuse 'jailbox stop'
+    ATTACH_PUBLIC=true CONVERGENCE_BAD_PROPERTY='{{range .Mounts}}{{if not' observe refuse 'jailbox stop'
+    ATTACH_PUBLIC=true CONVERGENCE_SESSION_RESULT=hidden-mask observe refuse 'jailbox stop'
+    unset JAILBOX_CONFIG_HIDDEN_PATHS_0
+    ATTACH_PUBLIC=true observe refuse 'jailbox stop'
+done
+launch stop >/dev/null
+export JAILBOX_CONFIG_HIDDEN_PATHS_0=writable-file
+: > "$CONVERGENCE_LOG"
+CONVERGENCE_REJECT_MASK=true expect_failure "jailbox stop"
+[[ $(grep -c '^run .*--cidfile ' "$CONVERGENCE_LOG") = 1 ]] || fail 'mask failure retried creation'
+[[ ! -f "$CONVERGENCE_ENGINE/container.$PREFIX" && ! -d "$GENERATION" ]] || fail 'mask failure leaked container or credentials'
+[[ -d "$CONVERGENCE_ENGINE/home" ]] || fail 'mask failure removed persistent home'
+expect_success
+ATTACH_PUBLIC=true observe allow
+printf 'PASS: native masks gate reuse and every transport; option failure never retries unmasked
+'

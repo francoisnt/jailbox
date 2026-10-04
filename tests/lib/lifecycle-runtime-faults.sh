@@ -30,6 +30,17 @@ fault_baseline() {
             ;;
         *) matrix_die "No starting state defined for $command:$policy" ;;
     esac
+    # Both fresh-home and retained-home creation failures carry native masks.
+    # Resume fixtures keep the policy already recorded on their containers.
+    case "$contract:$policy" in
+        launch:false|launch:none|launch:new-ephemeral|launch:plain-network)
+            mkdir -p "$PROJECT/writable-lane/hidden"
+            printf secret > "$PROJECT/writable-lane/hidden/data"
+            chmod 755 "$PROJECT/writable-lane" "$PROJECT/writable-lane/hidden"
+            chmod 644 "$PROJECT/writable-lane/hidden/data"
+            export JAILBOX_CONFIG_HIDDEN_PATHS_0=writable-lane/hidden
+            ;;
+    esac
 }
 
 # An independent inventory oracle for dynamically constructed interruption

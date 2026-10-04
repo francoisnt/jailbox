@@ -21,8 +21,9 @@ podman() {
     case "$1" in
         container)
             printf '%s\n' podman run --read-only --cap-drop=ALL --security-opt=no-new-privileges \
-                -v "$tmp/project/writable-lane:/home/jailbox/project/writable-lane:Z,rw" \
-                -v "$tmp/project/attachment-policy:/home/jailbox/project/attachment-policy:Z,ro" fixture-image
+                --security-opt mask=/home/jailbox/project/writable-lane/hidden:/home/jailbox/project/writable-file \
+                -v "$tmp/project/writable-lane:/home/jailbox/project/writable-lane:Z,rw,rprivate" \
+                -v "$tmp/project/attachment-policy:/home/jailbox/project/attachment-policy:Z,ro,rprivate" fixture-image
             ;;
         rm)
             if [[ "$remove_receipt" = true ]]; then
@@ -47,16 +48,19 @@ assert_marker() { [[ "$1" = keep ]] || fail 'health recovery lost persistent hom
 for remove_receipt in false true; do
     rm -f "$tmp/constructed" "$tmp/observed" "$tmp/recoveries" "$tmp/replays" "$tmp/signals"
     observe_health_variants < /dev/null
-    [[ $(wc -l < "$tmp/constructed") = 10 && $(wc -l < "$tmp/observed") = 19 ]] || fail 'health variants or recovery observations were skipped'
-    [[ $(wc -l < "$tmp/recoveries") = 18 ]] || fail 'health recovery not executed'
-    [[ $(wc -l < "$tmp/replays") = 7 && $(wc -l < "$tmp/signals") = 2 ]] || fail 'health damage not applied'
+    [[ $(wc -l < "$tmp/constructed") = 13 && $(wc -l < "$tmp/observed") = 25 ]] || fail 'health variants or recovery observations were skipped'
+    [[ $(wc -l < "$tmp/recoveries") = 24 ]] || fail 'health recovery not executed'
+    [[ $(wc -l < "$tmp/replays") = 10 && $(wc -l < "$tmp/signals") = 2 ]] || fail 'health damage not applied'
     grep -q -- '--read-only=false' "$tmp/replays"
     grep -q -- '--cap-drop=CHOWN' "$tmp/replays"
-    grep -q -- 'attachment-policy:Z,rw' "$tmp/replays"
+    grep -q -- 'attachment-policy:Z,rw,rprivate' "$tmp/replays"
     grep -q -- '/run/podman/podman.sock:ro,Z' "$tmp/replays"
-    [[ $(grep -c -- '--security-opt=no-new-privileges' "$tmp/replays") = 6 ]] || fail 'privileges variant did not remove no-new-privileges'
-    grep -q 'writable-lane:Z,ro' "$tmp/replays"
-    grep -q 'writable-lane/protected/extra:Z,rw' "$tmp/replays"
+    [[ $(grep -c -- '--security-opt=no-new-privileges' "$tmp/replays") = 9 ]] || fail 'privileges variant did not remove no-new-privileges'
+    grep -q 'writable-lane:Z,ro,rprivate' "$tmp/replays"
+    grep -q 'writable-lane/protected/extra:Z,rw,rprivate' "$tmp/replays"
+    grep -q 'mask=/proc/kcore' "$tmp/replays"
+    grep -q 'hidden/data:Z,rw,rprivate' "$tmp/replays"
+    grep -q 'writable-file:ro,Z,rprivate' "$tmp/replays"
     grep -Fxq 'health-upstream:allow' "$tmp/observed"
 done
-printf 'PASS: all ten health variants alter their target and execute their assertions\n'
+printf 'PASS: all thirteen health variants alter their target and execute their assertions\n'

@@ -76,13 +76,16 @@ def main():
 
         base = {"DEV_IMAGE": "debian:bookworm", "EPHEMERAL_HOME": "false"}
         check("omitted arrays", encode(base))
-        check("explicitly empty arrays", encode({**base, "EGRESS_ALLOW": [], "READONLY_PATHS": [], "WRITABLE_PATHS": []}))
+        check("explicitly empty arrays", encode({**base, "EGRESS_ALLOW": [], "READONLY_PATHS": [], "WRITABLE_PATHS": [], "HIDDEN_PATHS": []}))
         populated = {**base, "EGRESS_ALLOW": ["example.com", "api.example.com"],
                      "READONLY_PATHS": paths}
         check("multiple members and literal spaces/commas", encode(populated))
         check("writable indexed commas", encode({**base, "WRITABLE_PATHS": paths}))
         check("writable protection overlap", encode({**populated, "WRITABLE_PATHS": paths}), "protected")
         check("writable missing member", encode({**base, "WRITABLE_PATHS": ["missing-lane"]}), "missing-lane")
+        check("hidden indexed commas", encode({**populated, "HIDDEN_PATHS": paths}))
+        check("hidden missing member", encode({**base, "HIDDEN_PATHS": ["missing-mask"]}), "missing-mask")
+        check("hidden duplicate", encode({**base, "HIDDEN_PATHS": [paths[0], paths[0]]}), "overlapping")
         # Combined many-member overlays have no application-defined maximum.
         lanes, protected = [], []
         for index in range(72):
@@ -91,7 +94,7 @@ def main():
             (lane / "policy").write_text("protected")
             lanes.append(lane.name)
             protected.append(lane.name + "/policy")
-        check("many combined overlays", encode({**base, "WRITABLE_PATHS": lanes, "READONLY_PATHS": protected}))
+        check("many combined overlays", encode({**base, "WRITABLE_PATHS": lanes, "READONLY_PATHS": protected, "HIDDEN_PATHS": protected}))
         check("image scalar consumed", encode({**base, "DEV_IMAGE": ""}), "Containerfile")
         check("retention scalar consumed", encode({**base, "EPHEMERAL_HOME": "invalid"}), "EPHEMERAL_HOME")
         # Both indices must affect validation, rather than merely being accepted.

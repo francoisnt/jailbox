@@ -335,7 +335,7 @@ contents never change it; the configured values and the Containerfile's path
 do. `jailbox.conf` formatting — quoting, spacing, comments, an explicitly
 spelled default — does not change it either, because the digest is taken over
 effective values. A path is not formatting: it reaches the digest when it is
-listed in `READONLY_PATHS` or `WRITABLE_PATHS`, so the same content mounted
+listed in `READONLY_PATHS`, `WRITABLE_PATHS`, or `HIDDEN_PATHS`, so the same content mounted
 from a different project path is a different sandbox. Reordering `EGRESS_ALLOW`
 is stable because that allowlist is a set. Both path arrays are serialized in
 declared order, so reordering either changes the digest.
@@ -594,6 +594,7 @@ external config directly rather than a symlinked spelling.
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
 | `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |
 | `WRITABLE_PATHS` | — | Comma-separated existing project paths allowed to remain writable; non-empty makes the project base read-only |
+| `HIDDEN_PATHS` | — | Comma-separated existing project files/directories whose contents are hidden at runtime |
 
 Resource-limit values are passed to Podman verbatim; Podman validates them
 when the development container starts, so an unsupported value fails at
@@ -698,6 +699,28 @@ unrestricted outbound internet access.
   while other project paths stay read-only. A regular-file lane supports
   in-place writes, but its read-only parent prevents sibling temporary files
   and atomic replacement. List its parent directory if those operations are needed.
+- `HIDDEN_PATHS=secrets,private.key` masks those existing paths at runtime.
+  Machine callers use indexed `JAILBOX_CONFIG_HIDDEN_PATHS_0`, `_1`, etc.; each
+  indexed value is literal, including commas. Entries must be project-relative
+  regular files or directories, with no symlink components, dot segments,
+  colons, trailing slash, duplicates, or overlapping hidden ancestors.
+  Missing paths are rejected; masks do not reserve names.
+- Hidden masks take precedence over protected read-only paths, writable lanes,
+  and the project base. All paths are validated before launch; overlays at or
+  below a hidden path are omitted. Contradictory writable/protected declarations
+  remain invalid. A selected Containerfile or frontend configuration file may
+  be hidden after the host consumes it. Project mounts use private propagation.
+  Unsupported masking fails creation without retrying with weaker protection.
+- Native masking hides original contents and prevents their modification through
+  the masked path. Filenames can remain visible. Reads or directory listings may
+  succeed with empty results, and file writes may succeed while discarding data;
+  the original host content stays unchanged. The sandbox cannot delete or replace
+  the mask. Other hardlinks and copies remain readable. Changed hidden policy
+  requires explicit `stop`/`up` recovery, like other configuration changes.
+- Masks apply only at runtime. Containerfiles can read or copy hidden paths from
+  `DEV_BUILD_CONTEXT` during image builds. Keep secrets outside the build context
+  or exclude them with container ignore files. jailbox does not edit ignore files
+  or remove secrets from images, caches, Git history, logs, or existing copies.
 - Allowing `.git` is explicit. Protecting `.git/config` and `.git/hooks` can
   coexist with commits that write objects and refs. Agent-authored commits are
   still untrusted, and multiple sandboxes must not share a writable Git directory.

@@ -3,6 +3,7 @@
 EFFECTIVE_READONLY_PATHS=()
 READONLY_MOUNTS=()
 WRITABLE_MOUNTS=()
+HIDDEN_MASK_OPTIONS=()
 GITCONFIG_MOUNT=()
 ROOTFS_FLAG=()
 
@@ -10,6 +11,7 @@ initialize_container_runtime_state() {
     EFFECTIVE_READONLY_PATHS=()
     READONLY_MOUNTS=()
     WRITABLE_MOUNTS=()
+    HIDDEN_MASK_OPTIONS=()
     GITCONFIG_MOUNT=()
     ROOTFS_FLAG=()
 }
@@ -34,6 +36,10 @@ finalize_effective_readonly_paths() {
     local path relative classified status
     local -a automatic_inputs
     EFFECTIVE_READONLY_PATHS=()
+    validate_disjoint_paths_lexical HIDDEN_PATHS "${HIDDEN_PATHS[@]}" || return 1
+    for path in "${HIDDEN_PATHS[@]}"; do
+        check_hidden_path "$path" >/dev/null || return 1
+    done
     for path in "${READONLY_PATHS[@]}"; do
         status=0
         relative=$(check_readonly_path "$path") || status=$?
@@ -99,25 +105,56 @@ expand_readonly_symlink_targets() {
     done
 }
 
+# Masks replace exact overlays and all overlays below a hidden directory.
+# Ancestor overlays remain: they protect or enable access to visible siblings.
+project_path_hidden() {
+    local candidate=$1 hidden
+    for hidden in "${HIDDEN_PATHS[@]}"; do
+        [[ "$candidate" != "$hidden" && "$candidate" != "$hidden/"* ]] || return 0
+    done
+    return 1
+}
+
+build_hidden_mask_option() {
+    local path mask=''
+    for path in "${HIDDEN_PATHS[@]}"; do
+        mask+=${mask:+:}$REMOTE_PATH/$path
+    done
+    [[ -z "$mask" ]] || printf 'mask=%s' "$mask"
+}
+
 build_readonly_mounts() {
-    local path status
+    local path status mask
     # Reassemble from original trusted-input spellings immediately before
     # creating mount arguments so a path replaced with a symlink is rejected.
     status=0
     finalize_effective_readonly_paths || status=$?
     [ "$status" -eq 0 ] || return "$status"
+    HIDDEN_MASK_OPTIONS=()
+    mask=$(build_hidden_mask_option) || return 1
+    [[ -z "$mask" ]] || HIDDEN_MASK_OPTIONS=(--security-opt "$mask")
     WRITABLE_MOUNTS=()
     # Lanes cannot nest, so their relative order cannot mask another lane.
     for path in "${WRITABLE_PATHS[@]}"; do
-        WRITABLE_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,rw")
+        project_path_hidden "$path" && continue
+        WRITABLE_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,rw,rprivate")
     done
     READONLY_MOUNTS=()
     for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        READONLY_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,ro")
+        project_path_hidden "$path" && continue
+        READONLY_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,ro,rprivate")
     done
 }
 
 assert_container_launch_state() {
+    local mask
+    mask=$(build_hidden_mask_option) || return 1
+    if [[ -n "$mask" ]]; then
+        [[ ${#HIDDEN_MASK_OPTIONS[@]} = 2 && ${HIDDEN_MASK_OPTIONS[0]} = --security-opt &&
+           ${HIDDEN_MASK_OPTIONS[1]} = "$mask" ]] || die 'internal error: container launch requires initialized hidden masks'
+    else
+        [[ -z "${HIDDEN_MASK_OPTIONS[*]-}" ]] || die 'internal error: unexpected hidden masks'
+    fi
     assert_config_digest_ready
     [ -n "$JAILBOX_IMAGE" ] || die "internal error: container launch requires initialized image state"
     [ -n "${NETWORK_STATE[selected_network]}" ] || die "internal error: container launch requires initialized network state"
@@ -137,11 +174,11 @@ assert_container_launch_state() {
 }
 
 start_jailbox_container() {
-    assert_container_launch_state
+    assert_container_launch_state || return 1
 
     [[ "${MANAGED_ID:-}" =~ ^[1-9][0-9]{0,4}$ ]] || die 'managed image identity is not initialized'
-    local project_options=Z
-    [[ -z "${WRITABLE_PATHS[*]-}" ]] || project_options=Z,ro
+    local project_options=Z,rprivate
+    [[ -z "${WRITABLE_PATHS[*]-}" ]] || project_options=Z,ro,rprivate
     echo "🚢 Starting jailbox..."
     # Authentication files are prepared on the host and mounted read-only.
     # /run stays private to the managed UID and contains only mutable daemon
@@ -170,6 +207,7 @@ start_jailbox_container() {
         -v "$PROJECT_DIR:$REMOTE_PATH:$project_options" \
         "${WRITABLE_MOUNTS[@]}" \
         "${READONLY_MOUNTS[@]}" \
+        "${HIDDEN_MASK_OPTIONS[@]}" \
         --memory="$MEMORY_LIMIT" \
         --cpus="$CPU_LIMIT" \
         --pids-limit="$PIDS_LIMIT" \
@@ -241,12 +279,15 @@ validate_container_hardening() {
 }
 
 container_mount_predicate() {
-    local destination="$1" kind="$2" source="$3" rw="$4" predicate
+    local destination="$1" kind="$2" source="$3" rw="$4" propagation=${5:-} predicate
     predicate="(and (eq .Type $(ssh_inspect_quote "$kind")) (eq .RW $rw)"
     if [ "$kind" = volume ]; then
         predicate+=" (eq .Name $(ssh_inspect_quote "$source")))"
     else
         predicate+=" (eq .Source $(ssh_inspect_quote "$source")))"
+    fi
+    if [[ -n "$propagation" ]]; then
+        predicate="(and $predicate (eq .Propagation $(ssh_inspect_quote "$propagation")))"
     fi
     printf '%s' "{{range .Mounts}}{{if eq .Destination $(ssh_inspect_quote "$destination")}}{{$predicate}}{{end}}{{end}}"
 }
@@ -276,10 +317,10 @@ validate_development_identity() {
 
 validate_development_mounts() {
     validate_development_identity || return 1
-    local path template allowed project_rw=true
+    local path template allowed mask project_rw=true
     [[ -z "${WRITABLE_PATHS[*]-}" ]] || project_rw=false
     local -a properties=()
-    template=$(container_mount_predicate "$REMOTE_PATH" bind "$PROJECT_DIR" "$project_rw") || return 1
+    template=$(container_mount_predicate "$REMOTE_PATH" bind "$PROJECT_DIR" "$project_rw" rprivate) || return 1
     properties+=("$template" "mount '$REMOTE_PATH'")
     template=$(container_mount_predicate "/home/$MANAGED_USER" volume "$VOLUME_NAME" true) || return 1
     properties+=("$template" "mount '/home/$MANAGED_USER'")
@@ -287,17 +328,28 @@ validate_development_mounts() {
     validate_ssh_container_mount || return 1
     properties=()
     for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        template=$(container_mount_predicate "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" false) || return 1
+        project_path_hidden "$path" && continue
+        template=$(container_mount_predicate "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" false rprivate) || return 1
         properties+=("$template" "mount '$REMOTE_PATH/$path'")
     done
     for path in "${WRITABLE_PATHS[@]}"; do
-        template=$(container_mount_predicate "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" true) || return 1
+        project_path_hidden "$path" && continue
+        template=$(container_mount_predicate "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" true rprivate) || return 1
         properties+=("$template" "mount '$REMOTE_PATH/$path'")
     done
+    # Podman exposes native masks in neither .Mounts nor SecurityOpt. Its
+    # recorded creation argv establishes intent; the live session independently
+    # verifies the mask mounts and substitutes before reuse or attachment.
+    mask=$(build_hidden_mask_option) || return 1
+    if [[ -n "$mask" ]]; then
+        template="{{\$previous := \"\"}}{{range .Config.CreateCommand}}{{if and (eq \$previous \"--security-opt\") (eq . $(ssh_inspect_quote "$mask"))}}true{{end}}{{\$previous = .}}{{end}}"
+        properties+=("$template" 'native mask options')
+    fi
     # Reject additional mounts, including overlays below protected mounts and
     # host socket aliases. Only jailbox's explicit mount inventory is eligible.
     allowed="(or (eq .Destination $(ssh_inspect_quote "$REMOTE_PATH")) (eq .Destination $(ssh_inspect_quote "/home/$MANAGED_USER")) (eq .Destination \"/run/jailbox-sshd\")"
     for path in "${EFFECTIVE_READONLY_PATHS[@]}" "${WRITABLE_PATHS[@]}"; do
+        project_path_hidden "$path" && continue
         allowed+=" (eq .Destination $(ssh_inspect_quote "$REMOTE_PATH/$path"))"
     done
     allowed+=" (and (eq .Destination $(ssh_inspect_quote "/home/$MANAGED_USER/.gitconfig")) (eq .Type \"bind\") (not .RW) (eq .Source $(ssh_inspect_quote "$SSH_DIR/gitconfig"))))"

@@ -5,10 +5,14 @@ set -euo pipefail
 mode=$1
 project=$2
 proxy=$3
-writable_count=$4
-shift 4
+project_rw=$4
+writable_count=$5
+hidden_count=$6
+shift 6
 writable=("${@:1:writable_count}")
 shift "$writable_count"
+hidden=("${@:1:hidden_count}")
+shift "$hidden_count"
 reject() { printf '%s\n' "$1"; exit 0; }
 if [[ "$mode" = full || "$mode" = launch ]]; then
     managed_uid=$(id -u jailbox) || reject identity
@@ -16,7 +20,7 @@ if [[ "$mode" = full || "$mode" = launch ]]; then
     [[ "$managed_uid" != 0 && "$managed_uid" = "$managed_gid" &&
        $(id -u) = "$managed_uid" && $(id -g) = "$managed_gid" ]] || reject identity
     [[ -f /run/jailbox-sshd/authorized_keys ]] || reject authorized-keys
-    if [[ -z "${writable[*]-}" ]]; then
+    if [[ "$project_rw" = true ]]; then
         [[ -w "$project" ]] || reject project-write
     fi
     [[ ! -S /var/run/docker.sock && ! -S /run/podman/podman.sock ]] || reject sockets
@@ -24,6 +28,26 @@ elif [[ "$mode" != mounts ]]; then
     exit 1
 fi
 # Read-only observations are shared with attachment. Never touch user files.
+# Native file masks expose the null device, not the original inode. Directory
+# masks expose an empty read-only tmpfs. Check mount shape and contents without
+# probing writes or reading the original host data.
+for ((index=0; index<${#hidden[@]}; index+=2)); do
+    kind=${hidden[index]}
+    TARGET=${hidden[index+1]}
+    export TARGET
+    EXPECTED="mask-$kind" awk -f "/usr/local/lib/jailbox/readonly-mount.awk" /proc/self/mountinfo || reject hidden-mask
+    case "$kind" in
+        file)
+            [[ -c "$TARGET" ]] || reject hidden-mask
+            device=$(stat -Lc '%t:%T' -- "$TARGET") || reject hidden-mask
+            [[ "$device" = 1:3 ]] || reject hidden-mask ;;
+        directory)
+            [[ -d "$TARGET" ]] || reject hidden-mask
+            contents=$(find "$TARGET" -mindepth 1 -maxdepth 1 -print -quit) || reject hidden-mask
+            [[ -z "$contents" ]] || reject hidden-mask ;;
+        *) reject hidden-mask ;;
+    esac
+done
 for TARGET in "${writable[@]}"; do
     export TARGET
     EXPECTED=rw awk -f "/usr/local/lib/jailbox/readonly-mount.awk" /proc/self/mountinfo || reject lane-mount

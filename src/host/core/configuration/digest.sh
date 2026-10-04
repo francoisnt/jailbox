@@ -26,6 +26,7 @@ declare -A DIGEST_ARRAY_MODES=(
     [EGRESS_ALLOW]=set
     [READONLY_PATHS]=ordered
     [WRITABLE_PATHS]=ordered
+    [HIDDEN_PATHS]=ordered
 )
 
 validate_digest_api_mapping() {

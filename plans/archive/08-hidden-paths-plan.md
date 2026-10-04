@@ -60,7 +60,11 @@ mutation on invalid or contradictory protected inputs. Changes make existing
 resources incompatible and require explicit lifecycle recovery.
 
 Masking is pathname-scoped. Other hardlinks/copies remain readable, the pathname
-may be inferable, and host content must stay mounted/unchanged. It applies only
+remains discoverable, and host content must stay mounted/unchanged.
+Native masks expose an empty substitute: reads/listings may succeed with empty
+results and file writes may succeed while discarding data. The contract is that
+original contents cannot be read or changed through the masked path, and the
+mask cannot be deleted or replaced by the sandbox. It applies only
 at runtime: Containerfiles can read/copy entries inside `DEV_BUILD_CONTEXT`
 before masks exist. Users must exclude secrets with container ignore files or
 keep them outside context; jailbox does not edit ignore files or repair images,
@@ -102,17 +106,17 @@ Portable/runtime tests cover indexed members, comma-bearing paths, every
 overlap/ancestor relationship, files/directories/missing paths, Containerfile
 protection, digest mismatch, mount isolation, and build-context documentation.
 Real-Podman tests prove that the host can consume the selected Containerfile,
-then sandbox reads, writes, deletion, and replacement at its masked project
-path fail. Cover both exact masks and masked ancestors, unchanged host contents,
-and absence of child overlays that could re-expose the file.
+then the sandbox cannot read or change its original contents, or delete or
+replace its masked project path. Cover both exact masks and masked ancestors,
+unchanged host contents, and absence of child overlays that could re-expose the file.
 For each masked shape, include a case whose parent lane is writable, proving
 sibling creation, deletion, and replacement succeed. Retain the overlap cases
 under read-only parents. For an ancestor mask, also prove deletion
 and replacement of the masked ancestor itself fail, alongside denied access
-to the Containerfile beneath it. Denied reads establish masking; denied
+to the Containerfile beneath it. Empty or denied reads establish masking; denied
 deletion and replacement establish preservation of the protected path.
-Assert observable denial and unchanged host contents without requiring a
-particular error code.
+Assert hidden original contents, denied deletion/replacement, and unchanged host
+contents without requiring a particular error code.
 No editor-gate requirement applies here; later editor-specific coverage gets
 a new frontend plan when needed.
 
@@ -126,7 +130,7 @@ guarantee.
 
 Also cover literal glob/option-like segments, quoted option construction,
 explicit private propagation, option failure without retry, masked file and
-directory read/write/list denial with read-only root, host visibility unchanged,
+directory content isolation with read-only root, host visibility unchanged,
 readable hardlink/copy aliases, child-mount non-reexposure, inspect policy, and
 stale exec/shell refusal. Extend plan 7's real-Podman fixture and update its
 empty-base expectation from `:Z` to `:Z,rprivate`; effective isolation, not
@@ -134,7 +138,7 @@ argument order/inspect alone, is the contract.
 
 Reuse plan 7's fixture setup and cleanup, while specifying expected masking and
 permission outcomes independently of the production decision helpers. Keep the
-real-Podman assertions that establish effective denial and host preservation.
+real-Podman assertions that establish effective masking and host preservation.
 Add regression assertions that valid mask representations pass inventory
 validation while unexpected mounts, socket aliases, and re-exposing child
 overlays refuse reuse and attachment.
@@ -148,11 +152,13 @@ Run `tests/run portable`, `tests/run runtime`, and `tests/run matrix`.
 
 ## Acceptance criteria
 
-- Valid hidden paths are inaccessible at runtime with documented precedence.
+- Original contents of valid hidden paths cannot be read or changed at runtime
+  through those paths, with documented precedence.
 - A selected Containerfile may be hidden only after host consumption and is
   treated as stronger than read-only; build context is not misrepresented.
-  Runtime tests prove denied read, write, deletion, and replacement at the
-  masked path while host contents remain unchanged. Each masked shape includes
+  Runtime tests prove hidden original contents and denied deletion/replacement
+  at the masked path while host contents remain unchanged, including after
+  writes to native empty substitutes. Each masked shape includes
   a writable-parent case verified by successful sibling operations, alongside
   read-only-parent overlap coverage. Ancestor-mask coverage includes denied
   deletion and replacement of the masked ancestor itself.

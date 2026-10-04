@@ -274,7 +274,8 @@ compose_machine_environment() {
     local -A composition=(
         [EGRESS_ALLOW]=egress
         [READONLY_PATHS]=protected
-        [WRITABLE_PATHS]=writable
+        [WRITABLE_PATHS]=ordered
+        [HIDDEN_PATHS]=ordered
     )
     FRONTEND_POLICY_READY=0
     public_api_validate_mapping 'frontend array composition' CONFIG_ARRAY_KEYS composition
@@ -303,7 +304,7 @@ compose_machine_environment() {
         case "${composition[$key]}" in
             egress) deduplicate=true; [[ -z "$value" ]] || items+=("$@") ;;
             protected) deduplicate=true; items+=("${FRONTEND_ANCHORS[@]}") ;;
-            writable) deduplicate=false ;;
+            ordered) deduplicate=false ;;
             *) public_api_error "unknown frontend array composition for '$key'" ;;
         esac
         unique=()

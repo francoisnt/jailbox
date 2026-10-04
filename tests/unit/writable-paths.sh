@@ -31,7 +31,7 @@ READONLY_PATHS=(src/policy)
 SELECTED_DEV_CONTAINERFILE_INPUT="$PROJECT_DIR/src/Containerfile"
 build_readonly_mounts
 [[ ${#WRITABLE_MOUNTS[@]} = 8 && ${#READONLY_MOUNTS[@]} = 4 ]]
-[[ ${WRITABLE_MOUNTS[*]} = *"$PROJECT_DIR/dir,comma:$REMOTE_PATH/dir,comma:Z,rw"* ]]
+[[ ${WRITABLE_MOUNTS[*]} = *"$PROJECT_DIR/dir,comma:$REMOTE_PATH/dir,comma:Z,rw,rprivate"* ]]
 for path in src/policy src/policy/child src/Containerfile; do
     [[ "$path" != */child ]] || mkdir "$PROJECT_DIR/$path"
     WRITABLE_PATHS=("$path")

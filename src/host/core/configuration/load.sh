@@ -132,6 +132,7 @@ validate_machine_config() {
     validate_egress_allow
     validate_readonly_paths_lexical
     validate_writable_paths_lexical
+    validate_disjoint_paths_lexical HIDDEN_PATHS "${HIDDEN_PATHS[@]}"
 }
 
 validate_egress_allow() {
@@ -158,13 +159,18 @@ validate_readonly_paths_lexical() {
 }
 
 validate_writable_paths_lexical() {
-    local path previous
+    validate_disjoint_paths_lexical WRITABLE_PATHS "${WRITABLE_PATHS[@]}"
+}
+
+validate_disjoint_paths_lexical() {
+    local key=$1 path previous
+    shift
     local -a lanes=()
-    for path in "${WRITABLE_PATHS[@]}"; do
-        validate_project_mount_path_lexical "$path" || die "invalid WRITABLE_PATHS path '$path'"
+    for path in "$@"; do
+        validate_project_mount_path_lexical "$path" || die "invalid $key path '$path'"
         for previous in "${lanes[@]}"; do
             if project_paths_overlap "$path" "$previous"; then
-                die "overlapping WRITABLE_PATHS paths: $previous and $path"
+                die "overlapping $key paths: $previous and $path"
             fi
         done
         lanes+=("$path")

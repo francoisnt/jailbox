@@ -317,12 +317,13 @@ assert_generation_restart() {
 
 # Real kernel mount enforcement: nested RW lane over RO base, then RO children.
 assert_writable_lanes() (
-    local image="$1" managed_id="$2" project probe_container
+    local image="$1" managed_id="$2" project probe_container built_image=''
     project=$(mktemp -d) || return 1
     probe_container="jailbox-writable-${project##*/}"
     # shellcheck disable=SC2329 # Invoked by the subshell EXIT trap.
     cleanup_writable_fixture() {
         podman rm -f --ignore "$probe_container" >/dev/null || return 1
+        if [[ -n "$built_image" ]]; then podman image rm --ignore "$built_image" >/dev/null || return 1; fi
         rm -rf -- "$project"
     }
     trap cleanup_writable_fixture EXIT
@@ -336,18 +337,76 @@ assert_writable_lanes() (
     if podman run --name "$probe_container" --rm -i --network none --read-only \
         --userns="keep-id:uid=$managed_id,gid=$managed_id" --user "$managed_id:$managed_id" \
         --cap-drop=ALL --security-opt=no-new-privileges --entrypoint bash \
-        -v "$project:/project:Z,ro" \
-        -v "$project/lane:/project/lane:Z,rw" \
-        -v "$project/single:/project/single:Z,rw" \
-        -v "$project/.git:/project/.git:Z,rw" \
-        -v "$project/lane/protected:/project/lane/protected:Z,ro" \
-        -v "$project/lane/policy:/project/lane/policy:Z,ro" \
-        -v "$project/.git/config:/project/.git/config:Z,ro" \
-        -v "$project/.git/hooks:/project/.git/hooks:Z,ro" \
+        -v "$project:/project:Z,ro,rprivate" \
+        -v "$project/lane:/project/lane:Z,rw,rprivate" \
+        -v "$project/single:/project/single:Z,rw,rprivate" \
+        -v "$project/.git:/project/.git:Z,rw,rprivate" \
+        -v "$project/lane/protected:/project/lane/protected:Z,ro,rprivate" \
+        -v "$project/lane/policy:/project/lane/policy:Z,ro,rprivate" \
+        -v "$project/.git/config:/project/.git/config:Z,ro,rprivate" \
+        -v "$project/.git/hooks:/project/.git/hooks:Z,ro,rprivate" \
         "$image" -s < "$JAILBOX_DIR/tests/lib/sandbox/check-writable-paths.sh"; then
         pass 'writable lanes, regular-file semantics, nested protection and Git commits'
     else
         fail 'writable lane kernel enforcement'
         return 1
     fi
+
+    # Use the actual host selector, build and mount planner. Expected denial
+    # and host preservation are independently asserted by the fixture payload.
+    # shellcheck source=tests/lib/core.sh
+    source "$JAILBOX_DIR/tests/lib/core.sh" "$JAILBOX_DIR/src"
+    local shape parent_policy selected hidden expected actual project_options mount_destinations
+    PROJECT_DIR=$project
+    REMOTE_PATH=/project
+    PROJECT_RESOURCE_PREFIX=$probe_container
+    apply_config_defaults
+    initialize_dev_image_state
+    built_image=$PROJECT_DEV_IMAGE
+    mkdir -p "$project/lane/hidden/child" || return 1
+    chmod 755 "$project/lane/hidden" "$project/lane/hidden/child" || return 1
+    printf secret > "$project/lane/hidden/.secret" || return 1
+    printf 'FROM %s\n' "$image" > "$project/lane/Containerfile" || return 1
+    cp "$project/lane/Containerfile" "$project/lane/hidden/Containerfile" || return 1
+    chmod 644 "$project/lane/Containerfile" "$project/lane/hidden/Containerfile" "$project/lane/hidden/.secret" || return 1
+    # shellcheck disable=SC2329 # Called by the shared production validator.
+    validation_ssh() { podman exec -i "$probe_container" bash -c "$1"; }
+    for shape in exact ancestor; do
+        selected=lane/Containerfile; hidden=$selected
+        if [[ "$shape" = ancestor ]]; then selected=lane/hidden/Containerfile; hidden=lane/hidden; fi
+        rm -f "$project/hardlink" "$project/copy" || return 1
+        ln "$project/$selected" "$project/hardlink" || return 1
+        cp "$project/$selected" "$project/copy" || return 1
+        expected=$(runtime_file_digest "$project/$selected") || return 1
+        DEV_CONTAINERFILE=$selected
+        build_or_select_dev_image || return 1
+        for parent_policy in writable readonly; do
+            WRITABLE_PATHS=()
+            READONLY_PATHS=(lane/hidden/child)
+            if [[ "$parent_policy" = writable ]]; then WRITABLE_PATHS=(lane); else READONLY_PATHS+=(lane); fi
+            HIDDEN_PATHS=("$hidden")
+            project_options=Z,rprivate
+            [[ -z ${WRITABLE_PATHS[*]-} ]] || project_options=Z,ro,rprivate
+            build_readonly_mounts || return 1
+            podman run -d --name "$probe_container" --network none --read-only \
+                --userns="keep-id:uid=$managed_id,gid=$managed_id" --user "$managed_id:$managed_id" \
+                --cap-drop=ALL --security-opt=no-new-privileges --entrypoint sleep \
+                -v "$project:/project:$project_options" "${WRITABLE_MOUNTS[@]}" "${READONLY_MOUNTS[@]}" \
+                "${HIDDEN_MASK_OPTIONS[@]}" "$built_image" 300 >/dev/null || return 1
+            # No ordinary mount may expose the masked destination or descendants.
+            mount_destinations=$(podman container inspect "$probe_container" --format '{{range .Mounts}}{{println .Destination}}{{end}}') || return 1
+            if grep -Eq "^/project/$hidden(/|$)" <<< "$mount_destinations"; then
+                fail 'hidden policy emitted a re-exposing overlay'; return 1
+            fi
+            validate_development_session mounts || return 1
+            podman exec -i "$probe_container" bash -s -- "$shape" "$parent_policy" \
+                < "$JAILBOX_DIR/tests/lib/sandbox/check-hidden-paths.sh" || { fail "hidden $shape under $parent_policy parent"; return 1; }
+            actual=$(runtime_file_digest "$project/$selected") || return 1
+            [[ "$actual" = "$expected" ]] || { fail 'mask changed host contents'; return 1; }
+            [[ $(cat "$project/lane/hidden/.secret") = secret && -d "$project/lane/hidden/child" ]] || return 1
+            cmp "$project/hardlink" "$project/copy" || return 1
+            podman rm -f "$probe_container" >/dev/null || return 1
+            pass "native $shape mask under $parent_policy parent hides contents and preserves host paths"
+        done
+    done
 )

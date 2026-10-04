@@ -51,6 +51,9 @@ delete_line() {
 }
 
 assert_result "unchanged public API detected" unchanged
+delete_line '    HIDDEN_PATHS'
+assert_result "hidden configuration removal detected" removed
+git -C "$FIXTURE" checkout -q -- src/public-api.sh
 delete_line '    WRITABLE_PATHS'
 assert_result "writable configuration removal detected" removed
 git -C "$FIXTURE" checkout -q -- src/public-api.sh

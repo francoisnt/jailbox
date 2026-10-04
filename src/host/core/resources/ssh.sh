@@ -13,18 +13,29 @@ validation_ssh() {
 }
 
 validate_development_session() {
-    local mode="$1" path arguments result proxy="" index payload status=0
-    local -a paths=(/) writable=()
-    for path in "${WRITABLE_PATHS[@]}"; do writable+=("$REMOTE_PATH/$path"); done
-    [[ -z "${writable[*]-}" ]] || paths+=("$REMOTE_PATH")
-    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do paths+=("$REMOTE_PATH/$path"); done
+    local mode="$1" path arguments result proxy="" index payload status=0 project_rw=true kind
+    local -a paths=(/) writable=() hidden=()
+    if [[ -n "${WRITABLE_PATHS[*]-}" ]]; then
+        paths+=("$REMOTE_PATH")
+        project_rw=false
+    fi
+    for path in "${WRITABLE_PATHS[@]}"; do
+        project_path_hidden "$path" || writable+=("$REMOTE_PATH/$path")
+    done
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
+        project_path_hidden "$path" || paths+=("$REMOTE_PATH/$path")
+    done
+    for path in "${HIDDEN_PATHS[@]}"; do
+        kind=$(project_path_type "$PROJECT_DIR/$path") || return 1
+        hidden+=("$kind" "$REMOTE_PATH/$path")
+    done
     if [[ "$mode" != mounts && -n "${EGRESS_ALLOW[*]-}" ]]; then proxy=${NETWORK_STATE[proxy_url]}; fi
     if [[ ! -f "$SCRIPT_DIR/container/checks/validate-session.sh" ]] ||
         ! payload=$(< "$SCRIPT_DIR/container/checks/validate-session.sh"); then
         refuse_local_validation 'could not read local validation payload; repair the jailbox installation before retrying'
         return 1
     fi
-    printf -v arguments "%q " "$mode" "$REMOTE_PATH" "$proxy" "${#writable[@]}" "${writable[@]}" "${paths[@]}"
+    printf -v arguments "%q " "$mode" "$REMOTE_PATH" "$proxy" "$project_rw" "${#writable[@]}" "${#hidden[@]}" "${writable[@]}" "${hidden[@]}" "${paths[@]}"
     result=$(validation_ssh "bash -s -- $arguments" <<< "$payload" && printf '.') || status=$?
     if [[ "$status" != 0 ]]; then
         refuse_sandbox "SSH validation command failed (exit $status; transport or remote execution error)"
@@ -36,6 +47,7 @@ validate_development_session() {
         $'authorized-keys\n.') refuse_sandbox 'authorized_keys is unavailable' ;;
         $'project-write\n.') refuse_local_validation 'managed user cannot write the project; correct host project ownership and permissions before retrying' ;;
         $'lane-write\n.') refuse_local_validation 'managed user cannot write a declared writable lane; correct host ownership and permissions before retrying' ;;
+        $'hidden-mask\n.') refuse_sandbox 'hidden path mask differs from policy' ;;
         $'lane-mount\n.') refuse_sandbox 'writable lane mount differs from policy' ;;
         $'probe-cleanup\n.') refuse_local_validation 'could not remove writable-lane readiness marker' ;;
         $'sockets\n.') refuse_sandbox 'runtime socket isolation could not be established' ;;
