@@ -276,6 +276,9 @@ mv "$tmp/changed" "$tmp/mountinfo"
 [[ $(lane_remote full) = lane-mount ]] || fail 'read-only lane accepted'
 # Exercise native mask observation with synthetic mount records and real
 # empty-directory/null-device shapes. No write probe is permitted here.
+# Device numbers belong to the Linux container, not the portable test host.
+cp "$ROOT/tests/fixtures/validation-stat.sh" "$tmp/bin/stat"
+chmod 755 "$tmp/bin/stat"
 mkdir "$tmp/masked-directory"
 chmod 755 "$tmp/masked-directory"
 mask_remote() {
@@ -320,6 +323,11 @@ for producer in stat find; do
     chmod 755 "$tmp/bin/$producer"
     [[ $(mask_remote) = hidden-mask ]] || fail "failed mask $producer producer accepted"
     rm "$tmp/bin/$producer"
+    if [[ "$producer" = stat ]]; then
+        cp "$ROOT/tests/fixtures/validation-stat.sh" "$tmp/bin/stat"
+        chmod 755 "$tmp/bin/stat"
+    fi
+    [[ $(mask_remote) = ok ]] || fail "healthy mask rejected after restoring $producer"
 done
 healthy
 cat > "$tmp/bin/awk" <<'STUB'

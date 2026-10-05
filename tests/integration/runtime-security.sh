@@ -323,6 +323,8 @@ assert_writable_lanes() (
     local image="$1" managed_id="$2" project probe_container built_image=''
     project=$(mktemp -d) || return 1
     probe_container="jailbox-writable-${project##*/}"
+    # This name also prefixes image repositories, which require lowercase.
+    probe_container=${probe_container,,}
     # shellcheck disable=SC2329 # Invoked by the subshell EXIT trap.
     cleanup_writable_fixture() {
         podman rm -f --ignore "$probe_container" >/dev/null || return 1
