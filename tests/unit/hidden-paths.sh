@@ -28,9 +28,9 @@ rejects() {
 for path in '' /tmp . .. ./lane lane/../file lane/ lane//hidden lane:hidden missing fifo link link/hidden; do
     rejects check_hidden_path "$path"
 done
-for paths in 'lane lane' 'lane lane/hidden' 'lane/hidden lane'; do
+for paths in 'lane lane/hidden' 'lane/hidden lane'; do
     read -r -a HIDDEN_PATHS <<< "$paths"
-    rejects finalize_effective_readonly_paths
+    rejects finalize_project_path_policy
 done
 # A host alias above the physical project is allowed.
 [[ $(PROJECT_DIR="$fixture/project-alias" check_hidden_path lane/hidden) = lane/hidden ]]
@@ -38,40 +38,41 @@ HIDDEN_PATHS=('dir,comma' '-option/*[literal]' lane/Containerfile)
 WRITABLE_PATHS=(lane)
 READONLY_PATHS=(lane/Containerfile readonly)
 SELECTED_DEV_CONTAINERFILE_INPUT="$PROJECT_DIR/lane/Containerfile"
-build_readonly_mounts
+build_project_mounts
 [[ ${#HIDDEN_MASK_OPTIONS[@]} = 2 && ${HIDDEN_MASK_OPTIONS[0]} = --security-opt ]]
-[[ ${HIDDEN_MASK_OPTIONS[1]} = "mask=$REMOTE_PATH/dir,comma:$REMOTE_PATH/-option/*[literal]:$REMOTE_PATH/lane/Containerfile" ]]
-[[ ${#WRITABLE_MOUNTS[@]} = 2 && ${#READONLY_MOUNTS[@]} = 2 ]]
-[[ ${READONLY_MOUNTS[1]} = "$PROJECT_DIR/readonly:$REMOTE_PATH/readonly:Z,ro,rprivate" ]]
+[[ ${HIDDEN_MASK_OPTIONS[1]} = "mask=$REMOTE_PATH/-option/*[literal]:$REMOTE_PATH/dir,comma:$REMOTE_PATH/lane/Containerfile" ]]
+[[ ${#PROJECT_MOUNTS[@]} = 4 ]]
+[[ ${PROJECT_MOUNTS[3]} = "$PROJECT_DIR/readonly:$REMOTE_PATH/readonly:Z,ro,rprivate" ]]
 # Hidden ancestors suppress both read-only and writable children, after full
 # semantic validation. The base remains read-only even if every lane is masked.
 HIDDEN_PATHS=(lane)
 WRITABLE_PATHS=(lane)
 READONLY_PATHS=(lane/Containerfile)
-build_readonly_mounts
-[[ -z ${READONLY_MOUNTS[*]-} && -z ${WRITABLE_MOUNTS[*]-} ]]
+build_project_mounts
+[[ -z ${PROJECT_MOUNTS[*]-} ]]
 WRITABLE_PATHS=(lane/hidden/child)
 READONLY_PATHS=(lane/Containerfile)
-build_readonly_mounts
-[[ -z ${READONLY_MOUNTS[*]-} && -z ${WRITABLE_MOUNTS[*]-} ]]
+build_project_mounts
+[[ -z ${PROJECT_MOUNTS[*]-} ]]
 WRITABLE_PATHS=(lane/missing)
-rejects build_readonly_mounts
+rejects build_project_mounts
 WRITABLE_PATHS=(lane/Containerfile)
-rejects build_readonly_mounts
+build_project_mounts
+[[ -z ${PROJECT_MOUNTS[*]-} ]]
 WRITABLE_PATHS=()
 READONLY_PATHS=(lane/missing)
-rejects build_readonly_mounts
+rejects build_project_mounts
 # Valid RO ancestor, hidden child, and selected Containerfile ancestor mask.
 READONLY_PATHS=(lane)
 HIDDEN_PATHS=(lane/hidden)
 SELECTED_DEV_CONTAINERFILE_INPUT="$PROJECT_DIR/lane/hidden/Containerfile"
-build_readonly_mounts
-[[ ${#READONLY_MOUNTS[@]} = 2 && ${READONLY_MOUNTS[1]} = "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,ro,rprivate" ]]
+build_project_mounts
+[[ ${#PROJECT_MOUNTS[@]} = 2 && ${PROJECT_MOUNTS[1]} = "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,ro,rprivate" ]]
 # A path replaced by a symlink is rejected when options are rebuilt.
 rm "$PROJECT_DIR/dir,comma"
 ln -s lane "$PROJECT_DIR/dir,comma"
 HIDDEN_PATHS=('dir,comma')
-rejects build_readonly_mounts
+rejects build_project_mounts
 rm "$PROJECT_DIR/dir,comma"
 printf hidden > "$PROJECT_DIR/dir,comma"
 # Public validation consumes every indexed member without touching the engine.
@@ -89,7 +90,7 @@ grep -q 'overlapping HIDDEN_PATHS' "$fixture/output"
 HIDDEN_PATHS=(lane/hidden 'dir,comma')
 READONLY_PATHS=(lane lane/hidden/Containerfile)
 WRITABLE_PATHS=()
-finalize_effective_readonly_paths
+finalize_project_path_policy
 CONTAINER_NAME=fixture MANAGED_USER=jailbox VOLUME_NAME=fixture-home SSH_DIR=/state LOCAL_PORT=50222
 validate_development_identity() { :; }
 validate_ssh_container_mount() { :; }

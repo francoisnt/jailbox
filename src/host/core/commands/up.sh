@@ -43,7 +43,7 @@ bring_up_sandbox() {
         validate_dev_image
         # Classify launch inputs before the wrapper build. Mount construction
         # repeats this to catch subsequent path replacement.
-        finalize_effective_readonly_paths
+        finalize_project_path_policy
         build_jailbox_image
     fi
     if [ "$OBSERVED_PROXY_STATE" = absent ]; then
@@ -62,7 +62,7 @@ bring_up_sandbox() {
         session_mode=launch
         configure_runtime_mounts
         create_ssh_generation
-        build_readonly_mounts
+        build_project_mounts
         record_launch_resource_attempt "volume:$VOLUME_NAME"
         ensure_home_volume
         record_launch_resource_attempt "container:$CONTAINER_NAME"

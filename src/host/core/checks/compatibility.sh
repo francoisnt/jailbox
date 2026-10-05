@@ -70,7 +70,7 @@ inspect_sandbox_compatibility() {
             [ "$selection_status" -le 2 ] || return "$selection_status"
         fi
     fi
-    finalize_effective_readonly_paths || return 1
+    finalize_project_path_policy || return 1
     validate_sandbox_structure
 }
 

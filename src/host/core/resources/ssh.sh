@@ -13,19 +13,20 @@ validation_ssh() {
 }
 
 validate_development_session() {
+    assert_project_path_policy_ready || return 1
     local mode="$1" path arguments result proxy="" index payload status=0 project_rw=true kind
     local -a paths=(/) writable=() hidden=()
     if [[ -n "${WRITABLE_PATHS[*]-}" ]]; then
         paths+=("$REMOTE_PATH")
         project_rw=false
     fi
-    for path in "${WRITABLE_PATHS[@]}"; do
-        project_path_hidden "$path" || writable+=("$REMOTE_PATH/$path")
+    for path in "${EFFECTIVE_WRITABLE_PATHS[@]}"; do
+        writable+=("$REMOTE_PATH/$path")
     done
     for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        project_path_hidden "$path" || paths+=("$REMOTE_PATH/$path")
+        paths+=("$REMOTE_PATH/$path")
     done
-    for path in "${HIDDEN_PATHS[@]}"; do
+    for path in "${EFFECTIVE_HIDDEN_PATHS[@]}"; do
         kind=$(project_path_type "$PROJECT_DIR/$path") || return 1
         hidden+=("$kind" "$REMOTE_PATH/$path")
     done

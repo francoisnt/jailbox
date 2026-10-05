@@ -1,16 +1,20 @@
 # Container observation, structure, mounts, and explicit start operations.
 
 EFFECTIVE_READONLY_PATHS=()
-READONLY_MOUNTS=()
-WRITABLE_MOUNTS=()
+EFFECTIVE_WRITABLE_PATHS=()
+EFFECTIVE_HIDDEN_PATHS=()
+PROJECT_PATH_POLICY_READY=false
+PROJECT_MOUNTS=()
 HIDDEN_MASK_OPTIONS=()
 GITCONFIG_MOUNT=()
 ROOTFS_FLAG=()
 
 initialize_container_runtime_state() {
+    PROJECT_PATH_POLICY_READY=false
     EFFECTIVE_READONLY_PATHS=()
-    READONLY_MOUNTS=()
-    WRITABLE_MOUNTS=()
+    EFFECTIVE_WRITABLE_PATHS=()
+    EFFECTIVE_HIDDEN_PATHS=()
+    PROJECT_MOUNTS=()
     HIDDEN_MASK_OPTIONS=()
     GITCONFIG_MOUNT=()
     ROOTFS_FLAG=()
@@ -23,127 +27,95 @@ validate_configured_readonly_paths() {
     done
 }
 
-effective_readonly_contains() {
-    local candidate path
-    candidate="$1"
-    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        [ "$path" = "$candidate" ] && return 0
-    done
-    return 1
-}
-
-finalize_effective_readonly_paths() {
-    local path relative classified status
-    local -a automatic_inputs
+# Validate the complete input before resolving overlaps. Configuration remains
+# unchanged for digest identity. Only a complete result is published; callers
+# must stop on failure rather than consume partial or stale policy.
+finalize_project_path_policy() {
+    local path relative classified sorted
+    local -a readonly=() writable=() hidden=() effective_readonly=() effective_writable=()
+    PROJECT_PATH_POLICY_READY=false
     EFFECTIVE_READONLY_PATHS=()
+    EFFECTIVE_WRITABLE_PATHS=()
+    EFFECTIVE_HIDDEN_PATHS=()
     validate_disjoint_paths_lexical HIDDEN_PATHS "${HIDDEN_PATHS[@]}" || return 1
     for path in "${HIDDEN_PATHS[@]}"; do
-        check_hidden_path "$path" >/dev/null || return 1
+        relative=$(check_hidden_path "$path") || return 1
+        project_path_in_list "$relative" "${hidden[@]}" || hidden+=("$relative")
     done
     for path in "${READONLY_PATHS[@]}"; do
-        status=0
-        relative=$(check_readonly_path "$path") || status=$?
-        [ "$status" -eq 0 ] || return "$status"
-        effective_readonly_contains "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
+        relative=$(check_readonly_path "$path") || return 1
+        readonly+=("$relative")
     done
-    automatic_inputs=()
-    [ -n "$SELECTED_DEV_CONTAINERFILE_INPUT" ] && automatic_inputs+=("$SELECTED_DEV_CONTAINERFILE_INPUT")
-    for path in "${automatic_inputs[@]}"; do
-        status=0
-        classified=$(classify_trusted_file "$path" "launch input") || status=$?
-        [ "$status" -eq 0 ] || return "$status"
-        relative="${classified#*$'\t'}"
-        [ -n "$relative" ] || continue
-        effective_readonly_contains "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
+    for path in "${WRITABLE_PATHS[@]}"; do
+        relative=$(check_writable_path "$path") || return 1
+        writable+=("$relative")
     done
-    expand_readonly_symlink_targets || return 1
-    validate_writable_path_policy
+    if [[ -n "$SELECTED_DEV_CONTAINERFILE_INPUT" ]]; then
+        classified=$(classify_trusted_file "$SELECTED_DEV_CONTAINERFILE_INPUT" "launch input") || return 1
+        relative=${classified#*$'\t'}
+        # Automatic inputs are regular files: an exact RO entry cannot be
+        # overridden by a more-specific configured writable directory.
+        [[ -z "$relative" ]] || readonly+=("$relative")
+    fi
+    for path in "${readonly[@]}"; do
+        project_path_covered_by "$path" "${hidden[@]}" && continue
+        project_path_in_list "$path" "${effective_readonly[@]}" || effective_readonly+=("$path")
+    done
+    for path in "${writable[@]}"; do
+        project_path_covered_by "$path" "${hidden[@]}" && continue
+        project_path_in_list "$path" "${effective_readonly[@]}" && continue
+        project_path_in_list "$path" "${effective_writable[@]}" || effective_writable+=("$path")
+    done
+    # Hidden options have a canonical order too, independent of array order.
+    if [[ -n "${hidden[*]-}" ]]; then
+        sorted=$(printf '%s\n' "${hidden[@]}" | LC_ALL=C sort) || return 1
+        mapfile -t hidden <<< "$sorted"
+    fi
+    EFFECTIVE_READONLY_PATHS=("${effective_readonly[@]}")
+    EFFECTIVE_WRITABLE_PATHS=("${effective_writable[@]}")
+    EFFECTIVE_HIDDEN_PATHS=("${hidden[@]}")
+    PROJECT_PATH_POLICY_READY=true
 }
 
-validate_writable_path_policy() {
-    local writable protected
-    for writable in "${WRITABLE_PATHS[@]}"; do
-        check_writable_path "$writable" >/dev/null || return 1
-        for protected in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-            if writable_path_conflicts_with_protection "$writable" "$protected"; then
-                die "WRITABLE_PATHS path '$writable' is protected by '$protected'"
-            fi
-        done
-    done
-}
-
-readonly_path_covered() {
-    local candidate=$1 path
-    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        [[ "$candidate" != "$path" && "$candidate" != "$path/"* ]] || return 0
-    done
-    return 1
-}
-
-# Scan the transitive closure of protected directories. find does not follow
-# links: explicit resolution records both their targets and mutable link-chain
-# directories. A completion record distinguishes an empty walk from a failure.
-expand_readonly_symlink_targets() {
-    local project index path link dependencies relative complete
-    project=$(realpath -e -- "$PROJECT_DIR") || return 1
-    for ((index=0; index<${#EFFECTIVE_READONLY_PATHS[@]}; index++)); do
-        path=$project/${EFFECTIVE_READONLY_PATHS[index]}
-        [[ -d "$path" ]] || continue
-        complete=false
-        while IFS= read -r -d '' link; do
-            if [[ "$link" = readonly-walk-complete ]]; then complete=true; break; fi
-            dependencies=$(project_symlink_dependencies "$link" "$project") || return 1
-            [[ -n "$dependencies" ]] || continue
-            while IFS= read -r relative; do
-                readonly_path_covered "$relative" || EFFECTIVE_READONLY_PATHS+=("$relative")
-            done <<< "$dependencies"
-        done < <(set -o pipefail; find "$path" -type l -print0 | LC_ALL=C sort -z || exit; printf 'readonly-walk-complete\0')
-        [[ "$complete" = true ]] || {
-            printf 'Error: could not inspect symlinks beneath protected path %s\n' "$path" >&2
-            return 1
-        }
-    done
-}
-
-# Masks replace exact overlays and all overlays below a hidden directory.
-# Ancestor overlays remain: they protect or enable access to visible siblings.
-project_path_hidden() {
-    local candidate=$1 hidden
-    for hidden in "${HIDDEN_PATHS[@]}"; do
-        [[ "$candidate" != "$hidden" && "$candidate" != "$hidden/"* ]] || return 0
-    done
-    return 1
+assert_project_path_policy_ready() {
+    if [[ ${PROJECT_PATH_POLICY_READY:-false} != true ]]; then
+        printf 'Error: internal error: project path policy has not been finalized\n' >&2
+        return 1
+    fi
 }
 
 build_hidden_mask_option() {
     local path mask=''
-    for path in "${HIDDEN_PATHS[@]}"; do
+    for path in "${EFFECTIVE_HIDDEN_PATHS[@]}"; do
         mask+=${mask:+:}$REMOTE_PATH/$path
     done
     [[ -z "$mask" ]] || printf 'mask=%s' "$mask"
 }
 
-build_readonly_mounts() {
-    local path status mask
-    # Reassemble from original trusted-input spellings immediately before
-    # creating mount arguments so a path replaced with a symlink is rejected.
-    status=0
-    finalize_effective_readonly_paths || status=$?
-    [ "$status" -eq 0 ] || return "$status"
+build_project_mounts() {
+    local path mask sorted mode
+    local -a mounts=() masks=() paths=()
+    PROJECT_MOUNTS=()
     HIDDEN_MASK_OPTIONS=()
+    # Recheck original trusted-input spellings immediately before assembling
+    # arguments, so replacement with a symlink still fails.
+    finalize_project_path_policy || return 1
     mask=$(build_hidden_mask_option) || return 1
-    [[ -z "$mask" ]] || HIDDEN_MASK_OPTIONS=(--security-opt "$mask")
-    WRITABLE_MOUNTS=()
-    # Lanes cannot nest, so their relative order cannot mask another lane.
-    for path in "${WRITABLE_PATHS[@]}"; do
-        project_path_hidden "$path" && continue
-        WRITABLE_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,rw,rprivate")
-    done
-    READONLY_MOUNTS=()
-    for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        project_path_hidden "$path" && continue
-        READONLY_MOUNTS+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,ro,rprivate")
-    done
+    [[ -z "$mask" ]] || masks=(--security-opt "$mask")
+    paths=("${EFFECTIVE_READONLY_PATHS[@]}" "${EFFECTIVE_WRITABLE_PATHS[@]}")
+    if [[ -n "${paths[*]-}" ]]; then
+        # Bytewise sorting puts a prefix before its descendants, regardless of
+        # category. Nested overlays implement most-specific policy; retain RO
+        # entries below writable exceptions even with another RO ancestor.
+        sorted=$(printf '%s\n' "${paths[@]}" | LC_ALL=C sort) || return 1
+        while IFS= read -r path; do
+            mode=rw
+            if project_path_in_list "$path" "${EFFECTIVE_READONLY_PATHS[@]}"; then mode=ro; fi
+            mounts+=(-v "$PROJECT_DIR/$path:$REMOTE_PATH/$path:Z,$mode,rprivate")
+        done <<< "$sorted"
+    fi
+    PROJECT_MOUNTS=("${mounts[@]}")
+    HIDDEN_MASK_OPTIONS=("${masks[@]}")
 }
 
 assert_container_launch_state() {
@@ -205,8 +177,7 @@ start_jailbox_container() {
         "${GITCONFIG_MOUNT[@]}" \
         -p 127.0.0.1:"$LOCAL_PORT":2222 \
         -v "$PROJECT_DIR:$REMOTE_PATH:$project_options" \
-        "${WRITABLE_MOUNTS[@]}" \
-        "${READONLY_MOUNTS[@]}" \
+        "${PROJECT_MOUNTS[@]}" \
         "${HIDDEN_MASK_OPTIONS[@]}" \
         --memory="$MEMORY_LIMIT" \
         --cpus="$CPU_LIMIT" \
@@ -316,6 +287,7 @@ validate_development_identity() {
 }
 
 validate_development_mounts() {
+    assert_project_path_policy_ready || return 1
     validate_development_identity || return 1
     local path template allowed mask project_rw=true
     [[ -z "${WRITABLE_PATHS[*]-}" ]] || project_rw=false
@@ -328,12 +300,10 @@ validate_development_mounts() {
     validate_ssh_container_mount || return 1
     properties=()
     for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        project_path_hidden "$path" && continue
         template=$(container_mount_predicate "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" false rprivate) || return 1
         properties+=("$template" "mount '$REMOTE_PATH/$path'")
     done
-    for path in "${WRITABLE_PATHS[@]}"; do
-        project_path_hidden "$path" && continue
+    for path in "${EFFECTIVE_WRITABLE_PATHS[@]}"; do
         template=$(container_mount_predicate "$REMOTE_PATH/$path" bind "$PROJECT_DIR/$path" true rprivate) || return 1
         properties+=("$template" "mount '$REMOTE_PATH/$path'")
     done
@@ -348,8 +318,7 @@ validate_development_mounts() {
     # Reject additional mounts, including overlays below protected mounts and
     # host socket aliases. Only jailbox's explicit mount inventory is eligible.
     allowed="(or (eq .Destination $(ssh_inspect_quote "$REMOTE_PATH")) (eq .Destination $(ssh_inspect_quote "/home/$MANAGED_USER")) (eq .Destination \"/run/jailbox-sshd\")"
-    for path in "${EFFECTIVE_READONLY_PATHS[@]}" "${WRITABLE_PATHS[@]}"; do
-        project_path_hidden "$path" && continue
+    for path in "${EFFECTIVE_READONLY_PATHS[@]}" "${EFFECTIVE_WRITABLE_PATHS[@]}"; do
         allowed+=" (eq .Destination $(ssh_inspect_quote "$REMOTE_PATH/$path"))"
     done
     allowed+=" (and (eq .Destination $(ssh_inspect_quote "/home/$MANAGED_USER/.gitconfig")) (eq .Type \"bind\") (not .RW) (eq .Source $(ssh_inspect_quote "$SSH_DIR/gitconfig"))))"

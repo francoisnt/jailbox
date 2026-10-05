@@ -157,7 +157,7 @@ test_resource_limit_flags() {
     MANAGED_USER="jailbox"
     MANAGED_ID=1001
     GITCONFIG_MOUNT=()
-    READONLY_MOUNTS=()
+    PROJECT_MOUNTS=()
     stub_dir=$(mktemp -d)
     LAUNCH_STATE_DIRS+=("$stub_dir")
     argv_file="$stub_dir/argv"
@@ -184,7 +184,7 @@ test_resource_limit_flags() {
     mkdir -p "$PROJECT_DIR/lane/protected"
     WRITABLE_PATHS=(lane)
     READONLY_PATHS=(lane/protected)
-    build_readonly_mounts
+    build_project_mounts
     run_launch_with_stub_podman "$stub_dir" "$argv_file"
     assert_argv_line "nonempty writable policy makes base read-only" "$argv_file" "$PROJECT_DIR:$REMOTE_PATH:Z,ro,rprivate"
     assert_argv_line "declared lane is read-write" "$argv_file" "$PROJECT_DIR/lane:$REMOTE_PATH/lane:Z,rw,rprivate"
@@ -197,15 +197,36 @@ test_resource_limit_flags() {
     else
         fail 'incorrect writable mount ordering'
     fi
+    mkdir -p "$PROJECT_DIR/lane/protected/generated/policy/output"
+    READONLY_PATHS=(lane/protected/generated/policy lane/protected)
+    WRITABLE_PATHS=(lane/protected/generated/policy/output lane/protected/generated lane)
+    build_project_mounts
+    run_launch_with_stub_podman "$stub_dir" "$argv_file"
+    local path mode line previous=0
+    for path in '' lane lane/protected lane/protected/generated lane/protected/generated/policy lane/protected/generated/policy/output; do
+        case "$path" in
+            ''|lane/protected|lane/protected/generated/policy) mode=ro ;;
+            *) mode=rw ;;
+        esac
+        line=$(grep -nFx "$PROJECT_DIR${path:+/$path}:$REMOTE_PATH${path:+/$path}:Z,$mode,rprivate" "$argv_file")
+        [[ ${line%%:*} -gt "$previous" ]] || fail 'alternating overlays are not parent-first'
+        previous=${line%%:*}
+    done
+    pass 'launch preserves alternating exceptions independent of input order'
     HIDDEN_PATHS=(lane/protected)
-    build_readonly_mounts
+    build_project_mounts
     run_launch_with_stub_podman "$stub_dir" "$argv_file"
     assert_argv_line "native masks form one literal option" "$argv_file" "mask=$REMOTE_PATH/lane/protected"
     assert_not_contains "hidden path has no overlay" "$argv_file" "$PROJECT_DIR/lane/protected:"
+    WRITABLE_PATHS=(lane/protected/generated)
+    build_project_mounts
+    run_launch_with_stub_podman "$stub_dir" "$argv_file"
+    assert_argv_line 'fully suppressed writable policy keeps base read-only' "$argv_file" "$PROJECT_DIR:$REMOTE_PATH:Z,ro,rprivate"
+    [[ -z ${PROJECT_MOUNTS[*]-} ]] || fail 'hidden descendants still have overlays'
     HIDDEN_MASK_OPTIONS=()
     assert_launch_state_rejects 'missing mask state rejected' 'initialized hidden masks'
     apply_config_defaults
-    build_readonly_mounts
+    build_project_mounts
 
     MEMORY_LIMIT="1.5g"
     NETWORK_STATE[proxy_url]=http://10.240.32.2:8888
@@ -220,20 +241,23 @@ test_resource_limit_flags() {
 }
 
 test_initialize_container_runtime_state_clears_outputs() {
+    PROJECT_PATH_POLICY_READY=true
     READONLY_PATHS=(stale)
     EFFECTIVE_READONLY_PATHS=(stale)
-    READONLY_MOUNTS=(stale)
-    WRITABLE_MOUNTS=(stale)
+    PROJECT_MOUNTS=(stale)
+    EFFECTIVE_WRITABLE_PATHS=(stale)
+    EFFECTIVE_HIDDEN_PATHS=(stale)
     HIDDEN_MASK_OPTIONS=(stale)
     GITCONFIG_MOUNT=(stale)
     ROOTFS_FLAG=(stale)
 
     initialize_container_runtime_state
+    [[ "$PROJECT_PATH_POLICY_READY" = false ]] || fail 'policy readiness was not cleared'
     [[ -z ${HIDDEN_MASK_OPTIONS[*]-} ]] || fail 'hidden mask state was not cleared'
 
     if [[ "${READONLY_PATHS[*]}" = stale && "${#EFFECTIVE_READONLY_PATHS[@]}" -eq 0 && \
-        "${#READONLY_MOUNTS[@]}" -eq 0 && \
-        "${#WRITABLE_MOUNTS[@]}" -eq 0 && \
+        "${#PROJECT_MOUNTS[@]}" -eq 0 && \
+        "${#EFFECTIVE_WRITABLE_PATHS[@]}" -eq 0 && "${#EFFECTIVE_HIDDEN_PATHS[@]}" -eq 0 && \
         "${#GITCONFIG_MOUNT[@]}" -eq 0 && "${#ROOTFS_FLAG[@]}" -eq 0 ]]; then
         pass "runtime initialization preserves config and clears outputs"
     else

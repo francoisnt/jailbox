@@ -31,71 +31,6 @@ validate_project_boundary() {
     fi
 }
 
-# Emit project-relative dependencies only. The project root cannot be added as
-# an overlay without replacing the writable-project contract, so refuse it.
-print_project_protection_target() {
-    local target=$1 project=$2 relative
-    [[ "$target" != "$project" ]] || {
-        echo 'Error: protected symlink requires protecting the entire project; choose a narrower target' >&2
-        return 1
-    }
-    [[ "$target" = "$project/"* ]] || return 0
-    relative=${target#"$project"/}
-    reject_control_characters 'protected symlink target' "$relative"
-    validate_project_mount_path_lexical "$relative" || {
-        echo 'Error: protected symlink target is not a valid project mount path' >&2
-        return 1
-    }
-    printf '%s\n' "$relative"
-}
-
-# Resolve every component, retaining intermediate link directories as well as
-# the final target. Otherwise a writable intermediate link could be retargeted
-# after the final target was mounted read-only. No file contents are read.
-project_symlink_dependencies() {
-    local pending=$1 project=$2 current=/ component rest parent target hops=0 directory_component
-    reject_control_characters 'protected symlink' "$pending"
-    pending=${pending#/}
-    while [[ -n "$pending" ]]; do
-        component=${pending%%/*}
-        rest=""
-        directory_component=false
-        [[ "$pending" != */* ]] || { rest=${pending#*/}; directory_component=true; }
-        pending=$rest
-        case "$component" in
-            ''|.) continue ;;
-            ..) current=${current%/*}; current=${current:-/}; continue ;;
-        esac
-        parent=$current
-        current=${current%/}/$component
-        if [[ -L "$current" ]]; then
-            hops=$((hops + 1))
-            ((hops <= 40)) || { echo 'Error: protected symlink chain is cyclic or too deep' >&2; return 1; }
-            print_project_protection_target "$parent" "$project" || return 1
-            target=$(readlink -- "$current" && printf '.') || return 1
-            [[ "$target" = *$'\n.' ]] || return 1
-            target=${target%$'\n.'}
-            reject_control_characters 'protected symlink target' "$target"
-            case "$target" in
-                /*) current=/; target=${target#/} ;;
-                *) current=$parent ;;
-            esac
-            pending=$target${rest:+/$rest}
-        elif [[ ! -e "$current" ]]; then
-            printf 'Error: protected symlink target does not exist: %s\n' "$current" >&2
-            return 1
-        elif [[ "$directory_component" = true && ! -d "$current" ]]; then
-            printf 'Error: protected symlink traverses a non-directory: %s\n' "$current" >&2
-            return 1
-        fi
-    done
-    [[ -f "$current" || -d "$current" ]] || {
-        echo 'Error: protected symlink target is not a regular file or directory' >&2
-        return 1
-    }
-    print_project_protection_target "$current" "$project"
-}
-
 # Print the canonical project-relative spelling of an existing path. Return
 # 1 for an outside path and 2 when containment cannot be established. Callers
 # may omit an outside input's project mount, but must not ignore a failed read.
@@ -284,7 +219,21 @@ project_paths_overlap() {
     [[ "$1" = "$2" || "$1" = "$2/"* || "$2" = "$1/"* ]]
 }
 
-# A writable lane at or below a protected path would weaken that protection.
-writable_path_conflicts_with_protection() {
-    [[ "$1" = "$2" || "$1" = "$2/"* ]]
+# Policy comparisons use literal path bytes and component boundaries.
+project_path_in_list() {
+    local candidate=$1 path
+    shift
+    for path in "$@"; do
+        [[ "$candidate" != "$path" ]] || return 0
+    done
+    return 1
+}
+
+project_path_covered_by() {
+    local candidate=$1 path
+    shift
+    for path in "$@"; do
+        [[ "$candidate" != "$path" && "$candidate" != "$path/"* ]] || return 0
+    done
+    return 1
 }

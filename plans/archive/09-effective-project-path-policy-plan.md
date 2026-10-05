@@ -25,9 +25,13 @@ warnings, including when automatic protection suppresses a writable entry.
 
 Validate every explicit entry before suppressing it. Preserve existing lexical,
 existence, regular-file/directory, physical-project containment, and
-no-symlink-component rules. Reject duplicates within each array, but allow
-nested read-only and writable entries so alternating exceptions can be
-expressed. Preserve the rejection of nested hidden entries. Preserve automatic protection of
+no-symlink-component rules. Core accepts exact duplicates within read-only,
+writable, and hidden arrays and silently deduplicates them in effective policy.
+The frontend passes configured path entries through and appends its protection
+anchors without deduplication; core owns path-policy validation and resolution.
+Allow nested read-only and writable entries so alternating exceptions can be
+expressed. Reject distinct hidden entries with an ancestor/descendant relationship.
+Preserve automatic protection of
 selected Containerfiles and frontend configuration. A hidden mask satisfies
 their runtime integrity requirement after the host consumes them.
 
@@ -61,7 +65,8 @@ attachment. Contained link creation or retargeting alone does not require
 recreation or block attachment. Configuration changes still require explicit
 stop/up through existing digest compatibility checks; never repair resources
 during attachment. Preserve configuration digest semantics and read-only
-attachment checks.
+attachment checks. Path-array deduplication affects effective policy only;
+the digest still records configured entries in order, including repetitions.
 
 Use native masks and private project mounts. Writable child overlays are valid
 only where effective policy permits them; no overlay may re-expose hidden
@@ -94,6 +99,11 @@ protected. Validate the new nested mount combinations with Podman early in
 implementation. Assert that valid cross-category overlaps succeed without
 overlap warnings, including a writable
 declaration for the automatically protected frontend configuration file.
+Verify exact duplicates in all three path arrays succeed through both machine
+and file configuration without duplicate mounts or mask destinations, including
+read-only collisions with frontend anchors and the selected Containerfile.
+Retain nested-hidden rejection and verify that changing repetitions in any
+path array changes the digest.
 
 ### Non-goals
 
@@ -121,9 +131,12 @@ unused closure helpers. Remove `project_symlink_dependencies` and
 their contained-link refusal diagnostics. Replace the conflict decision in
 `writable_path_conflicts_with_protection` with the new precedence rules.
 Replace nested-writable rejection in `validate_writable_paths_lexical` in
-`src/host/core/configuration/load.sh`, retaining duplicate rejection and the
-hidden-array validation rules. Preserve frontend configuration-file anchors
-composed by `src/host/frontend/file-policy.sh`: these regular-file entries remain
+`src/host/core/configuration/load.sh`. Remove duplicate rejection from
+`validate_readonly_paths_lexical` and `validate_disjoint_paths_lexical` in the
+same module, retaining rejection of distinct nested hidden entries. Remove read-only
+deduplication from `compose_machine_environment` in
+`src/host/frontend/file-policy.sh`, retaining egress composition behavior.
+Preserve its frontend configuration-file anchors: these regular-file entries remain
 protected by the exact-path read-only tie rule, including inside writable
 directories. Selected Containerfile protection must likewise survive all
 configured exceptions.
@@ -149,7 +162,10 @@ expectations. In `tests/unit/attachment.sh`, verify that creating or retargeting
 a contained link alone does not block attachment, retaining its already-valid
 read-only-child-under-writable-lane case. Extend runtime security fixtures and
 affected lifecycle cases, and keep bounded matrix inventories/documentation
-synchronized.
+synchronized. Replace duplicate-refusal expectations for all three path arrays and update
+`tests/unit/frontend-file-policy.sh` to assert that explicit repetitions and
+appended anchors reach core unchanged; cover their successful core validation
+and effective deduplication.
 
 Update README precedence and symlink propagation explanations. Replace the
 claims that writable lanes cannot nest, that a lane cannot equal or lie beneath
@@ -158,7 +174,9 @@ invalid. Explain most-specific read-only/writable policy, exact-path ties, and
 absolute hidden/automatic protection with a writable-child example. Replace
 claims of automatic symlink-target/intermediate-directory protection and
 contained-link rejection, including project-root targets, with user-managed
-destination policy and its integrity limits. Explain silent overlap suppression.
+destination policy and its integrity limits. Explain silent overlap suppression
+and acceptance of exact duplicates in all three path arrays, distinguishing effective
+deduplication from configuration-digest identity.
 
 Run `tests/run dev` and affected suites, with permission-sensitive cases under
 umasks `0022` and `0002`. Run runtime and matrix gates when their prerequisites

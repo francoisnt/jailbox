@@ -61,6 +61,9 @@ in `src/host/cli.sh`. Consumers explicitly initialize and validate the declarati
 The `src/jailbox` entrypoint selects a layer before loading
 its implementation. Frontend code invokes core only through public CLI child
 processes; it never sources core modules or accesses private core state.
+The frontend parses and composes configuration for core, including its required
+protection anchors. Core owns machine path-policy validation and resolution;
+do not duplicate that policy logic in the frontend.
 
 Runtime sources and the installer live under `src/`; tests, maintenance tools,
 plans, and documentation remain at the repository root. Packaging copies `src/`

@@ -687,11 +687,14 @@ unrestricted outbound internet access.
   read-only overlays. They must already exist as regular files or directories;
   missing paths are rejected and no stubs are created. Other project paths,
   including unused Containerfile candidates, follow the base or writable-lane
-  policy unless included by the symlink-target protection below.
+  policy unless explicitly configured otherwise.
 - Writable lanes must be existing project-relative regular files or directories,
-  without dot segments, colons, trailing slashes, symlink components, duplicate
-  or nested lanes. A lane cannot equal or lie beneath a protected path; a
-  protected path inside a writable directory remains read-only. Control
+  without dot segments, colons, trailing slashes, or symlink components.
+  Read-only and writable entries may nest: the most specific entry wins,
+  with read-only winning an exact tie. Automatic Containerfile and frontend
+  config-file protection always remains read-only unless hidden. Overlaps are
+  resolved silently, including writable declarations for automatically protected
+  files. Every declared path is validated even if stronger policy suppresses it. Control
   characters cannot be represented by either configuration interface. Indexed
   environment members support literal commas; file configuration uses commas
   as separators.
@@ -699,16 +702,19 @@ unrestricted outbound internet access.
   while other project paths stay read-only. A regular-file lane supports
   in-place writes, but its read-only parent prevents sibling temporary files
   and atomic replacement. List its parent directory if those operations are needed.
+  `READONLY_PATHS=src,src/generated/policy` with `WRITABLE_PATHS=src/generated`
+  allows writes under `src/generated` except its `policy` child; the rest of
+  `src` stays read-only. Array order does not change this precedence. A nonempty
+  writable list keeps the project base read-only even if every lane is suppressed.
 - `HIDDEN_PATHS=secrets,private.key` masks those existing paths at runtime.
   Machine callers use indexed `JAILBOX_CONFIG_HIDDEN_PATHS_0`, `_1`, etc.; each
   indexed value is literal, including commas. Entries must be project-relative
   regular files or directories, with no symlink components, dot segments,
-  colons, trailing slash, duplicates, or overlapping hidden ancestors.
+  colons, trailing slash, or distinct entries with overlapping hidden ancestors.
   Missing paths are rejected; masks do not reserve names.
 - Hidden masks take precedence over protected read-only paths, writable lanes,
   and the project base. All paths are validated before launch; overlays at or
-  below a hidden path are omitted. Contradictory writable/protected declarations
-  remain invalid. A selected Containerfile or frontend configuration file may
+  below a hidden path are omitted. A selected Containerfile or frontend configuration file may
   be hidden after the host consumes it. Project mounts use private propagation.
   Unsupported masking fails creation without retrying with weaker protection.
 - Native masking hides original contents and prevents their modification through
@@ -726,12 +732,22 @@ unrestricted outbound internet access.
   still untrusted, and multiple sandboxes must not share a writable Git directory.
 - Changing writable policy requires explicit `jailbox stop` then `jailbox up`;
   existing resources refuse reuse or attachment under a different policy.
-- Symlinks inside protected directories also protect their in-project targets,
-  recursively. Intermediate symlinks require protecting their containing
-  directories against retargeting. Broken links, cycles, unsupported targets,
-  and links requiring protection of the entire project are rejected. External
-  targets do not introduce host mounts. Explicit protected paths still cannot
-  contain symlink components.
+- Exact duplicates in read-only, writable, and hidden lists are accepted and
+  produce no duplicate overlays or masks. Configuration digests still include
+  entry order and repetitions, so changing them requires explicit stop/up even
+  when effective access stays the same. File-driven commands append config-file
+  protection anchors; machine callers reproducing that configuration must include
+  those appended entries, including repetitions.
+- Symlinks inside configured directories are not scanned and do not propagate
+  policy. Making `src` read-only does not protect a writable destination reached
+  through `src/link`; configure that destination separately. Intermediate link
+  directories receive no automatic protection. Broken, cyclic, external, and
+  project-root links inside directories do not block launch or attachment, and
+  creating or retargeting them alone does not require recreation. Explicit
+  configured paths still cannot contain symlink components, and trusted build
+  input validation remains unchanged. External links do not introduce host mounts.
+  Hidden directories do not hide linked destinations elsewhere; a link to a
+  masked pathname still encounters the mask.
 - Protection is pathname-based: pre-existing writable hard-link aliases can
   still modify the same inode.
 - Read-only overlays protect integrity, not secrecy: code in the sandbox can

@@ -147,19 +147,19 @@ validate_egress_allow() {
 }
 
 validate_readonly_paths_lexical() {
-    local path seen
-    declare -A seen=()
+    local path
 
     for path in "${READONLY_PATHS[@]}"; do
         validate_project_mount_path_lexical "$path" || \
             die "invalid READONLY_PATHS path '$path' (use a non-empty project-relative path without dot segments, colons, or a trailing slash)"
-        [[ ! -v seen[$path] ]] || die "duplicate READONLY_PATHS path: $path"
-        seen["$path"]=1
     done
 }
 
 validate_writable_paths_lexical() {
-    validate_disjoint_paths_lexical WRITABLE_PATHS "${WRITABLE_PATHS[@]}"
+    local path
+    for path in "${WRITABLE_PATHS[@]}"; do
+        validate_project_mount_path_lexical "$path" || die "invalid WRITABLE_PATHS path '$path'"
+    done
 }
 
 validate_disjoint_paths_lexical() {
@@ -169,7 +169,7 @@ validate_disjoint_paths_lexical() {
     for path in "$@"; do
         validate_project_mount_path_lexical "$path" || die "invalid $key path '$path'"
         for previous in "${lanes[@]}"; do
-            if project_paths_overlap "$path" "$previous"; then
+            if [[ "$path" != "$previous" ]] && project_paths_overlap "$path" "$previous"; then
                 die "overlapping $key paths: $previous and $path"
             fi
         done

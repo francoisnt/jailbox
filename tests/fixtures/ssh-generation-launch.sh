@@ -55,10 +55,10 @@ compute_config_digest() { :; }
 require_compatible_project_resources() { :; }
 build_or_select_dev_image() { :; }
 validate_dev_image() { :; }
-finalize_effective_readonly_paths() { :; }
+finalize_project_path_policy() { :; }
 build_jailbox_image() { :; }
 configure_network() { :; }
-build_readonly_mounts() { [ "$GENERATION_FAILURE" != before ]; }
+build_project_mounts() { [ "$GENERATION_FAILURE" != before ]; }
 ensure_home_volume() { :; }
 start_jailbox_container() {
     # The new pin must already exist when the engine is first invoked.

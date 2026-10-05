@@ -21,9 +21,11 @@ fault_baseline() {
             ;;
         launch:false)
             construct home-false-false egress false false
-            mkdir -p "$PROJECT/writable-lane"
-            chmod 755 "$PROJECT/writable-lane"
+            mkdir -p "$PROJECT/writable-lane/protected/generated"
+            chmod 755 "$PROJECT/writable-lane" "$PROJECT/writable-lane/protected" "$PROJECT/writable-lane/protected/generated"
             export JAILBOX_CONFIG_WRITABLE_PATHS_0=writable-lane
+            export JAILBOX_CONFIG_READONLY_PATHS_0=writable-lane/protected
+            export JAILBOX_CONFIG_WRITABLE_PATHS_1=writable-lane/protected/generated
             ;;
         stop:false|stop:true|clean:false|clean:true)
             construct running egress "$policy" "$policy"

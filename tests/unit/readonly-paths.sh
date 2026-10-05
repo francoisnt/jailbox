@@ -58,23 +58,23 @@ test_order_and_mounts() {
     : > "$PROJECT_DIR/Containerfile"
     READONLY_PATHS=(docs/policy jailbox.conf config/lane.conf)
     SELECTED_DEV_CONTAINERFILE_INPUT="$PROJECT_DIR/Containerfile"
-    finalize_effective_readonly_paths
+    finalize_project_path_policy
     if [ "${EFFECTIVE_READONLY_PATHS[*]}" = "docs/policy jailbox.conf config/lane.conf Containerfile" ]; then
         pass "effective order is composed paths then Containerfile"
     else
         fail "effective order (${EFFECTIVE_READONLY_PATHS[*]})"
     fi
-    build_readonly_mounts
-    joined="${READONLY_MOUNTS[*]}"
+    build_project_mounts
+    joined="${PROJECT_MOUNTS[*]}"
     case "$joined" in
-        *"$PROJECT_DIR/docs/policy:$REMOTE_PATH/docs/policy:Z,ro"*"$PROJECT_DIR/Containerfile:$REMOTE_PATH/Containerfile:Z,ro"*) pass "effective files get read-only mounts" ;;
+        *"$PROJECT_DIR/Containerfile:$REMOTE_PATH/Containerfile:Z,ro"*"$PROJECT_DIR/docs/policy:$REMOTE_PATH/docs/policy:Z,ro"*) pass "effective files get read-only mounts" ;;
         *) fail "effective files get read-only mounts" ;;
     esac
     READONLY_PATHS=(docs)
-    build_readonly_mounts
-    case "${READONLY_MOUNTS[*]}" in *"$PROJECT_DIR/docs:$REMOTE_PATH/docs:Z,ro"*) pass "directory gets read-only mount" ;; *) fail "directory gets read-only mount" ;; esac
+    build_project_mounts
+    case "${PROJECT_MOUNTS[*]}" in *"$PROJECT_DIR/docs:$REMOTE_PATH/docs:Z,ro"*) pass "directory gets read-only mount" ;; *) fail "directory gets read-only mount" ;; esac
     READONLY_PATHS=(docs/policy docs/policy)
-    assert_failure "duplicate configured path rejected" validate_readonly_paths_lexical
+    assert_success "duplicate configured path accepted" validate_readonly_paths_lexical
     rm -rf "$PROJECT_DIR"
 }
 test_anchor_and_empty_regression() {
@@ -85,7 +85,7 @@ test_anchor_and_empty_regression() {
     : > "$PROJECT_DIR/jailbox.conf"
     SELECTED_DEV_CONTAINERFILE_INPUT=""
     READONLY_PATHS=(jailbox.conf)
-    finalize_effective_readonly_paths
+    finalize_project_path_policy
     if [ "${EFFECTIVE_READONLY_PATHS[*]-}" = jailbox.conf ]; then pass "external config launch retains default anchor"; else fail "external config launch retains default anchor"; fi
     EFFECTIVE_READONLY_PATHS=()
     output_file=$(mktemp)
@@ -103,10 +103,10 @@ test_recheck() {
     with_project
     : > "$PROJECT_DIR/policy"
     READONLY_PATHS=(policy)
-    finalize_effective_readonly_paths
+    finalize_project_path_policy
     rm "$PROJECT_DIR/policy"
     ln -s /etc/passwd "$PROJECT_DIR/policy"
-    assert_failure "pre-mount recheck rejects symlink replacement" build_readonly_mounts
+    assert_failure "pre-mount recheck rejects symlink replacement" build_project_mounts
     rm -rf "$PROJECT_DIR"
 }
 test_symlinked_project_root() {
@@ -138,34 +138,23 @@ test_directory_symlink_targets() {
     ln -s '../target file' "$PROJECT_DIR/chain/link"
     ln -s ../chain/link "$PROJECT_DIR/policy/chained"
     READONLY_PATHS=(policy)
-    build_readonly_mounts
-    assert_success 'file symlink target is protected' effective_readonly_contains 'target file'
-    assert_success 'directory symlink target is protected' effective_readonly_contains targets
-    assert_success 'intermediate link directory cannot be retargeted' effective_readonly_contains chain
-    assert_success 'new directory targets recursively protect their links' effective_readonly_contains transitive
-    [[ ${#EFFECTIVE_READONLY_PATHS[@]} = 5 ]] || fail 'unexpected expansion or duplicate cycle'
-    original=${READONLY_MOUNTS[*]}
-    assert_success 'repeated expansion is stable' build_readonly_mounts
-    [[ ${READONLY_MOUNTS[*]} = "$original" ]] || fail 'unstable mount order'
+    build_project_mounts
+    [[ ${EFFECTIVE_READONLY_PATHS[*]} = policy ]] || fail 'contained links changed policy'
+    original=${PROJECT_MOUNTS[*]}
     ln -s missing "$PROJECT_DIR/policy/broken"
-    assert_failure 'dangling nested symlink refuses' build_readonly_mounts
-    rm "$PROJECT_DIR/policy/broken"
     ln -s '../target file/' "$PROJECT_DIR/policy/not-directory"
-    assert_failure 'trailing slash cannot turn a file into a directory target' build_readonly_mounts
-    rm "$PROJECT_DIR/policy/not-directory"
     ln -s cycle "$PROJECT_DIR/policy/cycle"
-    assert_failure 'cyclic nested symlink refuses' build_readonly_mounts
-    rm "$PROJECT_DIR/policy/cycle"
     ln -s .. "$PROJECT_DIR/policy/root"
-    assert_failure 'whole-project target refuses rather than weakening protection' build_readonly_mounts
-    rm "$PROJECT_DIR/policy/root"
-    # A failed walk with plausible output must not turn into an empty closure.
+    ln -s "$external/missing" "$PROJECT_DIR/policy/external-broken"
+    assert_success 'contained broken, cyclic, external and root links accepted' build_project_mounts
+    [[ ${PROJECT_MOUNTS[*]} = "$original" ]] || fail 'contained links changed mounts'
     (
-        # shellcheck disable=SC2329 # Called by the production directory walker.
-        find() { printf '%s\0' "$PROJECT_DIR/policy/file"; return 42; }
-        if finalize_effective_readonly_paths; then exit 1; fi
-    ) || fail 'failed directory discovery accepted'
-    pass 'failed symlink discovery refuses partial results'
+        # shellcheck disable=SC2329 # Prove policy resolution never walks directories.
+        find() { return 42; }
+        build_project_mounts
+        [[ ${PROJECT_MOUNTS[*]} = "$original" ]]
+    ) || fail 'policy resolution attempted directory discovery'
+    pass 'contained links add neither restrictions nor discovery requirements'
     rm -rf "$PROJECT_DIR" "$external"
 }
 test_containerfile_state() {

@@ -334,6 +334,11 @@ construct() {
             if [[ "$key" != stopped ]]; then
                 export JAILBOX_CONFIG_WRITABLE_PATHS_0=writable-lane
                 export JAILBOX_CONFIG_READONLY_PATHS_0=writable-lane/protected
+                mkdir -p "$PROJECT/writable-lane/protected/generated/policy"
+                chmod 755 "$PROJECT/writable-lane/protected/generated" "$PROJECT/writable-lane/protected/generated/policy"
+                export JAILBOX_CONFIG_WRITABLE_PATHS_1=writable-lane/protected/generated
+                export JAILBOX_CONFIG_WRITABLE_PATHS_2=writable-lane/protected/generated
+                export JAILBOX_CONFIG_READONLY_PATHS_1=writable-lane/protected/generated/policy
             else
                 export JAILBOX_CONFIG_WRITABLE_PATHS_0=writable-file
             fi

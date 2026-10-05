@@ -78,15 +78,21 @@ gate or platform passed. Run results, environment limitations, timing evidence,
 and local log locations belong in the handoff.
 
 Writable-path coverage uses existing matrix row names: running exercises a
-directory lane with a protected child, stopped resumes a file-only lane, and
+directory lane with alternating read-only/writable descendants and repeated
+entries, stopped resumes a file-only lane, and
 mismatched-digest changes writable policy before explicit recovery. The retained
-home launch fault fixture uses a directory lane; its SSH launch probe is a
+home launch fault fixture uses a writable exception inside a read-only child
+of a directory lane; its SSH launch probe is a
 required fault boundary. Snapshot selection stays bounded: the two new health
 variants add four comparisons, increasing the fixed total from 36 to 40. Selected
 snapshots include the small project fixture to catch attachment mutations.
 Portable `writable-paths`, `validation-batches`, `attachment`, and schema-consumer
 checks cover rejection and read-only observation; runtime wrapper checks prove
-kernel enforcement, regular-file writes and protected Git commits.
+kernel enforcement, regular-file writes and protected Git commits. Effective
+path-policy coverage adds repeated alternation, automatic file protection inside
+an exception, silent overlap suppression and user-managed symlink destinations.
+These extensions retain existing row counts and bounded snapshot selections;
+earlier timing samples do not measure the expanded workload.
 
 Hidden-path coverage extends the same running/stopped rows with native file and
 ancestor masks. Three health variants remove masks or add unauthorized overlays

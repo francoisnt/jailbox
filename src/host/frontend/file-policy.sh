@@ -303,7 +303,7 @@ compose_machine_environment() {
         [[ -z "$value" ]] || IFS=, read -ra items <<< "$value"
         case "${composition[$key]}" in
             egress) deduplicate=true; [[ -z "$value" ]] || items+=("$@") ;;
-            protected) deduplicate=true; items+=("${FRONTEND_ANCHORS[@]}") ;;
+            protected) deduplicate=false; items+=("${FRONTEND_ANCHORS[@]}") ;;
             ordered) deduplicate=false ;;
             *) public_api_error "unknown frontend array composition for '$key'" ;;
         esac

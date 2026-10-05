@@ -41,7 +41,7 @@ rm "$FIXTURE/bin/tr"
 
 # Invalid writable policies must refuse before builds or resource mutations.
 mkdir -p "$XDG_STATE_HOME" "$FIXTURE/project/writable/protected"
-for lane in ../outside missing-lane writable/protected; do
+for lane in ../outside missing-lane; do
     before=$(snapshot)
     : > "$CONVERGENCE_LOG"
     JAILBOX_CONFIG_WRITABLE_PATHS_0="$lane" \

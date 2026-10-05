@@ -281,6 +281,8 @@ EOF
         export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
         export JAILBOX_CONFIG_READONLY_PATHS_1=config/runtime.conf
         export JAILBOX_CONFIG_READONLY_PATHS_2=protected-policy
+        export JAILBOX_CONFIG_READONLY_PATHS_3=jailbox.conf
+        export JAILBOX_CONFIG_READONLY_PATHS_4=config/runtime.conf
         if [[ "$stage" = debian ]]; then
             unset JAILBOX_CONFIG_DEV_IMAGE
             export JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile
@@ -301,9 +303,9 @@ EOF
         "printf '%s\n' edited > /home/jailbox/project/editor-write.txt"
     assert_ssh "$ssh_cfg" "$ctr" "git index write works with managed UID" \
         "git -C /home/jailbox/project add editor-write.txt"
-    assert_ssh "$ssh_cfg" "$ctr" 'protected symlink target is immutable through both paths' \
-        "! printf changed >> /home/jailbox/project/protected-policy/target/file 2>/dev/null && ! printf changed >> /home/jailbox/project/linked-policy/file 2>/dev/null && ! rm /home/jailbox/project/linked-policy/file 2>/dev/null"
-    assert_eq 'protected target host contents survive write attempts' 'protected target' "$(cat "$project_dir/linked-policy/file")"
+    assert_ssh "$ssh_cfg" "$ctr" 'contained symlink retains writable destination policy' \
+        "printf changed > /home/jailbox/project/protected-policy/target/file && test \"\$(cat /home/jailbox/project/linked-policy/file)\" = changed && ! rm /home/jailbox/project/protected-policy/target 2>/dev/null"
+    assert_eq 'linked destination follows project base policy' 'changed' "$(cat "$project_dir/linked-policy/file")"
     assert_ssh "$ssh_cfg" "$ctr" "selected in-project config is immutable" \
         "! printf 'DEV_IMAGE=attacker\\n' >> /home/jailbox/project/config/runtime.conf 2>/dev/null && ! rm /home/jailbox/project/config/runtime.conf 2>/dev/null"
     # The anchor is not the selected config for this run; it must still be

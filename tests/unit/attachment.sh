@@ -183,6 +183,7 @@ if grep -q 'jailbox stop\|jailbox --clean' "$FIXTURE/diagnostic"; then fail 'hos
 if (
     SCRIPT_DIR="$FIXTURE/missing-installation"
     LAUNCH_CONVERGING=false
+    PROJECT_PATH_POLICY_READY=true # Isolate the missing-payload diagnostic.
     EFFECTIVE_READONLY_PATHS=()
     EGRESS_ALLOW=()
     validate_development_session full
@@ -251,10 +252,38 @@ for lane in writable-directory writable-file; do
     ATTACH_PUBLIC=true observe allow
     ATTACH_PUBLIC=true CONVERGENCE_BAD_PROPERTY='.Destination "/home/jailbox/project/'"$lane"'"' observe refuse 'jailbox stop'
     ATTACH_PUBLIC=true CONVERGENCE_SESSION_RESULT=lane-mount observe refuse 'jailbox stop'
+    if [[ "$lane" = writable-directory ]]; then
+        ln -s ../../writable-file "$FIXTURE/project/writable-directory/protected/link"
+        ln -s missing "$FIXTURE/project/writable-directory/protected/broken"
+        ln -s cycle "$FIXTURE/project/writable-directory/protected/cycle"
+        ATTACH_PUBLIC=true observe allow
+        rm "$FIXTURE/project/writable-directory/protected/link"
+        ln -s ../.. "$FIXTURE/project/writable-directory/protected/link"
+        ATTACH_PUBLIC=true observe allow
+        expect_success
+    fi
     unset JAILBOX_CONFIG_WRITABLE_PATHS_0
     ATTACH_PUBLIC=true observe refuse 'jailbox stop'
 done
 printf 'PASS: writable directory and file policies support reuse and every attachment consumer without mutations\n'
+
+# Alternating exceptions and duplicates share the same attachment boundary.
+launch stop >/dev/null
+mkdir -p "$FIXTURE/project/writable-directory/protected/generated/policy/output"
+chmod 755 "$FIXTURE/project/writable-directory/protected/generated" \
+    "$FIXTURE/project/writable-directory/protected/generated/policy" \
+    "$FIXTURE/project/writable-directory/protected/generated/policy/output"
+export JAILBOX_CONFIG_READONLY_PATHS_1=writable-directory/protected/generated/policy
+export JAILBOX_CONFIG_WRITABLE_PATHS_0=writable-directory/protected/generated
+export JAILBOX_CONFIG_WRITABLE_PATHS_1=writable-directory/protected/generated/policy/output
+export JAILBOX_CONFIG_WRITABLE_PATHS_2=writable-directory/protected/generated
+expect_success
+expect_success
+ATTACH_PUBLIC=true observe allow
+ATTACH_PUBLIC=true CONVERGENCE_BAD_PROPERTY='.Destination "/home/jailbox/project/writable-directory/protected/generated/policy"' observe refuse 'jailbox stop'
+unset JAILBOX_CONFIG_WRITABLE_PATHS_2
+ATTACH_PUBLIC=true observe refuse 'jailbox stop'
+unset JAILBOX_CONFIG_WRITABLE_PATHS_0 JAILBOX_CONFIG_WRITABLE_PATHS_1 JAILBOX_CONFIG_READONLY_PATHS_1
 
 # Native masks share healthy reuse, inventory refusal and all public transports.
 unset JAILBOX_CONFIG_READONLY_PATHS_0

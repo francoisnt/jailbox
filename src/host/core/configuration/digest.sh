@@ -20,7 +20,8 @@ CONFIG_DIGEST_LABEL="jailbox.config-digest"
 
 # Array keys whose members are a set: reordering or repeating them expresses
 # the same policy, so they are serialized deduplicated in bytewise LC_ALL=C
-# order. Ordered arrays retain mount precedence. Every new array key must
+# order. Path arrays retain caller order and repetitions in digest identity;
+# effective mount precedence is resolved separately. Every new array key must
 # explicitly choose its semantics; an omission fails before digest generation.
 declare -A DIGEST_ARRAY_MODES=(
     [EGRESS_ALLOW]=set

@@ -59,6 +59,9 @@ producer_status=125
 if (validate_container_hardening fixture) > "$tmp/out" 2>&1; then fail 'accepted failed inspection with plausible output'; fi
 
 REMOTE_PATH='/project with spaces'
+# This transport fixture supplies finalized state directly, including unusual
+# bytes used to test argument encoding independently of config validation.
+PROJECT_PATH_POLICY_READY=true
 EFFECTIVE_READONLY_PATHS=('policy with spaces' $'literal\\path\nnext')
 EGRESS_ALLOW=()
 validation_ssh() {

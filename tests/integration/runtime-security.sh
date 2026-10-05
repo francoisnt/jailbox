@@ -210,6 +210,9 @@ assert_readonly_mount_validation() {
     PROJECT_DIR="$project_dir"
     REMOTE_PATH="/home/jailbox/project"
 
+    # Supply finalized expectations directly to exercise the live mount checker
+    # independently of the policy planner, including deliberately wrong mounts.
+    PROJECT_PATH_POLICY_READY=true
     EFFECTIVE_READONLY_PATHS=("Containerfile" ".git/hooks")
     if output=$(check_readonly_mounts 2>&1); then
         pass "read-only validation passes for correctly mounted paths"
@@ -371,6 +374,41 @@ assert_writable_lanes() (
     chmod 644 "$project/lane/Containerfile" "$project/lane/hidden/Containerfile" "$project/lane/hidden/.secret" || return 1
     # shellcheck disable=SC2329 # Called by the shared production validator.
     validation_ssh() { podman exec -i "$probe_container" bash -c "$1"; }
+    # Exercise both nesting directions with the production mount planner and
+    # independent kernel assertions, including an automatic file in an exception.
+    mkdir -p "$project/lane/protected/generated/restricted/output/hidden" || return 1
+    chmod 755 "$project/lane/protected/generated" "$project/lane/protected/generated/restricted" \
+        "$project/lane/protected/generated/restricted/output" "$project/lane/protected/generated/restricted/output/hidden" || return 1
+    cp "$project/lane/Containerfile" "$project/lane/protected/generated/Containerfile" || return 1
+    printf secret > "$project/lane/protected/generated/restricted/output/hidden/data" || return 1
+    chmod 644 "$project/lane/protected/generated/Containerfile" \
+        "$project/lane/protected/generated/restricted/output/hidden/data" || return 1
+    ln -s generated "$project/lane/protected/link" || return 1
+    ln -s .. "$project/lane/protected/generated/readonly-link" || return 1
+    ln -s restricted/output/hidden "$project/lane/protected/generated/hidden-link" || return 1
+    ln -s missing "$project/lane/protected/broken" || return 1
+    ln -s cycle "$project/lane/protected/cycle" || return 1
+    ln -s ../.. "$project/lane/protected/project-root" || return 1
+    DEV_CONTAINERFILE=lane/protected/generated/Containerfile
+    build_or_select_dev_image || return 1
+    READONLY_PATHS=(lane/protected/generated/restricted lane/protected lane/protected)
+    WRITABLE_PATHS=(lane/protected/generated/restricted/output lane/protected/generated lane
+        lane/protected/generated/Containerfile lane/protected/generated/restricted/output/hidden)
+    HIDDEN_PATHS=(lane/protected/generated/restricted/output/hidden lane/protected/generated/restricted/output/hidden)
+    build_project_mounts || return 1
+    podman run -d --name "$probe_container" --network none --read-only \
+        --userns="keep-id:uid=$managed_id,gid=$managed_id" --user "$managed_id:$managed_id" \
+        --cap-drop=ALL --security-opt=no-new-privileges --entrypoint sleep \
+        -v "$project:/project:Z,ro,rprivate" "${PROJECT_MOUNTS[@]}" \
+        "${HIDDEN_MASK_OPTIONS[@]}" "$built_image" 300 >/dev/null || return 1
+    validate_development_session mounts || return 1
+    podman exec -i "$probe_container" bash -s < "$JAILBOX_DIR/tests/lib/sandbox/check-path-policy.sh" || {
+        fail 'alternating project path policy'; return 1;
+    }
+    cmp "$project/lane/Containerfile" "$project/lane/protected/generated/Containerfile" || return 1
+    [[ $(cat "$project/lane/protected/generated/restricted/output/hidden/data") = secret ]] || return 1
+    podman rm -f "$probe_container" >/dev/null || return 1
+    pass 'alternating exceptions preserve automatic files, hidden contents and symlink destination policy'
     for shape in exact ancestor; do
         selected=lane/Containerfile; hidden=$selected
         if [[ "$shape" = ancestor ]]; then selected=lane/hidden/Containerfile; hidden=lane/hidden; fi
@@ -387,12 +425,12 @@ assert_writable_lanes() (
             HIDDEN_PATHS=("$hidden")
             project_options=Z,rprivate
             [[ -z ${WRITABLE_PATHS[*]-} ]] || project_options=Z,ro,rprivate
-            build_readonly_mounts || return 1
+            build_project_mounts || return 1
             podman run -d --name "$probe_container" --network none --read-only \
                 --tmpfs /tmp:rw,noexec,nosuid,nodev \
                 --userns="keep-id:uid=$managed_id,gid=$managed_id" --user "$managed_id:$managed_id" \
                 --cap-drop=ALL --security-opt=no-new-privileges --entrypoint sleep \
-                -v "$project:/project:$project_options" "${WRITABLE_MOUNTS[@]}" "${READONLY_MOUNTS[@]}" \
+                -v "$project:/project:$project_options" "${PROJECT_MOUNTS[@]}" \
                 "${HIDDEN_MASK_OPTIONS[@]}" "$built_image" 300 >/dev/null || return 1
             # No ordinary mount may expose the masked destination or descendants.
             mount_destinations=$(podman container inspect "$probe_container" --format '{{range .Mounts}}{{println .Destination}}{{end}}') || return 1

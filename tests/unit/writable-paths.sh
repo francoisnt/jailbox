@@ -24,47 +24,45 @@ for path in '' /tmp . .. ./src src/../file src/ src//policy src:policy missing f
 done
 for paths in 'src src' 'src src/policy' 'src/policy src'; do
     read -r -a WRITABLE_PATHS <<< "$paths"
-    rejects validate_writable_paths_lexical
+    validate_writable_paths_lexical
 done
 WRITABLE_PATHS=(src build 'dir,comma' file)
 READONLY_PATHS=(src/policy)
 SELECTED_DEV_CONTAINERFILE_INPUT="$PROJECT_DIR/src/Containerfile"
-build_readonly_mounts
-[[ ${#WRITABLE_MOUNTS[@]} = 8 && ${#READONLY_MOUNTS[@]} = 4 ]]
-[[ ${WRITABLE_MOUNTS[*]} = *"$PROJECT_DIR/dir,comma:$REMOTE_PATH/dir,comma:Z,rw,rprivate"* ]]
+build_project_mounts
+[[ ${#PROJECT_MOUNTS[@]} = 12 ]]
+[[ ${PROJECT_MOUNTS[*]} = *"$PROJECT_DIR/dir,comma:$REMOTE_PATH/dir,comma:Z,rw,rprivate"* ]]
 for path in src/policy src/policy/child src/Containerfile; do
     [[ "$path" != */child ]] || mkdir "$PROJECT_DIR/$path"
     WRITABLE_PATHS=("$path")
-    rejects finalize_effective_readonly_paths
+    finalize_project_path_policy
 done
 WRITABLE_PATHS=(file)
-build_readonly_mounts
+build_project_mounts
 rm "$PROJECT_DIR/file"
 ln -s src "$PROJECT_DIR/file"
-rejects build_readonly_mounts
+rejects build_project_mounts
 rm "$PROJECT_DIR/file"
 printf original > "$PROJECT_DIR/file"
-# A protected symlink target cannot be exposed through a writable lane either.
+# Contained symlinks do not change the target policy.
 ln -s ../../build "$PROJECT_DIR/src/policy/build"
 WRITABLE_PATHS=(build)
-rejects finalize_effective_readonly_paths
+finalize_project_path_policy
+[[ ${EFFECTIVE_WRITABLE_PATHS[*]} = build ]]
 rm "$PROJECT_DIR/src/policy/build"
 # Lexical and physical validation stay engine independent through public validate.
 (cd "$PROJECT_DIR" && env JAILBOX_CONFIG_DEV_IMAGE=fixture \
     JAILBOX_CONFIG_WRITABLE_PATHS_0='dir,comma' "$ROOT/src/jailbox" validate)
-# The frontend must retain duplicate writable entries for core refusal, and
-# its policy anchor cannot be made writable by file configuration.
+# Core accepts frontend duplicates and silently protects the config anchor.
 frontend_validate() { (cd "$PROJECT_DIR" && "$ROOT/src/jailbox" --config jailbox.conf validate); }
 printf 'DEV_IMAGE=fixture\nWRITABLE_PATHS=file,file\n' > "$PROJECT_DIR/jailbox.conf"
-rejects frontend_validate
-grep -q 'overlapping WRITABLE_PATHS' "$fixture/output"
+frontend_validate
 printf 'DEV_IMAGE=fixture\nWRITABLE_PATHS=jailbox.conf\n' > "$PROJECT_DIR/jailbox.conf"
-rejects frontend_validate
-grep -q 'is protected' "$fixture/output"
+frontend_validate
 # Read exact predicates: every lane needs its own source/type/RW check and only
 # exact destinations enter the inventory; descendants never get blanket access.
 WRITABLE_PATHS=(src file)
-finalize_effective_readonly_paths
+finalize_project_path_policy
 CONTAINER_NAME=fixture
 MANAGED_USER=jailbox
 VOLUME_NAME="fixture-home"

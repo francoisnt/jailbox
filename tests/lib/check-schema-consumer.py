@@ -81,11 +81,12 @@ def main():
                      "READONLY_PATHS": paths}
         check("multiple members and literal spaces/commas", encode(populated))
         check("writable indexed commas", encode({**base, "WRITABLE_PATHS": paths}))
-        check("writable protection overlap", encode({**populated, "WRITABLE_PATHS": paths}), "protected")
+        check("writable protection overlap", encode({**populated, "WRITABLE_PATHS": paths}))
         check("writable missing member", encode({**base, "WRITABLE_PATHS": ["missing-lane"]}), "missing-lane")
         check("hidden indexed commas", encode({**populated, "HIDDEN_PATHS": paths}))
         check("hidden missing member", encode({**base, "HIDDEN_PATHS": ["missing-mask"]}), "missing-mask")
-        check("hidden duplicate", encode({**base, "HIDDEN_PATHS": [paths[0], paths[0]]}), "overlapping")
+        for key in ("READONLY_PATHS", "WRITABLE_PATHS", "HIDDEN_PATHS"):
+            check(f"{key} duplicates", encode({**base, key: paths + paths}))
         # Combined many-member overlays have no application-defined maximum.
         lanes, protected = [], []
         for index in range(72):
