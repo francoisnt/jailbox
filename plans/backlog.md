@@ -250,6 +250,16 @@ races if they cannot be eliminated.
 
 ## Runtime isolation
 
+### Configurable symlink handling
+
+Consider optional symlink discovery, warnings, explicit target-coverage
+enforcement, or automatic policy propagation. Plan 09 leaves destination
+policy to users without scanning contained links. A future design must justify
+the benefit and walk cost, define behavior for read-only, writable, and hidden
+paths, and distinguish validation-time checks from runtime protection. Account
+for broken links, retargeting, conflicts, host/container resolution differences,
+and an option to ignore links. No new symlink mode is part of plan 09.
+
 ### Orchestrator-managed editor launch
 
 Support a host orchestrator that owns a jailbox lifecycle but wants JailIDE to

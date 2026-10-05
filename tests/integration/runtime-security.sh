@@ -389,6 +389,7 @@ assert_writable_lanes() (
             [[ -z ${WRITABLE_PATHS[*]-} ]] || project_options=Z,ro,rprivate
             build_readonly_mounts || return 1
             podman run -d --name "$probe_container" --network none --read-only \
+                --tmpfs /tmp:rw,noexec,nosuid,nodev \
                 --userns="keep-id:uid=$managed_id,gid=$managed_id" --user "$managed_id:$managed_id" \
                 --cap-drop=ALL --security-opt=no-new-privileges --entrypoint sleep \
                 -v "$project:/project:$project_options" "${WRITABLE_MOUNTS[@]}" "${READONLY_MOUNTS[@]}" \
@@ -399,14 +400,14 @@ assert_writable_lanes() (
                 fail 'hidden policy emitted a re-exposing overlay'; return 1
             fi
             validate_development_session mounts || return 1
-            podman exec -i "$probe_container" bash -s -- "$shape" "$parent_policy" \
+            podman exec -i "$probe_container" bash -s -- "$shape" "$parent_policy" "$project" \
                 < "$JAILBOX_DIR/tests/lib/sandbox/check-hidden-paths.sh" || { fail "hidden $shape under $parent_policy parent"; return 1; }
             actual=$(runtime_file_digest "$project/$selected") || return 1
             [[ "$actual" = "$expected" ]] || { fail 'mask changed host contents'; return 1; }
             [[ $(cat "$project/lane/hidden/.secret") = secret && -d "$project/lane/hidden/child" ]] || return 1
             cmp "$project/hardlink" "$project/copy" || return 1
             podman rm -f "$probe_container" >/dev/null || return 1
-            pass "native $shape mask under $parent_policy parent hides contents and preserves host paths"
+            pass "native $shape mask under $parent_policy parent blocks symlink access and preserves host paths"
         done
     done
 )
