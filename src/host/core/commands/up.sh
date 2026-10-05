@@ -24,6 +24,7 @@ prepare_launch() {
 }
 
 bring_up_sandbox() {
+    local session_mode=full
     # Start a new operation before inspection; inspection cannot clear attempts.
     reset_launch_attempts
     initialize_runtime_ids
@@ -58,6 +59,7 @@ bring_up_sandbox() {
     begin_launch_convergence
     configure_network
     if [ "$OBSERVED_DEV_STATE" = absent ]; then
+        session_mode=launch
         configure_runtime_mounts
         create_ssh_generation
         build_readonly_mounts
@@ -66,11 +68,13 @@ bring_up_sandbox() {
         record_launch_resource_attempt "container:$CONTAINER_NAME"
         start_jailbox_container
     elif [ "$OBSERVED_DEV_STATE" != running ]; then
+        session_mode=launch
         resume_jailbox_container
     fi
     wait_for_ssh
     validate_sandbox_structure
-    validate_development_session launch
+    # Healthy reuse must not create write probes that change project metadata.
+    validate_development_session "$session_mode"
     validate_proxy_ready
     configure_downloader_proxy
     post_start_validation

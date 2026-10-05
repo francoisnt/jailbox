@@ -219,8 +219,11 @@ lane_remote() {
     PATH="$tmp/bin:$PATH" bash "$tmp/remote" "$1" "$tmp/project" '' false 2 0 \
         "$tmp/project/lane" "$tmp/project/file" / "$tmp/project"
 }
+touch -t 200001010000 "$tmp/lane-timestamp" "$tmp/project/lane"
 [[ $(lane_remote full) = ok ]] || fail 'read-only base produced false project-write refusal'
+[[ ! "$tmp/project/lane" -nt "$tmp/lane-timestamp" ]] || fail 'read-only validation changed lane timestamp'
 [[ $(lane_remote launch) = ok ]] || fail 'directory launch probe failed'
+[[ "$tmp/project/lane" -nt "$tmp/lane-timestamp" ]] || fail 'launch did not exercise directory write probe'
 [[ -z $(find "$tmp/project/lane" -mindepth 1 -print) ]] || fail 'launch marker leaked'
 [[ $(cat "$tmp/project/file") = original ]] || fail 'validator modified a user file'
 (

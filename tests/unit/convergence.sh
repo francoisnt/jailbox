@@ -90,13 +90,16 @@ for kind in network volume; do
 done
 echo 'PASS: CLI mutation failures reach rollback without readiness success'
 
-CONVERGENCE_IMAGE_MISSING=true expect_success
+CONVERGENCE_SSH_LOG="$FIXTURE/create-ssh" CONVERGENCE_IMAGE_MISSING=true expect_success
+grep -q '^bash -s -- launch ' "$FIXTURE/create-ssh"
 grep -q '^pull localhost/convergence$' "$CONVERGENCE_LOG"
 [[ -f "$GENERATION/key" ]]
 printf retained > "$CONVERGENCE_ENGINE/home/marker"
 before=$(snapshot)
 : > "$CONVERGENCE_LOG"
-expect_success
+CONVERGENCE_SSH_LOG="$FIXTURE/reuse-ssh" expect_success
+grep -q '^bash -s -- full ' "$FIXTURE/reuse-ssh"
+if grep -q '^bash -s -- launch ' "$FIXTURE/reuse-ssh"; then exit 1; fi
 [[ "$before" == "$(snapshot)" ]]
 if grep -Eq '^(build|probe|run|start|stop|rm|network create|volume create)' "$CONVERGENCE_LOG"; then exit 1; fi
 echo 'PASS: absent creation and running reuse preserve identities and home'
@@ -135,7 +138,8 @@ before=$(snapshot)
 CONVERGENCE_FAIL_START=$PREFIX expect_failure 'could not start development container'
 grep -q 'sandbox convergence failed' "$FIXTURE/output"
 [[ "$before" == "$(snapshot)" ]]
-expect_success
+CONVERGENCE_SSH_LOG="$FIXTURE/resume-ssh" expect_success
+grep -q '^bash -s -- launch ' "$FIXTURE/resume-ssh"
 if grep -Eq '^(build|probe)' "$CONVERGENCE_LOG"; then exit 1; fi
 [[ "$keys" == "$(find "$GENERATION" -type f -exec cksum {} + | sort)" ]]
 [[ $(cat "$CONVERGENCE_ENGINE/home/marker") == retained ]]
