@@ -5,9 +5,54 @@ on:
     branches: ["master"]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test-gates:
     name: required test gates
     uses: ./.github/workflows/test-gates.yml
     with:
-      run_editor: false
+      run_editor: true
+
+  pr-gates:
+    name: PR gates
+    needs: test-gates
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every selected gate to pass
+        env:
+          GATES_RESULT: ${{ needs.test-gates.result }}
+        run: test "$GATES_RESULT" = success
+
+  dependabot-auto-merge:
+    name: Enable Dependabot auto-merge
+    needs: [test-gates, pr-gates]
+    if: >-
+      vars.DEPENDABOT_AUTO_MERGE == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Verify Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@d7267f607e9d3fb96fc2fbe83e0af444713e90b7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for eligible updates
+        if: >-
+          steps.metadata.outputs.package-ecosystem == 'github_actions' &&
+          contains(fromJSON('["version-update:semver-patch", "version-update:semver-minor"]'), steps.metadata.outputs.update-type)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: gh pr merge "$PR_NUMBER" --auto --squash --match-head-commit "$PR_HEAD"

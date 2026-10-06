@@ -59,6 +59,33 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 ## Linting and tests
 
+### Dependabot merge policy
+
+Every PR and push to `master` runs portable, runtime, matrix, and both editor
+variants through the shared gate workflow. The `PR gates` check succeeds only
+when all four gates succeed.
+
+Verified patch/minor GitHub Actions updates can enable squash auto-merge after
+the gates pass. Major updates and missing or unknown update metadata require
+manual review. The merge job uses Dependabot's verified metadata and
+`gh pr merge --auto`, without checking out or executing PR code. The merge
+command requires the PR head to match the tested revision.
+
+Configure GitHub's merge requirements before activating the automation:
+
+1. In Settings → General → Pull Requests, enable squash merging and auto-merge.
+2. Add or update branch protection or an active ruleset for `master`: require
+   `PR gates` to pass and require branches to be up to date before merging.
+   Preserve existing required checks and review requirements. Run the new
+   workflow once if `PR gates` is not yet available in the check picker.
+3. Set the repository Actions variable `DEPENDABOT_AUTO_MERGE` to `true`.
+
+GitHub enforces required checks, branch freshness, and reviews; the workflow
+does not duplicate those settings or approve PRs. Existing major action tags
+remain unchanged, so most current Dependabot proposals still require manual review.
+
+### Local checks
+
 Use `tests/run dev` during editing: syntax, worktree ShellCheck, generated-file
 checks, and the fast product and harness suites. Add affected suites explicitly, for example
 `tests/run dev attachment exec` (names may include `.sh`). The extra suites run
@@ -219,8 +246,8 @@ file `EDITOR`. Product launches never use `JAILBOX_EDITOR` as an override.
 The four gates are independent, self-contained quality gates. Naming no gate
 runs all four in order and stops at the first failing suite; it checks every
 gate's prerequisites before the first suite, so a missing Podman or editor
-fails immediately rather than after the portable gate. Pull requests must pass
-the portable, runtime and matrix gates; releases also require the editor gate. Run
+fails immediately rather than after the portable gate. Pull requests, pushes to
+`master`, releases, and canary runs require all four gates. Run
 `tests/run portable` before sending a change, plus `tests/run runtime` when
 Podman is available.
 

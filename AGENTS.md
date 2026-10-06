@@ -295,7 +295,12 @@ new test scripts cannot silently escape ShellCheck.
   ARCHITECTURE.md or CONTRIBUTING.md from README.md, whether by relative path
   or repository URL. Those guides remain repository-only and may link to one
   another; README.md continues to ship with the installed package.
-- Pull requests use portable, runtime, and matrix gates.
+- Every pull request and push to master runs all four gates: portable, runtime,
+  matrix, and editor (both VS Code and VSCodium). Auto-merge is limited to verified
+  Dependabot patch/minor GitHub Actions updates after all four gates pass; major
+  updates require manual review. Enforce the combined PR gates status and an
+  up-to-date branch in GitHub branch protection or rulesets, not custom merge
+  helpers. Configure these requirements before activating auto-merge.
 - Releases and canary runs use all four gates: portable, runtime, matrix, editor.
   Releases may reuse a verified complete passing result from the shared gate
   workflow for the exact commit, dependency combination, and required coverage,
