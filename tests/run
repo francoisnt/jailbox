@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run jailbox's test gates.
 #
-# Usage: tests/run [dev [SUITE ...]|portable|runtime|matrix|editor]
+# Usage: tests/run [dev [SUITE ...]|GATE ...]
 #
 #   dev       Fast development checks, plus explicitly named portable suites
 #   portable  ShellCheck, product/harness tests, and distribution/install lifecycle
@@ -197,9 +197,10 @@ run_gate() {
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [dev [SUITE ...]|portable|runtime|matrix|editor]
+Usage: $(basename "$0") [dev [SUITE ...]|GATE ...]
 
 Runs every gate in order when no gate is named.
+Name multiple gates to run them in the given order, sharing one log directory.
 Runtime and matrix are independent gates; matrix prepares its own required images.
 
 Development checks:
@@ -226,22 +227,29 @@ if [[ ${1:-} = dev ]]; then
     # Preserve the complete invocation when logging re-executes the entrypoint.
     set -- dev "${DEV_SUITES[@]}"
 else
-    case "$#" in
-        0) GATES=("${ALL_GATES[@]}") ;;
-        1)
-            case "$1" in
-                portable|runtime|matrix|editor) GATES=("$1") ;;
-                --help|-h) usage; exit 0 ;;
-                *) die "unknown test gate: $1 (expected dev, portable, runtime, matrix, or editor)" ;;
+    GATES=()
+    if (($# == 0)); then
+        GATES=("${ALL_GATES[@]}")
+    elif [[ $# = 1 && ( $1 = --help || $1 = -h ) ]]; then
+        usage
+        exit 0
+    else
+        for gate in "$@"; do
+            case "$gate" in
+                portable|runtime|matrix|editor) ;;
+                *) die "unknown test gate: $gate (expected portable, runtime, matrix, or editor)" ;;
             esac
-            ;;
-        *) usage >&2; exit 2 ;;
-    esac
+            gate_selected "$gate" && die "duplicate test gate: $gate"
+            GATES+=("$gate")
+        done
+    fi
 fi
 
 # Help and argument validation finish before timestamped execution begins.
 test_log_entrypoint "$SCRIPT_DIR/run" "$@"
 require_gate_prerequisites "$@"
+test_run_directory "$JAILBOX_DIR" || die 'could not create run log directory'
+printf 'Run logs: %s\n' "$JAILBOX_TEST_RUN_DIR"
 TZ=UTC printf 'jailbox tests · %(%Y-%m-%d)T · UTC\n' -1
 if [[ ${GITHUB_ACTIONS:-false} = true && -n ${GITHUB_STEP_SUMMARY:-} && ${JAILBOX_TEST_LOG_SCRIPT:-} = "$SCRIPT_DIR/run" ]]; then
     printf '| Gate | Suites passed | Suites failed | Elapsed |\n| --- | ---: | ---: | ---: |\n' >> "$GITHUB_STEP_SUMMARY"

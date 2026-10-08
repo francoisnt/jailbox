@@ -40,7 +40,8 @@ done
 [[ $(uname -s) = Linux ]] || die 'Linux is required'
 podman image exists jailbox-test-debian || die 'run wrapper-images.sh first'
 LIFECYCLE_STARTED=$SECONDS
-RUN="$ROOT/testlog/lifecycle-$(date +%Y%m%d-%H%M%S)-$$"
+test_suite_directory "$ROOT" matrix lifecycle || die 'could not create log directory'
+RUN=$TEST_SUITE_LOG_DIR
 mkdir -p "$RUN/claims" "$RUN/done"
 lifecycle_jobs > "$RUN/catalog"
 if [[ "$LIFECYCLE_SAMPLE_MODE" = true ]]; then

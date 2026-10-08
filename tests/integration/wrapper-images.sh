@@ -435,7 +435,8 @@ main() {
     done
 
     local log_dir
-    log_dir="$JAILBOX_DIR/testlog/test-$(date +%Y%m%d-%H%M%S)-$$"
+    test_suite_directory "$JAILBOX_DIR" runtime wrapper || die 'could not create log directory'
+    log_dir=$TEST_SUITE_LOG_DIR
     mkdir -p "$log_dir"
     write_run_meta "$log_dir"
 

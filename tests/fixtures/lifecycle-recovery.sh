@@ -3,7 +3,7 @@
 # shellcheck disable=SC2329 # These callbacks are invoked by the sourced runner.
 set -euo pipefail
 matrix_die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-matrix_case_begin() { CASE_KEY=$1; }
+matrix_case_begin() { CASE_KEY=$1; mkdir -p "$LOG/$CASE_KEY"; }
 matrix_case_pass() { printf '%s\n' "$CASE_KEY" >> "$LOG/passed"; }
 construct() {
     mkdir -p "$GENERATION" "$HOME_PATH"
@@ -17,7 +17,7 @@ construct() {
     if [[ ${RECOVERY_DAMAGE:-} = missing-initial-home ]]; then
         rm -rf -- "$HOME_PATH"
         # A previous case left plausible labels, but this fixture has no home.
-        printf 'false\n' > "$LOG/home-labels-before"
+        printf 'false\n' > "$LOG/$CASE_KEY/home-labels-before"
     fi
 }
 exists() {

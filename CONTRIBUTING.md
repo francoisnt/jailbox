@@ -160,10 +160,18 @@ not enforced limits. Two fixed-concurrency ShellCheck samples peaked at
 peaked at 16–35 MiB. Larger or changed workloads may require revisiting these
 allowances.
 
+Each `tests/run` invocation groups its logs under one
+`testlog/<date-time>/` directory. The name uses UTC with milliseconds,
+for example `2026-10-08_02-00-37.123Z`. Gate and suite folders sit underneath it,
+for example `matrix/lifecycle/worker-1/running.up/`.
+`tests/run runtime matrix` runs those gates in the given order under the same
+run directory; `tests/run` groups all four gates there. Direct integration
+scripts also create dated run directories. Existing logs are not moved.
+
 The portable lint driver (`scripts/lint.sh`) shows a single updating terminal
 progress line, occasional progress snapshots
 in redirected output, and grouped diagnostics. Detailed batch timings and output
-remain in the reported `testlog/shellcheck.*` directory. Source analysis and file
+remain in the reported `testlog/<date-time>/portable/shellcheck` directory. Source analysis and file
 discovery remain enabled on cache misses; discovery also runs before cache hits.
 Successful default invocations are cached in `testlog/shellcheck-cache` using
 the ShellCheck executable, platform, and contents and names of files under
@@ -177,7 +185,7 @@ extended analysis remains enabled.
 
 Portable runs lint, generated-file checks, pooled suites, exclusive suites, and
 distribution in that order. Product tests in `tests/unit/` run in a bounded
-worker pool, with separate logs and timings under `testlog/portable.*`. They
+worker pool, with separate logs and timings under `testlog/<date-time>/portable/suites`. They
 must isolate mutable fixtures and avoid shared paths, ports, and external
 effects. Tests of runners, fixtures, observers, and scheduling belong in
 `tests/harness/parallel/` and share the product worker pool. Suites that cannot
@@ -319,7 +327,7 @@ names. Final image cleanup waits until all workers and their CLI owners stop.
 Set `JAILBOX_LIFECYCLE_JOBS=1` for a serial comparison, or `=4` to measure four
 workers (accepted range: 1–16). The suite retains every case at every worker
 count. Each run writes sorted `completed-cases`, per-case `case-timings`, and
-per-job `timings` files under its `testlog/lifecycle-*` directory. A full run also
+per-job `timings` files under its `testlog/<date-time>/matrix/lifecycle` directory. A full run also
 writes `run-summary` with worker count, exit status, and elapsed seconds including
 worker setup and final cleanup, excluding image preparation. It verifies
 completed jobs and cases against the catalog and discovered fault points before
@@ -366,7 +374,7 @@ elapsed times. This measures this sample's speed, not the whole matrix's speed.
 Failure injection uses test-only PATH wrappers and FIFO barriers. Each lifecycle
 CLI process is registered in the existing exact-resource ledger before it can
 mutate resources; the ledger lives outside the temporary fixture. Logs and
-snapshots are retained under `testlog/lifecycle-*`. Permission-sensitive changes
+snapshots are retained under `testlog/<date-time>/matrix/lifecycle`. Permission-sensitive changes
 should also be checked with `umask 0002`, alongside the usual `0022`.
 
 All test-gate output and saved diagnostic logs carry UTC timestamps with

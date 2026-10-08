@@ -739,7 +739,8 @@ main() {
     ledger_prune_stale_runs
 
     local log_dir rel_log_dir
-    log_dir="$JAILBOX_DIR/testlog/e2e-$(date +%Y%m%d-%H%M%S)-$$"
+    test_suite_directory "$JAILBOX_DIR" runtime headless || die 'could not create log directory'
+    log_dir=$TEST_SUITE_LOG_DIR
     mkdir -p "$log_dir"
     write_run_meta "$log_dir"
     stub_dir=$(mktemp -d)

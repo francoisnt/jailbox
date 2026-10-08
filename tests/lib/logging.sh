@@ -4,6 +4,31 @@
 # One checkout identity follows nested test tools; copied fixtures must not
 # silently switch the meaning of relative paths in an enclosing run's logs.
 TEST_LOG_REPOSITORY_ROOT=${JAILBOX_TEST_LOG_ROOT:-$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd -P)} || return 1
+# One UTC directory belongs to a test invocation and follows its child suites.
+# Copied test repositories must create their own run instead of writing into
+# the enclosing gate's logs. Names use UTC with millisecond precision.
+test_run_directory() {
+    local repository=$1 stamp
+    if [[ ${JAILBOX_TEST_RUN_REPOSITORY:-} != "$repository" || -z ${JAILBOX_TEST_RUN_DIR:-} ]]; then
+        stamp=$(python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z").replace("T", "_").replace(":", "-"))') || return 1
+        mkdir -p "$repository/testlog" || return 1
+        # Refuse a collision rather than mixing two runs' output.
+        mkdir "$repository/testlog/$stamp" || return 1
+        JAILBOX_TEST_RUN_DIR="$repository/testlog/$stamp"
+        export JAILBOX_TEST_RUN_DIR JAILBOX_TEST_RUN_REPOSITORY="$repository"
+    fi
+}
+
+test_suite_directory() {
+    local repository=$1 gate=$2 suite=$3
+    if [[ ${JAILBOX_TEST_RUN_REPOSITORY:-} = "$repository" ]]; then
+        gate=${JAILBOX_TEST_GATE:-$gate}
+    fi
+    test_run_directory "$repository" || return 1
+    TEST_SUITE_LOG_DIR="$JAILBOX_TEST_RUN_DIR/$gate/$suite"
+    mkdir -p "$TEST_SUITE_LOG_DIR" || return 1
+}
+
 test_timestamp_stream() {
     local line delimiter
     local root=$TEST_LOG_REPOSITORY_ROOT

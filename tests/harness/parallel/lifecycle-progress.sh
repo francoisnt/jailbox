@@ -50,7 +50,7 @@ done
 export SUITE_TRACE="$tmp/suites"
 for option in --help -h; do
     bash "$tmp/tree/tests/run" "$option" > "$tmp/help"
-    grep -Fxq 'Usage: run [dev [SUITE ...]|portable|runtime|matrix|editor]' "$tmp/help" || fail 'help usage missing'
+    grep -Fxq 'Usage: run [dev [SUITE ...]|GATE ...]' "$tmp/help" || fail 'help usage missing'
     if grep -q '^\[' "$tmp/help"; then fail 'help contains timestamps'; fi
     [[ ! -s "$SUITE_TRACE" ]] || fail 'help executed a suite'
 done

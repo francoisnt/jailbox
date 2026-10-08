@@ -10,6 +10,7 @@ trap 'rm -rf -- "$tmp"' EXIT
 LOG="$tmp/log"
 mkdir "$LOG"
 CASE_KEY=missing-proxy.up
+mkdir -p "$LOG/$CASE_KEY"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 matrix_die() { fail "$@"; }
 snapshot() { printf 'state\n' >> "$tmp/snapshot-calls"; cat "$tmp/state"; }
@@ -38,8 +39,8 @@ for expected in absent stopped running; do
 done
 [[ $(wc -l < "$LOG/observations") -eq 6 ]] || fail 'missing observations'
 [[ $(wc -l < "$tmp/snapshot-calls") -eq 24 ]] || fail 'selected observations omitted snapshots'
-[[ -f "$LOG/missing-proxy.up.initial.status.stdout" &&
-   -f "$LOG/missing-proxy.up.recovered.status.stdout" ]] || fail 'phase artifacts were overwritten'
+[[ -f "$LOG/missing-proxy.up/initial.status.stdout" &&
+   -f "$LOG/missing-proxy.up/recovered.status.stdout" ]] || fail 'phase artifacts were overwritten'
 successful=6
 reject() {
     if (matrix_observe initial absent refuse) > "$tmp/out" 2> "$tmp/err"; then
@@ -93,6 +94,7 @@ done < <(attachment_health_cases)
 : > "$tmp/snapshot-calls"
 for ((i=0; i<100; i++)); do
     CASE_KEY="fault.up.false.after.$i"
+    mkdir -p "$LOG/$CASE_KEY"
     REPLY=$'stopped\n'
     matrix_observe interrupted stopped refuse
     REPLY=$'running\n'
@@ -107,11 +109,12 @@ fi
 if (RESULT=125; matrix_observe recovered running allow) >/dev/null 2>&1; then
     fail 'cheap observation accepted failed status'
 fi
-[[ -f "$LOG/$CASE_KEY.interrupted.status.stdout" &&
-   -f "$LOG/$CASE_KEY.recovered.status.stdout" ]] || fail 'fault artifacts lost a phase'
+[[ -f "$LOG/$CASE_KEY/interrupted.status.stdout" &&
+   -f "$LOG/$CASE_KEY/recovered.status.stdout" ]] || fail 'fault artifacts lost a phase'
 
 # Required snapshot failures must not count as matching empty snapshots.
 CASE_KEY=missing-proxy.up
+mkdir -p "$LOG/$CASE_KEY"
 REPLY=$'absent\n'
 successful=206
 # shellcheck disable=SC2329 # Called by matrix_observe through reject.
@@ -125,6 +128,7 @@ printf 'PASS: all observations enforce framing; bounded cases enforce non-mutati
 # Discovered interruptions retain independently expected status and complete
 # connection validation, without repeating the exec/shell validation boundary.
 CASE_KEY=interrupt.up.false.1.before
+mkdir -p "$LOG/$CASE_KEY"
 REPLY=$'running\n'
 observe_connection() { printf 'connection\n' >> "$tmp/checks"; }
 observe_exec() { printf 'exec\n' >> "$tmp/checks"; }

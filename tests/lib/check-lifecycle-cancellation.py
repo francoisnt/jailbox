@@ -26,7 +26,7 @@ with (tree / "cancel-output").open("wb") as output:
     try:
         deadline = time.monotonic() + 15
         while True:
-            markers = list((tree / "testlog").glob("lifecycle-*/mock-started-*"))
+            markers = list((tree / "testlog").glob("*/matrix/lifecycle/mock-started-*"))
             if len(markers) == 2 and all(p.read_text().strip() for p in markers):
                 workers = [int(p.read_text()) for p in markers]
                 break

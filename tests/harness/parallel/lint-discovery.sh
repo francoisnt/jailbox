@@ -47,7 +47,7 @@ bash "$tmp/scripts/lint.sh" > "$tmp/output" 2>&1
 grep -q 'ShellCheck passed' "$tmp/output"
 [[ $(grep -c 'Progress: ShellCheck:' "$tmp/output") -le 1 ]] || fail 'noisy fast lint run'
 if grep -Eq 'shellcheck: starting|shellcheck: .*: passed' "$tmp/output"; then fail 'batch chatter on console'; fi
-lint_logs=("$tmp"/testlog/shellcheck.*)
+lint_logs=("$tmp"/testlog/*/portable/shellcheck)
 [[ ${#lint_logs[@]} = 1 && -d ${lint_logs[0]} ]] || fail 'expected one new lint run'
 lint_log=${lint_logs[0]}
 [[ -s "$lint_log/timings.log" ]] || fail 'missing detailed timings'

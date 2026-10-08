@@ -145,7 +145,8 @@ EOF
 }
 
 setup_logging() {
-    LOG_DIR="$JAILBOX_DIR/testlog/editor-$(date +%Y%m%d-%H%M%S)-$$"
+    test_suite_directory "$JAILBOX_DIR" editor editor || return 1
+    LOG_DIR=$TEST_SUITE_LOG_DIR
     RUN_LOG="$LOG_DIR/editor-smoke.log"
     mkdir -p "$LOG_DIR"
     write_run_meta "$LOG_DIR"

@@ -9,7 +9,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 FIXTURE=$tmp LOG=$tmp GENERATION="$tmp/generation" PREFIX=fixture CASE_KEY=running.up
 PROJECT="$tmp/project"
-mkdir "$GENERATION"
+mkdir "$GENERATION" "$LOG/$CASE_KEY"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 matrix_die() { fail "$@"; }
 construct() {
@@ -41,7 +41,7 @@ podman() {
 }
 matrix_observe() {
     printf '%s:%s\n' "$1" "$3" >> "$tmp/observed"
-    printf 'jailbox stop\n' > "$LOG/$CASE_KEY.$1.connection.stderr"
+    printf 'jailbox stop\n' > "$LOG/$CASE_KEY/$1.connection.stderr"
 }
 expect_success() { printf '%s\n' "$1" >> "$tmp/recoveries"; }
 assert_marker() { [[ "$1" = keep ]] || fail 'health recovery lost persistent home'; }

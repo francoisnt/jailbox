@@ -189,7 +189,7 @@ TEST_CASE='runtime rejects reduced traces before publishing expected cases'
     source "$ROOT/tests/lib/lifecycle-runtime-faults.sh"
     LOG="$FIXTURE/guard-log"
     mkdir "$LOG"
-    matrix_case_begin() { CASE_KEY="$1"; }
+    matrix_case_begin() { CASE_KEY="$1"; mkdir -p "$LOG/$CASE_KEY"; }
     fault_baseline() { :; }
     expect_success() { printf '%s\n' 'mkdir /some-state' > "$LIFECYCLE_EVENTS"; }
     matrix_die() { exit 42; }

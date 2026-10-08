@@ -237,7 +237,7 @@ declare -A known_runs=()
 new_coordinator_run() {
     local candidate
     local -a created=()
-    for candidate in "$tree"/testlog/lifecycle-*; do
+    for candidate in "$tree"/testlog/*/matrix/lifecycle; do
         [[ ! -d "$candidate" || -n ${known_runs[$candidate]+x} ]] || created+=("$candidate")
     done
     [[ ${#created[@]} = 1 ]] || return 1

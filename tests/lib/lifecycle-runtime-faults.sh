@@ -114,8 +114,8 @@ interrupt_at_barrier() {
     wait "$ACTIVE_PID" 2>/dev/null || true
     ACTIVE_PID=""
     wait "$log_pid" || matrix_die 'could not finish interrupted command log'
-    cp -- "$LIFECYCLE_COMMAND_LOG" "$LOG/$CASE_KEY.command" || matrix_die 'could not publish interrupted command log'
-    printf '%s\texit=137\n' "${LIFECYCLE_COMMAND_LOG##*/}" >> "$LOG/command-index.tsv"
+    cp -- "$LIFECYCLE_COMMAND_LOG" "$LOG/$CASE_KEY/command" || matrix_die 'could not publish interrupted command log'
+    printf '%s\texit=137\n' "${LIFECYCLE_COMMAND_LOG#"$LOG/"}" >> "$LOG/command-index.tsv"
     exec {ready}>&-
 }
 
@@ -128,9 +128,9 @@ run_mutation_faults() {
     # New-home and pre-existing-home launches exercise distinct rollback
     # ownership. Cleanup exercises stored persistent and ephemeral policy.
     matrix_case_begin "trace.$command.$policy"
-    trace="$LOG/$CASE_KEY.events"
+    trace="$LOG/$CASE_KEY/events"
     fault_baseline "$command" "$policy"
-    export LIFECYCLE_EVENTS="$LOG/events"
+    export LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live"
     : > "$LIFECYCLE_EVENTS"
     expect_success "$command"
     cp "$LIFECYCLE_EVENTS" "$trace"
@@ -154,10 +154,10 @@ run_mutation_faults() {
             if [[ "$policy" = resume ]]; then
                 dev_id=$(podman container inspect "$PREFIX" --format '{{.Id}}')
                 proxy_id=$(podman container inspect "$PREFIX-proxy" --format '{{.Id}}')
-                podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/networks-before"
-                filesystem_snapshot "$GENERATION" > "$LOG/generation-before"
+                podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/$CASE_KEY/networks-before"
+                filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-before"
             fi
-            export LIFECYCLE_EVENTS="$LOG/events" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE="$fault"
+            export LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE="$fault"
             : > "$LIFECYCLE_EVENTS"
             result=0
             if [[ "$fault" = barrier ]]; then
@@ -166,7 +166,7 @@ run_mutation_faults() {
             else
                 lifecycle_capture cli "$command" || result=$?
             fi
-            cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY.events"
+            cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY/events"
             [[ $(wc -l < "$LIFECYCLE_EVENTS") -ge "$point" ]] || matrix_die 'fault point not reached'
             lifecycle_same_fault_event "$trace" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'fault point reached a different operation'
             unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE
@@ -177,11 +177,11 @@ run_mutation_faults() {
                 if [[ "$policy" = resume ]]; then
                     [[ $(podman container inspect "$PREFIX" --format '{{.Id}}') = "$dev_id" ]] || matrix_die 'interrupted resume replaced development survivor'
                     [[ $(podman container inspect "$PREFIX-proxy" --format '{{.Id}}') = "$proxy_id" ]] || matrix_die 'interrupted resume replaced proxy survivor'
-                    podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/networks-after"
-                    cmp -s "$LOG/networks-before" "$LOG/networks-after" || matrix_die 'interrupted resume replaced networks'
-                    filesystem_snapshot "$GENERATION" > "$LOG/generation-after"
-                    cmp -s "$LOG/generation-before" "$LOG/generation-after" || matrix_die 'interrupted resume changed credentials'
-                    if grep -Eq '^podman (stop|rm) ' "$LOG/$CASE_KEY.events"; then matrix_die 'interrupted resume removed or stopped survivors'; fi
+                    podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/$CASE_KEY/networks-after"
+                    cmp -s "$LOG/$CASE_KEY/networks-before" "$LOG/$CASE_KEY/networks-after" || matrix_die 'interrupted resume replaced networks'
+                    filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-after"
+                    cmp -s "$LOG/$CASE_KEY/generation-before" "$LOG/$CASE_KEY/generation-after" || matrix_die 'interrupted resume changed credentials'
+                    if grep -Eq '^podman (stop|rm) ' "$LOG/$CASE_KEY/events"; then matrix_die 'interrupted resume removed or stopped survivors'; fi
                     [[ "$result" != 0 ]] || assert_service
                 elif [[ "$result" = 0 ]]; then
                     # Some idempotent operations can confirm success even
@@ -237,28 +237,28 @@ run_failed_resume() {
             before_id=$(podman container inspect "$PREFIX" --format '{{.Id}}')
             before_proxy=""
             if [[ "$missing" = false ]]; then before_proxy=$(podman container inspect "$PREFIX-proxy" --format '{{.Id}}'); fi
-            filesystem_snapshot "$GENERATION" > "$LOG/generation-before"
-            export LIFECYCLE_FAIL_SSH=true LIFECYCLE_EVENTS="$LOG/events"
+            filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-before"
+            export LIFECYCLE_FAIL_SSH=true LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live"
             : > "$LIFECYCLE_EVENTS"
             if lifecycle_capture cli up; then matrix_die 'injected readiness failure succeeded'; fi
-            cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY.events"
+            cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY/events"
             unset LIFECYCLE_FAIL_SSH LIFECYCLE_EVENTS
-            grep -Fxq "podman start $PREFIX" "$LOG/$CASE_KEY.events" || matrix_die 'readiness failure did not follow survivor start'
-            if grep -Eq '^podman (stop|rm) ' "$LOG/$CASE_KEY.events"; then matrix_die 'failed resume attempted to stop or remove a survivor/dependency'; fi
+            grep -Fxq "podman start $PREFIX" "$LOG/$CASE_KEY/events" || matrix_die 'readiness failure did not follow survivor start'
+            if grep -Eq '^podman (stop|rm) ' "$LOG/$CASE_KEY/events"; then matrix_die 'failed resume attempted to stop or remove a survivor/dependency'; fi
             [[ $(podman container inspect "$PREFIX" --format '{{.Id}}') = "$before_id" ]] || matrix_die 'failed resume replaced survivor'
-            filesystem_snapshot "$GENERATION" > "$LOG/generation-after"
-            cmp -s "$LOG/generation-before" "$LOG/generation-after" || matrix_die 'failed resume changed SSH generation'
+            filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-after"
+            cmp -s "$LOG/$CASE_KEY/generation-before" "$LOG/$CASE_KEY/generation-after" || matrix_die 'failed resume changed SSH generation'
             require_present container "$PREFIX-proxy"
             if [[ "$missing" = false ]]; then
                 [[ $(podman container inspect "$PREFIX-proxy" --format '{{.Id}}') = "$before_proxy" ]] || matrix_die 'failed resume replaced proxy survivor'
             else
-                grep -q 'Retained dependency' "$LOG/$CASE_KEY.command" || matrix_die 'missing retained dependency diagnosis'
+                grep -q 'Retained dependency' "$LOG/$CASE_KEY/command" || matrix_die 'missing retained dependency diagnosis'
             fi
             observed=$(podman container inspect "$PREFIX" --format '{{.State.Status}}')
-            lifecycle_reports_state "$LOG/$CASE_KEY.command" "$PREFIX" "$observed" || matrix_die 'diagnosis differs from final observed state'
+            lifecycle_reports_state "$LOG/$CASE_KEY/command" "$PREFIX" "$observed" || matrix_die 'diagnosis differs from final observed state'
             assert_marker keep
             matrix_observe_fault failed-resume
-            grep -q 'jailbox stop' "$LOG/$CASE_KEY.command" || matrix_die 'missing explicit recovery'
+            grep -q 'jailbox stop' "$LOG/$CASE_KEY/command" || matrix_die 'missing explicit recovery'
             expect_success stop
             assert_cleanup stop "$policy"
             expect_success up
@@ -274,27 +274,27 @@ run_removal_failure() {
     local point
     matrix_case_begin failed-new-container-cleanup
     fault_baseline up false
-    export LIFECYCLE_EVENTS="$LOG/events"
+    export LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live"
     : > "$LIFECYCLE_EVENTS"
     expect_success up
     # Locate the development creation operation by its exact --name argument,
     # independently of helper launches and proxy creation.
     point=$(awk -v name="$PREFIX" '$1 == "podman" && $2 == "run" { for (i=3;i<NF;i++) if ($i == "--name" && $(i+1) == name) print NR }' "$LIFECYCLE_EVENTS")
-    cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY.reference"
+    cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY/reference"
     unset LIFECYCLE_EVENTS
     [[ "$point" =~ ^[0-9]+$ ]] || matrix_die 'development creation event missing'
     fault_baseline up false
-    export LIFECYCLE_EVENTS="$LOG/events" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE=after LIFECYCLE_FAIL_REMOVE=true
+    export LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE=after LIFECYCLE_FAIL_REMOVE=true
     : > "$LIFECYCLE_EVENTS"
     if lifecycle_capture cli up; then matrix_die 'creation failure succeeded'; fi
-    lifecycle_same_fault_event "$LOG/$CASE_KEY.reference" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'creation fault reached a different operation'
+    lifecycle_same_fault_event "$LOG/$CASE_KEY/reference" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'creation fault reached a different operation'
     unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE LIFECYCLE_FAIL_REMOVE
     require_present container "$PREFIX"
     require_present container "$PREFIX-proxy"
     require_present network "$NETWORK-internal"
     require_present network "$NETWORK-external"
     [[ -f "$GENERATION/key" && -f "$GENERATION/container-id" ]] || matrix_die 'failed container removal lost credentials'
-    grep -q 'cleanup could not remove' "$LOG/$CASE_KEY.command" || matrix_die 'missing incomplete-cleanup diagnosis'
+    grep -q 'cleanup could not remove' "$LOG/$CASE_KEY/command" || matrix_die 'missing incomplete-cleanup diagnosis'
     assert_marker keep
     matrix_observe_fault failed-cleanup
     expect_success stop
@@ -314,8 +314,8 @@ run_existing_dependency_failure() {
         if exists container "$PREFIX-proxy"; then proxy_id=$(podman container inspect "$PREFIX-proxy" --format '{{.Id}}'); fi
         for name in "$NETWORK-internal" "$NETWORK-external"; do
             podman network inspect "$name"
-        done > "$LOG/networks-before"
-        find "$STATE" -type f -exec sha256sum {} + | LC_ALL=C sort > "$LOG/material-before"
+        done > "$LOG/$CASE_KEY/networks-before"
+        find "$STATE" -type f -exec sha256sum {} + | LC_ALL=C sort > "$LOG/$CASE_KEY/material-before"
         export LIFECYCLE_FAIL_SSH=true
         if lifecycle_capture cli up; then matrix_die 'new-generation readiness failure succeeded'; fi
         unset LIFECYCLE_FAIL_SSH
@@ -328,13 +328,13 @@ run_existing_dependency_failure() {
         fi
         for name in "$NETWORK-internal" "$NETWORK-external"; do
             podman network inspect "$name"
-        done > "$LOG/networks-after"
-        cmp -s "$LOG/networks-before" "$LOG/networks-after" || matrix_die 'rollback changed pre-existing networks'
-        find "$STATE" -type f -exec sha256sum {} + | LC_ALL=C sort > "$LOG/material-after"
-        cmp -s "$LOG/material-before" "$LOG/material-after" || matrix_die 'rollback changed pre-existing runtime content'
+        done > "$LOG/$CASE_KEY/networks-after"
+        cmp -s "$LOG/$CASE_KEY/networks-before" "$LOG/$CASE_KEY/networks-after" || matrix_die 'rollback changed pre-existing networks'
+        find "$STATE" -type f -exec sha256sum {} + | LC_ALL=C sort > "$LOG/$CASE_KEY/material-after"
+        cmp -s "$LOG/$CASE_KEY/material-before" "$LOG/$CASE_KEY/material-after" || matrix_die 'rollback changed pre-existing runtime content'
         assert_marker keep
         matrix_observe failed-create stopped refuse
-        grep -q 'jailbox stop' "$LOG/$CASE_KEY.command" || matrix_die 'missing explicit recovery'
+        grep -q 'jailbox stop' "$LOG/$CASE_KEY/command" || matrix_die 'missing explicit recovery'
         expect_success stop
         expect_success up
         assert_service
@@ -352,8 +352,8 @@ run_home_inspection_failure() {
             contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
             matrix_case_begin "home-inspection.$policy.$command"
             construct running egress "$policy" "$policy"
-            snapshot > "$LOG/inspection-before"
-            export LIFECYCLE_FAIL_HOME_INSPECT="$HOME_VOLUME" LIFECYCLE_EVENTS="$LOG/events"
+            snapshot > "$LOG/$CASE_KEY/inspection-before"
+            export LIFECYCLE_FAIL_HOME_INSPECT="$HOME_VOLUME" LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live"
             : > "$LIFECYCLE_EVENTS"
             matrix_observe inspection-error running refuse
             if [[ "$contract" = clean ]]; then
@@ -362,10 +362,10 @@ run_home_inspection_failure() {
             else
                 if lifecycle_capture cli "$command"; then matrix_die 'home inspection failure was ignored'; fi
                 [[ ! -s "$LIFECYCLE_EVENTS" ]] || matrix_die 'inspection failure attempted lifecycle mutation'
-                snapshot > "$LOG/inspection-after"
-                cmp -s "$LOG/inspection-before" "$LOG/inspection-after" || matrix_die 'inspection failure changed existing state'
-                grep -Eiq 'inspect.*retention|retention.*inspect' "$LOG/$CASE_KEY.command" || matrix_die 'missing operational inspection diagnosis'
-                if grep -Eq 'jailbox (stop|--clean)' "$LOG/$CASE_KEY.command"; then matrix_die 'inspection error recommended destructive recovery'; fi
+                snapshot > "$LOG/$CASE_KEY/inspection-after"
+                cmp -s "$LOG/$CASE_KEY/inspection-before" "$LOG/$CASE_KEY/inspection-after" || matrix_die 'inspection failure changed existing state'
+                grep -Eiq 'inspect.*retention|retention.*inspect' "$LOG/$CASE_KEY/command" || matrix_die 'missing operational inspection diagnosis'
+                if grep -Eq 'jailbox (stop|--clean)' "$LOG/$CASE_KEY/command"; then matrix_die 'inspection error recommended destructive recovery'; fi
             fi
             unset LIFECYCLE_FAIL_HOME_INSPECT LIFECYCLE_EVENTS
             # Resolve the engine error and retry the requested command; do not

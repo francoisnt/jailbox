@@ -63,6 +63,7 @@ cli_exec() {
 
 matrix_case_begin() {
     CASE_KEY="$1"
+    mkdir -p -- "$LOG/$CASE_KEY" || matrix_die 'could not create case log directory'
     CASE_STARTED=$SECONDS
     lifecycle_case_label "$RUN" "$CASE_KEY"
 }
@@ -100,7 +101,7 @@ image_snapshot() {
 }
 expect_success() {
     lifecycle_capture cli "$@" || {
-        cat "$LOG/$CASE_KEY.command" >&2
+        cat "$LOG/$CASE_KEY/command" >&2
         matrix_die "$* failed"
     }
 }
@@ -180,7 +181,7 @@ matrix_observe() {
         full|readiness) ;;
         *) matrix_die "unknown observation workload: $workload" ;;
     esac
-    local output="$LOG/$CASE_KEY.$phase.status" compare=false
+    local output="$LOG/$CASE_KEY/$phase.status" compare=false
     if status_snapshot_required "$CASE_KEY" "$phase"; then compare=true; fi
     if [[ "$compare" = true ]]; then
         snapshot > "$output.before" || matrix_die 'could not snapshot before status'
@@ -189,10 +190,10 @@ matrix_observe() {
     cli status > "$output.stdout" 2> "$output.stderr" || matrix_die "status failed (see $output.stderr)"
     printf '%s\n' "$status" > "$output.expected"
     cmp -s "$output.expected" "$output.stdout" || matrix_die "wrong status (see $output.stdout)"
-    observe_connection "$attachment" "$LOG/$CASE_KEY.$phase.connection" || matrix_die "connection observation failed"
+    observe_connection "$attachment" "$LOG/$CASE_KEY/$phase.connection" || matrix_die "connection observation failed"
     if [[ "$workload" = full ]]; then
-        observe_exec "$attachment" "$LOG/$CASE_KEY.$phase.exec" || matrix_die "exec observation failed"
-        observe_shell "$attachment" "$LOG/$CASE_KEY.$phase.shell" || matrix_die "shell observation failed"
+        observe_exec "$attachment" "$LOG/$CASE_KEY/$phase.exec" || matrix_die "exec observation failed"
+        observe_shell "$attachment" "$LOG/$CASE_KEY/$phase.shell" || matrix_die "shell observation failed"
     fi
     if [[ "$CASE_KEY:$phase" = running.up:initial ]]; then
         verify_exec_transport
@@ -240,9 +241,9 @@ observe_exec() {
 verify_exec_transport() {
     local first second status result actual
     local -a args=('' ' ' '"quotes"' '*' $'line\n' $'\377' --config --)
-    printf '%s\0' "${args[@]}" > "$LOG/exec-argv.expected"
-    LIFECYCLE_READONLY=true cli exec -- printf '%s\0' "${args[@]}" > "$LOG/exec-argv.actual" || matrix_die 'exec argv failed'
-    cmp -s "$LOG/exec-argv.expected" "$LOG/exec-argv.actual" || matrix_die 'exec argv changed'
+    printf '%s\0' "${args[@]}" > "$LOG/$CASE_KEY/exec-argv.expected"
+    LIFECYCLE_READONLY=true cli exec -- printf '%s\0' "${args[@]}" > "$LOG/$CASE_KEY/exec-argv.actual" || matrix_die 'exec argv failed'
+    cmp -s "$LOG/$CASE_KEY/exec-argv.expected" "$LOG/$CASE_KEY/exec-argv.actual" || matrix_die 'exec argv changed'
     actual=$(LIFECYCLE_READONLY=true cli exec pwd) || matrix_die 'exec pwd failed'
     [[ "$actual" = /home/jailbox/project ]] || matrix_die 'wrong exec directory'
     for status in 1 42 126 127 130 255; do
@@ -251,12 +252,12 @@ verify_exec_transport() {
         LIFECYCLE_READONLY=true cli exec bash -c 'exit "$1"' bash "$status" || result=$?
         [[ "$result" = "$status" ]] || matrix_die 'exec lost remote status'
     done
-    LIFECYCLE_READONLY=true cli exec cat < "$LOG/exec-argv.expected" > "$LOG/exec-first" & first=$!
-    LIFECYCLE_READONLY=true cli exec printf '%s' independent > "$LOG/exec-second" & second=$!
+    LIFECYCLE_READONLY=true cli exec cat < "$LOG/$CASE_KEY/exec-argv.expected" > "$LOG/$CASE_KEY/exec-first" & first=$!
+    LIFECYCLE_READONLY=true cli exec printf '%s' independent > "$LOG/$CASE_KEY/exec-second" & second=$!
     wait "$first" || matrix_die 'first concurrent exec failed'
     wait "$second" || matrix_die 'second concurrent exec failed'
-    cmp -s "$LOG/exec-argv.expected" "$LOG/exec-first" || matrix_die 'concurrent exec lost stdin'
-    [[ $(cat "$LOG/exec-second") = independent ]] || matrix_die 'concurrent exec lost argv'
+    cmp -s "$LOG/$CASE_KEY/exec-argv.expected" "$LOG/$CASE_KEY/exec-first" || matrix_die 'concurrent exec lost stdin'
+    [[ $(cat "$LOG/$CASE_KEY/exec-second") = independent ]] || matrix_die 'concurrent exec lost argv'
 }
 
 verify_exec_proxy_environment() {
@@ -299,11 +300,11 @@ occupy_first_subnet() {
     if podman network create --internal --subnet "$subnet" "$EXTRA" >/dev/null 2>&1; then return; fi
     # Another project may already occupy the candidate. Establish that fact
     # read-only instead of treating an arbitrary create failure as a collision.
-    podman network ls --format '{{.Name}}' > "$LOG/network-names"
+    podman network ls --format '{{.Name}}' > "$LOG/$CASE_KEY/network-names"
     while IFS= read -r name; do
-        podman network inspect "$name" --format '{{range .Subnets}}{{println .Subnet}}{{end}}' > "$LOG/subnets"
-        if grep -Fxq "$subnet" "$LOG/subnets"; then return; fi
-    done < "$LOG/network-names"
+        podman network inspect "$name" --format '{{range .Subnets}}{{println .Subnet}}{{end}}' > "$LOG/$CASE_KEY/subnets"
+        if grep -Fxq "$subnet" "$LOG/$CASE_KEY/subnets"; then return; fi
+    done < "$LOG/$CASE_KEY/network-names"
     matrix_die 'could not establish a collision on the first subnet candidate'
 }
 construct() {
@@ -504,24 +505,24 @@ run_row() {
         fi
         matrix_case_begin "$key.$command"
         construct "$key" "$mode" "$policy" "$requested"
-        rm -f -- "$LOG/home-labels-before" || matrix_die 'could not clear previous home labels'
+        rm -f -- "$LOG/$CASE_KEY/home-labels-before" || matrix_die 'could not clear previous home labels'
         if exists volume "$HOME_VOLUME"; then
-            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/home-labels-before" || matrix_die 'could not inspect initial home labels'
+            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/$CASE_KEY/home-labels-before" || matrix_die 'could not inspect initial home labels'
         fi
-        if [[ "$contract" = launch && "$retained" = keep && ! -f "$LOG/home-labels-before" ]]; then
+        if [[ "$contract" = launch && "$retained" = keep && ! -f "$LOG/$CASE_KEY/home-labels-before" ]]; then
             matrix_die 'retained-home recovery requires initial home labels'
         fi
         matrix_observe initial "$status" "$attach"
         if [[ "$contract" != launch ]]; then
-            image_snapshot > "$LOG/images-before"
+            image_snapshot > "$LOG/$CASE_KEY/images-before"
             extra_present=false
             if exists network "$EXTRA"; then extra_present=true; fi
             expect_success "$command"
             assert_cleanup "$command" "$policy"
             if [[ "$extra_present" = true ]]; then require_present network "$EXTRA"; fi
             if [[ "$contract" = stop ]]; then
-                image_snapshot > "$LOG/images-after"
-                cmp -s "$LOG/images-before" "$LOG/images-after" || matrix_die 'stop changed images'
+                image_snapshot > "$LOG/$CASE_KEY/images-after"
+                cmp -s "$LOG/$CASE_KEY/images-before" "$LOG/$CASE_KEY/images-after" || matrix_die 'stop changed images'
                 matrix_observe stopped "$stopped" refuse
             else
                 matrix_observe cleaned absent refuse
@@ -535,24 +536,24 @@ run_row() {
             if exists container "$PREFIX"; then dev_id=$(podman container inspect "$PREFIX" --format '{{.Id}}'); fi
             if exists container "$PREFIX-proxy"; then proxy_id=$(podman container inspect "$PREFIX-proxy" --format '{{.Id}}'); fi
             if [[ -d "$GENERATION" ]]; then
-                filesystem_snapshot "$GENERATION" > "$LOG/generation-before"
+                filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-before"
                 generation_present=true
             fi
-            if [[ "$attach" = allow ]]; then snapshot > "$LOG/noop-before"; fi
+            if [[ "$attach" = allow ]]; then snapshot > "$LOG/$CASE_KEY/noop-before"; fi
         fi
         if [[ "$up" = refuse ]]; then
-            snapshot > "$LOG/before"
+            snapshot > "$LOG/$CASE_KEY/before"
             if lifecycle_capture cli "$command"; then matrix_die 'damaged state accepted'; fi
-            snapshot > "$LOG/after"
-            cmp -s "$LOG/before" "$LOG/after" || matrix_die 'compatibility refusal mutated pre-existing state'
+            snapshot > "$LOG/$CASE_KEY/after"
+            cmp -s "$LOG/$CASE_KEY/before" "$LOG/$CASE_KEY/after" || matrix_die 'compatibility refusal mutated pre-existing state'
             if [[ "$recovery" = clean ]]; then
-                grep -q 'jailbox --clean' "$LOG/$CASE_KEY.command" || matrix_die 'missing clean recovery'
-                grep -q 'permanently' "$LOG/$CASE_KEY.command" || matrix_die 'missing deletion warning'
+                grep -q 'jailbox --clean' "$LOG/$CASE_KEY/command" || matrix_die 'missing clean recovery'
+                grep -q 'permanently' "$LOG/$CASE_KEY/command" || matrix_die 'missing deletion warning'
                 expect_success --clean
             else
-                grep -q 'jailbox stop' "$LOG/$CASE_KEY.command" || matrix_die 'missing stop recovery'
+                grep -q 'jailbox stop' "$LOG/$CASE_KEY/command" || matrix_die 'missing stop recovery'
                 if [[ "$policy" = true && "$key" = home-* ]]; then
-                    grep -Eiq 'orphan(ed)?.*ephemeral|ephemeral.*orphan(ed)?' "$LOG/$CASE_KEY.command" || matrix_die 'missing ephemeral-orphan diagnosis'
+                    grep -Eiq 'orphan(ed)?.*ephemeral|ephemeral.*orphan(ed)?' "$LOG/$CASE_KEY/command" || matrix_die 'missing ephemeral-orphan diagnosis'
                 fi
                 expect_success stop
             fi
@@ -562,8 +563,8 @@ run_row() {
             # sharing its relaunch proof: no containers/networks/credentials,
             # preserved persistent home, labels, marker, and unrelated content.
             assert_cleanup stop "$policy"
-            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/home-labels-after" || matrix_die 'could not inspect retained home labels'
-            cmp -s "$LOG/home-labels-before" "$LOG/home-labels-after" || matrix_die 'repair rewrote home metadata'
+            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/$CASE_KEY/home-labels-after" || matrix_die 'could not inspect retained home labels'
+            cmp -s "$LOG/$CASE_KEY/home-labels-before" "$LOG/$CASE_KEY/home-labels-after" || matrix_die 'repair rewrote home metadata'
             matrix_observe repaired "$stopped" refuse
             printf '%s|%s\n' "$CASE_KEY" "$representative.$command" >> "$LOG/recovery-coverage"
             matrix_case_pass
@@ -577,18 +578,18 @@ run_row() {
             [[ $(podman container inspect "$PREFIX-proxy" --format '{{.Id}}') = "$proxy_id" ]] || matrix_die 'convergence replaced proxy survivor'
         fi
         if [[ "$generation_present" = true ]]; then
-            filesystem_snapshot "$GENERATION" > "$LOG/generation-after"
-            cmp -s "$LOG/generation-before" "$LOG/generation-after" || matrix_die 'convergence changed surviving generation'
+            filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-after"
+            cmp -s "$LOG/$CASE_KEY/generation-before" "$LOG/$CASE_KEY/generation-after" || matrix_die 'convergence changed surviving generation'
         fi
         if [[ "$attach" = allow ]]; then
-            snapshot > "$LOG/noop-after"
-            cmp -s "$LOG/noop-before" "$LOG/noop-after" || matrix_die 'healthy reuse mutated sandbox'
+            snapshot > "$LOG/$CASE_KEY/noop-after"
+            cmp -s "$LOG/$CASE_KEY/noop-before" "$LOG/$CASE_KEY/noop-after" || matrix_die 'healthy reuse mutated sandbox'
         fi
         assert_service
         assert_marker "$retained"
         if [[ "$retained" = keep ]]; then
-            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/home-labels-after"
-            cmp -s "$LOG/home-labels-before" "$LOG/home-labels-after" || matrix_die 'reuse rewrote home metadata'
+            podman volume inspect "$HOME_VOLUME" --format '{{json .Labels}}' > "$LOG/$CASE_KEY/home-labels-after"
+            cmp -s "$LOG/$CASE_KEY/home-labels-before" "$LOG/$CASE_KEY/home-labels-after" || matrix_die 'reuse rewrote home metadata'
         fi
         if [[ "$key" = managed-blocks ]]; then
             podman exec "$PREFIX" sh -c 'grep -q "# user curl preference" "$HOME/.curlrc" && grep -q "# user wget preference" "$HOME/.wgetrc"' || matrix_die 'managed sync lost user settings'
@@ -671,7 +672,7 @@ observe_health_variants() {
         matrix_observe "health-$variant" running "$expected"
         # Every refusal's explicit stop/up recovery must retain persistent home.
         if [[ "$expected" = refuse ]]; then
-            grep -q 'jailbox stop' "$LOG/$CASE_KEY.health-$variant.connection.stderr" || matrix_die 'health failure lacks recovery'
+            grep -q 'jailbox stop' "$LOG/$CASE_KEY/health-$variant.connection.stderr" || matrix_die 'health failure lacks recovery'
             expect_success stop
             expect_success up
             assert_marker keep

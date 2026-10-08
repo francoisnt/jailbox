@@ -50,8 +50,8 @@ done <<< "$files"
 # shellcheck source=scripts/lib/container-shells.sh
 source "$SCRIPT_DIR/lib/container-shells.sh"
 collect_container_shells src
-mkdir -p testlog
-lint_output=$(mktemp -d "$PWD/testlog/shellcheck.XXXXXXXX")
+test_suite_directory "$PWD" portable shellcheck
+lint_output=$TEST_SUITE_LOG_DIR
 
 # Reuse only a successful check of identical default inputs. Discovery above
 # still validates new files and interpreters before consulting the cache.

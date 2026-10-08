@@ -132,8 +132,8 @@ portable_suite_pool() (
 run_portable_suites() {
     local run workers result=0 passed=0 failed=0
     workers=$(worker_tool_budget portable) || return 1
-    mkdir -p "$JAILBOX_DIR/testlog" || return 1
-    run=$(mktemp -d "$JAILBOX_DIR/testlog/${GATE:-portable}.XXXXXXXX") || return 1
+    test_suite_directory "$JAILBOX_DIR" "${GATE:-portable}" suites || return 1
+    run=$TEST_SUITE_LOG_DIR
     portable_suite_pool "$run" "$workers" "$@" || result=$?
     if [[ -f "$run/summary" ]]; then
         IFS='|' read -r passed failed < "$run/summary" || return 1
