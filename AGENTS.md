@@ -445,9 +445,27 @@ it happens.
 
 ## User interaction
 
+- Keep changes within what the user explicitly requested. If an additional
+  improvement seems useful but was not requested, explain it and ask before
+  implementing it. Do not bundle optional cleanup, logging, features, or other
+  improvements into the requested work without approval.
 - Use simple terms and keep replies and repository documents direct and to the
   point. Be as short as possible without losing relevant details or clarity.
   Avoid repetition.
+- Explain technical work as if the reader is unfamiliar with the code and its
+  terminology. Start with what happens, why it matters, and what the change
+  does, using everyday words and concrete examples. For example, say "each
+  command erases the previous command's log" instead of "command evidence is
+  overwritten", and "a diary of when workers build or delete images" instead
+  of "mutation audit". If a technical term is needed, explain it on first use.
+  Use this style in all replies, progress updates, and repository prose, without
+  waiting for the user to ask for a simpler explanation. Include implementation
+  names and details only when they help the reader understand or act. Prefer a
+  few clear sentences over a shorter sentence packed with technical terms.
+- After the plain-language explanation, add a separate "Technical summary"
+  section with a compact, dense account using precise technical terms and
+  relevant implementation details. Keep the plain-language explanation
+  self-contained so the reader can skip the technical section.
 - Print repository paths relative to the repository root in human-readable
   logs, including captured command output and CI logs. Preserve actual command
   arguments and machine-readable records; display formatting must not change
