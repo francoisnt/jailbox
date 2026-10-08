@@ -154,8 +154,17 @@ before=$(snapshot)
 : > "$CONVERGENCE_LOG"
 if launch connection-info > "$FIXTURE/out" 2> "$FIXTURE/error"; then fail 'anchor absent from digest'; fi
 assert_no_mutation
-# Repeated anchors leave effective mounts unchanged, but remain digest inputs.
+# Prelisting automatic anchors makes default and selected policies equivalent.
 printf 'READONLY_PATHS=jailbox.conf,selected.conf\n' >> "$FIXTURE/project/jailbox.conf"
+cp "$FIXTURE/project/jailbox.conf" "$FIXTURE/project/selected.conf"
+launch --no-editor > "$FIXTURE/out"
+launch --config selected.conf --no-editor > "$FIXTURE/out"
+[[ "$before" == "$(snapshot)" ]]
+if grep -Eq '^(run|start|stop|rm|network create|volume create)' "$CONVERGENCE_LOG"; then fail 'prelisted anchors recreated resources'; fi
+: > "$CONVERGENCE_LOG"
+# Explicit repetitions still participate in the digest.
+sed 's/READONLY_PATHS=.*/READONLY_PATHS=jailbox.conf,selected.conf,jailbox.conf/' "$FIXTURE/project/jailbox.conf" > "$FIXTURE/repeated.conf"
+cp "$FIXTURE/repeated.conf" "$FIXTURE/project/jailbox.conf"
 if launch --no-editor > "$FIXTURE/out" 2> "$FIXTURE/error"; then fail 'repeated anchor reused a different digest'; fi
 grep -q 'jailbox stop' "$FIXTURE/error"
 assert_no_mutation

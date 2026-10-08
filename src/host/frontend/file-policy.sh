@@ -269,7 +269,7 @@ load_file_policy() {
 # Optional arguments come from the editor frontend; headless callers pass none.
 # shellcheck disable=SC2120
 compose_machine_environment() {
-    local entry key value item index deduplicate complete=0
+    local entry key value item anchor index deduplicate complete=0
     local -a environment=() ignored=() items=() unique=()
     local -A composition=(
         [EGRESS_ALLOW]=egress
@@ -303,7 +303,17 @@ compose_machine_environment() {
         [[ -z "$value" ]] || IFS=, read -ra items <<< "$value"
         case "${composition[$key]}" in
             egress) deduplicate=true; [[ -z "$value" ]] || items+=("$@") ;;
-            protected) deduplicate=false; items+=("${FRONTEND_ANCHORS[@]}") ;;
+            protected)
+                deduplicate=false
+                # Preserve explicit ordering and repetitions, but only append
+                # automatic protection anchors absent from the file policy.
+                for anchor in "${FRONTEND_ANCHORS[@]}"; do
+                    for item in "${items[@]}"; do
+                        [[ "$item" != "$anchor" ]] || continue 2
+                    done
+                    items+=("$anchor")
+                done
+                ;;
             ordered) deduplicate=false ;;
             *) public_api_error "unknown frontend array composition for '$key'" ;;
         esac

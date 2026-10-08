@@ -736,8 +736,8 @@ unrestricted outbound internet access.
   produce no duplicate overlays or masks. Configuration digests still include
   entry order and repetitions, so changing them requires explicit stop/up even
   when effective access stays the same. File-driven commands append config-file
-  protection anchors; machine callers reproducing that configuration must include
-  those appended entries, including repetitions.
+  protection anchors only when not already listed; machine callers reproducing
+  that configuration must include any appended entries.
 - Symlinks inside configured directories are not scanned and do not propagate
   policy. Making `src` read-only does not protect a writable destination reached
   through `src/link`; configure that destination separately. Intermediate link

@@ -92,8 +92,7 @@ compose_machine_environment example.org example.com 2> "$TMP/notice"
 policy_has JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
 policy_has JAILBOX_CONFIG_READONLY_PATHS_1=selected.conf
 policy_has JAILBOX_CONFIG_READONLY_PATHS_2=jailbox.conf
-policy_has JAILBOX_CONFIG_READONLY_PATHS_3=jailbox.conf
-policy_has JAILBOX_CONFIG_READONLY_PATHS_4=selected.conf
+policy_lacks_prefix JAILBOX_CONFIG_READONLY_PATHS_3=
 policy_has JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com
 policy_has JAILBOX_CONFIG_EGRESS_ALLOW_1=example.org
 policy_has "FRONTEND_TEST_UNRELATED=$FRONTEND_TEST_UNRELATED"
@@ -105,7 +104,6 @@ done
 policy_lacks_prefix JAILBOX_CONFIG_DEV_IMAGE=
 policy_lacks_prefix JAILBOX_CONFIG_EDITOR=
 policy_lacks_prefix JAILBOX_CONFIG_UNKNOWN=
-policy_lacks_prefix JAILBOX_CONFIG_READONLY_PATHS_5=
 grep -q JAILBOX_CONFIG_UNKNOWN "$TMP/notice"
 grep -q 'jailbox up' "$TMP/notice"
 if grep -q secret "$TMP/notice"; then fail 'notice leaks values'; fi
