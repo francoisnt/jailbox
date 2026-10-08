@@ -1,69 +1,52 @@
 # jAilbox
 
-**Hardened Remote SSH development environments for your existing dev containers.**
+**Run coding agents in your project's development container with less access to your host.**
 
 [![PR checks](https://github.com/francoisnt/jailbox/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/francoisnt/jailbox/actions/workflows/pr-checks.yml)
 [![Latest release](https://img.shields.io/github/v/release/francoisnt/jailbox)](https://github.com/francoisnt/jailbox/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<!-- TODO: terminal recording / GIF of `jailbox` launching into the editor -->
+jailbox wraps your existing development image with SSH access and runs it in a
+hardened Podman container. Open your project in VS Code or VSCodium and use its
+terminal, tools, and coding agents inside the container.
 
-jailbox wraps your project's development image with OpenSSH and runs it as a
-hardened, rootless Podman container. It gives tools — especially AI coding
-agents — your project's full toolchain while reducing host exposure:
+- **Keep your toolchain.** Use your project's Containerfile/Dockerfile or a compatible development image.
+- **Reduce host exposure.** A read-only container root, no Linux capabilities, no privilege escalation, and no container-engine sockets.
+- **Choose access.** Protect or hide project paths and optionally restrict outbound HTTP(S) to allowed domains.
+- **Keep your editor setup.** Separate per-project profiles leave your normal editor settings alone.
 
-- Read-only root filesystem, zero Linux capabilities, no privilege escalation
-- No Docker/Podman sockets
-- Optional egress control (domain allowlist enforced by a proxy sidecar)
-- Clean separation between project files and runtime state
+Building a script or orchestrator? The same executable provides an
+[automation interface](docs/automation.md) to launch, inspect, connect to, and
+clean up sandboxes without an editor.
 
-You keep the convenience of Remote SSH development; the agent loses most of
-its reach into your machine.
+[Quick start](#quick-start) · [Everyday use](#everyday-use) ·
+[Development guide](docs/development.md) · [Automation guide](docs/automation.md) ·
+[Security guide](docs/security.md)
 
----
+## Quick start
 
-## Requirements
+### 1. Check requirements
 
-- **Linux or macOS** with **Podman** (rootless preferred)
-- **Bash 4.4 or newer** (`brew install bash` on macOS)
-- **GNU coreutils or compatible utilities**, including `realpath` with `-e`,
-  `-m`, and `--relative-to`, and `sort -z`. Installation, launch, validation,
-  and attachment check these capabilities and refuse with setup instructions
-  if they are unavailable.
-- `podman`, `ssh`, `ssh-keygen`, and either `sha256sum` or `shasum` (project
-  identity is a SHA-256 hash of the project path). Filtered launches require
-  an SSH client with `SetEnv` support (OpenSSH 7.8+).
-- VS Code or VSCodium with the **Remote - SSH** extension (for the editor
-  workflow)
-- A project with a `Containerfile`/`Dockerfile` — or a compatible development
-  image (see [Project image requirements](#project-image-requirements) and
-  [Recipes](#recipes))
+You need Podman (rootless preferred), Bash 4.4+, OpenSSH client tools, GNU
+coreutils or compatible utilities, and a SHA-256 utility. For the editor
+workflow, install VS Code or VSCodium and its Remote SSH extension. Your project
+needs a compatible development image or Containerfile/Dockerfile.
+See [full requirements and setup](docs/development.md#requirements).
 
-**macOS coverage is limited to portable tests; container and editor integration
-on a Mac remain unverified.** Our hosted Mac CI runners cannot start the Linux VM
-that Podman requires. See [Tested Configurations](#tested-configurations).
+**Linux runs all integration tests. macOS currently has portable-test coverage
+only; real container and editor behavior on Mac remains unverified.**
+[Platform coverage](docs/development.md#tested-configurations) explains the limits.
 
-On macOS, install coreutils and put its commands first on `PATH` before installing
-or running jailbox:
+### 2. Install
 
 ```bash
-brew install bash coreutils
-export PATH="$(brew --prefix bash)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+curl -fsSL https://github.com/francoisnt/jailbox/releases/latest/download/install.sh | bash
 ```
 
-Add that `export` line to your shell startup file to retain it in new terminals.
-On Linux, install your distribution's `coreutils` package if it is missing.
-The installer does not install system packages or edit shell startup files.
+The installer comes from a published release and downloads the latest release
+archive, checking its SHA-256 checksum before installation.
 
-## Quick Start
-
-### 1. Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/francoisnt/jailbox/master/src/install.sh | bash
-```
-
-### 2. Use
+### 3. Launch your project
 
 ```bash
 cd /path/to/your/project
@@ -71,933 +54,114 @@ jailbox init
 jailbox
 ```
 
-By default, the sandbox can modify project files and access the internet.
-Configure [path restrictions](#file-configuration-jailboxconf) and
-[`EGRESS_ALLOW`](#run-an-ai-coding-agent-with-egress-control) as needed.
-Read-only files remain readable; use `HIDDEN_PATHS` to hide selected contents
-at runtime. See the [security model](#security--threat-model) for the limits
-of these protections.
+`init` creates a minimal `jailbox.conf` without overwriting an existing path.
+jailbox builds or selects your development image, starts the container, and
+opens the project through Remote SSH. Use the editor's integrated terminal to
+run your tools inside the container. Subsequent launches reuse a compatible,
+healthy sandbox.
 
-`jailbox init` creates a minimal `jailbox.conf` without overwriting any existing
-path. jailbox then discovers or builds your dev image, starts the hardened
-container, and opens the project in VS Code or VSCodium via Remote SSH. Use
-`jailbox --no-editor` to launch from the same file without opening an editor.
-Automation uses `jailbox up` with `JAILBOX_CONFIG_*` environment configuration.
+No Containerfile? Add `DEV_IMAGE=node:22-bookworm` to `jailbox.conf` for a Node.js
+development image, or select another [compatible image](docs/development.md#project-image-requirements).
 
-### Updating
+**By default, the container can edit project files and access the internet.**
+Read-only files are still readable. Configure the restrictions below before
+launch when needed, and read the [security limits](#security-limits).
 
-Re-run the install command above. It cleanly replaces the previous install
-and never touches your `jailbox.conf`, containers, or images.
+## Choose what the sandbox can access
 
-### Uninstalling
-
-```bash
-jailbox --uninstall
-```
-
-This removes the installed files and the `jailbox` command. Project
-containers and images are left in place; remove them with `jailbox --clean`
-per project (or `podman rm` / `podman rmi`) beforehand if you no longer
-want them.
-
-If modern Bash is unavailable, run the installed copy of
-`install.sh --uninstall` directly; the installer remains compatible with the
-macOS system Bash 3.2.
-
----
-
-## Recipes
-
-### Run an AI coding agent with egress control
-
-The setup jailbox is built for. Run `jailbox init`, then edit `jailbox.conf`
-in the project root to allow only the hosts your agent and toolchain need —
-everything else is blocked at the network level:
+Edit `jailbox.conf` to match your project. These examples use paths that must
+already exist; choose the ones you need:
 
 ```conf
-# Claude Code + npm toolchain (check your agent's docs for its endpoints):
-EGRESS_ALLOW=api.anthropic.com,claude.ai,statsig.anthropic.com,sentry.io,registry.npmjs.org,github.com
+# Protect selected files from modification.
+READONLY_PATHS=Makefile,scripts/deploy.sh
+
+# Or restrict writes to selected directories; the rest becomes read-only.
+WRITABLE_PATHS=src,build
+
+# Hide existing files or directories inside the running container.
+HIDDEN_PATHS=secrets
+
+# Allow outbound HTTP(S) only to these domains (plus editor bootstrap hosts).
+EGRESS_ALLOW=registry.npmjs.org,github.com
 ```
 
-Launch with `jailbox`, open the integrated terminal, and run your agent
-there. Requests to hosts outside the allowlist fail; see
-[Troubleshooting](#troubleshooting) for how to spot and allow a blocked
-domain. Without `EGRESS_ALLOW`, the container has unrestricted outbound
-access — the rest of the hardening still applies, but for agent work the
-allowlist is strongly recommended.
+Add the domains your agent and tools require. Hiding files at runtime does not
+exclude them from image builds: keep secrets outside the build context or use
+container ignore files.
 
-### Project without a Containerfile
+See the [configuration reference](docs/development.md#file-configuration-jailboxconf)
+for defaults and examples, and the [security guide](docs/security.md) for path
+precedence and network limits. After changing policy, stop the sandbox and
+launch again.
 
-Point jailbox at a [compatible development image](#project-image-requirements)
-by adding one line to the generated config:
+## Everyday use
+
+Run commands from the project's directory:
 
 ```bash
-jailbox init
-echo 'DEV_IMAGE=node:22-bookworm' >> jailbox.conf
-jailbox
+jailbox                 # Launch or reuse the sandbox and open the editor
+jailbox --no-editor     # Launch from jailbox.conf without opening an editor
+jailbox status          # Show resource inventory: running, stopped, or absent
+jailbox stop            # Remove containers and networks; retain a persistent home
 ```
 
-### Protect project files
-
-Paths the host or CI later executes deserve read-only overlays inside the
-container. List only paths that already exist in the project:
-
-```conf
-READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
-```
-
----
-
-## Command Reference
-
-Run `jailbox` without a command to launch the environment and open the editor
-(requires configuration).
-
-<!-- BEGIN GENERATED: public-api -->
-<!-- Generated by scripts/gen-public-api.sh; run: bash scripts/gen-public-api.sh --write -->
-```bash
-jailbox --config PATH   # Load configuration from PATH instead of project jailbox.conf
-jailbox up              # Launch the sandbox using environment configuration
-jailbox stop            # Stop and remove this project's jailbox containers, networks, and ephemeral home
-jailbox --clean         # Permanently delete this project's containers, networks, home, runtime state, and derived images
-jailbox --no-editor     # Launch from the config file without opening an editor
-jailbox exec            # Run a command: exec [--] CMD [ARG...]
-jailbox shell           # Open an interactive login shell in a running sandbox
-jailbox init            # Create the default project jailbox.conf
-jailbox config-schema   # Print machine configuration key names and types
-jailbox status          # Print this project's resource inventory state
-jailbox connection-info # Print validated NUL-delimited SSH connection metadata
-jailbox validate        # Check environment configuration and local launch inputs
-jailbox ssh-config      # Print manual SSH config instructions for this project
-jailbox --uninstall     # Remove this jailbox installation from the host
-jailbox --version       # Show the build version without reading configuration
-jailbox --help          # Show this help
-```
-<!-- END GENERATED: public-api -->
-
-### Lifecycle
-
-`up` ensures the declared sandbox is ready. It creates an absent sandbox,
-resumes compatible stopped containers, and reuses healthy running containers
-without restarting them or rotating SSH credentials. Eligible partial states
-are completed in dependency order: for example, a missing proxy can be created
-on valid surviving networks. Missing networks beneath a surviving container,
-damaged SSH material, changed policy, and unhealthy running
-components refuse reuse without repair. Explicit replacement is:
+To rebuild after editing your Containerfile or to apply changed configuration:
 
 ```bash
 jailbox stop
 jailbox
 ```
 
-Bare `jailbox` launches the sandbox from `jailbox.conf` and opens the configured
-editor. `jailbox --no-editor` uses the same file workflow without editor discovery,
-bootstrap hosts, or editor launch. `jailbox up` launches using only
-`JAILBOX_CONFIG_*` environment configuration. Bare launch opens the editor after
-successful creation, resume, or reuse. It composes one environment and invokes
-public `up` and then `connection-info` child processes, just as an external
-orchestrator would. A failure from either command prevents editor launch. No
-launch automatically replaces an incompatible sandbox.
+Use your original launch command if you selected a custom configuration or
+launched without an editor. Run lifecycle commands one at a time per project.
+Stopping disconnects active sessions; if the next launch fails, fix the cause
+and retry.
 
-Concurrent launches, stops, or cleans for one project are unsupported. The
-frontend does not lock the interval from `up` through `connection-info` and
-editor launch; coordinate other terminals and automation throughout that
-sequence. Once connected, the editor session has no lifecycle protection:
-another caller's `stop` or `--clean` disconnects it.
+The home directory persists by default. `EPHEMERAL_HOME=true` makes the home
+created for that container generation disposable on stop. **`jailbox --clean`
+permanently deletes the project's home, runtime state, and derived images**
+as well as its containers and networks. Host project files remain in place.
+See [home retention and recovery](docs/development.md#everyday-use).
 
-Before changing sandbox state, launch validates the complete resource inventory,
-stored home policy, SSH generation, mounts, hardening, network attachments, and
-independently observable running health. Readiness that depends on an eligible
-missing or stopped component is checked after creation/start. Missing or stale
-jailbox-managed downloader blocks are synchronized; correct blocks and unrelated
-home contents are preserved. Required checks fail closed. External website
-availability is advisory; failed DNS or transport is never proof of isolation
-or proxy denial. Attachment checks retain the required local security checks
-but do not probe the availability of allowed websites.
+## Security limits
 
-`stop` removes the development and proxy containers and all three project
-networks. The home is persistent by default; a home created with
-`EPHEMERAL_HOME=true` is removed last. Images and unrelated project runtime
-files are preserved; SSH-generation material is removed after the development
-container. The next launch creates fresh containers and rotates both client
-and server key pairs. Stop is idempotent, succeeds when either or both containers
-are already gone, and never reads or creates configuration, so it stays usable
-when `jailbox.conf` is missing or malformed.
+jailbox uses a read-only container root, drops all Linux capabilities, disables
+privilege escalation, and mounts no Docker or Podman socket. SSH uses fresh
+client and server keys per container generation and strict host-key checking.
 
-Because nothing is kept alive as a fallback, a launch that fails after
-`jailbox stop` — a broken dev image build, for example — leaves no sandbox
-running. Run `jailbox` again once the build is fixed.
+Code can still change writable project files and send data to reachable
+services. Network filtering is optional; allowed domains can receive data, and
+host services listening on bridge-accessible addresses can remain reachable
+even with filtering enabled. Containers rely on the Linux kernel and container
+runtime for isolation. Persistent home contents remain sandbox-controlled.
 
-`--clean` is the full teardown: containers, the home volume, all three
-project networks, the project's runtime state, and the exact derived dev,
-wrapper, and proxy image names. It warns that the home and runtime state are
-permanently deleted. An external `DEV_IMAGE` is untouched unless deliberately
-named as one of those three derived images.
+Read the [security guide](docs/security.md) for the full protections, path rules,
+and threat model.
 
-Both commands act on the project's exact derived names and on nothing else —
-the two containers, three networks, and home (subject to stored retention for
-`stop`), plus the three derived images for `--clean`. They never read
-configuration and never compute the configuration digest, so they stay usable
-when `jailbox.conf` is missing or malformed; whatever occupies one of those
-names is removed, regardless of what created it. Every target is probed before
-anything is deleted; stop also reads home metadata first. A probe or required
-metadata inspection failure aborts without deletion. A later removal failure
-reports an error and leaves a partially completed cleanup that can be retried.
+## Guides and help
 
-New homes record `jailbox.ephemeral-home=true|false` at creation. Stop follows
-that stored value, independently of current configuration. Unlabeled legacy
-homes remain unlabeled and persistent. A present invalid label (including an
-empty value) makes stop warn and preserve the home; launch refuses it with
-warned `--clean` then `up` guidance. A metadata inspection error never counts
-as a legacy or corrupt label.
-
-Changing persistent or legacy homes to ephemeral requires explicit `--clean`
-then `up`, permanently deleting the existing home and runtime state. Changing
-ephemeral homes to persistent uses `stop` then `up`. An ephemeral home left
-without its development-container object is never reused: run `stop` to remove
-it before `up`, even when requesting the same mode. These home refusals take
-precedence over a configuration digest mismatch; cleanup never runs
-automatically.
-
-The names are derived from the SHA-256 hash of the project's physical path, so
-an unrelated occupant is improbable — but if one exists, `stop` or `--clean`
-will delete it. That is a deliberate trade: a name-collision check could not be
-a security boundary anyway. Names and labels cannot authenticate a resource
-against any process running with your Podman authority, which is exactly the
-authority these commands use. jailbox's containment comes from mounting no
-container-engine socket into the sandbox, so the sandbox never holds that
-authority in the first place; guarding host-side deletions against other
-host-side processes is a different threat boundary, and not one jailbox
-claims.
-
-Concurrent lifecycle commands for one project are unsupported. They no longer
-silently replace each other's containers, but they still race over shared SSH,
-network, and image state; run one at a time.
-
-**State**: host state lives under `${XDG_STATE_HOME:-$HOME/.local/state}/jailbox/`.
-Core runtime state, including SSH keys/config, is under `projects/<project-id>/`;
-`--clean` removes that directory, and `stop` removes SSH credentials while
-retaining unrelated runtime files. Frontend profiles live separately under
-`editor-profiles/<project-id>/` and remain after both commands. `init` writes
-only the new default `jailbox.conf`.
-
-Each development-container object owns one SSH generation, prepared on the host
-before creation. Its client private key, pinned server identity, and client
-configuration stay host-only under the project's `ssh-generation/` directory.
-Only server keys and authorized keys enter the container through a read-only
-mount. Jailbox passes the proxy address through the container environment;
-startup validates it and configures SSH to supply session proxy variables even
-when an editor's SSH client does not forward them. Reuse validates the container's
-proxy address against the current policy. The keep-id user mapping preserves
-strict ownership; the authorized-keys path and its parents are not group- or
-other-writable. Mutable daemon state
-lives separately on a private, managed-user-owned `/run` tmpfs. Startup validates
-authentication material and never repairs it or generates replacement keys.
-
-Restarting the same container retains its identities. Orphaned complete or
-partial SSH material blocks new creation: use `stop` then `up`. Compatibility
-refusal preserves existing sandbox resources and generation files. Failure
-after an allowed start is different: a surviving container is never
-automatically stopped or deleted, even if this invocation started it. It may
-remain running or have exited; process state, tmpfs, and startup home writes
-are not restored. Managed downloader synchronization may have completed.
-
-Handled failures remove only invocation-created resources that survivors no
-longer need, removing containers before their credentials. A new proxy needed
-by a surviving development container is retained, as is authentication material
-when container removal fails. Diagnostics report retained objects, observed
-states, cleanup failures, and explicit recovery. Forced termination may leave
-partial state for the same inspection and recovery rules. Stop retains or
-deletes the home according to its recorded policy.
-
-**Upgrade**: re-run the install command (see Quick Start); it replaces the
-previous install cleanly.
-
-**Uninstall**: `jailbox --uninstall` (delegates to the installed copy's
-`install.sh --uninstall`, so the uninstall logic always matches the
-installed version).
-This command requires Bash 4.4 or newer; without it, run the installed
-`install.sh --uninstall` directly.
-
-### Configuration and version compatibility
-
-Every project resource that outlives a single launch — both containers and all
-three project networks — carries a `jailbox.config-digest` label: a SHA-256
-digest of the exact jailbox version, the effective machine configuration
-values, and the identity of the selected Containerfile. A launch recomputes
-that digest and refuses before creating or reusing anything when a surviving
-resource carries a missing, malformed, or different one. `jailbox stop`
-clears incompatible containers and networks while preserving persistent homes.
-The comparison includes resources outside the requested network mode.
-Resources created by
-a jailbox release from before the digest carry no label at all, so they are
-incompatible too; the refusal names each one and the command that clears it.
-
-The home volume is deliberately exempt from the digest. Its retention metadata
-is checked separately, and its containment comes from the mount and runtime
-policy applied at every launch. Persistent home content therefore survives
-configuration and version changes.
-
-**The digest covers references, not content.** A mutable or re-pulled
-`DEV_IMAGE` tag, edited Containerfile bytes, and changed build-context
-contents never change it; the configured values and the Containerfile's path
-do. `jailbox.conf` formatting — quoting, spacing, comments, an explicitly
-spelled default — does not change it either, because the digest is taken over
-effective values. A path is not formatting: it reaches the digest when it is
-listed in `READONLY_PATHS`, `WRITABLE_PATHS`, or `HIDDEN_PATHS`, so the same content mounted
-from a different project path is a different sandbox. Reordering `EGRESS_ALLOW`
-is stable because that allowlist is a set. Both path arrays are serialized in
-declared order, so reordering either changes the digest.
-
-**Version binding is deliberately conservative.** It stops a new release from
-resuming containers whose immutable Podman settings were created under older
-hardening rules, so a stamped release and a development build never share a
-digest, and neither do two different stamped releases. Every unstamped build
-reports the same `dev` token — including an install made from a source
-checkout — so distinct source revisions are not distinguished by the digest.
-
-**Ordinary reuse does not build images.** `up` and bare launch validate
-configuration, resource compatibility, SSH, and runtime security, then reuse or
-resume existing containers. They build only the images needed for missing
-containers. Edited Containerfiles, copied build-context files, and manually
-re-pulled image tags alone do not prevent reuse or update existing containers.
-
-**Use `jailbox stop` followed by your original launch command to rebuild.** This removes the
-existing containers and SSH credentials, builds from selected inputs, and
-creates a new generation. Stop preserves persistent homes and deletes
-ephemeral homes according to their recorded retention policy.
-
-Builds can fetch missing base images and update the local image store and
-derived tags. Automatic registry refresh is not performed; rebuilding does
-not guarantee registry freshness or reproducibility. Persistent-to-ephemeral
-changes and corrupt home metadata require warned `--clean` then `up`, since
-stop preserves the blocking home. `--clean` permanently deletes the project's
-home and runtime state.
-
----
-
-## Configuration
-
-Machine commands consume only declared `JAILBOX_CONFIG_*` environment variables.
-The frontend owns `jailbox.conf`: bare launch, `--no-editor`, and
-`--config PATH validate` parse the selected file and pass composed policy to
-machine commands as child processes. These file workflows replace inherited
-`JAILBOX_CONFIG_*` entries, reporting ignored variable names on stderr without
-printing values. Unrelated environment entries remain available to children.
-Use `jailbox up` for environment-driven launches.
-
-### Environment configuration (`JAILBOX_CONFIG_*`)
-
-Every configuration key has exactly one derived spelling:
-
-```bash
-JAILBOX_CONFIG_DEV_IMAGE=node:22-bookworm \
-JAILBOX_CONFIG_EGRESS_ALLOW_0=github.com \
-JAILBOX_CONFIG_EGRESS_ALLOW_1=api.github.com \
-JAILBOX_CONFIG_READONLY_PATHS= \
-jailbox up
-```
-
-- Scalars: `KEY` becomes `JAILBOX_CONFIG_KEY`. An absent variable receives
-  the key's default; a present empty variable is an empty value.
-- Arrays: contiguous members `JAILBOX_CONFIG_KEY_0`, `JAILBOX_CONFIG_KEY_1`,
-  … starting at zero, each non-empty; a bare empty `JAILBOX_CONFIG_KEY=`
-  declares an explicitly empty array. Indices are `0` or a nonzero decimal
-  without leading zeros; gaps, `_01`-style suffixes, mixing the bare form
-  with indexed members, and non-empty bare variables are rejected before
-  anything is mutated, naming the offending variable.
-- Values are ordinary bytes including commas and spaces; any ASCII control
-  character (including newline) is rejected. jailbox imposes no member-count
-  maximum — total environment/argument size and host runtime capacity are the
-  operational ceilings.
-- Unknown `JAILBOX_CONFIG_*` names are rejected. There is no
-  `JAILBOX_CONFIG_EDITOR`: file `EDITOR` selects the editor for bare launch.
-  Inherited `JAILBOX_EDITOR` and shell `EDITOR` do not override that selection.
-
-`jailbox up` never reads `jailbox.conf`, even when no environment keys are set.
-`up`, `exec`, `shell`, `connection-info`, and plain `validate` consume environment
-configuration; bare launch and `--no-editor` consume file configuration; `stop`, `status`, `config-schema`, `ssh-config`, `init`,
-`--clean`, `--version`, `--help`, and `--uninstall` never read it.
-
-### Connection metadata and local validation
-
-`jailbox exec [--] CMD [ARG...]` runs a non-interactive command in a healthy,
-already-running sandbox using only `JAILBOX_CONFIG_*` environment policy.
-It uses the same complete attachment checks as `connection-info`, and never
-creates, starts, repairs, or replaces resources. Arguments after `exec` (and
-its optional leading `--`) are passed literally, including empty arguments;
-binary stdin belongs exclusively to the command, even during validation.
-The installed Bash decoder starts the command in `/home/jailbox/project`.
-No login shell is added: request one explicitly with
-`jailbox exec -- bash -lc 'your command'` when needed. The SSH session retains
-the generated uppercase and lowercase HTTP/HTTPS/NO_PROXY environment policy.
-
-The Base64 argument frame is limited to 49,152 bytes; larger frames fail with
-`argument list too long for jailbox exec`. SSH uses pinned host keys and no
-PTY. The remote exit status is returned, with 255 ambiguous between a remote
-exit and SSH failure. Ctrl-C ends local SSH promptly, but neither Ctrl-C nor
-closing SSH guarantees signal delivery or termination of an unconfirmed remote
-process. Coordinate lifecycle mutations separately from attachments.
-Digest mismatch diagnostics list only recognized current invocation key names
-in declaration order (or explicitly say none are present), never values.
-Those names provide current-side context and cannot identify which launch-side
-input differed; matching effective policy is required, regardless of provenance.
-
-`jailbox shell` opens an interactive login Bash in an already-running compatible
-sandbox. It requires terminals on both stdin and stdout, accepts no arguments
-or `--config`, and uses only `JAILBOX_CONFIG_*` environment policy. Use the same
-effective policy as launch, including any editor-added policy. It performs the
-same attachment validation and digest diagnostics as `exec`; it never prompts
-to launch or repair resources. An absent compatible sandbox needs an explicit
-`jailbox up` before retrying. Other refusals explain the required recovery.
-
-The shell starts in `/home/jailbox/project` with the SSH session environment,
-including jailbox's proxy variables, before sandbox-local login startup files
-run. A failed directory change aborts attachment. Startup files may customize
-PATH, the working directory, and proxy variables; jailbox does not reset those
-customizations afterward or load the host's login profiles. You can also use
-your editor's terminal; shell adds no file-configured shortcut.
-
-SSH allocates a remote PTY: terminal Ctrl-C interrupts the foreground remote
-command, resizing propagates, and normal exit or disconnect restores the local
-terminal. Signals sent directly to the local client retain ordinary SSH
-behavior. The remote exit status is returned; 255 can also mean SSH failure.
-Disconnecting does not guarantee termination of every remote process. Coordinate
-lifecycle mutations separately from shell attachment, as with `exec`.
-
-`jailbox connection-info` consumes only `JAILBOX_CONFIG_*` environment
-configuration, including defaults when none is set. It validates the current
-digest, every surviving policy-bearing resource, SSH generation, runtime
-hardening, protected mounts, socket isolation, and live SSH/proxy/downloader
-health without repairing or starting anything. Missing or stopped compatible
-sandboxes and stale managed downloader settings need `up`; incompatible state
-needs the recovery reported by the command, with recorded home retention or
-deletion explained.
-
-Success emits exactly these five records in order, each terminated by NUL,
-with a literal TAB separating its name and verbatim value:
-
-| Name | Value |
+| Guide | What you will find |
 |---|---|
-| `ssh_config` | Absolute validated generated client-config path |
-| `ssh_host` | Exact generated host alias |
-| `remote_path` | Absolute sandbox project path, currently `/home/jailbox/project` |
-| `project_id` | First 12 lowercase hexadecimal SHA-256 characters of the canonical host project path |
-| `proxy_url` | Live internal `http://<IPv4-address>:8888`, or empty without filtering |
-
-The release version governs the schema. Consumers must require exit success,
-split each NUL-delimited record on its first TAB, check names against
-`[a-z][a-z0-9_]*`, reject duplicates, missing/out-of-order required fields,
-invalid required values, and an unterminated final record. Unknown valid fields
-may follow the required fields; their values are opaque. Values preserve all
-accepted bytes, but framing does not widen configuration or SSH path syntax.
-Use `IFS= read -r -d ''` or save stdout to a file: shell command substitution
-cannot preserve NUL bytes. Failure emits diagnostics on stderr and no records.
-Callers must serialize lifecycle changes per project and exclude them throughout
-dependent inspection/attachment sequences, including the complete `up` then
-`connection-info` interval. All callers, including other terminals and automation,
-must cooperate: jailbox provides neither a lock nor an atomic multi-command
-transaction. Successful attachment does not protect a long-lived session from
-later lifecycle changes.
-
-`jailbox validate` also consumes only environment configuration, ignoring even
-a malformed `jailbox.conf`. It checks defaults, declarations, local paths and
-protected launch inputs. Without `DEV_IMAGE`, a Containerfile and accessible
-build context are required. Success certifies only configuration and local
-inputs, not image contents, build success, port availability, editor readiness,
-or sandbox health. It requires no Podman, SSH, editor, or project identity hash
-and writes no state. `jailbox --config PATH validate` explicitly validates file
-policy using headless composition; `connection-info` rejects `--config`.
-
-`jailbox ssh-config` ignores configuration and needs neither Podman nor SSH.
-It reports the identity-derived path and alias and a safely quoted SSH
-`Include` instruction where representable. Path existence is not validation;
-machine consumers must use `connection-info`. For editors, the
-`remote.SSH.configFile` setting can point at the generated config.
-
-### Machine discovery and inventory
-
-`jailbox config-schema` prints one newline-terminated record per machine key:
-the uppercase key name (`[A-Z][A-Z0-9_]*`), one literal TAB, then `scalar` or
-`array`. Scalars appear in declaration order, followed by arrays in declaration
-order; new keys are appended to their respective declaration arrays. Frontend
-keys such as `EDITOR` are excluded. There are no headings, defaults, values,
-colors, or diagnostics on stdout. Discovery needs no project configuration,
-Podman, SSH, hash utility, or editor.
-
-The jailbox release version governs this schema. Consumers should select a
-compatible release range using `jailbox --version`, accept additional valid
-keys within that range, and reject malformed records, duplicate keys, invalid
-names, unknown types, and missing keys they require. Failed declaration
-validation exits nonzero with diagnostics on stderr and empty stdout.
-
-`jailbox status` uses the canonical physical current directory to identify the
-project. On success it exits zero and prints exactly one word plus newline:
-
-- `running`: the development container is running, regardless of support
-  resource health or SSH damage.
-- `stopped`: the development container is not running and at least one derived
-  development/proxy container, plain/internal/external project network, or home
-  volume exists.
-- `absent`: none of those resources exists.
-
-Images and host SSH/runtime state do not affect this inventory. A persistent,
-legacy unlabeled, or corrupt-label home retained by `stop` yields `stopped`;
-removing an ephemeral home with the other resources yields `absent`, as does
-successful `--clean`. Status needs Podman and SHA-256 project identity hashing,
-but no configuration, configuration digest, SSH, or editor. It does not repair
-or mutate state, and it does not certify readiness to attach.
-
-Failed identity derivation or required engine inspection exits nonzero, leaves
-stdout empty, and reports the error on stderr. Consumers must check both the
-exit status and exact output. Neither discovery command emits configuration
-values or SSH material. Initialization is local and needs no inventory check.
-
-### File configuration (`jailbox.conf`)
-
-Every file-driven launch requires a `jailbox.conf` in the project root. Create the minimal default safely with `jailbox init`:
-
-```conf
-# Additional project paths mounted read-only inside the sandbox.
-READONLY_PATHS=
-```
-
-`init` refuses to overwrite any existing file or other filesystem object and
-requires neither Podman nor an absent sandbox. It suggests existing `.env`,
-`.git/hooks`, `.git/config`, `AGENTS.md`, `CLAUDE.md`, and `.github/workflows`
-paths, in that order, as comments. Add chosen paths to the single comma-separated
-`READONLY_PATHS=` assignment; suggestions do not enable protection themselves.
-Protecting `.git/hooks` alone
-does not prevent Git-triggered host execution: writable `.git/config` can select
-other hooks or commands. Making `.git/config` read-only prevents in-sandbox
-`git config --local` updates.
-
-Configuration uses strict `KEY=value` lines (no shell syntax, values cannot
-contain whitespace or ASCII control characters):
-
-Use `jailbox --config PATH`, `jailbox --config PATH --no-editor`, or
-`jailbox --config PATH validate` to select a complete config file. The option must
-precede the command and is rejected for all other commands. The selected file
-replaces rather than merges with the project config. Relative settings still
-resolve from the project root. The default `jailbox.conf` is still required when
-selecting an external file; it remains a persistent read-only anchor so a sandbox cannot
-plant policy for a later bare launch. The selected file is the only file
-parsed. A selected config inside the project is also mounted read-only; an
-external config is outside the project mount and needs no overlay.
-
-Default, selected in-project, and directly selected external config paths
-reject a symlink in any supplied path component. Pass the physical path to an
-external config directly rather than a symlinked spelling.
-
-| Key | Default | Purpose |
-|---|---|---|
-| `DEV_IMAGE` | — | Use this image instead of building one |
-| `DEV_CONTAINERFILE` | auto-discovered | Containerfile to build the dev image from |
-| `DEV_BUILD_CONTEXT` | project root | Build context for `DEV_CONTAINERFILE` |
-| `DEV_TARGET_STAGE` | final stage | Multi-stage build target to use as dev image |
-| `MEMORY_LIMIT` | `4g` | Development container memory limit (Podman `--memory` value) |
-| `CPU_LIMIT` | `2` | Development container CPU limit (Podman `--cpus` value) |
-| `PIDS_LIMIT` | `256` | Development container process/thread limit (Podman `--pids-limit` value) |
-| `EPHEMERAL_HOME` | `false` | Exact lowercase `true` or `false`; `true` makes the home belong to one container generation and deletes it on stop. Empty or other values are invalid. |
-| `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`); frontend-only, file-exclusive key |
-| `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
-| `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |
-| `WRITABLE_PATHS` | — | Comma-separated existing project paths allowed to remain writable; non-empty makes the project base read-only |
-| `HIDDEN_PATHS` | — | Comma-separated existing project files/directories whose contents are hidden at runtime |
-
-Resource-limit values are passed to Podman verbatim; Podman validates them
-when the development container starts, so an unsupported value fails at
-launch with Podman's own diagnostic. The proxy sidecar's resources are core
-policy, not configuration.
-
-Annotated example:
-
-```conf
-DEV_IMAGE=node:22-bookworm
-
-# Or build from source:
-DEV_CONTAINERFILE=./Dockerfile
-DEV_TARGET_STAGE=dev
-
-# Optional editor preference. Defaults to codium when available, then code.
-EDITOR=codium
-
-EGRESS_ALLOW=github.com,githubusercontent.com,api.github.com,claude.ai
-
-# Existing paths to mount read-only. Every listed path must exist before launch.
-READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
-```
-
-Alpine-based dev images require `EDITOR=codium`: VS Code Remote SSH does not
-support Alpine SSH hosts. See the [tested configurations](#tested-configurations)
-matrix for the supported editor/OS combinations.
-
-When `EGRESS_ALLOW` is configured, a bare editor launch automatically adds the
-selected editor's Remote SSH bootstrap hosts so the editor can install its
-remote server:
-
-- `EDITOR=code`: `update.code.visualstudio.com`, `vscode.download.prss.microsoft.com`, `main.vscode-cdn.net`, `vo.msecnd.net`
-- `EDITOR=codium`: `github.com`, `githubusercontent.com`
-
-`jailbox up` and `jailbox --no-editor` do not discover an editor or add bootstrap
-hosts; its filtered sandbox contains only the configured allowlist. After an
-explicit `jailbox stop`, a bare `jailbox` launch creates a sandbox whose policy
-also permits the selected editor's hosts. Without `EGRESS_ALLOW`, both commands
-use the ordinary unrestricted network and no allowlist is rendered.
-
-**How egress enforcement works:** When `EGRESS_ALLOW` is set, jailbox places
-the container on an internal-only Podman network — created with no external
-route and no DNS service. A tinyproxy sidecar is attached to both that
-internal network and a separate external-facing network, and acts as the sole
-outbound gateway at a fixed internal IP. Applications that ignore
-`HTTP_PROXY`/`HTTPS_PROXY` cannot reach the public internet directly: the
-internal network has no gateway, so outbound connections fail at the network
-level regardless of proxy cooperation. tinyproxy enforces the domain
-allowlist for all HTTP and HTTPS traffic that passes through it, and
-restricts HTTPS CONNECT tunnels to port 443.
-
-Without `EGRESS_ALLOW`, the container runs on a standard Podman network with
-unrestricted outbound internet access.
-
----
-
-## Security & Threat Model
-
-### What jailbox does well
-- Read-only root filesystem
-- Zero capabilities + no-new-privileges
-- Rootless Podman containers (`--userns=keep-id`)
-- Fresh client and server SSH key pairs per container, with strict pinned host-key checking
-- No container runtime sockets mounted
-- Strict sshd configuration (key auth only, local TCP forwarding only,
-  agent and X11 forwarding explicitly disabled in client and server policy)
-- Optional egress control: when `EGRESS_ALLOW` is set, the container is
-  placed on an internal-only network with no direct external route and no
-  DNS; an unprivileged tinyproxy sidecar is the only outbound gateway,
-  accepts clients from the internal network only, and enforces the domain
-  allowlist for HTTP/HTTPS
-
-### Important realities
-- The container maps your **host UID/GID** to its own non-root `jailbox`
-  account, so it can edit project files and new files remain owned by you
-- Launch and attachment refuse projects that equal or contain the host home
-  directory or jailbox runtime-state directory. Normal projects beneath the
-  home directory remain supported.
-- Project files are mounted writable by default. With non-empty `WRITABLE_PATHS`,
-  the project base is read-only and only the declared lanes are writable.
-  Core automatically overlays the exact in-project Containerfile used for the
-  build read-only. File-driven launches
-  also protect the default `jailbox.conf` and selected in-project config.
-  Selecting an external config does not remove protection from the default.
-- File-driven launch requires that default config even when an external config is selected.
-  Keeping this anchor present and read-only prevents the sandbox from creating
-  policy that a later bare launch would trust.
-- Only additional paths explicitly listed in `READONLY_PATHS` receive
-  read-only overlays. They must already exist as regular files or directories;
-  missing paths are rejected and no stubs are created. Other project paths,
-  including unused Containerfile candidates, follow the base or writable-lane
-  policy unless explicitly configured otherwise.
-- Writable lanes must be existing project-relative regular files or directories,
-  without dot segments, colons, trailing slashes, or symlink components.
-  Read-only and writable entries may nest: the most specific entry wins,
-  with read-only winning an exact tie. Automatic Containerfile and frontend
-  config-file protection always remains read-only unless hidden. Overlaps are
-  resolved silently, including writable declarations for automatically protected
-  files. Every declared path is validated even if stronger policy suppresses it. Control
-  characters cannot be represented by either configuration interface. Indexed
-  environment members support literal commas; file configuration uses commas
-  as separators.
-- For example, `WRITABLE_PATHS=src,build` allows changes in those directories
-  while other project paths stay read-only. A regular-file lane supports
-  in-place writes, but its read-only parent prevents sibling temporary files
-  and atomic replacement. List its parent directory if those operations are needed.
-  `READONLY_PATHS=src,src/generated/policy` with `WRITABLE_PATHS=src/generated`
-  allows writes under `src/generated` except its `policy` child; the rest of
-  `src` stays read-only. Array order does not change this precedence. A nonempty
-  writable list keeps the project base read-only even if every lane is suppressed.
-- `HIDDEN_PATHS=secrets,private.key` masks those existing paths at runtime.
-  Machine callers use indexed `JAILBOX_CONFIG_HIDDEN_PATHS_0`, `_1`, etc.; each
-  indexed value is literal, including commas. Entries must be project-relative
-  regular files or directories, with no symlink components, dot segments,
-  colons, trailing slash, or distinct entries with overlapping hidden ancestors.
-  Missing paths are rejected; masks do not reserve names.
-- Hidden masks take precedence over protected read-only paths, writable lanes,
-  and the project base. All paths are validated before launch; overlays at or
-  below a hidden path are omitted. A selected Containerfile or frontend configuration file may
-  be hidden after the host consumes it. Project mounts use private propagation.
-  Unsupported masking fails creation without retrying with weaker protection.
-- Native masking hides original contents and prevents their modification through
-  the masked path. Filenames can remain visible. Reads or directory listings may
-  succeed with empty results, and file writes may succeed while discarding data;
-  the original host content stays unchanged. The sandbox cannot delete or replace
-  the mask. Other hardlinks and copies remain readable. Changed hidden policy
-  requires explicit `stop`/`up` recovery, like other configuration changes.
-- Masks apply only at runtime. Containerfiles can read or copy hidden paths from
-  `DEV_BUILD_CONTEXT` during image builds. Keep secrets outside the build context
-  or exclude them with container ignore files. jailbox does not edit ignore files
-  or remove secrets from images, caches, Git history, logs, or existing copies.
-- Allowing `.git` is explicit. Protecting `.git/config` and `.git/hooks` can
-  coexist with commits that write objects and refs. Agent-authored commits are
-  still untrusted, and multiple sandboxes must not share a writable Git directory.
-- Changing writable policy requires explicit `jailbox stop` then `jailbox up`;
-  existing resources refuse reuse or attachment under a different policy.
-- Exact duplicates in read-only, writable, and hidden lists are accepted and
-  produce no duplicate overlays or masks. Configuration digests still include
-  entry order and repetitions, so changing them requires explicit stop/up even
-  when effective access stays the same. File-driven commands append config-file
-  protection anchors only when not already listed; machine callers reproducing
-  that configuration must include any appended entries.
-- Symlinks inside configured directories are not scanned and do not propagate
-  policy. Making `src` read-only does not protect a writable destination reached
-  through `src/link`; configure that destination separately. Intermediate link
-  directories receive no automatic protection. Broken, cyclic, external, and
-  project-root links inside directories do not block launch or attachment, and
-  creating or retargeting them alone does not require recreation. Explicit
-  configured paths still cannot contain symlink components, and trusted build
-  input validation remains unchanged. External links do not introduce host mounts.
-  Hidden directories do not hide linked destinations elsewhere; a link to a
-  masked pathname still encounters the mask.
-- Protection is pathname-based: pre-existing writable hard-link aliases can
-  still modify the same inode.
-- Read-only overlays protect integrity, not secrecy: code in the sandbox can
-  still read their contents.
-- Paths are validated before launch and rechecked while mount arguments are
-  assembled, but host-side filesystem races before Podman resolves each bind
-  source are not eliminated.
-- The AI (or any code running in the container) can still exfiltrate or
-  destroy project contents
-- You still share the kernel and container runtime trust boundary
-- Persistent home contents are sandbox-controlled state retained across policy
-  and version changes. They are not integrity-checked; use an ephemeral home
-  when each new container generation should start with fresh home contents
-- `stop` and `--clean` delete the project's exact derived Podman names using
-  your own Podman authority. Neither a name nor a label can authenticate a
-  resource against a host process that already holds that authority, so these
-  commands are not a guard against other host-side processes. What jailbox
-  does guarantee is that the sandbox never holds that authority: no
-  container-engine socket is mounted into it
-- Without `EGRESS_ALLOW`, the container has unrestricted outbound internet
-  access
-- Host services listening on `0.0.0.0` (local dev servers, LLM runtimes,
-  databases) remain reachable from the container through the Podman bridge
-  gateway IP — even in egress mode, since the internal network's bridge
-  interface still exists on the host. Bind sensitive host services to
-  `127.0.0.1` if the container must not reach them
-- Egress enforcement is proxy-mediated (HTTP/HTTPS domain filter), not
-  packet-level: tinyproxy only filters traffic that passes through it and
-  cannot inspect TLS payload; allowed endpoints can still receive exfiltrated
-  data; this is not equivalent to a firewall, VM network isolation, or
-  kernel-enforced packet filtering
-- In filtered mode, the effective allowlist depends on the launch command:
-  bare `jailbox` includes the discovered editor's bootstrap hosts, while
-  `jailbox up` does not. In particular, VSCodium adds `github.com` and
-  `githubusercontent.com` to a bare-launch sandbox
-
-jailbox focuses on reducing accidental host exposure and limiting common
-container escape vectors, not defending against a determined kernel- or
-runtime-level attacker. It provides much better defaults than running agents
-directly on the host or in privileged containers, but it is **not** a full
-sandbox.
-
----
-
-## How It Works
-
-jailbox follows a clean layered approach:
-
-1. **Dev Image** — Uses or builds from your existing `Containerfile`/`Dockerfile`
-2. **Wrapper Image** — Adds OpenSSH server, creates the managed `jailbox` user, and installs hardened sshd config
-3. **Runtime** — Project mounted at `/home/jailbox/project` with the configured writable lanes and read-only protections, plus a home volume that is persistent by default
-4. **SSH & Editor** — Generates project-specific SSH state under
-   `~/.local/state/jailbox/projects/` and VS Code/VSCodium user profiles under
-   `~/.local/state/jailbox/editor-profiles/`. Both use `XDG_STATE_HOME` instead
-   of `~/.local/state` when set. Unset or empty uses the default; relative paths
-   are rejected.
-
-**What remains unavoidable** (due to Remote SSH limitations):
-- An OpenSSH server is still required
-- A generated SSH config is needed for dynamic ports and proxy settings
-- jailbox uses per-project editor profiles to avoid mutating your normal VS Code settings
-
-**What jailbox avoids**:
-- Mutating host `~/.ssh/config`
-- Mounting host `~/.gitconfig`; only `user.name` and `user.email` are copied into a generated config
-- Mounting runtime sockets
-- Dynamic sshd_config rewriting
-- Overwriting `.vscode/settings.json`
-
-### Project image requirements
-
-- Existing image users (such as `node`) are preserved. jailbox creates its own
-  `jailbox` user and group with unused IDs and maps your host identity to them.
-  Do not pre-create a `jailbox` user or group or require tools from another
-  user's private home.
-- Install all tools, language runtimes, and dependencies **globally**
-  (system-wide) so they are available to the `jailbox` user.
-- Include `bash` (preferred) or a working `/bin/sh`.
-- Provide a supported package manager (`apt-get`, `apk`, `dnf`, or `yum`).
-- The installed OpenSSH server must support `SetEnv` (introduced in OpenSSH
-  7.8). Wrapper builds check this feature and report an error if unavailable.
-  Proxy delivery does not require the newer server `Include` directive.
-
-If your final stage is distroless or production-only, use `DEV_TARGET_STAGE`
-to target a proper development stage.
-
----
-
-## Troubleshooting
-
-Follow the failing command’s diagnostic and recovery guidance. `jailbox validate`
-optionally checks environment configuration and local launch inputs; `status`
-reports inventory, and `ssh-config` prints human connection instructions. None
-of these certifies attachment health.
-
-| Symptom | Cause / fix |
-|---|---|
-| `no Containerfile found` | Set `DEV_IMAGE=<image>` or `DEV_CONTAINERFILE=<path>` in `jailbox.conf` |
-| `dev image has no usable shell` / `no supported package manager` | The selected image/stage is production or distroless; set `DEV_TARGET_STAGE` to a dev stage or use `DEV_IMAGE` |
-| `managed user 'jailbox' already exists in the dev image` | Remove/rename that user in the dev image; jailbox manages its own user |
-| `managed group 'jailbox' already exists in the dev image` | Use a dev image without that reserved group; existing users with other names are preserved |
-| `refusing sandbox reuse` | Follow the stated recovery; `stop` preserves persistent homes and deletes ephemeral homes, while `--clean` permanently deletes home/runtime state |
-| `sandbox convergence failed` | Startup or synchronization began before failure; read the cleanup and retained-resource report before retrying or performing recovery |
-| `local port N is already in use` | Another process holds the project's derived SSH port; stop it and relaunch |
-| `SSH generation is orphaned` | Credentials outlived their container; run `jailbox stop` (which removes them) then `jailbox up` |
-| `SSH state path ... is a symlink` / `is not a directory` | jailbox will not read or delete credentials through a substituted path; replace that path with a real directory, or point `XDG_STATE_HOME` at one, then relaunch |
-| A request from inside the container fails in egress mode | Check the proxy log: `podman logs <project>-proxy` (find the name with `podman ps`). Blocked hosts appear as `Proxying refused on filtered domain` — add the domain to `EGRESS_ALLOW`, then use `jailbox stop` followed by your original launch command |
-| VS Code cannot connect to an Alpine-based container | VS Code Remote SSH does not support Alpine hosts; set `EDITOR=codium` |
-| Editor preflight reports missing binary or Remote SSH extension | Install the named requirement; select `EDITOR=codium` or `EDITOR=code` in `jailbox.conf` |
-| `sshd did not become ready in time` | Inspect the container log: `podman logs <container-name>` (printed in the error) |
-| Editor shows `Unable to watch for file changes` | The Linux kernel running the container has a low `fs.inotify.max_user_watches` limit (jailbox warns below 524288). On the Linux host running Podman — or inside its VM on macOS — raise it persistently: `echo 'fs.inotify.max_user_watches=524288' \| sudo tee /etc/sysctl.d/60-jailbox-inotify.conf` then `sudo sysctl --system`. On macOS, first enter the VM with `podman machine ssh` and run those commands there. Reapply the setting if you remove and recreate the VM. |
-
----
-
-## Why not Dev Containers?
-
-jailbox is **not** a replacement for Microsoft's Dev Containers specification.
-
-**Dev Containers** excel at team collaboration, standardized onboarding, and
-rich configuration through `devcontainer.json`.
-
-**jailbox** provides more **opinionated, hardened runtime defaults** focused
-on reducing risk when running untrusted code (particularly AI agents). It
-works with plain `Containerfile`/`Dockerfile` setups and adds optional egress
-control.
-
-**Many teams use both**:
-- Dev Containers for regular development and consistency
-- jailbox for AI-assisted coding sessions that benefit from stronger containment
-
----
-
-## Tested Configurations
-
-CI runs portable tests on Linux and macOS: shell and CLI contracts, configuration,
-packaging, and installation. These tests use simulated engine/transport behavior
-where needed; they do not start a real Podman container or attach a real editor.
-The runtime, lifecycle matrix, and editor gates run on Linux hosts only. The
-container OS/editor combinations below describe that Linux-host coverage.
-
-The limitation comes from the available CI infrastructure. Linux hosts can run
-Podman containers directly; macOS needs Podman Machine to start a Linux virtual
-machine first. GitHub's hosted ARM Mac runners are themselves virtual machines,
-and [they cannot start another VM inside them (nested virtualization)](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#limitations-for-arm64-macos-runners).
-Our current CI setup therefore cannot exercise the real Mac container workflow.
-We do not use Intel runners as a workaround: they would require older Podman
-versions because [Podman 6 removed Intel Mac support](https://github.com/podman-container-tools/podman/releases/tag/v6.0.0),
-and would still leave current Apple Silicon behavior untested. We do not yet
-have a dedicated Apple Silicon runtime CI host.
-
-No verified Apple Silicon runtime result is recorded here. VM startup, shared
-file ownership and protected mounts, SSH forwarding, egress filtering, home
-retention, and actual editor attachment on macOS remain unverified. Passing
-portable tests or Linux runtime tests does not establish those Mac behaviors.
-Closing this gap requires a Mac host that can run Podman Machine, with recorded
-test results for the relevant macOS, architecture, Podman, image, and editor versions.
-
-<!-- BEGIN GENERATED: tested-matrix -->
-<!-- Generated by scripts/gen-tested-matrix.sh from versions.env. Edit those, then run: bash scripts/gen-tested-matrix.sh --write -->
-
-The release gate installs the exact versions pinned in
-[`versions.env`](https://github.com/francoisnt/jailbox/blob/master/versions.env) — editors, Remote SSH extensions, the
-VSCodium REH server, and container base images — so a green gate vouches for
-this specific matrix. A daily canary workflow tests every new upstream
-release against the full suite and advances the pins automatically when it
-passes; failures are tracked as `canary`-labeled issues. Alpine/VSCodium is
-a best-effort tier: the pinned combination is release-blocking, while
-latest-version failures only file issues.
-
-| Container OS | VS Code 1.140.0 | VSCodium 1.135.06055 |
-|---|---|---|
-| Debian 12 | ✅ | ✅ |
-| Alpine 3.21 | — | ✅ |
-| Fedora 41 | ✅ | ✅ |
-
-VS Code Remote SSH does not support Alpine SSH hosts; that combination is
-covered by VSCodium only.
-
-Remote extensions: `ms-vscode-remote.remote-ssh` 0.128.0
-(VS Code), `jeanp413.open-remote-ssh` 0.3.1 (VSCodium).
-VSCodium REH server: 1.135.06055 (commit `1a46a584725d5dd330e0bcd7f5510f24990efcf2`).
-
-Last verified: 2026-10-04
-<!-- END GENERATED: tested-matrix -->
-
-Successful full test runs are listed in the
-[master history](https://github.com/francoisnt/jailbox/blob/master/compatibility/master.csv)
-and [release history](https://github.com/francoisnt/jailbox/blob/master/compatibility/releases.csv).
-Each row identifies the tested commit, editor/extension versions, VSCodium server
-commit, development image tags, and the Bash/Podman versions observed by the Linux
-runtime gate.
-These are historical results, not proof for other mixtures or today's master.
-macOS coverage remains portable only.
-
----
-
-## Contributing
-
-### Versions and releases
-
-`jailbox --version` prints one line, such as `jailbox 0.8.0`, without reading
-project configuration, requiring Podman, or changing runtime state. Unstamped
-source checkouts and installations made from them print `jailbox dev`. Release
-packages carry a `VERSION` build artifact; install and update preserve it.
-A malformed stamp fails with a diagnostic on stderr and no stdout output.
-Do not add a `VERSION` file to source: packaging refuses an existing stamp.
-
-The release version is also the API/schema version. Before 1.0, interface
-additions receive patch bumps and removals or breaking changes require minor
-bumps. Consumers can pin a minor line, for example `>=0.8.0,<0.9.0`. After
-1.0, additions require minor bumps and breaking changes require major bumps;
-consumers can pin a major line. Automatic comparison detects configuration-key
-and CLI declaration names. Maintainers must review behavior, environment keys,
-machine schemas, and accepted configuration grammar too: tightening validation
-can break existing inputs without changing a declaration name.
-
-Run `bash scripts/release.sh` to see the automatic selection, optionally raise
-the bump, and confirm dispatch. Use `--bump minor` or `--bump major` to specify
-a minimum explicitly; `--bump patch` is also accepted. The higher of the
-automatic and requested bumps wins locally and in CI. `--yes` skips prompts;
-`--dry-run` and `--print-version` are non-interactive and honor `--bump`.
-The Actions Release workflow offers the same minimum-bump choice, defaulting
-to `auto`. A major bump before 1.0 produces `v1.0.0`; `--first-major` remains
-available only before 1.0 and cannot be combined with an explicit bump in
-either entry path. Overrides apply only to their release request.
-
-Release requests use ephemeral `release-request`, `release-request-first-major`,
-or `release-request-bump-{patch,minor,major}` tags. They never participate in
-version-tag discovery. CI reuses verified passing push results for all four
-gates on the exact commit with the pinned dependencies, provided no later
-test failure or unfinished run remains. Otherwise, it runs fresh gates.
-It always builds and validates the final archive's stamp and `--version` output
-against the selected version before creating the release tag. It publishes those same validated
-archive bytes, the identical `latest` alias, and their checksums.
-
-## Project Status
-
-jailbox is usable today for real projects and is actively maintained, but
-still evolving.
-
-**Repository**: https://github.com/francoisnt/jailbox
+| [Development](docs/development.md) | Configuration, images, editors, recipes, troubleshooting, and tested versions |
+| [Automation](docs/automation.md) | Environment-driven core commands, scripts, connection records, lifecycle rules, and compatibility |
+| [Security](docs/security.md) | File protections, hidden paths, network filtering, and their limits |
+| [Comparison](docs/comparison.md) | Licensing, defaults, file access, networking, and alternatives |
+
+For a launch or connection failure, start with the diagnostic and
+[troubleshooting guide](docs/development.md#troubleshooting).
+[Report a bug](https://github.com/francoisnt/jailbox/issues) with your jailbox
+version, platform, and relevant diagnostics; omit credentials and secrets.
+
+## Update or uninstall
+
+Re-run the install command to update. It replaces the installed files without
+touching project configuration, containers, or images.
+
+Run `jailbox --uninstall` to remove the installation. Existing sandboxes remain;
+if you want to remove them too, run `jailbox --clean` in each project beforehand.
+See [uninstall details](docs/development.md#uninstalling), including the fallback
+for macOS system Bash.
 
 ## License
 

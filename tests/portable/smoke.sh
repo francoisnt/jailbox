@@ -75,6 +75,7 @@ smoke_install_update_uninstall() {
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./src/install.sh
     "$tmp/bin/jailbox" --help >/dev/null
     cmp README.md "$tmp/share/jailbox/README.md"
+    diff -r docs "$tmp/share/jailbox/docs"
     cmp src/install.sh "$tmp/share/jailbox/install.sh"
     test -x "$tmp/share/jailbox/container/runtime/bin/jailbox-exec-argv"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/readonly-mount.awk"
@@ -89,6 +90,7 @@ smoke_install_update_uninstall() {
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" >/dev/null
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.9' ]]
     cmp "$tmp/jailbox-v9.9.9/README.md" "$tmp/share/jailbox/README.md"
+    diff -r "$tmp/jailbox-v9.9.9/docs" "$tmp/share/jailbox/docs"
     cmp "$tmp/share/jailbox/VERSION" "$tmp/jailbox-v9.9.9/VERSION"
 
     # Updating from another stamped tree replaces the installed identity.

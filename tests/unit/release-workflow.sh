@@ -32,6 +32,7 @@ grep -Fq "inputs.remote_ssh_version == '' && inputs.open_remote_ssh_version == '
 grep -Fq 'run: python3 scripts/lib/release-gates.py record' "$gates"
 
 if grep -Eq 'run_editor: *false' "$workflow"; then exit 1; fi
+grep -Fxq '            dist/install.sh' "$workflow"
 awk -f "$ROOT/tests/lib/release-order.awk" "$workflow"
 # shellcheck disable=SC2016 # Match the validator invocation literally.
 grep -Fq 'bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$DIST_DIR"' "$ROOT/scripts/build-tarball.sh"

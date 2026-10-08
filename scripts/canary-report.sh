@@ -101,7 +101,7 @@ bump_pins() {
         return 0
     fi
 
-    git -C "$JAILBOX_DIR" add versions.env README.md
+    git -C "$JAILBOX_DIR" add versions.env docs/development.md
     git -C "$JAILBOX_DIR" \
         -c user.name="jailbox-canary" \
         -c user.email="canary@users.noreply.github.com" \

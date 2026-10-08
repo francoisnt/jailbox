@@ -5,13 +5,13 @@ APP_NAME="jailbox"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 
-RELEASE_PATHS=(README.md LICENSE)
+RELEASE_PATHS=(README.md LICENSE docs)
 
 usage() {
     cat <<EOF_USAGE
 Usage: scripts/build-tarball.sh VERSION
 
-Build dist/jailbox-VERSION.tar.gz and dist/jailbox-latest.tar.gz from the current checkout.
+Build release archives, dist/install.sh, and checksums from the current checkout.
 VERSION must look like vMAJOR.MINOR.PATCH.
 EOF_USAGE
 }
@@ -43,6 +43,7 @@ stage_dir="$DIST_DIR/$release_name"
 tarball="$DIST_DIR/$release_name.tar.gz"
 latest_tarball="$DIST_DIR/$APP_NAME-latest.tar.gz"
 checksums_file="$DIST_DIR/SHA256SUMS"
+installer="$DIST_DIR/install.sh"
 
 for script in "$ROOT_DIR/src/install.sh" "$ROOT_DIR/src/jailbox" "$ROOT_DIR/src/public-api.sh"; do
     bash -n "$script" || die "invalid shell syntax: $script"
@@ -53,7 +54,7 @@ done < <(find "$ROOT_DIR/src/host" "$ROOT_DIR/scripts" -type f -name '*.sh' -pri
 source "$ROOT_DIR/scripts/lib/container-shells.sh"
 check_container_syntax "$ROOT_DIR/src" || die 'invalid container shell source'
 
-rm -rf "$stage_dir" "$tarball" "$latest_tarball" "$checksums_file"
+rm -rf "$stage_dir" "$tarball" "$latest_tarball" "$checksums_file" "$installer"
 mkdir -p "$stage_dir"
 cp -R "$ROOT_DIR/src/." "$stage_dir/"
 
@@ -63,10 +64,10 @@ for path in "${RELEASE_PATHS[@]}"; do
 done
 
 printf '%s\n' "${version#v}" > "$stage_dir/VERSION"
-
 # Ensure entry-point scripts remain executable after copying into the stage dir.
 chmod 755 "$stage_dir/jailbox" "$stage_dir/install.sh"
 chmod 755 "$stage_dir"/container/*.sh
+cp "$stage_dir/install.sh" "$installer"
 
 # Build from inside dist so the archive has a clean top-level directory.
 (cd "$DIST_DIR" && tar -czf "$release_name.tar.gz" "$release_name")
@@ -75,7 +76,7 @@ rm -rf "$stage_dir"
 
 # Checksums use bare filenames so `sha256sum --check` works from the
 # download directory.
-(cd "$DIST_DIR" && sha256 "$release_name.tar.gz" "$APP_NAME-latest.tar.gz" > SHA256SUMS)
+(cd "$DIST_DIR" && sha256 "$release_name.tar.gz" "$APP_NAME-latest.tar.gz" install.sh > SHA256SUMS)
 
 bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$DIST_DIR"
 

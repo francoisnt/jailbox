@@ -74,7 +74,7 @@ do not duplicate that policy logic in the frontend.
 
 Runtime sources and the installer live under `src/`; tests, maintenance tools,
 plans, and documentation remain at the repository root. Packaging copies `src/`
-contents to the bundle root and adds `README.md` and `LICENSE`. Checkout and installed
+contents to the bundle root and adds `README.md`, `LICENSE`, and `docs/`. Checkout and installed
 paths differ: source callers use `src/jailbox`, while installed runtime paths
 remain relative to the executable. Keep both layouts covered by tests.
 
@@ -301,7 +301,10 @@ new test scripts cannot silently escape ShellCheck.
 - Keep README.md focused on user-facing documentation. Do not link to
   ARCHITECTURE.md or CONTRIBUTING.md from README.md, whether by relative path
   or repository URL. Those guides remain repository-only and may link to one
-  another; README.md continues to ship with the installed package.
+  another. Keep README.md focused on the first development session and everyday
+  use, with an early link for automation users. Detailed development, automation,
+  and security guides live in docs/ and ship alongside README.md in the installed
+  package. Keep shared contracts authoritative in one guide and link to them.
 - Every pull request and push to master runs all four gates: portable, runtime,
   matrix, and editor (both VS Code and VSCodium). Auto-merge is limited to verified
   Dependabot patch/minor GitHub Actions updates after all four gates pass; major

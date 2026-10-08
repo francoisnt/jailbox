@@ -5,7 +5,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/source" "$tmp/project" "$tmp/bin"
 cp -R "$ROOT/src" "$ROOT/scripts" \
-    "$ROOT/README.md" "$ROOT/LICENSE" "$tmp/source/"
+    "$ROOT/README.md" "$ROOT/LICENSE" "$ROOT/docs" "$tmp/source/"
 cat > "$tmp/bin/podman" <<'STUB'
 #!/bin/bash
 echo 'Podman must not be called' >&2
@@ -61,9 +61,9 @@ repack() {
     (
         cd "$dist"
         if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum jailbox-v1.2.3.tar.gz jailbox-latest.tar.gz
+            sha256sum jailbox-v1.2.3.tar.gz jailbox-latest.tar.gz install.sh
         else
-            shasum -a 256 jailbox-v1.2.3.tar.gz jailbox-latest.tar.gz
+            shasum -a 256 jailbox-v1.2.3.tar.gz jailbox-latest.tar.gz install.sh
         fi
     ) > "$dist/SHA256SUMS"
 }
@@ -84,6 +84,13 @@ for body in "printf 'jailbox 1.2.4\\n'" "printf 'jailbox 1.2.3\\n\\n'" "printf '
     reject_artifact
 done
 cp "$ROOT/src/jailbox" "$tree/jailbox"
+repack
+bash "$ROOT/scripts/validate-release.sh" v1.2.3 "$dist"
+# Checksum-valid but mismatched installer assets must not pass validation.
+cp "$dist/install.sh" "$tmp/original-installer"
+printf '\n# different standalone installer\n' >> "$dist/install.sh"
+reject_artifact
+cp "$tmp/original-installer" "$dist/install.sh"
 repack
 bash "$ROOT/scripts/validate-release.sh" v1.2.3 "$dist"
 printf 'bad\n' > "$dist/SHA256SUMS"

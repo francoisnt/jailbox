@@ -47,14 +47,14 @@ tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 
-validate_readme_keys() {
+validate_documented_keys() {
     # shellcheck disable=SC2034 # Both arrays are consumed through namerefs.
     local -a documented_keys=() declared_keys=("${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}" "${FRONTEND_SCALAR_KEYS[@]}")
     # shellcheck disable=SC2034
-    mapfile -t documented_keys < <(awk -F '`' '/^\| `[A-Z][A-Z0-9_]*` \|/ {print $2 "=" $0}' "$ROOT/README.md")
-    public_api_validate_mapping 'README configuration keys' declared_keys documented_keys
+    mapfile -t documented_keys < <(awk -F '`' '/^\| `[A-Z][A-Z0-9_]*` \|/ {print $2 "=" $0}' "$ROOT/docs/development.md")
+    public_api_validate_mapping 'documented configuration keys' declared_keys documented_keys
 }
-validate_readme_keys
+validate_documented_keys
 expect_failure() {
     local expected="$1"
     shift
@@ -144,8 +144,8 @@ missing_digest_mode() {
     validate_digest_api_mapping
 }
 expect_failure "digest array modes: missing mapping 'SAMPLE'" missing_digest_mode
-missing_documentation() { CONFIG_SCALAR_KEYS+=(SAMPLE); validate_readme_keys; }
-expect_failure "README configuration keys: missing mapping 'SAMPLE'" missing_documentation
+missing_documentation() { CONFIG_SCALAR_KEYS+=(SAMPLE); validate_documented_keys; }
+expect_failure "documented configuration keys: missing mapping 'SAMPLE'" missing_documentation
 
 (
     add_command

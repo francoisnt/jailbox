@@ -1,5 +1,5 @@
 #!/bin/bash
-# Generate the README command reference from the canonical declarations.
+# Generate the automation command reference from the canonical declarations.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=src/public-api.sh
@@ -36,10 +36,10 @@ case "${1:-}" in
             $0 == end {ends++; inside=0; next}
             inside {print}
             END {if (starts != 1 || ends != 1 || inside) exit 1}
-        ' "$ROOT/README.md" > "$tmp/current"
+        ' "$ROOT/docs/automation.md" > "$tmp/current"
         if [[ "$1" = --check ]]; then
             cmp -s "$tmp/generated" "$tmp/current" || {
-                printf 'README command reference is stale; run bash scripts/gen-public-api.sh --write\n' >&2
+                printf 'automation command reference is stale; run bash scripts/gen-public-api.sh --write\n' >&2
                 exit 1
             }
         else
@@ -47,8 +47,8 @@ case "${1:-}" in
                 $0 == begin {print; while ((getline line < generated) > 0) print line; close(generated); inside=1; next}
                 $0 == end {inside=0}
                 !inside {print}
-            ' "$ROOT/README.md" > "$tmp/readme"
-            cat "$tmp/readme" > "$ROOT/README.md"
+            ' "$ROOT/docs/automation.md" > "$tmp/readme"
+            cat "$tmp/readme" > "$ROOT/docs/automation.md"
         fi
         ;;
     *) printf 'Usage: bash scripts/gen-public-api.sh [--check|--write]\n' >&2; exit 2 ;;

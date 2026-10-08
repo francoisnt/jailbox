@@ -83,6 +83,8 @@ download_file() {
 }
 
 installer_bundle_is_available() {
+    # A piped installer must download its release, regardless of the working directory.
+    [ -n "$SOURCE_FILE" ] || return 1
     # Recognize local bundles before checking their basic shape, so a broken
     # local tree does not silently select the network bootstrap path.
     [ -e "$SOURCE_DIR/VERSION" ] || [ -e "$SOURCE_DIR/jailbox" ] ||
@@ -193,6 +195,10 @@ copy_bundle() {
             cp "$SOURCE_DIR/../$document" "$tmp_dir/$document" || die "could not copy $document"
         fi
     done
+
+    if [ ! -d "$tmp_dir/docs" ]; then
+        cp -R "$SOURCE_DIR/../docs" "$tmp_dir/docs" || die "could not copy docs"
+    fi
 
     chmod 755 "$tmp_dir/jailbox"
     for script in "$tmp_dir"/container/*.sh; do

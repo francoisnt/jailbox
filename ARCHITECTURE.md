@@ -3,7 +3,8 @@
 This guide explains how jailbox turns a development image into a sandbox, why
 it sometimes refuses to reuse one, and how its tests establish those promises.
 Read the first six sections in order; use the glossary when a term is unfamiliar.
-The [README](README.md) remains the command and configuration reference, and
+The [README](README.md) introduces the development workflow; detailed user guides
+live in [docs/](docs/development.md), and
 [CONTRIBUTING](CONTRIBUTING.md) explains how to run and extend the tests.
 
 - [Current behavior](#1-current-behavior)
@@ -41,7 +42,7 @@ Core passes the live proxy address through the container environment and
 validates it on reuse; startup validates the address before creating SSH options.
 
 Runtime sources live under `src/`. Packaging flattens that directory into the
-bundle root and adds `README.md`; repository tooling stays outside
+bundle root and adds `README.md`, `LICENSE`, and `docs/`; repository tooling stays outside
 the bundle. Source execution uses `src/jailbox`, while installed paths stay unchanged.
 
 This is one repository, one installed `jailbox` executable, and one release.
@@ -353,7 +354,7 @@ fields are `ssh_config`, `ssh_host`, `remote_path`, `project_id`, and `proxy_url
 in that order. Consumers check command success, framing, field names, uniqueness,
 and required value meanings. Valid future fields may follow and have opaque
 values. Bash command substitution cannot retain NUL bytes, so a parser must use
-a byte-preserving input path. See the [connection contract](README.md#connection-metadata-and-local-validation)
+a byte-preserving input path. See the [connection contract](docs/automation.md#connection-metadata-and-local-validation)
 for exact rules and exec/shell transport limits.
 
 An environment caller attaching after a frontend launch needs the same effective
@@ -443,7 +444,7 @@ The trust boundary excludes a malicious host process with the user's authority.
 The writable project and persistent home are also not reset to known-clean
 content between sessions. Project policy is trusted when read; later host edits
 are not continuously monitored. Read-only overlays restrict container writes,
-not writes by the host. Consult the [threat model](README.md#security--threat-model) alongside
+not writes by the host. Consult the [threat model](docs/security.md) alongside
 these mechanisms; proxy filtering is HTTP(S) mediation, not arbitrary packet
 inspection or a promise to make allowed destinations harmless.
 
@@ -572,7 +573,7 @@ an unchanged command name can acquire different behavior.
 The machine-boundary series ships as one release unit after its implementation
 and closing verification pass all four gates. Smaller implementation plans are
 reviewable work units, not independent releases. Release tooling and exact
-version policy are described in the [README](README.md#versions-and-releases).
+version policy are described in the [automation guide](docs/automation.md#versions-and-releases).
 
 ## 10. Glossary
 

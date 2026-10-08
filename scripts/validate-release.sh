@@ -13,7 +13,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 cmp -s "$dist_dir/$name.tar.gz" "$dist_dir/jailbox-latest.tar.gz" || die 'latest archive differs from release archive'
-for asset in "$name.tar.gz" jailbox-latest.tar.gz; do
+for asset in "$name.tar.gz" jailbox-latest.tar.gz install.sh; do
     if command -v sha256sum >/dev/null 2>&1; then
         actual=$(sha256sum "$dist_dir/$asset")
     else
@@ -25,6 +25,8 @@ done
 
 # This validator consumes the artifact just built from trusted release source.
 tar -xzf "$dist_dir/$name.tar.gz" -C "$tmp"
+bash -n "$dist_dir/install.sh" || die 'release installer has invalid syntax'
+cmp -s "$dist_dir/install.sh" "$tmp/$name/install.sh" || die 'release installers differ'
 [[ -f "$tmp/$name/VERSION" && ! -L "$tmp/$name/VERSION" ]] || die 'release stamp is missing or invalid'
 printf '%s\n' "${version#v}" > "$tmp/expected"
 cmp -s "$tmp/expected" "$tmp/$name/VERSION" || die 'release stamp differs from selected version'

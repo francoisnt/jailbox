@@ -135,6 +135,7 @@ jobs:
           files: |
             dist/jailbox-${{ needs.select-version.outputs.version }}.tar.gz
             dist/jailbox-latest.tar.gz
+            dist/install.sh
             dist/SHA256SUMS
 
   # Remove the ephemeral request tag whether the release succeeded or not.

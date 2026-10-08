@@ -1,10 +1,10 @@
 #!/bin/bash
-# Generate the README "Tested Configurations" block from versions.env.
+# Generate the development guide "Tested Configurations" block from versions.env.
 #
 # Usage: scripts/gen-tested-matrix.sh [--write|--check]
 #   (default)  print the generated block to stdout
-#   --write    replace the block between the markers in README.md
-#   --check    fail when the README block differs from regeneration, when the
+#   --write    replace the block between the markers in docs/development.md
+#   --check    fail when the development guide block differs from regeneration, when the
 #              tinyproxy Containerfile FROM drifted from BASE_IMAGE_ALPINE, or
 #              when dev-images.Containerfile ARG defaults drifted from
 #              versions.env
@@ -16,7 +16,7 @@ JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 # shellcheck source=versions.env
 source "$JAILBOX_DIR/versions.env"
 
-README="$JAILBOX_DIR/README.md"
+DOCUMENT="$JAILBOX_DIR/docs/development.md"
 BEGIN_MARKER='<!-- BEGIN GENERATED: tested-matrix -->'
 END_MARKER='<!-- END GENERATED: tested-matrix -->'
 
@@ -59,8 +59,8 @@ EOF
 }
 
 assert_markers() {
-    if ! grep -Fxq "$BEGIN_MARKER" "$README" || ! grep -Fxq "$END_MARKER" "$README"; then
-        echo "README.md is missing the tested-matrix markers" >&2
+    if ! grep -Fxq "$BEGIN_MARKER" "$DOCUMENT" || ! grep -Fxq "$END_MARKER" "$DOCUMENT"; then
+        echo "docs/development.md is missing the tested-matrix markers" >&2
         exit 1
     fi
 }
@@ -77,8 +77,8 @@ write_block() {
         $0 == begin { skip = 1; while ((getline line < block_file) > 0) print line; next }
         $0 == end   { skip = 0; next }
         !skip       { print }
-    ' "$README" > "$tmp"
-    mv "$tmp" "$README"
+    ' "$DOCUMENT" > "$tmp"
+    mv "$tmp" "$DOCUMENT"
 }
 
 check_block() {
@@ -87,9 +87,9 @@ check_block() {
     assert_markers
     if ! diff -u \
         <(awk -v begin="$BEGIN_MARKER" -v end="$END_MARKER" \
-            '$0 == begin { inblock = 1 } inblock { print } $0 == end { inblock = 0 }' "$README") \
+            '$0 == begin { inblock = 1 } inblock { print } $0 == end { inblock = 0 }' "$DOCUMENT") \
         <(gen_block); then
-        echo "README tested-matrix block is stale; run: bash scripts/gen-tested-matrix.sh --write" >&2
+        echo "development guide tested-matrix block is stale; run: bash scripts/gen-tested-matrix.sh --write" >&2
         failed=1
     fi
 
