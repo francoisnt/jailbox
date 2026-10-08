@@ -74,7 +74,7 @@ do not duplicate that policy logic in the frontend.
 
 Runtime sources and the installer live under `src/`; tests, maintenance tools,
 plans, and documentation remain at the repository root. Packaging copies `src/`
-contents to the bundle root and adds `README.md`. Checkout and installed
+contents to the bundle root and adds `README.md` and `LICENSE`. Checkout and installed
 paths differ: source callers use `src/jailbox`, while installed runtime paths
 remain relative to the executable. Keep both layouts covered by tests.
 

@@ -5,7 +5,7 @@ APP_NAME="jailbox"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 
-RELEASE_PATHS=(README.md)
+RELEASE_PATHS=(README.md LICENSE)
 
 usage() {
     cat <<EOF_USAGE

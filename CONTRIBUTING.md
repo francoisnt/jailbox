@@ -20,7 +20,7 @@ glossary. The guide describes the implemented frontend and machine boundary.
 ```
 
 Run the checkout CLI as `src/jailbox`, or install it with `bash src/install.sh`.
-Releases flatten `src/` into the bundle root and add `README.md`; maintenance
+Releases flatten `src/` into the bundle root and add `README.md` and `LICENSE`; maintenance
 scripts and tests do not ship.
 
 The `src/host/` tree runs on the developer machine. The `src/container/` tree is

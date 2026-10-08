@@ -6,11 +6,12 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/source"
 cp -R "$ROOT/src" "$ROOT/scripts" "$tmp/source/"
-cp "$ROOT/README.md" "$tmp/source/"
+cp "$ROOT/README.md" "$ROOT/LICENSE" "$tmp/source/"
 printf 'future runtime dependency\n' > "$tmp/source/src/container/runtime/lib/jailbox/future.data"
 bash "$tmp/source/scripts/build-tarball.sh" v9.8.7 > "$tmp/build.log" 2>&1
 tar -xzf "$tmp/source/dist/jailbox-v9.8.7.tar.gz" -C "$tmp"
 bundle=$tmp/jailbox-v9.8.7
+cmp "$ROOT/LICENSE" "$bundle/LICENSE"
 cmp "$tmp/source/src/container/runtime/lib/jailbox/future.data" "$bundle/container/runtime/lib/jailbox/future.data"
 [[ ! -e "$bundle/ARCHITECTURE.md" && ! -e "$bundle/CONTRIBUTING.md" ]]
 if grep -Eq 'ARCHITECTURE\.md|CONTRIBUTING\.md' "$bundle/README.md"; then exit 1; fi
@@ -21,8 +22,13 @@ for mask in 0022 0002; do
     (umask "$mask"; "$installer_bash" "$bundle/install.sh" > "$tmp/install.log" 2>&1)
     cmp "$bundle/container/runtime/lib/jailbox/future.data" "$JAILBOX_INSTALL_DIR/container/runtime/lib/jailbox/future.data"
     cmp "$bundle/README.md" "$JAILBOX_INSTALL_DIR/README.md"
+    cmp "$ROOT/LICENSE" "$JAILBOX_INSTALL_DIR/LICENSE"
     [[ ! -e "$JAILBOX_INSTALL_DIR/ARCHITECTURE.md" && ! -e "$JAILBOX_INSTALL_DIR/CONTRIBUTING.md" ]]
 done
+"$installer_bash" "$tmp/source/src/install.sh" > "$tmp/install.log" 2>&1
+cmp "$ROOT/LICENSE" "$JAILBOX_INSTALL_DIR/LICENSE"
+# Restore the versioned installation for the failure checks below.
+"$installer_bash" "$bundle/install.sh" > "$tmp/install.log" 2>&1
 printf 'keep\n' > "$JAILBOX_INSTALL_DIR/preserved"
 # Simulate a copy that writes partial output before failing. Neither that output
 # nor an empty staging directory may replace the previous installation.

@@ -4,7 +4,7 @@
 
 [![PR checks](https://github.com/francoisnt/jailbox/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/francoisnt/jailbox/actions/workflows/pr-checks.yml)
 [![Latest release](https://img.shields.io/github/v/release/francoisnt/jailbox)](https://github.com/francoisnt/jailbox/releases/latest)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 <!-- TODO: terminal recording / GIF of `jailbox` launching into the editor -->
 
@@ -35,8 +35,9 @@ its reach into your machine.
   an SSH client with `SetEnv` support (OpenSSH 7.8+).
 - VS Code or VSCodium with the **Remote - SSH** extension (for the editor
   workflow)
-- A project with a `Containerfile`/`Dockerfile` — or any public image name
-  (see [Recipes](#recipes))
+- A project with a `Containerfile`/`Dockerfile` — or a compatible development
+  image (see [Project image requirements](#project-image-requirements) and
+  [Recipes](#recipes))
 
 **macOS coverage is limited to portable tests; container and editor integration
 on a Mac remain unverified.** Our hosted Mac CI runners cannot start the Linux VM
@@ -69,6 +70,13 @@ cd /path/to/your/project
 jailbox init
 jailbox
 ```
+
+By default, the sandbox can modify project files and access the internet.
+Configure [path restrictions](#file-configuration-jailboxconf) and
+[`EGRESS_ALLOW`](#run-an-ai-coding-agent-with-egress-control) as needed.
+Read-only files remain readable; use `HIDDEN_PATHS` to hide selected contents
+at runtime. See the [security model](#security--threat-model) for the limits
+of these protections.
 
 `jailbox init` creates a minimal `jailbox.conf` without overwriting any existing
 path. jailbox then discovers or builds your dev image, starts the hardened
@@ -120,7 +128,8 @@ allowlist is strongly recommended.
 
 ### Project without a Containerfile
 
-Point jailbox at any image by adding one line to the generated config:
+Point jailbox at a [compatible development image](#project-image-requirements)
+by adding one line to the generated config:
 
 ```bash
 jailbox init
@@ -992,4 +1001,4 @@ still evolving.
 
 ## License
 
-MIT
+jailbox is licensed under the [MIT License](LICENSE).

@@ -5,7 +5,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/source" "$tmp/project" "$tmp/bin"
 cp -R "$ROOT/src" "$ROOT/scripts" \
-    "$ROOT/README.md" "$tmp/source/"
+    "$ROOT/README.md" "$ROOT/LICENSE" "$tmp/source/"
 cat > "$tmp/bin/podman" <<'STUB'
 #!/bin/bash
 echo 'Podman must not be called' >&2

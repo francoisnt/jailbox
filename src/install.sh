@@ -183,14 +183,16 @@ install_from_release() {
 }
 
 copy_bundle() {
-    local tmp_dir script
+    local tmp_dir script document
 
     tmp_dir="$1"
     cp -R "$SOURCE_DIR/." "$tmp_dir/" || die "could not copy installer bundle"
-    # Release bundles include the README; checkouts keep it above src/.
-    if [ ! -f "$tmp_dir/README.md" ]; then
-        cp "$SOURCE_DIR/../README.md" "$tmp_dir/README.md" || die "could not copy README"
-    fi
+    # Release bundles include these documents; checkouts keep them above src/.
+    for document in README.md LICENSE; do
+        if [ ! -f "$tmp_dir/$document" ]; then
+            cp "$SOURCE_DIR/../$document" "$tmp_dir/$document" || die "could not copy $document"
+        fi
+    done
 
     chmod 755 "$tmp_dir/jailbox"
     for script in "$tmp_dir"/container/*.sh; do
