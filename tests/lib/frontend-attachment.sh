@@ -2,13 +2,11 @@
 # Runtime transport after a real filtered file/editor launch (editor is stubbed).
 set -euo pipefail
 ROOT=$1 PROJECT=$2 CONTAINER=$3 OUTPUT=$4
+# shellcheck source=tests/lib/headless-policy.sh
+source "$ROOT/tests/lib/headless-policy.sh"
 for name in "${!JAILBOX_CONFIG_@}"; do unset "$name"; done
 export JAILBOX_CONFIG_DEV_IMAGE="$5"
-export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
-export JAILBOX_CONFIG_READONLY_PATHS_1=config/runtime.conf
-export JAILBOX_CONFIG_READONLY_PATHS_2=protected-policy
-export JAILBOX_CONFIG_READONLY_PATHS_3=jailbox.conf
-export JAILBOX_CONFIG_READONLY_PATHS_4=config/runtime.conf
+headless_attachment_paths
 export JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com
 export JAILBOX_CONFIG_EGRESS_ALLOW_1=github.com
 export JAILBOX_CONFIG_EGRESS_ALLOW_2=githubusercontent.com

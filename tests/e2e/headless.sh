@@ -32,6 +32,8 @@ source "$JAILBOX_DIR/tests/lib/run-meta.sh"
 source "$JAILBOX_DIR/tests/lib/resource-ledger.sh"
 # shellcheck source=tests/lib/fixture-ports.sh
 source "$JAILBOX_DIR/tests/lib/fixture-ports.sh"
+# shellcheck source=tests/lib/headless-policy.sh
+source "$JAILBOX_DIR/tests/lib/headless-policy.sh"
 
 ALL_STAGES=(debian alpine fedora egress)
 
@@ -278,11 +280,7 @@ EOF
     assert_ssh "$ssh_cfg" "$ctr" "git available"  "git --version >/dev/null"
     if (
         export JAILBOX_CONFIG_DEV_IMAGE="$dev_image"
-        export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
-        export JAILBOX_CONFIG_READONLY_PATHS_1=config/runtime.conf
-        export JAILBOX_CONFIG_READONLY_PATHS_2=protected-policy
-        export JAILBOX_CONFIG_READONLY_PATHS_3=jailbox.conf
-        export JAILBOX_CONFIG_READONLY_PATHS_4=config/runtime.conf
+        headless_attachment_paths
         if [[ "$stage" = debian ]]; then
             unset JAILBOX_CONFIG_DEV_IMAGE
             export JAILBOX_CONFIG_DEV_CONTAINERFILE=Containerfile

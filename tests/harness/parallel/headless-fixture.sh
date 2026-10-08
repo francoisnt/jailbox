@@ -115,3 +115,32 @@ printf 'PASS: headless status artifacts retain each stage and observation outsid
     done
 )
 printf 'PASS: runtime editor stubs support preflight, validate launch, and preserve headless refusal\n'
+
+# Compare the attachment helper used by both runtime probes with the real
+# frontend's composition. This catches digest drift without requiring Podman.
+(
+    # shellcheck source=src/host/frontend/file-policy.sh
+    source "$ROOT/src/host/frontend/file-policy.sh"
+    # shellcheck source=tests/lib/headless-policy.sh
+    source "$ROOT/tests/lib/headless-policy.sh"
+    mkdir -p "$fixture/policy/config"
+    policy_project=$(cd "$fixture/policy" && pwd -P)
+    printf 'READONLY_PATHS=jailbox.conf,config/runtime.conf,protected-policy\n' > "$fixture/policy/jailbox.conf"
+    cp "$fixture/policy/jailbox.conf" "$fixture/policy/config/runtime.conf"
+    for name in "${!JAILBOX_CONFIG_@}"; do unset "$name"; done
+    headless_attachment_paths
+    attachment=()
+    for name in "${!JAILBOX_CONFIG_READONLY_PATHS_@}"; do
+        attachment+=("$name=${!name}")
+    done
+    for selected in jailbox.conf config/runtime.conf; do
+        load_file_policy "$policy_project" "$policy_project/$selected"
+        compose_machine_environment 2> "$fixture/policy.notice"
+        launch_paths=()
+        for entry in "${FRONTEND_ENVIRONMENT[@]}"; do
+            case "$entry" in JAILBOX_CONFIG_READONLY_PATHS_*=*) launch_paths+=("$entry") ;; esac
+        done
+        [[ "${attachment[*]}" == "${launch_paths[*]}" ]] || fail 'runtime attachment paths differ from frontend launch policy'
+    done
+)
+printf 'PASS: runtime attachment paths match default and selected frontend policy\n'
