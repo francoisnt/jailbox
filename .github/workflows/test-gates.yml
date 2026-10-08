@@ -125,8 +125,7 @@ jobs:
         with:
           name: portable-logs-${{ matrix.os }}-${{ matrix.bash }}
           path: |
-            testlog/portable.*/
-            testlog/shellcheck.*/
+            testlog/*/portable/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -166,8 +165,7 @@ jobs:
         with:
           name: runtime-logs
           path: |
-            testlog/test-*/
-            testlog/e2e-*/
+            testlog/*/runtime/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -191,8 +189,7 @@ jobs:
         with:
           name: matrix-logs
           path: |
-            testlog/test-*/
-            testlog/lifecycle-*/
+            testlog/*/matrix/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -231,7 +228,29 @@ jobs:
         with:
           name: editor-logs-${{ matrix.editor_cli }}
           path: |
-            testlog/test-*/
-            testlog/editor-*/
+            testlog/*/editor/
           if-no-files-found: ignore
           retention-days: 7
+
+  verified-result:
+    name: Record complete pinned gate result
+    needs: [portable, runtime, matrix, editor]
+    if: >-
+      success() && inputs.run_editor &&
+      inputs.code_version == '' && inputs.codium_version == '' &&
+      inputs.remote_ssh_version == '' && inputs.open_remote_ssh_version == ''
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Record verified gate evidence
+        env:
+          GATE_RESULTS: ${{ toJSON(needs) }}
+          GATE_INPUTS: ${{ toJSON(inputs) }}
+        run: python3 scripts/lib/release-gates.py record
+      - name: Upload verified gate evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: verified-test-gates-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verified-test-gates.json
+          if-no-files-found: error
+          retention-days: 30

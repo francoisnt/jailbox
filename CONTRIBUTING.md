@@ -390,7 +390,17 @@ that buffer their own output can delay individual lines.
 Releases are initiated manually and gated in CI: `scripts/release.sh`
 previews the automatic version and allows a higher bump interactively or with
 `--bump patch|minor|major`. It pushes an ephemeral request tag carrying that
-minimum; the Release workflow applies it when re-selecting the version, runs
-the full release gate, and creates the version tag and GitHub Release only
-after everything passes. See [Versions and releases](README.md#versions-and-releases)
+minimum; the Release workflow applies it when re-selecting the version and
+creates the version tag and GitHub Release only after validation passes.
+It first looks for complete passing push CI on the exact commit, using the
+same pinned dependencies and shared gate workflow. The saved result must
+confirm portable, runtime, matrix, and both editors. A later failed, cancelled,
+skipped, or unfinished test run prevents reuse. Canary runs with version
+overrides are never used as release evidence.
+
+Missing or expired evidence, or an unavailable GitHub API, causes fresh gates
+to run. Older CI runs without the verified-result artifact also need fresh
+gates. Evidence is retained for 30 days; compatibility records keep the original
+tested versions, timestamp, and successful test-run link. The versioned release
+package is always built and validated, even when CI results are reused. See [Versions and releases](README.md#versions-and-releases)
 for the compatibility policy and manual workflow inputs.

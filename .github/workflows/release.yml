@@ -3,8 +3,8 @@ name: Release
 # Releases are initiated manually: either from the Actions UI
 # (workflow_dispatch) or by scripts/release.sh pushing an ephemeral
 # release-request tag — plain git, no gh dependency. The version is selected
-# in CI with the same policy as scripts/release.sh, the full release gate
-# runs first, and the version tag plus GitHub Release are created only after
+# in CI with the same policy as scripts/release.sh. Complete matching push CI
+# is reused when verified; otherwise fresh gates run. Tags are created only after
 # all validation succeeds — a failed gate leaves no stale version tag.
 on:
   workflow_dispatch:
@@ -32,6 +32,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 # One release at a time: parallel runs would select the same version and
 # race on the tag push.
@@ -75,12 +76,40 @@ jobs:
           echo "Selected version: $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  previous-gates:
+    runs-on: ubuntu-24.04
+    outputs:
+      reuse: ${{ steps.lookup.outputs.reuse }}
+      bash_version: ${{ steps.lookup.outputs.bash_version }}
+      podman_version: ${{ steps.lookup.outputs.podman_version }}
+      tested_at: ${{ steps.lookup.outputs.tested_at }}
+      run_url: ${{ steps.lookup.outputs.run_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Find verified CI for this commit
+        id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python3 scripts/lib/release-gates.py select
+
   test-gates:
+    needs: previous-gates
+    if: needs.previous-gates.outputs.reuse != 'true'
     uses: ./.github/workflows/test-gates.yml
 
   publish:
     runs-on: ubuntu-24.04
-    needs: [select-version, test-gates]
+    needs: [select-version, previous-gates, test-gates]
+    if: >-
+      always() && needs.select-version.result == 'success' && needs.previous-gates.result == 'success' &&
+      ((needs.previous-gates.outputs.reuse == 'true' && needs.test-gates.result == 'skipped') ||
+       (needs.previous-gates.outputs.reuse == 'false' && needs.test-gates.result == 'success'))
+    outputs:
+      bash_version: ${{ needs.previous-gates.outputs.reuse == 'true' && needs.previous-gates.outputs.bash_version || needs.test-gates.outputs.runtime_bash_version }}
+      podman_version: ${{ needs.previous-gates.outputs.reuse == 'true' && needs.previous-gates.outputs.podman_version || needs.test-gates.outputs.runtime_podman_version }}
+      tested_at: ${{ needs.previous-gates.outputs.reuse == 'true' && needs.previous-gates.outputs.tested_at || needs.test-gates.outputs.tested_at }}
+      run_url: ${{ needs.previous-gates.outputs.reuse == 'true' && needs.previous-gates.outputs.run_url || needs.test-gates.outputs.test_run_url }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -123,7 +152,8 @@ jobs:
         run: git push origin ":refs/tags/${{ github.ref_name }}"
 
   record-compatibility:
-    needs: [select-version, test-gates, publish]
+    needs: [select-version, publish]
+    if: always() && needs.select-version.result == 'success' && needs.publish.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -132,8 +162,8 @@ jobs:
       - name: Append successful tested combination
         env:
           TARGET: ${{ needs.select-version.outputs.version }}
-          RUNTIME_BASH_VERSION: ${{ needs.test-gates.outputs.runtime_bash_version }}
-          RUNTIME_PODMAN_VERSION: ${{ needs.test-gates.outputs.runtime_podman_version }}
-          TESTED_AT: ${{ needs.test-gates.outputs.tested_at }}
-          TEST_RUN_URL: ${{ needs.test-gates.outputs.test_run_url }}
+          RUNTIME_BASH_VERSION: ${{ needs.publish.outputs.bash_version }}
+          RUNTIME_PODMAN_VERSION: ${{ needs.publish.outputs.podman_version }}
+          TESTED_AT: ${{ needs.publish.outputs.tested_at }}
+          TEST_RUN_URL: ${{ needs.publish.outputs.run_url }}
         run: bash scripts/record-compatibility.sh "$TARGET"

@@ -19,8 +19,18 @@ for binding in 'RELEASE_EVENT: ${{ github.event_name }}' \
     'BUMP: ${{ inputs.bump }}'; do
     grep -Fq "$binding" "$workflow"
 done
-grep -Fq 'needs: [select-version, test-gates]' "$workflow"
+grep -Fq 'needs: [select-version, previous-gates, test-gates]' "$workflow"
 grep -Fq 'uses: ./.github/workflows/test-gates.yml' "$workflow"
+grep -Fq "if: needs.previous-gates.outputs.reuse != 'true'" "$workflow"
+grep -Fq 'run: python3 scripts/lib/release-gates.py select' "$workflow"
+grep -Fq '  actions: read' "$workflow"
+gates="$ROOT/.github/workflows/test-gates.yml"
+grep -Fq '    needs: [portable, runtime, matrix, editor]' "$gates"
+grep -Fq '      success() && inputs.run_editor &&' "$gates"
+grep -Fq "inputs.code_version == '' && inputs.codium_version == ''" "$gates"
+grep -Fq "inputs.remote_ssh_version == '' && inputs.open_remote_ssh_version == ''" "$gates"
+grep -Fq 'run: python3 scripts/lib/release-gates.py record' "$gates"
+
 if grep -Eq 'run_editor: *false' "$workflow"; then exit 1; fi
 awk -f "$ROOT/tests/lib/release-order.awk" "$workflow"
 # shellcheck disable=SC2016 # Match the validator invocation literally.
@@ -29,7 +39,7 @@ grep -Fq 'git push origin ":refs/tags/' "$workflow"
 # Scope assertions to the recorder jobs: unrelated success guards do not count.
 release_record=$(awk '/^  record-compatibility:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$workflow")
 canary_record=$(awk '/^  record-compatibility:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$canary")
-grep -Fxq '    needs: [select-version, test-gates, publish]' <<< "$release_record"
+grep -Fxq '    needs: [select-version, publish]' <<< "$release_record"
 grep -Fxq "    if: always() && needs.test-gate.result == 'success' && github.ref == 'refs/heads/master'" <<< "$canary_record"
 grep -Fxq '    needs: [resolve, codium-commit, test-gate, report]' <<< "$canary_record"
 # shellcheck disable=SC2016 # Literal GitHub Actions expressions.

@@ -9,6 +9,13 @@ with OpenSSH and runs it as a hardened Podman container. Security behavior and
 the claims in the README are part of the product contract. Prefer small,
 auditable changes and preserve secure defaults.
 
+Always aim for the simplest solution that fully meets the requirements.
+Add complexity only when a concrete improvement in maintainability, quality,
+or readability outweighs its cost. Prefer fewer moving parts and existing
+mechanisms when they serve the task well; explain the benefit when choosing
+a more complex approach. Simplicity means easier to understand and maintain,
+not merely fewer lines of code.
+
 A first-party orchestrator consuming jailbox's machine interface is planned,
 not hypothetical. The machine-interface features in the 03.2 plan series
 (`config-schema`, `status`, `connection-info` with forward-compatible trailing
