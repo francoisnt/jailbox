@@ -328,7 +328,7 @@ TEST_CASE='the actual row runner skips unselected commands before constructing r
 pass
 
 TEST_CASE='the real worker loads the catalog needed by row recovery contracts'
-cp "$ROOT/tests/lib/"{lifecycle-worker,lifecycle-assertions,lifecycle-fixture,lifecycle-runtime,lifecycle-runtime-faults}.sh "$tree/tests/lib/"
+cp "$ROOT/tests/lib/"{lifecycle-worker,lifecycle-assertions,lifecycle-fixture,lifecycle-runtime,lifecycle-runtime-faults,lifecycle-logging}.sh "$tree/tests/lib/"
 cat "$ROOT/tests/fixtures/lifecycle-pool/worker-bootstrap.sh" >> "$tree/tests/lib/lifecycle-runtime-faults.sh"
 for variant in complete missing-catalog; do
     run="$tree/bootstrap-$variant"

@@ -95,7 +95,8 @@ interrupt_at_barrier() {
     mkfifo "$LIFECYCLE_READY" "$LIFECYCLE_RELEASE"
     # Opening read/write prevents FIFO open itself from being an unbounded wait.
     exec {ready}<> "$LIFECYCLE_READY"
-    exec {log_fd}> >(test_timestamp_stream > "$LOG/$CASE_KEY.command")
+    lifecycle_command_log_begin cli "$command" || matrix_die 'could not prepare interrupted command log'
+    exec {log_fd}> >(test_timestamp_stream > "$LIFECYCLE_COMMAND_LOG")
     log_pid=$!
     ledger_start_worker cli_exec "$command" >&"$log_fd" 2>&1 {log_fd}>&- || matrix_die 'could not register interrupted command'
     exec {log_fd}>&-
@@ -113,6 +114,8 @@ interrupt_at_barrier() {
     wait "$ACTIVE_PID" 2>/dev/null || true
     ACTIVE_PID=""
     wait "$log_pid" || matrix_die 'could not finish interrupted command log'
+    cp -- "$LIFECYCLE_COMMAND_LOG" "$LOG/$CASE_KEY.command" || matrix_die 'could not publish interrupted command log'
+    printf '%s\texit=137\n' "${LIFECYCLE_COMMAND_LOG##*/}" >> "$LOG/command-index.tsv"
     exec {ready}>&-
 }
 
@@ -161,7 +164,7 @@ run_mutation_faults() {
                 interrupt_at_barrier "$command"
                 result=137
             else
-                test_log_capture "$LOG/$CASE_KEY.command" cli "$command" || result=$?
+                lifecycle_capture cli "$command" || result=$?
             fi
             cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY.events"
             [[ $(wc -l < "$LIFECYCLE_EVENTS") -ge "$point" ]] || matrix_die 'fault point not reached'
@@ -237,7 +240,7 @@ run_failed_resume() {
             filesystem_snapshot "$GENERATION" > "$LOG/generation-before"
             export LIFECYCLE_FAIL_SSH=true LIFECYCLE_EVENTS="$LOG/events"
             : > "$LIFECYCLE_EVENTS"
-            if test_log_capture "$LOG/$CASE_KEY.command" cli up; then matrix_die 'injected readiness failure succeeded'; fi
+            if lifecycle_capture cli up; then matrix_die 'injected readiness failure succeeded'; fi
             cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY.events"
             unset LIFECYCLE_FAIL_SSH LIFECYCLE_EVENTS
             grep -Fxq "podman start $PREFIX" "$LOG/$CASE_KEY.events" || matrix_die 'readiness failure did not follow survivor start'
@@ -283,7 +286,7 @@ run_removal_failure() {
     fault_baseline up false
     export LIFECYCLE_EVENTS="$LOG/events" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE=after LIFECYCLE_FAIL_REMOVE=true
     : > "$LIFECYCLE_EVENTS"
-    if test_log_capture "$LOG/$CASE_KEY.command" cli up; then matrix_die 'creation failure succeeded'; fi
+    if lifecycle_capture cli up; then matrix_die 'creation failure succeeded'; fi
     lifecycle_same_fault_event "$LOG/$CASE_KEY.reference" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'creation fault reached a different operation'
     unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE LIFECYCLE_FAIL_REMOVE
     require_present container "$PREFIX"
@@ -314,7 +317,7 @@ run_existing_dependency_failure() {
         done > "$LOG/networks-before"
         find "$STATE" -type f -exec sha256sum {} + | LC_ALL=C sort > "$LOG/material-before"
         export LIFECYCLE_FAIL_SSH=true
-        if test_log_capture "$LOG/$CASE_KEY.command" cli up; then matrix_die 'new-generation readiness failure succeeded'; fi
+        if lifecycle_capture cli up; then matrix_die 'new-generation readiness failure succeeded'; fi
         unset LIFECYCLE_FAIL_SSH
         require_absent container "$PREFIX"
         [[ ! -e "$GENERATION" ]] || matrix_die 'failed new generation retained credentials'
@@ -357,7 +360,7 @@ run_home_inspection_failure() {
                 # Explicit clean does not depend on reading retention metadata.
                 expect_success "$command"
             else
-                if test_log_capture "$LOG/$CASE_KEY.command" cli "$command"; then matrix_die 'home inspection failure was ignored'; fi
+                if lifecycle_capture cli "$command"; then matrix_die 'home inspection failure was ignored'; fi
                 [[ ! -s "$LIFECYCLE_EVENTS" ]] || matrix_die 'inspection failure attempted lifecycle mutation'
                 snapshot > "$LOG/inspection-after"
                 cmp -s "$LOG/inspection-before" "$LOG/inspection-after" || matrix_die 'inspection failure changed existing state'

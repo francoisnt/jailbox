@@ -1,5 +1,7 @@
 #!/bin/bash
 # Construct and assert one worker's independent lifecycle fixtures.
+# shellcheck source=tests/lib/lifecycle-logging.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lifecycle-logging.sh"
 
 lifecycle_setup() {
     local tool variable
@@ -97,7 +99,7 @@ image_snapshot() {
     done
 }
 expect_success() {
-    test_log_capture "$LOG/$CASE_KEY.command" cli "$@" || {
+    lifecycle_capture cli "$@" || {
         cat "$LOG/$CASE_KEY.command" >&2
         matrix_die "$* failed"
     }
@@ -540,7 +542,7 @@ run_row() {
         fi
         if [[ "$up" = refuse ]]; then
             snapshot > "$LOG/before"
-            if test_log_capture "$LOG/$CASE_KEY.command" cli "$command"; then matrix_die 'damaged state accepted'; fi
+            if lifecycle_capture cli "$command"; then matrix_die 'damaged state accepted'; fi
             snapshot > "$LOG/after"
             cmp -s "$LOG/before" "$LOG/after" || matrix_die 'compatibility refusal mutated pre-existing state'
             if [[ "$recovery" = clean ]]; then
