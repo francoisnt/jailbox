@@ -103,8 +103,8 @@ bump_pins() {
 
     git -C "$JAILBOX_DIR" add versions.env docs/development.md
     git -C "$JAILBOX_DIR" \
-        -c user.name="jailbox-canary" \
-        -c user.email="canary@users.noreply.github.com" \
+        -c user.name="github-actions[bot]" \
+        -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
         commit -m "Advance version pins after green canary
 
 Verified by ${run_url} against ${TESTED_SHA}.

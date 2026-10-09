@@ -41,7 +41,9 @@ for attempt in 1 2 3; do
     (cd "$work/checkout" && python3 "$ROOT/scripts/lib/record-compatibility.py" "$target" "$history")
     git -C "$work/checkout" add -- "$history"
     if git -C "$work/checkout" diff --cached --quiet; then exit 0; fi
-    git -C "$work/checkout" -c user.name=jailbox-ci -c user.email=ci@users.noreply.github.com \
+    git -C "$work/checkout" \
+        -c user.name="github-actions[bot]" \
+        -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
         commit -m "Record tested compatibility for $target"
     if git -C "$work/checkout" push origin HEAD:refs/heads/master; then exit 0; fi
     git -C "$ROOT" fetch origin master || {
