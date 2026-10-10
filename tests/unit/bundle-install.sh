@@ -26,6 +26,9 @@ for mask in 0022 0002; do
     diff -r "$bundle/docs" "$JAILBOX_INSTALL_DIR/docs"
     cmp "$ROOT/LICENSE" "$JAILBOX_INSTALL_DIR/LICENSE"
     [[ ! -e "$JAILBOX_INSTALL_DIR/ARCHITECTURE.md" && ! -e "$JAILBOX_INSTALL_DIR/CONTRIBUTING.md" ]]
+    mkdir "$tmp/project-$mask"
+    (cd "$tmp/project-$mask"; umask "$mask"; "$JAILBOX_BIN_DIR/jailbox" init)
+    cmp "$ROOT/src/host/frontend/jailbox.conf.template" "$tmp/project-$mask/jailbox.conf"
 done
 "$installer_bash" "$tmp/source/src/install.sh" > "$tmp/install.log" 2>&1
 cmp "$ROOT/LICENSE" "$JAILBOX_INSTALL_DIR/LICENSE"

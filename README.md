@@ -54,7 +54,8 @@ jailbox init
 jailbox
 ```
 
-`init` creates a minimal `jailbox.conf` without overwriting an existing path.
+`init` creates a commented `jailbox.conf` with every setting and its default,
+without overwriting an existing path.
 jailbox builds or selects your development image, starts the container, and
 opens the project through Remote SSH. Use the editor's integrated terminal to
 run your tools inside the container. Subsequent launches reuse a compatible,

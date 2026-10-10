@@ -145,10 +145,14 @@ READONLY_PATHS=Makefile,.husky,scripts/deploy.sh
 
 ## File configuration (`jailbox.conf`)
 
-Every file-driven launch requires a `jailbox.conf` in the project root. Create the minimal default safely with `jailbox init`:
+Every file-driven launch requires a `jailbox.conf` in the project root.
+`jailbox init` creates a commented template containing every supported setting
+with its default value. A `# OR` separates using an existing image from the
+Containerfile build settings. The path-protection section starts with:
 
 ```conf
-# Additional project paths mounted read-only inside the sandbox.
+# Comma-separated existing paths, relative to the project root.
+# jailbox.conf and the selected Containerfile are protected automatically.
 READONLY_PATHS=
 ```
 

@@ -1,18 +1,36 @@
 #!/bin/bash
+# shellcheck disable=SC2030,SC2031 # API mutations intentionally stay in subshells.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=src/host/frontend/file-policy.sh
 source "$ROOT/src/host/frontend/file-policy.sh"
 # shellcheck source=src/host/frontend/init.sh
 source "$ROOT/src/host/frontend/init.sh"
+TEMPLATE=$ROOT/src/host/frontend/jailbox.conf.template
 TMP=$(mktemp -d)
 TMP=$(cd "$TMP" && pwd -P)
 trap 'chmod -R u+rwX "$TMP"; rm -rf -- "$TMP"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 
+check_template_defaults() {
+    local config=$1 entry key
+    # shellcheck disable=SC2034 # Consumed through the mapping validator's nameref.
+    local -a members=("${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}" "${FRONTEND_SCALAR_KEYS[@]}")
+    parse_config_file "$config"
+    public_api_validate_mapping 'template settings' members FRONTEND_VALUES allow-empty
+    for entry in "${CONFIG_DEFAULTS[@]}" "${FRONTEND_DEFAULTS[@]}"; do
+        key=${entry%%=*}
+        [[ ${FRONTEND_VALUES[$key]} == "${entry#*=}" ]] || fail "wrong default for $key"
+    done
+    grep -Fxq '# OR build a development image.' "$config" || fail 'missing image/build alternative'
+}
+
+# Check the shipped file itself, independently of the init implementation.
+check_template_defaults "$TEMPLATE"
+
 # No Podman, SSH, editor, or public core executable is available in this PATH.
 mkdir "$TMP/bin"
-for tool in mktemp ln rm; do
+for tool in mktemp ln rm cat; do
     ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
 done
 for mode in 0022 0002; do
@@ -27,11 +45,11 @@ for mode in 0022 0002; do
         touch "$local_project/.git/config" "$local_project/AGENTS.md" "$local_project/CLAUDE.md"
         chmod 600 "$local_project/AGENTS.md" "$local_project/CLAUDE.md"
         PATH="$TMP/bin" init_project_config "$local_project" > "$TMP/out"
-        expected=$'# Additional project paths mounted read-only inside the sandbox.\nREADONLY_PATHS=\n# Add selected suggestions comma-separated to the single READONLY_PATHS assignment.\n# .env\n# .git/hooks\n# .git/config\n# AGENTS.md\n# CLAUDE.md\n# .github/workflows'
-        [[ $(cat "$local_project/jailbox.conf") == "$expected" ]] || fail 'suggestion order or template'
+        expected=$(cat "$local_project/jailbox.conf")
+        suggestions=$(grep -E '^# (\.env|\.git/hooks|\.git/config|AGENTS.md|CLAUDE.md|\.github/workflows)$' "$local_project/jailbox.conf")
+        [[ $suggestions == $'# .env\n# .git/hooks\n# .git/config\n# AGENTS.md\n# CLAUDE.md\n# .github/workflows' ]] || fail 'suggestion order'
         [[ $(LC_ALL=C ls -l "$local_project/jailbox.conf") == -rw-------* ]] || fail 'private file mode'
-        load_file_policy "$local_project"
-        [[ ${#FRONTEND_VALUES[@]} == 1 && -z ${FRONTEND_VALUES[READONLY_PATHS]} ]] || fail 'suggestions changed effective policy'
+        check_template_defaults "$local_project/jailbox.conf"
         # Enabling suggestions edits one assignment, with no duplicate keys.
         sed 's/^READONLY_PATHS=$/READONLY_PATHS=AGENTS.md,CLAUDE.md/' "$local_project/jailbox.conf" > "$local_project/selected.conf"
         load_file_policy "$local_project" "$local_project/selected.conf"
@@ -54,7 +72,36 @@ for mode in 0022 0002; do
         empty=$TMP/empty-$mode
         mkdir "$empty"
         init_project_config "$empty" > "$TMP/out"
-        [[ $(wc -l < "$empty/jailbox.conf") == 3 ]] || fail 'absent suggestion stubs'
+        check_template_defaults "$empty/jailbox.conf"
+        if grep -Eq '^# (\.env|\.git/hooks|\.git/config|AGENTS.md|CLAUDE.md|\.github/workflows)$' "$empty/jailbox.conf"; then
+            fail 'absent suggestion stubs'
+        fi
+    )
+done
+
+# The template contract test must catch new declarations and changed defaults.
+for category in scalar array frontend; do
+    (
+        case "$category" in
+            scalar) CONFIG_SCALAR_KEYS+=(SAMPLE); CONFIG_DEFAULTS+=(SAMPLE=) ;;
+            array) CONFIG_ARRAY_KEYS+=(SAMPLE); CONFIG_DEFAULTS+=(SAMPLE=) ;;
+            frontend) FRONTEND_SCALAR_KEYS+=(SAMPLE); FRONTEND_DEFAULTS+=(SAMPLE=) ;;
+        esac
+        if (check_template_defaults "$TEMPLATE") > "$TMP/out" 2> "$TMP/err"; then fail "omitted $category key"; fi
+        grep -Fq "template settings: missing mapping 'SAMPLE'" "$TMP/err"
+    )
+done
+for key in MEMORY_LIMIT EDITOR; do
+    (
+        if [[ $key == EDITOR ]]; then
+            FRONTEND_DEFAULTS=(EDITOR=code)
+        else
+            for index in "${!CONFIG_DEFAULTS[@]}"; do
+                [[ ${CONFIG_DEFAULTS[index]} != MEMORY_LIMIT=* ]] || CONFIG_DEFAULTS[index]=MEMORY_LIMIT=8g
+            done
+        fi
+        if (check_template_defaults "$TEMPLATE") > "$TMP/out" 2> "$TMP/err"; then fail "missed changed $key default"; fi
+        grep -Fq "wrong default for $key" "$TMP/err"
     )
 done
 
@@ -74,9 +121,12 @@ publication_failures() (
         [[ $fault != allocated ]] || return 42
     }
     # shellcheck disable=SC2329
-    write_init_template() {
-        printf 'READONLY_PATHS=\n' || return $?
-        [[ $fault != write ]] || return 42
+    cat() {
+        if [[ $fault == write && ${2:-} == */jailbox.conf.template ]]; then
+            printf 'partial\n' || return $?
+            return 42
+        fi
+        command cat "$@"
     }
     # shellcheck disable=SC2329
     ln() {

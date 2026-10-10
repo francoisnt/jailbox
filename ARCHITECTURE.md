@@ -200,7 +200,8 @@ Explicit file validation uses the same headless composition and calls
 core `validate`; `jailbox --config jailbox.conf validate` checks the default
 file. Plain `jailbox validate` remains environment-only. `validate` checks
 configuration and local inputs; it does not prove an image builds, an editor is
-ready, or a sandbox is healthy. `init` only publishes a minimal config
+ready, or a sandbox is healthy. `init` copies a shipped template of all settings
+and their defaults, then appends project-specific protection suggestions,
 without overwriting an existing destination. Its protection suggestions are
 comments, not enabled policy.
 

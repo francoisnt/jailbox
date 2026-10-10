@@ -1,0 +1,40 @@
+# Use an existing development image.
+DEV_IMAGE=
+
+# OR build a development image.
+# Empty discovers Containerfile or Dockerfile automatically.
+DEV_CONTAINERFILE=
+# Empty uses the project root.
+DEV_BUILD_CONTEXT=
+# Empty builds the final stage.
+DEV_TARGET_STAGE=
+
+# Resource limits
+MEMORY_LIMIT=4g
+CPU_LIMIT=2
+PIDS_LIMIT=256
+
+# Keep home files between sandbox generations.
+EPHEMERAL_HOME=false
+
+# Empty prefers codium when available, otherwise code.
+# Accepted values: codium, code.
+EDITOR=
+
+# Comma-separated existing paths, relative to the project root.
+# jailbox.conf and the selected Containerfile are protected automatically.
+READONLY_PATHS=
+
+# Non-empty makes the project read-only except for these paths.
+WRITABLE_PATHS=
+
+# Hide file or directory contents inside the running sandbox.
+# This does not exclude them from image builds.
+HIDDEN_PATHS=
+
+# Empty permits unrestricted networking.
+# Non-empty restricts outbound HTTP(S) through the allowlisting proxy.
+# Use comma-separated domains required by your tools and services.
+EGRESS_ALLOW=
+
+# Add selected suggestions comma-separated to the single READONLY_PATHS assignment.
