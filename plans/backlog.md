@@ -413,34 +413,30 @@ authority. It remains outside the current numbered implementation sequence.
 
 ### KVM-backed development runtime
 
-Investigate an optional VM-backed OCI runtime that gives the development
-workload a guest kernel while preserving jailbox's Podman-oriented lifecycle.
-The closest current candidate is libkrun through Podman's
-`--runtime=krun`, but availability and behavior must be verified rather than
-assuming the flag is a drop-in isolation upgrade.
+Optional krun support, host namespace confinement, compatibility, and complete
+gate verification now belong to `10-krun-namespace-isolation-plan.md`. Ordinary
+execution remains independent of krun and KVM.
+An additional opt-in for a guest-local Podman engine belongs to
+`11-nested-podman-plan.md`, following plan 10's host/guest isolation probe.
 
-The investigation must cover:
+Other VM-backed runtimes and a private VM filesystem with controlled Git
+patch/commit export remain future investigations. The separately managed VM
+enclosure above retains its own scope.
 
-- supported Linux distributions, architectures, hardware virtualization, KVM
-  access, rootless operation, and installation burden;
-- ordinary OCI development images and the jailbox wrapper build;
-- project binds, nested read-only/writable overlays, named home storage,
-  ownership, `--read-only`, and tmpfs behavior through the VM file-sharing
-  layer;
-- SSH port forwarding, Podman networks, the egress proxy sidecar, and lifecycle
-  inspection/removal;
-- resource limits and the meaning of existing capability, seccomp,
-  `no-new-privileges`, and SELinux options under the alternate runtime;
-- explicit failure when the requested runtime or KVM is unavailable, with no
-  silent fallback to the ordinary host-kernel runtime; and
-- whether a private VM filesystem plus controlled Git patch/commit export would
-  provide a stronger and simpler boundary than sharing the live host checkout.
+### Eventual macOS VM support
 
-Do not make `krun`, Kata Containers, `crun-vm`, or another alternate runtime a
-prerequisite for the numbered implementation sequence. If an experimental
-runtime setting is later added, include it in the configuration digest and run
-jailbox's complete portable, runtime, and editor gates for each supported
-mode.
+Support macOS eventually with a verified VM boundary. Investigate libkrun as
+the provider of the Mac's Podman Linux VM, with jailbox containers inside it,
+without requiring another VM inside that guest. This is a product goal;
+the implementation design and supported Mac architectures remain unverified.
+Plan 10 remains Linux-only, and Mac runtime testing is currently unavailable.
+
+Define VM ownership and lifetime, authorized Mac file shares, and network
+restrictions enforced outside guest control. Verify that a compromised guest
+cannot bypass protected or hidden Mac paths or promised egress restrictions.
+Record actual Mac hardware and software versions and run all four gates,
+including both editors, before claiming support; portable checks alone do not
+establish Mac runtime compatibility.
 
 ## Developer experience
 
