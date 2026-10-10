@@ -13,10 +13,7 @@ cleanup_init_config() {
 
 write_init_template() {
     local project=$1 candidate
-    printf '%s\n' \
-        '# Additional project paths mounted read-only inside the sandbox.' \
-        'READONLY_PATHS=' \
-        '# Add selected suggestions comma-separated to the single READONLY_PATHS assignment.' || return $?
+    cat -- "${BASH_SOURCE[0]%/*}/jailbox.conf.template" || return $?
     # Existence only: never open candidate contents (in particular .env).
     for candidate in .env .git/hooks .git/config AGENTS.md CLAUDE.md .github/workflows; do
         if [[ -e "$project/$candidate" ]]; then
