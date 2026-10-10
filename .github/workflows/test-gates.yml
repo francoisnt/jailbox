@@ -98,7 +98,7 @@ jobs:
       - name: Restore successful ShellCheck
         id: shellcheck-cache
         if: steps.shellcheck-inputs.outputs.key != ''
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         continue-on-error: true
         with:
           path: testlog/shellcheck-cache/success
@@ -113,7 +113,7 @@ jobs:
       # ShellCheck success is reusable even if a later portable suite fails.
       - name: Save successful ShellCheck
         if: ${{ !cancelled() && steps.shellcheck-inputs.outputs.key != '' && steps.shellcheck-cache.outputs.cache-hit != 'true' && hashFiles('testlog/shellcheck-cache/success') != '' }}
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         continue-on-error: true
         with:
           path: testlog/shellcheck-cache/success
