@@ -91,6 +91,15 @@ cp "$dist/install.sh" "$tmp/original-installer"
 printf '\n# different standalone installer\n' >> "$dist/install.sh"
 reject_artifact
 cp "$tmp/original-installer" "$dist/install.sh"
+# Matching installers with missing or incorrect pins must also be rejected.
+for pin in '' v1.2.4; do
+    sed "s/^RELEASE_VERSION=.*/RELEASE_VERSION=\"$pin\"/" "$tmp/original-installer" > "$dist/install.sh"
+    cp "$dist/install.sh" "$tree/install.sh"
+    reject_artifact
+    grep -Fq 'release installer pin differs' "$tmp/err"
+done
+cp "$tmp/original-installer" "$dist/install.sh"
+cp "$tmp/original-installer" "$tree/install.sh"
 repack
 bash "$ROOT/scripts/validate-release.sh" v1.2.3 "$dist"
 printf 'bad\n' > "$dist/SHA256SUMS"

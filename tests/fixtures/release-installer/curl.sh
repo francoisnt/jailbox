@@ -6,6 +6,8 @@ printf '%s\n' "$2" >> "$INSTALLER_REQUESTS"
 case "$2" in
     https://github.com/francoisnt/jailbox/releases/latest/download/*)
         assets=$INSTALLER_ASSETS ;;
+    https://github.com/francoisnt/jailbox/releases/download/v9.8.8/*)
+        assets=$INSTALLER_ASSETS ;;
     https://github.com/francoisnt/jailbox/releases/download/v9.8.7/*)
         assets=$INSTALLER_PINNED_ASSETS ;;
     *) printf 'Unexpected installer request\n' >&2; exit 1 ;;

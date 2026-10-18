@@ -426,6 +426,9 @@ test failure or unfinished run remains. Otherwise, it runs fresh gates.
 It always builds and validates the final archive's stamp and `--version` output
 against the selected version before creating the release tag. It publishes those same validated
 archive bytes, the identical `latest` alias, `install.sh`, and their checksums.
-The standalone installer is an unchanged copy of `src/install.sh`, identical to
-the archive's installer. Streamed installation downloads the latest release by
-default; `JAILBOX_RELEASE_BASE_URL` can select a fixed release instead.
+Packaging stamps `src/install.sh` with the selected release version. The
+standalone installer and the archive’s installer are identical and download
+assets from that fixed release by default. The README’s latest URL selects the
+installer; later releases do not change its download target. Unstamped source
+streams default to latest; local checkout and extracted-bundle installs use
+the local files. `JAILBOX_RELEASE_BASE_URL` remains an explicit override.

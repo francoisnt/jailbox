@@ -27,6 +27,8 @@ done
 tar -xzf "$dist_dir/$name.tar.gz" -C "$tmp"
 bash -n "$dist_dir/install.sh" || die 'release installer has invalid syntax'
 cmp -s "$dist_dir/install.sh" "$tmp/$name/install.sh" || die 'release installers differ'
+[[ $(grep '^RELEASE_VERSION=' "$dist_dir/install.sh") == "RELEASE_VERSION=\"$version\"" ]] || \
+    die 'release installer pin differs from selected version'
 [[ -f "$tmp/$name/VERSION" && ! -L "$tmp/$name/VERSION" ]] || die 'release stamp is missing or invalid'
 printf '%s\n' "${version#v}" > "$tmp/expected"
 cmp -s "$tmp/expected" "$tmp/$name/VERSION" || die 'release stamp differs from selected version'

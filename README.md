@@ -43,8 +43,10 @@ only; real container and editor behavior on Mac remains unverified.**
 curl -fsSL https://github.com/francoisnt/jailbox/releases/latest/download/install.sh | bash
 ```
 
-The installer comes from a published release and downloads the latest release
-archive, checking its SHA-256 checksum before installation.
+The URL selects the latest published installer, which downloads its matching
+release archive and checks its SHA-256 checksum before installation. To install
+a specific release, replace `latest/download` in the URL with
+`download/vX.Y.Z` (using the desired version).
 
 ### 3. Launch your project
 

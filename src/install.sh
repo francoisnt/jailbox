@@ -13,7 +13,14 @@ if [ -n "$SOURCE_FILE" ]; then
 else
     SOURCE_DIR="$(pwd)"
 fi
-RELEASE_BASE_URL="${JAILBOX_RELEASE_BASE_URL:-https://github.com/francoisnt/jailbox/releases/latest/download}"
+# Packaging stamps the published installer; unstamped source streams use latest.
+RELEASE_VERSION=""
+if [ -n "$RELEASE_VERSION" ]; then
+    RELEASE_BASE_URL="https://github.com/francoisnt/jailbox/releases/download/$RELEASE_VERSION"
+else
+    RELEASE_BASE_URL="https://github.com/francoisnt/jailbox/releases/latest/download"
+fi
+RELEASE_BASE_URL="${JAILBOX_RELEASE_BASE_URL:-$RELEASE_BASE_URL}"
 RELEASE_TMP_DIR=""
 
 if [ -n "${JAILBOX_INSTALL_DIR:-}" ]; then
