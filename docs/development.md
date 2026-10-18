@@ -156,6 +156,13 @@ Containerfile build settings. The path-protection section starts with:
 READONLY_PATHS=
 ```
 
+When neither the project root nor `.devcontainer` contains a Containerfile or
+Dockerfile, `init` also creates a Debian Containerfile with Git, curl, and
+certificates. Add language runtimes and other project tools to its package list,
+or set `DEV_IMAGE` to use a prebuilt image instead. Existing build paths, including
+symlinks, are left untouched. Both new files are prepared before publication;
+a publication failure removes files created by that invocation.
+
 `init` refuses to overwrite any existing file or other filesystem object and
 requires neither Podman nor an absent sandbox. It suggests existing `.env`,
 `.git/hooks`, `.git/config`, `AGENTS.md`, `CLAUDE.md`, and `.github/workflows`
