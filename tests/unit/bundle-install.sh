@@ -35,7 +35,7 @@ cmp "$ROOT/LICENSE" "$JAILBOX_INSTALL_DIR/LICENSE"
 # Source checkout installation includes the same guides.
 diff -r "$ROOT/docs" "$JAILBOX_INSTALL_DIR/docs"
 # Save an older published installer, then advance the latest release assets.
-# Streaming that saved script must install latest even from a local source bundle.
+# Streaming that saved script must retain its release even from a local source bundle.
 mkdir "$tmp/download-tools"
 cp "$ROOT/tests/fixtures/release-installer/curl.sh" "$tmp/download-tools/curl"
 chmod 755 "$tmp/download-tools/curl"
@@ -43,20 +43,29 @@ cp -R "$tmp/source/dist" "$tmp/older-release"
 export INSTALLER_PINNED_ASSETS="$tmp/older-release"
 export INSTALLER_ASSETS="$tmp/source/dist" INSTALLER_REQUESTS="$tmp/requests"
 bash "$tmp/source/scripts/build-tarball.sh" v9.8.8 > "$tmp/build.log" 2>&1
-cmp "$ROOT/src/install.sh" "$INSTALLER_ASSETS/install.sh"
+grep -Fxq 'RELEASE_VERSION=""' "$tmp/source/src/install.sh"
+cmp "$bundle/install.sh" "$INSTALLER_PINNED_ASSETS/install.sh"
 unset JAILBOX_RELEASE_BASE_URL
 for mask in 0022 0002; do
     : > "$INSTALLER_REQUESTS"
     (cd "$tmp/source/src"; umask "$mask"
         cat "$INSTALLER_PINNED_ASSETS/install.sh" | PATH="$tmp/download-tools:$PATH" "$installer_bash" > "$tmp/install.log" 2>&1)
-    [[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.8' ]]
-    cmp "$INSTALLER_ASSETS/install.sh" "$JAILBOX_INSTALL_DIR/install.sh"
+    [[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.7' ]]
+    cmp "$INSTALLER_PINNED_ASSETS/install.sh" "$JAILBOX_INSTALL_DIR/install.sh"
     diff -r "$ROOT/docs" "$JAILBOX_INSTALL_DIR/docs"
     printf '%s\n' \
-        'https://github.com/francoisnt/jailbox/releases/latest/download/jailbox-latest.tar.gz' \
-        'https://github.com/francoisnt/jailbox/releases/latest/download/SHA256SUMS' > "$tmp/expected-requests"
+        'https://github.com/francoisnt/jailbox/releases/download/v9.8.7/jailbox-latest.tar.gz' \
+        'https://github.com/francoisnt/jailbox/releases/download/v9.8.7/SHA256SUMS' > "$tmp/expected-requests"
     cmp "$tmp/expected-requests" "$INSTALLER_REQUESTS"
 done
+# A newly fetched installer selects its own newer release.
+: > "$INSTALLER_REQUESTS"
+cat "$INSTALLER_ASSETS/install.sh" | PATH="$tmp/download-tools:$PATH" "$installer_bash" > "$tmp/install.log" 2>&1
+[[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.8' ]]
+printf '%s\n' \
+    'https://github.com/francoisnt/jailbox/releases/download/v9.8.8/jailbox-latest.tar.gz' \
+    'https://github.com/francoisnt/jailbox/releases/download/v9.8.8/SHA256SUMS' > "$tmp/expected-requests"
+cmp "$tmp/expected-requests" "$INSTALLER_REQUESTS"
 # A corrupt download must fail before replacing the installed release.
 printf 'corrupt\n' >> "$INSTALLER_ASSETS/jailbox-latest.tar.gz"
 if cat "$INSTALLER_ASSETS/install.sh" | PATH="$tmp/download-tools:$PATH" "$installer_bash" > "$tmp/install.log" 2>&1; then exit 1; fi

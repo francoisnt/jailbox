@@ -64,6 +64,8 @@ for path in "${RELEASE_PATHS[@]}"; do
 done
 
 printf '%s\n' "${version#v}" > "$stage_dir/VERSION"
+sed "s/^RELEASE_VERSION=\"\"$/RELEASE_VERSION=\"$version\"/" \
+    "$ROOT_DIR/src/install.sh" > "$stage_dir/install.sh"
 # Ensure entry-point scripts remain executable after copying into the stage dir.
 chmod 755 "$stage_dir/jailbox" "$stage_dir/install.sh"
 chmod 755 "$stage_dir"/container/*.sh
