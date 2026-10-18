@@ -170,6 +170,20 @@ for example `matrix/lifecycle/worker-1/running.up/`.
 run directory; `tests/run` groups all four gates there. Direct integration
 scripts also create dated run directories. Existing logs are not moved.
 
+Editor runs retain each launch's stdout/stderr and native trace logs under
+`editor/editor/<stage>.host-editor/launch.*/` in that run directory. The stage
+log records graceful and forced shutdowns, remaining process IDs, and attachment
+timeouts. A new launch waits for the previous editor processes to exit.
+On a Linux host with Podman, VSCodium, Remote SSH, and a display (or Xvfb), rerun
+only the Alpine scenario with:
+
+```bash
+tests/integration/wrapper-images.sh --prepare-only alpine
+JAILBOX_EDITOR=codium tests/e2e/editor-smoke.sh alpine
+```
+
+This is partial editor coverage, not a passing full editor gate.
+
 The portable lint driver (`scripts/lint.sh`) shows a single updating terminal
 progress line, occasional progress snapshots
 in redirected output, and grouped diagnostics. Detailed batch timings and output

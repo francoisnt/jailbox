@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2030,SC2031 # Launch scenarios isolate their environment.
 # Test-only preferences must be seeded after up and before real editor launch.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
@@ -68,8 +69,8 @@ EXT_ACTIVATION_MARKER=activated EDITOR_TIMEOUT=1
 touch "$tmp/project/$EXT_ACTIVATION_MARKER"
 : > "$SMOKE_TRACE"
 activate_proof_extension "$tmp/project" test-host
-printf '%s\0' --user-data-dir "$tmp/profile with spaces" --new-window \
-    --disable-workspace-trust --remote ssh-remote+test-host /home/jailbox/project > "$tmp/expected-argv"
+printf '%s\0' --disable-workspace-trust --user-data-dir "$tmp/profile with spaces" --new-window \
+    --remote ssh-remote+test-host /home/jailbox/project > "$tmp/expected-argv"
 cmp "$tmp/expected-argv" "$SMOKE_TRACE.argv"
 [[ "$(cat "$SMOKE_TRACE")" = $'editor\nready' ]]
 : > "$SMOKE_TRACE"
@@ -92,7 +93,10 @@ JAILBOX_DIR=$ROOT
 # shellcheck source=tests/lib/editor/workflows.sh
 source "$ROOT/tests/lib/editor/workflows.sh"
 PROOF_FILE=proof EXT_ACTIVATION_MARKER=activated EXT_TASK_RESULT=task-result
-cleanup_editor_workspace() { printf 'close\n' >> "$SMOKE_TRACE"; }
+cleanup_editor_workspace() {
+    printf 'close\n' >> "$SMOKE_TRACE"
+    return "${SMOKE_CLEANUP_STATUS:-0}"
+}
 podman() { [[ $* == 'stop test-host' ]] || return 91; printf 'stop\n' >> "$SMOKE_TRACE"; }
 editor_public_launch() {
     [[ ! -e "$1/$PROOF_FILE" && ! -e "$1/$EXT_ACTIVATION_MARKER" && ! -e "$1/$EXT_TASK_RESULT" && ! -e "$1/.jailbox-editor-settings.json" ]] || return 90
@@ -118,6 +122,12 @@ done
 export SMOKE_LAUNCH_STATUS=25
 if editor_reopen "$tmp/project" egress test-host reopen; then exit 1; fi
 [[ $(cat "$SMOKE_TRACE") == $'close\npublic-launch' ]]
+unset SMOKE_LAUNCH_STATUS
+: > "$SMOKE_TRACE"
+SMOKE_CLEANUP_STATUS=1
+if editor_reopen "$tmp/project" egress test-host resume; then exit 1; fi
+[[ $(cat "$SMOKE_TRACE") == close ]]
+unset SMOKE_CLEANUP_STATUS
 printf 'PASS: public reopen/resume requires fresh task proof and propagates launch failure\n'
 
 # Switching policy preserves the selected fixture image rather than assuming
@@ -156,3 +166,36 @@ for NETWORK_EXISTS_STATUS in 0 125; do
     grep -q 'inspect failed' "$tmp/network-error"
 done
 printf 'PASS: collision fixture isolates diagnostics and tolerates only confirmed disappearance\n'
+
+# Capture every real launch separately, including a failure before editor logs
+# exist, while preserving arguments and exit status. Discovery stays unmodified.
+(
+    export JAILBOX_TEST_EDITOR_LOG_DIR="$tmp/editor logs"
+    export JAILBOX_TEST_SEED_SETTINGS=0
+    # shellcheck disable=SC2329 # Exported into the editor fixture subprocess.
+    fake_editor() {
+        printf '%s\0' "$@" > "$SMOKE_TRACE.argv"
+        printf 'editor stdout\n'
+        printf 'editor stderr\n' >&2
+        return "${SMOKE_EDITOR_STATUS:-0}"
+    }
+    export -f fake_editor
+    for result in 0 24; do
+        export SMOKE_EDITOR_STATUS=$result
+        status=0
+        bash "$wrapper" --folder-uri 'target with spaces' > "$tmp/launch-output" || status=$?
+        [[ $status == "$result" ]]
+    done
+    mapfile -t captures < <(find "$JAILBOX_TEST_EDITOR_LOG_DIR" -name launcher.log)
+    [[ ${#captures[@]} == 2 ]]
+    for capture in "${captures[@]}"; do
+        grep -Fxq 'editor stdout' "$capture"
+        grep -Fxq 'editor stderr' "$capture"
+    done
+    # Last invocation still forwards the exact target after diagnostic options.
+    mapfile -d '' -t args < "$SMOKE_TRACE.argv"
+    [[ ${args[0]} == --log && ${args[1]} == trace && ${args[2]} == --logsPath ]]
+    [[ -d ${args[3]} && ${args[4]} == --disable-workspace-trust ]]
+    [[ ${args[5]} == --folder-uri && ${args[6]} == 'target with spaces' ]]
+)
+printf 'PASS: separate editor launch captures retain output and failure status\n'
