@@ -342,6 +342,15 @@ it happens.
 
 ## Plan authoring
 
+- A request to write a plan authorizes recording the agreed design, not
+  silently settling additional design choices. Before adding requirements for
+  configuration locations, public interfaces, trust restrictions, execution
+  behavior, or other consequential details that the discussion has not settled,
+  explain the concrete need and tradeoff in plain language and obtain agreement
+  from the user or another human developer responsible for the work. Present
+  choices for approval outside the plan; do not write an unapproved choice as
+  settled intent or hide it in implementation guidance. Leave routine internal
+  mechanisms to the implementer when they do not change the agreed contract.
 - Keep plans as short as possible, close to a concise summary when the task
   allows it. State each requirement once. Add detail only when needed to define
   behavior, constraints, acceptance criteria, or changes to existing code that
