@@ -523,8 +523,8 @@ terminate_editor_profile() {
     local project_dir="$1"
     local user_data pids pid
 
-    user_data=$(jailbox_editor_user_data "$project_dir")
-    pids=$(editor_profile_pids "$user_data")
+    user_data=$(jailbox_editor_user_data "$project_dir") || return 1
+    pids=$(editor_profile_pids "$user_data") || return 1
     [[ -n "$pids" ]] || return 0
 
     # ps lists parents before children, so the main process is killed first.
@@ -539,22 +539,37 @@ terminate_editor_profile() {
 # the instance to actually exit before falling back to a forced kill, so the
 # graceful path is the norm rather than a race against a fixed sleep.
 cleanup_editor_workspace() {
-    local project_dir="$1"
-    local ctr="$2"
-    local user_data deadline
+    local project_dir="$1" ctr="$2" user_data deadline pids
 
-    user_data=$(jailbox_editor_user_data "$project_dir")
-
-    [[ -n "$(editor_profile_pids "$user_data")" ]] || return 0
-    close_editor_workspace "$project_dir" "$ctr"
+    user_data=$(jailbox_editor_user_data "$project_dir") || return 1
+    pids=$(editor_profile_pids "$user_data") || return 1
+    [[ -n "$pids" ]] || return 0
+    printf '  Closing editor processes: %s\n' "${pids//$'\n'/ }"
+    close_editor_workspace "$project_dir" "$ctr" || return 1
 
     deadline=$((SECONDS + 10))
     while (( SECONDS < deadline )); do
-        [[ -z "$(editor_profile_pids "$user_data")" ]] && return 0
+        pids=$(editor_profile_pids "$user_data") || return 1
+        if [[ -z "$pids" ]]; then
+            echo '  Editor processes exited after close request'
+            return 0
+        fi
         sleep 0.5
     done
 
-    terminate_editor_profile "$project_dir"
+    printf '  Forcing editor shutdown; remaining processes: %s\n' "${pids//$'\n'/ }"
+    terminate_editor_profile "$project_dir" || return 1
+    deadline=$((SECONDS + 10))
+    while (( SECONDS < deadline )); do
+        pids=$(editor_profile_pids "$user_data") || return 1
+        if [[ -z "$pids" ]]; then
+            echo '  Editor processes exited after forced shutdown'
+            return 0
+        fi
+        sleep 0.5
+    done
+    printf '  Editor shutdown incomplete; remaining processes: %s\n' "${pids//$'\n'/ }" >&2
+    return 1
 }
 
 remote_editor_connections() {
@@ -594,6 +609,7 @@ wait_for_remote_editor_ready() {
         sleep 1
     done
 
+    echo "  No fresh remote editor connection within ${timeout}s" >&2
     return 1
 }
 
@@ -631,11 +647,11 @@ activate_proof_extension() {
     marker="$project_dir/$EXT_ACTIVATION_MARKER"
     baseline=$(snapshot_remote_editor_connections "$project_dir" "$ctr") || return 1
     # The initial-launch wrapper's trust flag does not persist across processes.
-    "$bin" --user-data-dir "$user_data" \
-        --new-window \
-        --disable-workspace-trust \
+    JAILBOX_TEST_EDITOR_REAL="$bin" JAILBOX_TEST_SEED_SETTINGS=0 \
+        bash "$JAILBOX_DIR/tests/fixtures/editor-smoke/editor.sh" \
+        --user-data-dir "$user_data" --new-window \
         --remote "ssh-remote+$ctr" \
-        /home/jailbox/project >/dev/null 2>&1 || return 1
+        /home/jailbox/project || return 1
     echo "  Waiting up to ${EDITOR_TIMEOUT}s for the fresh window to attach..."
     wait_for_remote_editor_ready "$project_dir" "$ctr" "$EDITOR_TIMEOUT" "$baseline" || {
         echo "  Fresh editor window did not attach before the deadline" >&2
@@ -793,6 +809,15 @@ collect_failure_diagnostics() {
     done
 
     echo ""
+    echo "  Captured editor launch logs:"
+    if [[ -n ${JAILBOX_TEST_EDITOR_LOG_DIR:-} && -d $JAILBOX_TEST_EDITOR_LOG_DIR ]]; then
+        find "$JAILBOX_TEST_EDITOR_LOG_DIR" -maxdepth 6 -type f \
+            \( -name '*.log' -o -name '*.txt' \) \
+            -print -exec tail -80 {} \; 2>&1 | sed 's/^/    /' || true
+    else
+        echo '    (missing)'
+    fi
+    echo ""
     echo "  Host editor profile logs:"
     echo "    Profile: $user_data"
     if [[ -d "$user_data/logs" ]]; then
@@ -914,6 +939,7 @@ run_stage() {
 
     test_phase_begin fixture || return 1
     project_dir=$(test_fixture_project "/tmp/jailbox-editor-$stage" "$LOG_DIR/ports") || return 1
+    export JAILBOX_TEST_EDITOR_LOG_DIR="$LOG_DIR/$stage.host-editor"
     # Before anything can create them, and outside the fixture directory.
     ledger_record_project_resources "$project_dir" || die "could not record this stage's resources"
     ctr=$(jailbox_container_name "$project_dir")

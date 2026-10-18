@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2030,SC2031 # Each scenario intentionally isolates its clock.
 # Exercise editor lifecycle guards without a display or remote server.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
@@ -14,6 +15,32 @@ close_editor_workspace() { fail 'cleanup launched an absent editor'; }
 terminate_editor_profile() { fail 'cleanup tried to kill an absent editor'; }
 cleanup_editor_workspace /test/project sandbox
 cleanup_editor_workspace /test/project sandbox
+
+# A forced shutdown must finish before another window can be launched. Failed
+# process inspection is an error, never proof that the editor has exited.
+# shellcheck disable=SC2329 # Stubs are called by the sourced cleanup function.
+(
+    sleep() { SECONDS=$((SECONDS + 1)); }
+    close_editor_workspace() { closed=1; }
+    terminate_editor_profile() { forced=1; exit_at=$((SECONDS + 2)); }
+    editor_profile_pids() {
+        [[ $scenario != inspection ]] || return 27
+        if [[ $scenario == graceful && $closed == 1 ]]; then return 0; fi
+        if [[ $scenario == forced && $forced == 1 && $SECONDS -ge $exit_at ]]; then return 0; fi
+        printf '101\n102\n'
+    }
+    for scenario in graceful forced stuck inspection; do
+        closed=0 forced=0 exit_at=0
+        status=0
+        cleanup_editor_workspace /test/project sandbox || status=$?
+        case $scenario in
+            graceful) [[ $status == 0 && $forced == 0 ]] ;;
+            forced) [[ $status == 0 && $forced == 1 && $SECONDS -ge $exit_at ]] ;;
+            stuck) [[ $status != 0 && $forced == 1 ]] ;;
+            inspection) [[ $status != 0 && $closed == 0 && $forced == 0 ]] ;;
+        esac
+    done
+)
 
 # Advance the polling deadline without sleeping. Old records, even after log
 # rotation removes some of them, must never count as a fresh connection.
