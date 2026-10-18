@@ -55,13 +55,16 @@ jailbox
 ```
 
 `init` creates a commented `jailbox.conf` with every setting and its default,
-without overwriting an existing path.
+without overwriting an existing path. If neither the project root nor
+`.devcontainer` contains a Containerfile or Dockerfile, it also creates a basic
+Debian `Containerfile` with Git, curl, and certificates. Add your project’s
+tools there before launching.
 jailbox builds or selects your development image, starts the container, and
 opens the project through Remote SSH. Use the editor's integrated terminal to
 run your tools inside the container. Subsequent launches reuse a compatible,
 healthy sandbox.
 
-No Containerfile? Add `DEV_IMAGE=node:22-bookworm` to `jailbox.conf` for a Node.js
+Prefer a prebuilt image? Set `DEV_IMAGE=node:22-bookworm` in `jailbox.conf` for a Node.js
 development image, or select another [compatible image](docs/development.md#project-image-requirements).
 
 **By default, the container can edit project files and access the internet.**

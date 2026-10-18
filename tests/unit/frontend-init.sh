@@ -50,6 +50,8 @@ for mode in 0022 0002; do
         [[ $suggestions == $'# .env\n# .git/hooks\n# .git/config\n# AGENTS.md\n# CLAUDE.md\n# .github/workflows' ]] || fail 'suggestion order'
         [[ $(LC_ALL=C ls -l "$local_project/jailbox.conf") == -rw-------* ]] || fail 'private file mode'
         check_template_defaults "$local_project/jailbox.conf"
+        cmp "$ROOT/src/host/frontend/Containerfile.template" "$local_project/Containerfile"
+        [[ $(LC_ALL=C ls -l "$local_project/Containerfile") == -rw-------* ]] || fail 'private Containerfile mode'
         # Enabling suggestions edits one assignment, with no duplicate keys.
         sed 's/^READONLY_PATHS=$/READONLY_PATHS=AGENTS.md,CLAUDE.md/' "$local_project/jailbox.conf" > "$local_project/selected.conf"
         load_file_policy "$local_project" "$local_project/selected.conf"
@@ -78,6 +80,45 @@ for mode in 0022 0002; do
         fi
     )
 done
+
+# Preserve every automatically discovered build-file path, including dangling
+# links and non-files, without masking an invalid existing choice.
+for candidate in Containerfile Dockerfile .devcontainer/Containerfile .devcontainer/Dockerfile; do
+    for kind in file symlink directory; do
+        project=$TMP/existing-${candidate//\//-}-$kind
+        mkdir -p "$project/.devcontainer"
+        case $kind in
+            file) printf 'original\n' > "$project/$candidate" ;;
+            symlink) ln -s absent "$project/$candidate" ;;
+            directory) mkdir "$project/$candidate" ;;
+        esac
+        init_project_config "$project" > "$TMP/out"
+        [[ $candidate == Containerfile || ! -e $project/Containerfile ]] || fail 'shadowed build file'
+        case $kind in
+            file) [[ $(cat "$project/$candidate") == original ]] ;;
+            symlink) [[ -L $project/$candidate ]] ;;
+            directory) [[ -d $project/$candidate ]] ;;
+        esac
+    done
+done
+
+# Failure publishing the second file rolls back only our new configuration.
+(
+    project=$TMP/containerfile-failure
+    mkdir "$project"
+    # shellcheck disable=SC2329
+    ln() {
+        if [[ ${3:-} == */Containerfile ]]; then
+            printf 'concurrent writer\n' > "$project/Containerfile"
+            return 43
+        fi
+        command ln "$@"
+    }
+    if init_project_config "$project" > "$TMP/out" 2> "$TMP/err"; then fail 'accepted Containerfile failure'; fi
+    [[ ! -e $project/jailbox.conf && ! -s $TMP/out ]]
+    [[ $(cat "$project/Containerfile") == 'concurrent writer' ]]
+    [[ -z $(find "$project" -name '.*.tmp.*' -print) ]]
+)
 
 # The template contract test must catch new declarations and changed defaults.
 for category in scalar array frontend; do

@@ -203,7 +203,9 @@ configuration and local inputs; it does not prove an image builds, an editor is
 ready, or a sandbox is healthy. `init` copies a shipped template of all settings
 and their defaults, then appends project-specific protection suggestions,
 without overwriting an existing destination. Its protection suggestions are
-comments, not enabled policy.
+comments, not enabled policy. When none of the four automatically discovered
+build-file paths exists, it also creates a minimal Debian Containerfile from a
+shipped template. Initialization does not build or pull an image.
 
 The init suggestions, in order, are `.env`, `.git/hooks`, `AGENTS.md`,
 `CLAUDE.md`, and `.github/workflows`, including only candidates that exist.

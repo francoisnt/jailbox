@@ -1,0 +1,10 @@
+# Basic development environment. Add your project's tools to the package list.
+FROM docker.io/library/debian:12
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+# jailbox adds SSH and mounts your project at launch; no COPY is needed.
