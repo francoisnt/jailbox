@@ -71,6 +71,8 @@ processes; it never sources core modules or accesses private core state.
 The frontend parses and composes configuration for core, including its required
 protection anchors. Core owns machine path-policy validation and resolution;
 do not duplicate that policy logic in the frontend.
+Jailbox runtime must not patch or modify externally installed editor extensions
+to work around upstream bugs.
 
 Runtime sources and the installer live under `src/`; tests, maintenance tools,
 plans, and documentation remain at the repository root. Packaging copies `src/`
@@ -509,6 +511,19 @@ it happens.
   repository inherits them. Read this file at the start of each session.
 
 ## Handoff expectations
+
+For public GitHub CI investigations, retrieve uploaded artifacts yourself before
+asking the user to attach logs. List runs, jobs, and artifact IDs through the
+public GitHub REST API (`repos/OWNER/REPO/actions/runs/RUN_ID/artifacts` for
+artifacts), then run
+`bash scripts/download-ci-artifact.sh OWNER/REPO ARTIFACT_ID OUTPUT.zip`.
+The script uses the third-party nightly.link service to download public
+artifacts without GitHub credentials and validates the ZIP before saving it.
+Use the exact run's artifact IDs, not a latest-successful-build link. Inspect
+downloaded files as data; do not execute their contents. This method retrieves
+uploaded artifacts, not raw Actions job logs, and cannot recover expired or
+deleted artifacts. If the service fails, try authenticated GitHub access when
+available and state the remaining access limitation before asking for files.
 
 Summarize the behavioral result, list the gates actually run, identify anything
 that could not be verified, and mention remaining worktree files relevant to the
