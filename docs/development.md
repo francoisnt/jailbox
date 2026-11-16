@@ -361,10 +361,10 @@ VS Code Remote SSH does not support Alpine SSH hosts; that combination is
 covered by VSCodium only.
 
 Remote extensions: `ms-vscode-remote.remote-ssh` 0.128.0
-(VS Code), `jeanp413.open-remote-ssh` 0.6.1 (VSCodium).
+(VS Code), `jeanp413.open-remote-ssh` 0.6.2 (VSCodium).
 VSCodium REH server: 1.143.17232 (commit `c072cf642cbbadabefa22f39c58cc902a8b7427f`).
 
-Last verified: 2026-11-11
+Last verified: 2026-11-16
 <!-- END GENERATED: tested-matrix -->
 
 Successful full test runs are listed in the
