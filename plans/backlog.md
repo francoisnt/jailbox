@@ -170,7 +170,7 @@ compare.
 ### New-home bootstrap
 
 `10-reproducible-home-setup-plan.md` owns new-home setup, optional opaque input
-from a user-selected host script, and an ephemeral-home default when setup is
+from a project-configured host script, and an ephemeral-home default when setup is
 configured, with explicit retention settings taking precedence. It supports
 both persistent and ephemeral new homes. Reapplying setup to existing homes
 and every-launch hooks remain outside that plan.

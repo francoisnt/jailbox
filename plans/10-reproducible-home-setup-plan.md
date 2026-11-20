@@ -31,12 +31,14 @@ tests. This plan is independently complete and does not depend on VM work.
   selected and `false` otherwise. Explicit `true` or `false` wins. Resolve this
   consistently for file and machine callers before digest calculation; an
   explicit value and the same inferred value have identical effective policy.
-  Empty or invalid explicit values retain strict validation.
+  Empty or invalid explicit values retain strict validation. If the inferred
+  ephemeral policy conflicts with an existing persistent home, explain that
+  setting `EPHEMERAL_HOME=false` retains it; describe `--clean` as a destructive
+  alternative.
 - Preserve recorded retention for existing homes. Adding a setup script must
-  not relabel a persistent home or make its contents disposable. Explain any
-  incompatible retention request and the existing recovery choices. Ephemeral
-  homes are removed on stop, not on every launch; rebuilding one is an explicit
-  user action.
+  not relabel a persistent home or make its contents disposable. Ephemeral homes
+  are removed on stop, not on every launch; rebuilding one is an explicit user
+  action.
 
 ### Optional host input
 
@@ -45,6 +47,11 @@ to project and machine configuration. Machine callers use
 `JAILBOX_CONFIG_SETUP_INPUT_SCRIPT`. Keep the provider and sandbox setup script
 in the project so their shared input format can be versioned together. Clearly
 document that the provider runs on the host with the invoking user's permissions.
+Apply the same path validation and automatic read-only protection as for
+`HOME_SETUP_SCRIPT`, including for direct machine callers. Explain that other
+project files the provider reads or executes may still be changed by the sandbox,
+and that the provider itself may have been writable before it was selected.
+Users should review it before selecting or changing it.
 
 Run the provider only when home setup will run, as the invoking host user,
 with no arguments and the project root as its working directory. The team is
@@ -72,7 +79,9 @@ Do not pass secret-manager session credentials into the sandbox implicitly.
 Core owns setup state tied to the home generation, stored outside the project
 and sandbox-controlled home. Record pending setup before executing user code;
 publish completion only after setup succeeds. Lost or inconsistent required
-records must not become permission to repeat setup or claim success.
+records must not become permission to repeat setup or claim success. Mark new
+homes at creation so they can be distinguished reliably from legacy homes and
+their setup records bound to the correct home generation.
 
 Provider failure, setup failure, or interruption fails launch and prevents
 editor attachment. Preserve the original error through cleanup. Apply existing
@@ -83,12 +92,11 @@ contents: users recreate an ephemeral home through stop/launch, or explicitly
 recover/delete a persistent home before starting again. Status and recovery
 commands remain available without valid setup inputs and never run scripts.
 
-Changing the script affects future initialization, not the contents of an
-already initialized home. Include the script's content identity in launch
-compatibility so changed launch inputs receive the existing stop/relaunch
-guidance; a retained completed home still does not rerun setup. Provider paths
-and payloads are not compatibility inputs: refreshing host input alone must
-not invalidate a running sandbox or publish secret-derived hashes.
+Changing either script's contents affects future initialization, not the
+contents of an already initialized home, and does not itself require a restart.
+Changing either script path triggers the usual stop-and-relaunch guidance.
+Provider payloads are not compatibility inputs: refreshing host input alone
+must not invalidate a running sandbox or publish secret-derived hashes.
 
 No every-launch hook, automatic refresh, periodic rebuilding, provider-specific
 integration, or new concurrency guarantee is included. Callers continue to
@@ -99,10 +107,12 @@ serialize lifecycle operations per project.
 Cover the default/explicit retention combinations for file and machine callers;
 new persistent and ephemeral homes; reuse, restart, and recreation; legacy
 homes; changed scripts; provider absence and failure; exact binary input;
-setup failure and interruption; completion publication and recovery. Prove
-that the selected sandbox script is protected and input
-bytes do not appear in jailbox-generated logs or resource metadata. Exercise
-permission-sensitive checks under both `0022` and `0002`.
+setup failure and interruption; completion publication and recovery. Verify both
+scripts are protected for frontend and direct machine launches, that changed
+script contents do not invalidate a session, and that changing the provider
+path triggers the usual stop-and-relaunch guidance. Prove input bytes do not
+appear in jailbox-generated logs or resource metadata. Exercise permission-sensitive
+checks under both `0022` and `0002`.
 
 Use `tests/run dev` and affected suites during implementation. Acceptance uses
 the existing portable, runtime, matrix, and editor gates, including both editors.
@@ -116,13 +126,16 @@ Keep configuration parsing in the frontend, and
 home lifecycle, initialization records, readiness, and execution orchestration
 in core. Frontend calls remain public CLI child processes; it must not inspect
 Podman or private core records to decide whether setup is needed. Reuse the
-existing SSH execution transport while keeping input stdin separate from
-script transfer. Do not add a general host-hook framework.
+existing SSH execution transport to run the sandbox script from the
+protected project mount with provider output as stdin. Do not add a general
+host-hook framework.
 
 Extend declarations in `src/public-api.sh` and validate all consuming mappings,
 schema output, generated API data, and release-version selection. Migrate the
-unconditional retention default in configuration loading to preserve omission
-until effective policy is resolved. Update `src/host/frontend/jailbox.conf.template`
+unconditional retention default in `CONFIG_DEFAULTS` in
+`src/public-api.sh` to preserve omission until effective policy is resolved;
+update the adjacent comment about independent defaults.
+Update `src/host/frontend/jailbox.conf.template`
 to document setup and leave `EPHEMERAL_HOME` commented rather than explicitly
 false; preserve existing user configuration without rewriting it.
 
