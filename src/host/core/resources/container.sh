@@ -31,7 +31,7 @@ validate_configured_readonly_paths() {
 # unchanged for digest identity. Only a complete result is published; callers
 # must stop on failure rather than consume partial or stale policy.
 finalize_project_path_policy() {
-    local path relative classified sorted
+    local setup_mode=${1:-initialize} key path relative classified sorted
     local -a readonly=() writable=() hidden=() effective_readonly=() effective_writable=()
     PROJECT_PATH_POLICY_READY=false
     EFFECTIVE_READONLY_PATHS=()
@@ -49,6 +49,12 @@ finalize_project_path_policy() {
     for path in "${WRITABLE_PATHS[@]}"; do
         relative=$(check_writable_path "$path") || return 1
         writable+=("$relative")
+    done
+    for key in HOME_SETUP_SCRIPT SETUP_INPUT_SCRIPT; do
+        path=${!key}
+        [[ -n "$path" ]] || continue
+        relative=$(resolve_setup_script_path "$path" "$key" "$setup_mode" "${hidden[@]}") || return 1
+        readonly+=("$relative")
     done
     if [[ -n "$SELECTED_DEV_CONTAINERFILE_INPUT" ]]; then
         classified=$(classify_trusted_file "$SELECTED_DEV_CONTAINERFILE_INPUT" "launch input") || return 1
@@ -99,7 +105,7 @@ build_project_mounts() {
     HIDDEN_MASK_OPTIONS=()
     # Recheck original trusted-input spellings immediately before assembling
     # arguments, so replacement with a symlink still fails.
-    finalize_project_path_policy || return 1
+    finalize_project_path_policy "${1:-initialize}" || return 1
     mask=$(build_hidden_mask_option) || return 1
     [[ -z "$mask" ]] || masks=(--security-opt "$mask")
     paths=("${EFFECTIVE_READONLY_PATHS[@]}" "${EFFECTIVE_WRITABLE_PATHS[@]}")

@@ -71,10 +71,9 @@ If the new launch fails, the previous sandbox is already gone; fix the cause
 and launch again. Builds use local caches and do not guarantee fresh registry
 images.
 
-The home directory persists by default, including editor servers and installed
-user tools. With `EPHEMERAL_HOME=true`, stop deletes the home created for that
-container generation. Stop follows the policy recorded when the home was
-created, not a later edit to the configuration file.
+The home directory normally persists between launches, including editor servers
+and installed user tools. With `EPHEMERAL_HOME=true`, stop deletes the home.
+Stop follows the policy recorded when the home was created.
 
 `jailbox --clean` permanently deletes the project's home, runtime state,
 containers, networks, and derived images. Changing an existing persistent home
@@ -82,6 +81,64 @@ to ephemeral requires this full cleanup; changing ephemeral to persistent uses
 stop followed by launch. Follow the diagnostic before deleting state.
 See the [lifecycle reference](automation.md#lifecycle) for exact retention,
 inspection, and recovery rules.
+
+### Reproducible home setup
+
+Set `HOME_SETUP_SCRIPT=scripts/setup-home.sh` in `jailbox.conf` to install
+dotfiles, user tools, or settings when jailbox creates a home. Keep system
+packages in the Containerfile. Make the script executable and give it a
+shebang. It runs as the sandbox user from the project root after readiness
+checks pass and before the editor opens, using the sandbox's network policy.
+
+An omitted `EPHEMERAL_HOME` defaults to `true` with a setup script and `false`
+otherwise. An explicit `true` or `false` takes precedence. To keep an existing
+persistent home, set `EPHEMERAL_HOME=false`. Setup runs only for newly created
+homes, including when you stop and relaunch an ephemeral home. For a persistent
+home, back up any files you want to keep before using the destructive
+`jailbox --clean` and launching again.
+
+With `HOME_SETUP_SCRIPT` set, you can add `SETUP_INPUT_SCRIPT=scripts/setup-input.sh`. Review this script
+before selecting or changing it. It runs on the host with your account's
+permissions, from the project root with no arguments and empty stdin. Its
+stdout becomes the setup script's stdin. Without a provider, setup receives
+empty stdin. The scripts define the format and should pin tool versions and
+check downloads where reproducibility matters.
+
+An executable `scripts/setup-input.sh` can send an ordinary setting.
+
+```sh
+#!/bin/sh
+printf '%s\n' 'theme=dark'
+```
+
+The executable `scripts/setup-home.sh` can save it in the new home.
+
+```sh
+#!/bin/sh
+set -eu
+umask 077
+mkdir -p "$HOME/.config/dev-tools"
+cat > "$HOME/.config/dev-tools/settings"
+```
+
+For credentials, let the host script retrieve them and send them on stdout.
+Keep secrets out of both scripts' diagnostics and the sandbox script's stdout.
+Sandbox tools may keep credentials in the home after setup. Review the
+[host script trust boundary](security.md#home-setup-and-host-input).
+
+Both script paths must stay within the project, with no symlink components.
+Jailbox mounts them read-only and refuses conflicting hidden paths. You can
+edit a mounted script in place while the sandbox runs. If you move a script,
+the sandbox can keep running while its original path is absent. A replacement
+at the original path needs a read-only mount to pass attachment checks.
+Starting a stopped container needs the configured files for mounting. Changing
+a configured path requires stop and relaunch.
+
+If the provider fails before setup runs, jailbox rolls back the fresh home.
+After fixing the provider, relaunch. If the sandbox script may have written to
+a persistent home, jailbox keeps that home for recovery and blocks normal
+launches until you recover or delete it. Follow the recovery diagnostic if
+cleanup leaves resources behind.
 
 ### Updating
 
@@ -199,7 +256,9 @@ external config directly rather than a symlinked spelling.
 | `MEMORY_LIMIT` | `4g` | Development container memory limit (Podman `--memory` value) |
 | `CPU_LIMIT` | `2` | Development container CPU limit (Podman `--cpus` value) |
 | `PIDS_LIMIT` | `256` | Development container process/thread limit (Podman `--pids-limit` value) |
-| `EPHEMERAL_HOME` | `false` | Exact lowercase `true` or `false`; `true` makes the home belong to one container generation and deletes it on stop. Empty or other values are invalid. |
+| `EPHEMERAL_HOME` | `true` with setup, otherwise `false` | Exact lowercase `true` or `false`. `true` deletes the home on stop. Empty or other values are invalid. |
+| `HOME_SETUP_SCRIPT` | — | Executable project-relative script run in a newly created sandbox home |
+| `SETUP_INPUT_SCRIPT` | — | Executable project-relative host script whose stdout supplies setup input |
 | `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`); frontend-only, file-exclusive key |
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
 | `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |
@@ -254,7 +313,7 @@ jailbox follows a clean layered approach:
 
 1. **Dev Image** — Uses or builds from your existing `Containerfile`/`Dockerfile`
 2. **Wrapper Image** — Adds OpenSSH server, creates the managed `jailbox` user, and installs hardened sshd config
-3. **Runtime** — Project mounted at `/home/jailbox/project` with the configured writable lanes and read-only protections, plus a home volume that is persistent by default
+3. **Runtime** — Project mounted at `/home/jailbox/project` with the configured writable lanes and read-only protections, plus a home volume governed by the recorded retention policy
 4. **SSH & Editor** — Generates project-specific SSH state under
    `~/.local/state/jailbox/projects/` and VS Code/VSCodium user profiles under
    `~/.local/state/jailbox/editor-profiles/`. Both use `XDG_STATE_HOME` instead

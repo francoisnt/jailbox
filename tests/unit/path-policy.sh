@@ -86,7 +86,7 @@ CASES
 
 # Exact duplicates leave configuration/digest identity intact while producing
 # one mount or mask. Check each public path category separately.
-DEV_IMAGE=fixture
+DEV_IMAGE=fixture EPHEMERAL_HOME=false
 for key in READONLY_PATHS WRITABLE_PATHS HIDDEN_PATHS; do
     READONLY_PATHS=(); WRITABLE_PATHS=(); HIDDEN_PATHS=()
     set_config_array "$key" a

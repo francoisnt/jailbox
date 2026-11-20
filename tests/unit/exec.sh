@@ -18,6 +18,8 @@ expect_success </dev/null
 # and concurrent callers. Stub only the already-tested attachment preparation.
 # shellcheck source=src/host/core/commands/exec.sh
 source "$ROOT/src/host/core/commands/exec.sh"
+# shellcheck source=src/host/core/resources/ssh.sh
+source "$ROOT/src/host/core/resources/ssh.sh"
 transport_exec() (
     require_command() { command -v "$1" >/dev/null; }
     load_environment_config() { return 0; }

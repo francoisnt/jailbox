@@ -565,8 +565,62 @@ EOF
         fail "stop removes the bare-launch sandbox"
     fi
     test_phase_begin home-lifecycle || return 1
-    assert_home_lifecycle "$project_dir" "$ctr" "$dev_image"
+    assert_home_lifecycle "$project_dir" "$ctr" "$dev_image" || return 1
+    if [[ "$stage" = egress ]]; then
+        test_phase_begin home-setup || return 1
+        if assert_home_setup "$project_dir" "$ctr" "$dev_image" "$log_dir/$stage.home-setup"; then
+            pass 'file and machine home setup ran with restricted access and exact SSH input'
+        else
+            fail 'home setup under sandbox restrictions'
+            return 1
+        fi
+    fi
 }
+
+assert_home_setup() (
+    local project=$1 prefix=$2 image=$3 log=$4 mode status=0
+    cd "$project" || return 1
+    cp "$JAILBOX_DIR/tests/fixtures/home-setup/setup.sh" setup-home.sh || return 1
+    cp "$JAILBOX_DIR/tests/fixtures/home-setup/provider.sh" setup-input.sh || return 1
+    chmod 755 setup-home.sh setup-input.sh || return 1
+    printf 'DEV_IMAGE=%s\nHOME_SETUP_SCRIPT=setup-home.sh\nSETUP_INPUT_SCRIPT=setup-input.sh\nEGRESS_ALLOW=example.com\n' "$image" > setup.conf || return 1
+    local key
+    for key in "${!JAILBOX_CONFIG_@}"; do unset "$key"; done
+    export JAILBOX_TEST_SETUP_HOST_SESSION=host-only
+    for mode in file machine; do
+        case "$mode" in
+            file)
+                "$JAILBOX_DIR/src/jailbox" --config setup.conf --no-editor > "$log.$mode" 2>&1 || status=$?
+                ;;
+            machine)
+                JAILBOX_CONFIG_DEV_IMAGE="$image" JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com \
+                    JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup-home.sh JAILBOX_CONFIG_SETUP_INPUT_SCRIPT=setup-input.sh \
+                    "$JAILBOX_DIR/src/jailbox" up > "$log.$mode" 2>&1 || status=$?
+                ;;
+        esac
+        if [[ "$status" != 0 ]]; then cat "$log.$mode" >&2; fail "$mode home setup"; return 1; fi
+        # Compare the test bytes inside the sandbox without printing them.
+        if ! printf 'test-home-setup-private-input\000\377\n\n' |
+            ssh -T -F "$(jailbox_ssh_config "$project")" "$prefix" 'cmp - /home/jailbox/setup-input'; then
+            fail "$mode home setup changed provider bytes"; return 1
+        fi
+        podman container inspect "$prefix" "$prefix-proxy" > "$log.$mode.containers" || return 1
+        podman volume inspect "$prefix-home" > "$log.$mode.volume" || return 1
+        if grep -aFq 'test-home-setup-private-input' "$log.$mode" "$log.$mode.containers" "$log.$mode.volume"; then
+            fail "$mode home setup exposed provider bytes in logs or metadata"; return 1
+        fi
+        if [[ "$mode" = machine ]]; then
+            # A host rename can move a live file bind away from its old path.
+            mv setup-input.sh setup-input.renamed || return 1
+            printf 'edited without a shebang\n' > setup-home.sh || return 1
+            chmod 644 setup-home.sh || return 1
+            JAILBOX_CONFIG_DEV_IMAGE="$image" JAILBOX_CONFIG_EGRESS_ALLOW_0=example.com \
+                JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup-home.sh JAILBOX_CONFIG_SETUP_INPUT_SCRIPT=setup-input.sh \
+                "$JAILBOX_DIR/src/jailbox" connection-info > "$log.connection" || return 1
+        fi
+        "$JAILBOX_DIR/src/jailbox" stop || return 1
+    done
+)
 
 # Exercise ephemeral generations and image cleanup across wrapper distributions.
 # All names are the stage's already-ledgered exact project names.

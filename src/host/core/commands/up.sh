@@ -8,77 +8,189 @@
 LAUNCH_ATTEMPTED_RESOURCES=()
 LAUNCH_ATTEMPTED_HOST_PATHS=()
 LAUNCH_CONVERGING=false
+LAUNCH_RETAIN_HOME=false
+LAUNCH_SETUP_ACTIVE=false
+LAUNCH_SETUP_TEMP=''
+LAUNCH_SETUP_JOB=''
+LAUNCH_PREVIOUS_JOB=''
+LAUNCH_SETUP_PROVIDER=''
+LAUNCH_SETUP_INPUT_FD=''
+LAUNCH_SETUP_OUTPUT_FD=''
 
 run_up() {
-    prepare_launch
+    prepare_launch || return $?
     bring_up_sandbox
 }
 
 prepare_launch() {
-    initialize_project_names
-    require_command podman
-    load_environment_config
+    initialize_project_names || return 1
+    require_command podman || return 1
+    load_environment_config || return 1
     host_preflight || return 1
     validate_project_boundary || return 1
     initialize_launch_state
 }
 
 bring_up_sandbox() {
-    local session_mode=full
+    local session_mode=full setup_mode=bind setup_generation='' setup_frame=''
     # Start a new operation before inspection; inspection cannot clear attempts.
     reset_launch_attempts
-    initialize_runtime_ids
-    validate_configured_readonly_paths
+    initialize_runtime_ids || return 1
+    validate_configured_readonly_paths || return 1
     # Stored home policy outranks digest incompatibility: stop cannot repair
     # a persistent-to-ephemeral change or corrupt retention metadata.
-    require_compatible_home
+    require_compatible_home || return 1
     # The digest is the compatibility gate for every policy-bearing resource
     # that outlives a single launch, so it is computed — and every surviving
     # resource checked against it — before anything is built or created.
-    compute_config_digest launch
-    require_compatible_project_resources
-    inspect_sandbox_compatibility
+    compute_config_digest launch || return 1
+    require_compatible_project_resources || return 1
+    inspect_sandbox_compatibility || return 1
     if [ "$OBSERVED_DEV_STATE" = absent ]; then
-        build_or_select_dev_image
-        validate_dev_image
+        if [[ -n "$HOME_SETUP_SCRIPT" ]] && ! observed_resource_present "volume:$VOLUME_NAME"; then
+            setup_mode=initialize
+            setup_frame=$(encode_ssh_command 'jailbox up home setup' "./$HOME_SETUP_SCRIPT") || return 1
+        fi
+        build_or_select_dev_image || return 1
+        validate_dev_image || return 1
         # Classify launch inputs before the wrapper build. Mount construction
         # repeats this to catch subsequent path replacement.
-        finalize_project_path_policy
+        finalize_project_path_policy mounted || return 1
         build_jailbox_image
     fi
     if [ "$OBSERVED_PROXY_STATE" = absent ]; then
-        build_current_proxy_image
+        build_current_proxy_image || return 1
     fi
-    validate_existing_sandbox_health
-    check_local_port_available "$OBSERVED_DEV_STATE"
+    validate_existing_sandbox_health || return 1
+    check_local_port_available "$OBSERVED_DEV_STATE" || return 1
     # All refusals above are read-only with respect to sandbox resources.
     # Record attempts before mutation so failures inside an engine operation
     # also enter dependency-safe rollback.
-    trap 'rollback_launch_on_exit "$?"' EXIT
-    trap 'exit 1' HUP INT TERM
+    trap 'rollback_launch_on_exit "$?" || true' EXIT
+    trap interrupt_launch HUP INT TERM
     begin_launch_convergence
-    configure_network
+    configure_network || return 1
     if [ "$OBSERVED_DEV_STATE" = absent ]; then
         session_mode=launch
-        configure_runtime_mounts
-        create_ssh_generation
-        build_project_mounts
-        record_launch_resource_attempt "volume:$VOLUME_NAME"
-        ensure_home_volume
+        configure_runtime_mounts || return 1
+        create_ssh_generation || return 1
+        build_project_mounts "$setup_mode" || return 1
+        if ! observed_resource_present "volume:$VOLUME_NAME"; then
+            if [[ -n "$setup_frame" ]]; then
+                # A new SSH key is generated for this launch before the home
+                # exists. Its public half supplies a fresh, non-secret ID.
+                setup_generation=$(config_digest_hash < "$KEY_FILE.pub") || return 1
+                is_config_digest_value "$setup_generation" || die 'could not derive home setup generation'
+                prepare_setup_provider || return 1
+            fi
+            record_launch_resource_attempt "volume:$VOLUME_NAME"
+            create_home_volume "${setup_generation:-plain}" || return $?
+        fi
         record_launch_resource_attempt "container:$CONTAINER_NAME"
-        start_jailbox_container
+        start_jailbox_container || return $?
     elif [ "$OBSERVED_DEV_STATE" != running ]; then
         session_mode=launch
-        resume_jailbox_container
+        resume_jailbox_container || return 1
     fi
-    wait_for_ssh
-    validate_sandbox_structure
+    wait_for_ssh || return 1
+    validate_sandbox_structure || return 1
     # Healthy reuse must not create write probes that change project metadata.
-    validate_development_session "$session_mode"
-    validate_proxy_ready
-    configure_downloader_proxy
-    post_start_validation
+    validate_development_session "$session_mode" || return 1
+    validate_proxy_ready || return 1
+    configure_downloader_proxy || return $?
+    post_start_validation || return 1
+    if [[ -n "$setup_generation" ]]; then
+        run_home_setup "$setup_frame" "$setup_generation" || return $?
+    fi
+    echo '✅ Sandbox is ready'
     trap - EXIT HUP INT TERM
+}
+
+prepare_setup_provider() {
+    [[ -n "$SETUP_INPUT_SCRIPT" ]] || return 0
+    # Snapshot the selected program before the development container can
+    # write to the project. Its project-local dependencies still need review.
+    LAUNCH_SETUP_PROVIDER=$(umask 077; mktemp "$SSH_DIR/.setup-provider.XXXXXXXX") || return 1
+    cat -- "$PROJECT_DIR/$SETUP_INPUT_SCRIPT" > "$LAUNCH_SETUP_PROVIDER" || return 1
+    require_script_shebang "$LAUNCH_SETUP_PROVIDER" SETUP_INPUT_SCRIPT || return 1
+    chmod 700 "$LAUNCH_SETUP_PROVIDER"
+}
+
+exec_setup_provider() {
+    exec </dev/null >&"$LAUNCH_SETUP_OUTPUT_FD" {LAUNCH_SETUP_INPUT_FD}<&- {LAUNCH_SETUP_OUTPUT_FD}>&- || return 1
+    cd -- "$PROJECT_DIR" || return 1
+    exec "$LAUNCH_SETUP_PROVIDER"
+}
+
+exec_sandbox_setup() {
+    exec <&"$LAUNCH_SETUP_INPUT_FD" {LAUNCH_SETUP_INPUT_FD}<&- || return 1
+    exec_ssh_command "$1"
+}
+
+run_setup_job() {
+    local job_type=$1 result=0 previous_flags=$-
+    shift
+    # The provider can start host children. Bash job control groups them
+    # for cancellation. The SSH client stays in the launch process group.
+    if [[ "$job_type" = provider ]]; then set -m; else set +m; fi
+    # Arm cleanup before starting the job. $! identifies it at the next trap.
+    LAUNCH_PREVIOUS_JOB=${!:-}
+    LAUNCH_SETUP_JOB=$job_type
+    "$@" &
+    set +m
+    wait "$!" || result=$?
+    LAUNCH_SETUP_JOB=''
+    [[ "$previous_flags" != *m* ]] || set -m
+    return "$result"
+}
+
+interrupt_launch() {
+    if [[ "$LAUNCH_SETUP_ACTIVE" = true ]]; then
+        printf 'Error: home setup was interrupted.\n' >&2
+    fi
+    exit 1
+}
+
+run_home_setup() {
+    local frame=$1 generation=$2 record result=0
+    LAUNCH_SETUP_ACTIVE=true
+    if [[ -n "$LAUNCH_SETUP_PROVIDER" ]]; then
+        LAUNCH_SETUP_TEMP=$(umask 077; mktemp "$SSH_DIR/.setup-input.XXXXXXXX") || return 1
+        exec {LAUNCH_SETUP_OUTPUT_FD}> "$LAUNCH_SETUP_TEMP" || return 1
+        exec {LAUNCH_SETUP_INPUT_FD}< "$LAUNCH_SETUP_TEMP" || return 1
+        # The descriptors retain the file. There is no pathname once any
+        # provider output can reach it, even after an unhandled interruption.
+        rm -f -- "$LAUNCH_SETUP_TEMP" || return 1
+        LAUNCH_SETUP_TEMP=''
+        run_setup_job provider exec_setup_provider || result=$?
+        exec {LAUNCH_SETUP_OUTPUT_FD}>&-
+        LAUNCH_SETUP_OUTPUT_FD=''
+        if ((result != 0)); then
+            printf 'Error: SETUP_INPUT_SCRIPT failed (exit %d).\n' "$result" >&2
+            return "$result"
+        fi
+    else
+        exec {LAUNCH_SETUP_INPUT_FD}< /dev/null || return 1
+    fi
+    # From here on the sandbox script may have written into the home.
+    [[ "$EPHEMERAL_HOME" = true ]] || LAUNCH_RETAIN_HOME=true
+    run_setup_job ssh exec_sandbox_setup "$frame" || result=$?
+    exec {LAUNCH_SETUP_INPUT_FD}<&-
+    LAUNCH_SETUP_INPUT_FD=''
+    if ((result != 0)); then
+        printf 'Error: HOME_SETUP_SCRIPT failed (exit %d).\n' "$result" >&2
+        return "$result"
+    fi
+    if [[ -n "$LAUNCH_SETUP_PROVIDER" ]]; then
+        rm -f -- "$LAUNCH_SETUP_PROVIDER" || return 1
+        LAUNCH_SETUP_PROVIDER=''
+    fi
+    record=$(home_setup_record_path) || return 1
+    [[ ! -L "$record" && ! -d "$record" ]] || die 'unsafe home setup completion path'
+    LAUNCH_SETUP_TEMP=$(umask 077; mktemp "$SSH_DIR/.home-setup-complete.XXXXXXXX") || return 1
+    printf '%s\n' "$generation" > "$LAUNCH_SETUP_TEMP" || return 1
+    mv -f -- "$LAUNCH_SETUP_TEMP" "$record" || return $?
+    LAUNCH_SETUP_TEMP=''
 }
 
 configure_network() {
@@ -163,6 +275,14 @@ initialize_convergence_state() {
 reset_launch_attempts() {
     LAUNCH_ATTEMPTED_RESOURCES=()
     LAUNCH_ATTEMPTED_HOST_PATHS=()
+    LAUNCH_RETAIN_HOME=false
+    LAUNCH_SETUP_ACTIVE=false
+    LAUNCH_SETUP_TEMP=''
+    LAUNCH_SETUP_JOB=''
+    LAUNCH_PREVIOUS_JOB=''
+    LAUNCH_SETUP_PROVIDER=''
+    LAUNCH_SETUP_INPUT_FD=''
+    LAUNCH_SETUP_OUTPUT_FD=''
 }
 
 # Record before attempting creation, excluding resources in the preflight
@@ -189,12 +309,28 @@ fail_sandbox_readiness() {
 # EXIT callback armed before sandbox mutation. A successful launch needs no
 # rollback; Bash retains the original failing exit status after this callback.
 rollback_launch_on_exit() {
-    [ "$1" -eq 0 ] || rollback_launch
+    [ "$1" -ne 0 ] || return 0
+    local path job=${!:-} target
+    [[ -z "$LAUNCH_SETUP_INPUT_FD" ]] || exec {LAUNCH_SETUP_INPUT_FD}<&-
+    [[ -z "$LAUNCH_SETUP_OUTPUT_FD" ]] || exec {LAUNCH_SETUP_OUTPUT_FD}>&-
+    if [[ -n "$LAUNCH_SETUP_JOB" && -n "$job" && "$job" != "$LAUNCH_PREVIOUS_JOB" ]]; then
+        target=$job
+        [[ "$LAUNCH_SETUP_JOB" != provider ]] || target=-$job
+        # Bash can report the killed job between these two commands.
+        {
+            kill -KILL -- "$target" || true
+            wait "$job" || true
+        } 2>/dev/null
+    fi
+    for path in "$LAUNCH_SETUP_TEMP" "$LAUNCH_SETUP_PROVIDER"; do
+        [[ -z "$path" ]] || rm -f -- "$path" || printf 'Error: could not remove temporary home setup material.\n' >&2
+    done
+    rollback_launch
 }
 
 rollback_launch() {
     local target kind name probe failed=false dependent=false state path index
-    local dev_retained=false proxy_retained=false needed
+    local dev_retained=false proxy_retained=false home_removed=false needed
     # 1. Remove only attempted containers, development before proxy. Never stop
     # a pre-existing survivor; a remaining development container needs its proxy.
     for name in "$CONTAINER_NAME" "$PROXY_NAME"; do
@@ -237,6 +373,9 @@ rollback_launch() {
         target=${LAUNCH_ATTEMPTED_RESOURCES[index]}
         kind=${target%%:*}; name=${target#*:}
         [ "$kind" != container ] || continue
+        if [ "$kind" = volume ] && [ "$LAUNCH_RETAIN_HOME" = true ]; then
+            continue
+        fi
         needed=$dependent
         [ "$kind" != volume ] || needed=$dev_retained
         if [ "$needed" = true ]; then
@@ -245,8 +384,9 @@ rollback_launch() {
         fi
         probe=0
         jailbox_resource_exists "$kind" "$name" || probe=$?
-        [ "$probe" -ne 1 ] || continue
-        if [ "$probe" -ne 0 ] || ! podman "$kind" rm "$name"; then
+        if [ "$probe" -eq 1 ] || { [ "$probe" -eq 0 ] && podman "$kind" rm "$name"; }; then
+            [[ "$kind" != volume ]] || home_removed=true
+        else
             failed=true
             printf "Error: cleanup retained '%s'.\n" "$target" >&2
         fi
@@ -269,6 +409,16 @@ rollback_launch() {
             printf "Error: cleanup retained host material '%s'.\n" "$path" >&2
         fi
     done
-    sandbox_stop_guidance >&2 || true
+    if [[ "$LAUNCH_SETUP_ACTIVE" = true ]]; then
+        if [[ "$home_removed" = false ]]; then
+            printf '%s\n' "$(home_setup_recovery "$EPHEMERAL_HOME")" >&2
+        elif [[ "$failed" = true ]]; then
+            printf "Run 'jailbox stop' to remove surviving sandbox resources, then relaunch.\n" >&2
+        else
+            printf 'Fix the setup error, then relaunch to create a new home.\n' >&2
+        fi
+    else
+        sandbox_stop_guidance >&2 || true
+    fi
     [ "$failed" = false ]
 }

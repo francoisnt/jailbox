@@ -4,6 +4,10 @@ set -euo pipefail
 if [[ " $* " = *' --list-extensions '* ]]; then
     exec "$JAILBOX_TEST_EDITOR_REAL" "$@"
 fi
+if [[ ${JAILBOX_TEST_REQUIRE_HOME_SETUP:-0} = 1 ]]; then
+    : > "$JAILBOX_TEST_EDITOR_ATTEMPT_FILE"
+    "$JAILBOX_TEST_CLI" exec -- test -f /home/jailbox/.jailbox-test-home-setup
+fi
 if [[ ${JAILBOX_TEST_SEED_SETTINGS:-1} == 1 ]]; then
 printf '{"security.workspace.trust.enabled":false,"task.allowAutomaticTasks":"on"}\n' |
     "$JAILBOX_TEST_CLI" exec /usr/local/bin/jailbox-write-editor-settings || exit $?

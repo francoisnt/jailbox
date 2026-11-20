@@ -8,7 +8,8 @@ proxy=$3
 project_rw=$4
 writable_count=$5
 hidden_count=$6
-shift 6
+required_readonly_count=$7
+shift 7
 writable=("${@:1:writable_count}")
 shift "$writable_count"
 hidden=("${@:1:hidden_count}")
@@ -57,7 +58,10 @@ index=0
 for TARGET in "$@"; do
     export TARGET
     # Environment transport preserves backslashes that awk -v would interpret.
-    EXPECTED=ro awk -f "/usr/local/lib/jailbox/readonly-mount.awk" /proc/self/mountinfo || reject "mount:$index"
+    if ! EXPECTED=ro awk -f "/usr/local/lib/jailbox/readonly-mount.awk" /proc/self/mountinfo; then
+        [[ "$mode" = full && "$index" -ge "$required_readonly_count" && ! -e "$TARGET" && ! -L "$TARGET" ]] ||
+            reject "mount:$index"
+    fi
     index=$((index + 1))
 done
 if [[ "$mode" = full || "$mode" = launch ]]; then

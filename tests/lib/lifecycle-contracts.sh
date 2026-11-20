@@ -13,7 +13,7 @@ declare -A LIFECYCLE_COMMAND_CONTRACTS=(
     [up]=launch [stop]=stop [--clean]=clean
 )
 declare -A LIFECYCLE_FAULT_SCENARIOS=(
-    [up]='false none new-ephemeral resume plain-network' [stop]='false true' [--clean]='false true'
+    [up]='false none new-ephemeral resume plain-network home-setup' [stop]='false true' [--clean]='false true'
 )
 
 validate_lifecycle_contracts() {
@@ -46,6 +46,7 @@ lifecycle_fault_event_applies() {
     case "$scenario" in
         resume) [[ "$event" = podman\ start\ * ]] ;;
         plain-network) [[ "$event" = podman\ network\ create\ * && "$event" = *-net ]] ;;
+        home-setup) [[ "$event" = ssh\ *jailbox-exec-argv* || "$event" = mv\ *home-setup-complete* ]] ;;
         *) return 0 ;;
     esac
 }
@@ -68,6 +69,12 @@ lifecycle_fault_requirements() {
             ;;
         launch:plain-network)
             requirements=('plain-network|1|^podman network create .* [^ ]+-net$')
+            ;;
+        launch:home-setup)
+            requirements=(
+                'setup-execution|1|^ssh .*jailbox-exec-argv'
+                'setup-record-publication|1|^mv .* /.*home-setup-complete$'
+            )
             ;;
         launch:false|launch:none|launch:new-ephemeral)
             requirements=(

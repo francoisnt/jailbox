@@ -138,7 +138,7 @@ therefore be unsuitable even when its application runs successfully elsewhere.
 | Development container | Runs the unprivileged SSH daemon and development processes | Reused or resumed until explicitly removed |
 | Proxy container | Filters HTTP(S) requests in egress mode | Needed only for filtered networking |
 | Plain network, or internal and external networks | Connect the selected topology | Project-scoped; cleanup considers all three names |
-| Home volume | Holds `/home/jailbox` data such as installed editor servers and user files | Persistent by default; stored retention policy decides removal on `stop` |
+| Home volume | Holds `/home/jailbox` data such as installed editor servers and user files | Ephemeral by default with a setup script; stored retention policy decides removal on `stop` |
 | Project bind mount | Exposes the host project at `/home/jailbox/project` | Host files remain host files; writes affect the checkout |
 | Protected path overlays | Make selected project inputs read-only inside the container | Applied over the project mount on each container creation |
 | Host runtime state | Holds SSH credentials/configuration and other project state outside the checkout | SSH generation follows the container; full cleanup removes project state |
@@ -296,6 +296,20 @@ and performs final readiness checks. Allowed upstream website availability is
 advisory; required local isolation and proxy checks must succeed. A website being
 unreachable is never proof that isolation is working.
 
+Core runs configured setup only for a newly created home and only after
+readiness checks. The volume label identifies the generation that requires
+setup. A matching completion file in private host state is published
+atomically after the setup command succeeds. A missing or mismatched file
+blocks reuse and attachment. Older homes and homes created without setup can
+be reused without a completion file.
+
+Core snapshots the optional host provider before starting the development
+container, then runs it from the project root. It buffers stdout privately in
+an unlinked file and waits for the provider to succeed. The setup command
+reads those bytes over the same authenticated SSH transport as `exec`.
+The configuration digest includes the selected paths. Script contents and
+provider output are outside the digest.
+
 ### Editor attachment after up
 
 After `up` succeeds, the editor frontend calls `connection-info` with the same
@@ -394,6 +408,10 @@ that survivors no longer need. It does not undo an image build, erase all home
 writes, or stop a pre-existing container merely because this invocation resumed
 it. A new proxy may need to survive for a pre-existing development container.
 Failed container removal also means its credentials must remain.
+Rollback can remove a fresh persistent home if the input provider fails before
+the sandbox script starts. Once the sandbox script may have written into that
+home, rollback preserves it. An unfinished home remains ineligible for launch
+and attachment until recovery.
 
 Forced termination can leave partial state. A later command applies the same
 inspection and recovery rules. Cleanup errors must be reported without turning

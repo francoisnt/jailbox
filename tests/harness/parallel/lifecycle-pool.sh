@@ -12,17 +12,21 @@ TEST_CASE=setup
 trap 'printf "FAIL [%s] line %s: %s\n" "$TEST_CASE" "$LINENO" "$BASH_COMMAND" >&2' ERR
 pass() { printf 'PASS: %s\n' "$TEST_CASE"; }
 
-TEST_CASE='all rows, nine fault groups, and targeted failures are scheduled'
+TEST_CASE='declared rows and fault groups are scheduled without duplicates'
 lifecycle_jobs > "$TEST_ROOT/catalog"
-[[ $(wc -l < "$TEST_ROOT/catalog") = 61 ]]
-[[ $(grep -c '^row\.' "$TEST_ROOT/catalog") = 48 ]]
-[[ $(grep -c '^fault\.' "$TEST_ROOT/catalog") = 9 ]]
-cut -d '|' -f3- "$TEST_ROOT/catalog" | head -48 > "$TEST_ROOT/rows"
-lifecycle_matrix_rows > "$TEST_ROOT/expected-rows"
+grep '^row\.' "$TEST_ROOT/catalog" > "$TEST_ROOT/rows"
+lifecycle_matrix_rows | sed 's/^[^|]*/row.&|row|&/' > "$TEST_ROOT/expected-rows"
 cmp "$TEST_ROOT/expected-rows" "$TEST_ROOT/rows"
-lifecycle_fixed_cases | sort > "$TEST_ROOT/fixed"
-[[ $(wc -l < "$TEST_ROOT/fixed") = 166 ]]
-[[ $(sort -u "$TEST_ROOT/fixed" | wc -l) = 166 ]]
+for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+    read -r -a scenarios <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
+    for scenario in "${scenarios[@]}"; do
+        printf 'fault.%s.%s|fault|%s|%s\n' "$command" "$scenario" "$command" "$scenario"
+    done
+done > "$TEST_ROOT/expected-fault-jobs"
+grep '^fault\.' "$TEST_ROOT/catalog" > "$TEST_ROOT/fault-jobs"
+cmp "$TEST_ROOT/expected-fault-jobs" "$TEST_ROOT/fault-jobs"
+cut -d '|' -f1 "$TEST_ROOT/catalog" | LC_ALL=C sort > "$TEST_ROOT/job-ids"
+[[ -z $(uniq -d "$TEST_ROOT/job-ids") ]]
 pass
 
 TEST_CASE='sample membership is exactly the first 50 declared state/command cases'
@@ -63,7 +67,7 @@ pass
 
 TEST_CASE='history changes ordering without dropping or duplicating jobs'
 lifecycle_order_jobs "$TEST_ROOT/catalog" /dev/null > "$TEST_ROOT/ordered"
-[[ $(head -9 "$TEST_ROOT/ordered" | grep -c '^fault\.') = 9 ]]
+awk '/^fault\./ { if (other_job) exit 1; next } { other_job = 1 }' "$TEST_ROOT/ordered"
 sort "$TEST_ROOT/catalog" > "$TEST_ROOT/expected"
 sort "$TEST_ROOT/ordered" > "$TEST_ROOT/actual"
 cmp "$TEST_ROOT/expected" "$TEST_ROOT/actual"
@@ -117,7 +121,8 @@ for workers in 1 2 4; do
     cat "$run"/visited-* | sort > "$TEST_ROOT/actual"
     cut -d '|' -f2- "$TEST_ROOT/catalog" | sort > "$TEST_ROOT/expected"
     cmp "$TEST_ROOT/expected" "$TEST_ROOT/actual"
-    [[ $(find "$run/done" -type f | wc -l) = 61 ]]
+    find "$run/done" -type f -exec basename {} \; | LC_ALL=C sort > "$TEST_ROOT/completed-jobs"
+    cmp "$TEST_ROOT/job-ids" "$TEST_ROOT/completed-jobs"
     pass
 done
 
@@ -217,6 +222,7 @@ printf 'Linux\n'
 PLATFORM
 chmod 755 "$tree/bin/setsid" "$tree/bin/uname"
 cp "$ROOT/tests/fixtures/lifecycle-pool/mock-worker.sh" "$tree/tests/lib/lifecycle-worker.sh"
+printf 'mkdir /fixture/state\n' > "$tree/mock-fault.trace"
 TEST_CASE='invalid mappings fail before coordinator resource preparation'
 cp "$tree/tests/lib/lifecycle-contracts.sh" "$tree/contracts-backup"
 for mapping in LIFECYCLE_COMMAND_CONTRACTS LIFECYCLE_FAULT_SCENARIOS; do
@@ -244,7 +250,15 @@ new_coordinator_run() {
     run=${created[0]}
     known_runs[$run]=1
 }
-previous=""
+# Derive the expected cases before running the coordinator so a worker that
+# omits both a fault and its manifest entry still fails this comparison.
+{
+    lifecycle_fixed_cases
+    while IFS='|' read -r _ _ command scenario; do
+        lifecycle_fault_cases "$tree/mock-fault.trace" "$command" "$scenario"
+    done < "$TEST_ROOT/expected-fault-jobs"
+} | LC_ALL=C sort > "$TEST_ROOT/expected-full-cases"
+[[ -z $(uniq -d "$TEST_ROOT/expected-full-cases") ]]
 for workers in 1 2 4; do
     if ! PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" \
         JAILBOX_LIFECYCLE_JOBS="$workers" JAILBOX_LIFECYCLE_TIMINGS=/dev/null \
@@ -253,12 +267,11 @@ for workers in 1 2 4; do
     fi
     grep -Fq 'matrix passed; logs: ' "$tree/output"
     new_coordinator_run
-    [[ $(wc -l < "$run/completed-cases") = 187 ]]
+    cmp "$TEST_ROOT/expected-full-cases" "$run/completed-cases"
+    cmp "$TEST_ROOT/job-ids" "$run/completed-jobs"
     grep -Fxq "workers=$workers" "$run/run-summary"
     grep -Eq '^elapsed_seconds=[0-9]+$' "$run/run-summary"
     grep -Fxq 'exit_status=0' "$run/run-summary"
-    if [[ -n "$previous" ]]; then cmp "$previous" "$run/completed-cases"; fi
-    previous="$run/completed-cases"
     for file in "$run"/worker-*/fixture; do
         IFS= read -r fixture < "$file"
         [[ ! -e "$fixture" ]]

@@ -953,7 +953,14 @@ run_stage() {
         fi
     fi
 
-    if ! seed_editor_server_cache "$project_dir" "$stage"; then
+    # The setup case needs a brand-new volume. Other stages still exercise
+    # seeding the editor cache into a retained home before launch.
+    if [[ "$stage" = debian ]]; then
+        EDITOR_CACHE_SEEDED=0
+        printf 'HOME_SETUP_SCRIPT=setup-home.sh\n' >> "$project_dir/jailbox.conf" || return 1
+        printf '#!/bin/sh\nexit 37\n' > "$project_dir/setup-home.sh" || return 1
+        chmod 755 "$project_dir/setup-home.sh" || return 1
+    elif ! seed_editor_server_cache "$project_dir" "$stage"; then
         fail "editor server cache prepared"
         cleanup_stage "$project_dir"
         project_dir=""
@@ -992,7 +999,24 @@ run_stage() {
         cp "$JAILBOX_DIR/tests/fixtures/editor-smoke/editor.sh" \
             "$project_dir/.vscode/test-editor-bin/${JAILBOX_TEST_EDITOR_REAL##*/}" || exit $?
         chmod 755 "$project_dir/.vscode/test-editor-bin/${JAILBOX_TEST_EDITOR_REAL##*/}" || exit $?
-        PATH="$project_dir/.vscode/test-editor-bin:$PATH" "$JAILBOX_DIR/src/jailbox"
+        export PATH="$project_dir/.vscode/test-editor-bin:$PATH"
+        if [[ "$stage" = debian ]]; then
+            local failure="$LOG_DIR/$stage.setup-failure" setup_status=0
+            export JAILBOX_TEST_EDITOR_ATTEMPT_FILE="$LOG_DIR/$stage.editor-attempt"
+            export JAILBOX_TEST_REQUIRE_HOME_SETUP=1 JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup-home.sh
+            "$JAILBOX_DIR/src/jailbox" > "$failure" 2>&1 || setup_status=$?
+            if [[ "$setup_status" = 0 || -e "$JAILBOX_TEST_EDITOR_ATTEMPT_FILE" ]] ||
+                ! grep -Fq 'HOME_SETUP_SCRIPT failed (exit 37)' "$failure"; then
+                cat "$failure" >&2
+                exit 1
+            fi
+            # Keep the successful home for subsequent editor tests in this stage.
+            export JAILBOX_CONFIG_EPHEMERAL_HOME=false
+            printf 'EPHEMERAL_HOME=false\n' >> jailbox.conf || exit $?
+            # shellcheck disable=SC2016 # Expanded by the sandbox setup script.
+            printf '%s\n' '#!/bin/sh' 'touch "$HOME/.jailbox-test-home-setup"' > setup-home.sh || exit $?
+        fi
+        "$JAILBOX_DIR/src/jailbox"
     ) 2>&1; then
         pass "jailbox launched editor workspace"
         editor_opened=1

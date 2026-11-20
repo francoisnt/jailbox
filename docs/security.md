@@ -9,6 +9,7 @@ default; choose additional restrictions to match your work.
 
 - [Protections](#what-jailbox-does-well)
 - [Limits and path policy](#important-realities)
+- [Home setup and host input](#home-setup-and-host-input)
 - [Network enforcement](#network-enforcement)
 
 ## What jailbox does well
@@ -34,7 +35,8 @@ default; choose additional restrictions to match your work.
 - Project files are mounted writable by default. With non-empty `WRITABLE_PATHS`,
   the project base is read-only and only the declared lanes are writable.
   Core automatically overlays the exact in-project Containerfile used for the
-  build read-only. File-driven launches
+  build read-only, along with the selected home setup and host input scripts.
+  File-driven launches
   also protect the default `jailbox.conf` and selected in-project config.
   Selecting an external config does not remove protection from the default.
 - File-driven launch requires that default config even when an external config is selected.
@@ -49,7 +51,8 @@ default; choose additional restrictions to match your work.
   without dot segments, colons, trailing slashes, or symlink components.
   Read-only and writable entries may nest: the most specific entry wins,
   with read-only winning an exact tie. Automatic Containerfile and frontend
-  config-file protection always remains read-only unless hidden. Overlaps are
+  config-file protection remains read-only unless hidden. A hidden path
+  overlapping either setup script fails validation. Overlaps are
   resolved silently, including writable declarations for automatically protected
   files. Every declared path is validated even if stronger policy suppresses it. Control
   characters cannot be represented by either configuration interface. Indexed
@@ -146,6 +149,27 @@ container escape vectors, not defending against a determined kernel- or
 runtime-level attacker. It provides much better defaults than running agents
 directly on the host or in privileged containers, but it is **not** a full
 sandbox.
+
+## Home setup and host input
+
+`HOME_SETUP_SCRIPT` runs inside the sandbox. The optional
+`SETUP_INPUT_SCRIPT` runs on the host with your permissions and host
+environment. Review it before selecting or changing it. It may have been
+writable by an earlier sandbox. Jailbox runs a private copy of the selected
+provider from the project root, so use that working directory to locate
+project files. Commands and other project files the provider uses can still
+be writable by the sandbox. Review and protect those dependencies, including
+files used indirectly by tools the provider runs.
+Keep provider work in the foreground so jailbox can cancel it on interruption.
+Detached processes can outlive jailbox.
+
+Jailbox waits for the provider to succeed and passes its stdout byte for byte
+to setup over authenticated SSH. The host environment and secret-manager
+session credentials stay on the host unless your provider explicitly includes
+them in its output. Jailbox does not log, hash, or retain the payload. Both
+scripts can print diagnostics, so keep secrets out of diagnostics and the
+sandbox script's stdout. Any credentials installed by setup or cached by its
+tools belong to the sandbox home and follow its retention policy.
 
 ## Network enforcement
 

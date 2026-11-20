@@ -19,6 +19,14 @@ fault_baseline() {
         launch:new-ephemeral)
             construct absent egress none true
             ;;
+        launch:home-setup)
+            construct absent plain none true
+            export JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup-home.sh LIFECYCLE_SETUP_FRAME
+            LIFECYCLE_SETUP_FRAME=$(printf './setup-home.sh\0' | base64)
+            # shellcheck disable=SC2016 # The setup script uses its remote home.
+            printf '%s\n' '#!/bin/sh' 'printf initialized > "$HOME/setup-marker"' > "$PROJECT/setup-home.sh"
+            chmod 755 "$PROJECT/setup-home.sh"
+            ;;
         launch:false)
             construct home-false-false egress false false
             mkdir -p "$PROJECT/writable-lane/protected/generated"
@@ -133,6 +141,7 @@ run_mutation_faults() {
     export LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live"
     : > "$LIFECYCLE_EVENTS"
     expect_success "$command"
+    if [[ "$policy" = home-setup ]]; then assert_setup_marker; fi
     cp "$LIFECYCLE_EVENTS" "$trace"
     count=$(wc -l < "$LIFECYCLE_EVENTS")
     unset LIFECYCLE_EVENTS
@@ -210,10 +219,13 @@ run_mutation_faults() {
             # These cases have valid home metadata. Stop/clean is the
             # owning recovery for interrupted operations; execute it.
             expect_success "$recovery"
-            if [[ "$contract:$policy" = launch:new-ephemeral ]]; then require_absent volume "$HOME_VOLUME"; fi
+            if [[ "$contract:$policy" = launch:new-ephemeral || "$contract:$policy" = launch:home-setup ]]; then
+                require_absent volume "$HOME_VOLUME"
+            fi
             if [[ "$contract" != launch ]]; then assert_cleanup "$command" "$policy"; fi
             expect_success up
             assert_service
+            if [[ "$policy" = home-setup ]]; then assert_setup_marker; fi
             if [[ "$contract:$policy" = launch:none ]]; then
                 # Forced termination may leave a newly created persistent
                 # home, but it had no pre-existing user marker to retain.
@@ -225,6 +237,13 @@ run_mutation_faults() {
             matrix_case_pass
         done
     done
+}
+
+assert_setup_marker() {
+    local path
+    path=$(volume_path) || matrix_die 'could not find setup home'
+    [[ $(podman unshare cat "$path/setup-marker") = initialized && -f "$STATE/home-setup-complete" ]] ||
+        matrix_die 'home setup or completion record is missing'
 }
 
 run_failed_resume() {
@@ -399,6 +418,9 @@ fault_attachment() {
         fi
     done
     if [[ ! -f "$GENERATION/container-id" || ! -f "$GENERATION/ssh_config" ]]; then
+        printf 'refuse\n'; return
+    fi
+    if [[ -n ${JAILBOX_CONFIG_HOME_SETUP_SCRIPT:-} && ! -f "$STATE/home-setup-complete" ]]; then
         printf 'refuse\n'; return
     fi
     recorded=$(cat "$GENERATION/container-id") || matrix_die 'cannot read fault receipt'

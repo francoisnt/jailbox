@@ -396,9 +396,15 @@ main() {
     local value
     assert_env_config "home is persistent by default" '[ "$EPHEMERAL_HOME" = false ]' \
         JAILBOX_CONFIG_READONLY_PATHS=
+    assert_env_config "home is ephemeral with a setup script by default" '[ "$EPHEMERAL_HOME" = true ]' \
+        JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup.sh
+    assert_env_rejects "provider requires a setup script" 'SETUP_INPUT_SCRIPT requires HOME_SETUP_SCRIPT' \
+        JAILBOX_CONFIG_SETUP_INPUT_SCRIPT=provider.sh
     for value in true false; do
         assert_env_config "home accepts $value" "[ \"\$EPHEMERAL_HOME\" = $value ]" \
             "JAILBOX_CONFIG_EPHEMERAL_HOME=$value"
+        assert_env_config "explicit $value wins with setup" "[ \"\$EPHEMERAL_HOME\" = $value ]" \
+            "JAILBOX_CONFIG_EPHEMERAL_HOME=$value" JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup.sh
     done
     for value in '' TRUE False 0 1 yes no ' true' 'false '; do
         assert_env_rejects "invalid home boolean '$value'" 'invalid EPHEMERAL_HOME' \

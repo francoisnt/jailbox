@@ -17,6 +17,9 @@ check_template_defaults() {
     # shellcheck disable=SC2034 # Consumed through the mapping validator's nameref.
     local -a members=("${CONFIG_SCALAR_KEYS[@]}" "${CONFIG_ARRAY_KEYS[@]}" "${FRONTEND_SCALAR_KEYS[@]}")
     parse_config_file "$config"
+    [[ ! -v FRONTEND_VALUES[EPHEMERAL_HOME] ]] || fail 'template sets home retention explicitly'
+    grep -Fxq '# EPHEMERAL_HOME=false' "$config" || fail 'missing commented home-retention override'
+    FRONTEND_VALUES[EPHEMERAL_HOME]=
     public_api_validate_mapping 'template settings' members FRONTEND_VALUES allow-empty
     for entry in "${CONFIG_DEFAULTS[@]}" "${FRONTEND_DEFAULTS[@]}"; do
         key=${entry%%=*}

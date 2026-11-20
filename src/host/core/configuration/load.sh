@@ -1,6 +1,7 @@
 # configuration — load
 
 ENV_CONFIG_PREFIX="JAILBOX_CONFIG_"
+EPHEMERAL_HOME_INFERRED=false
 
 environment_config_names() {
     compgen -A export "$ENV_CONFIG_PREFIX" || true
@@ -121,6 +122,12 @@ load_environment_config() {
             die "unknown configuration variable '$name'"
     done
 
+    EPHEMERAL_HOME_INFERRED=false
+    if [[ ! -v discovered[${ENV_CONFIG_PREFIX}EPHEMERAL_HOME] ]]; then
+        EPHEMERAL_HOME_INFERRED=true
+        EPHEMERAL_HOME=false
+        [[ -z "$HOME_SETUP_SCRIPT" ]] || EPHEMERAL_HOME=true
+    fi
     validate_machine_config
 }
 
@@ -129,6 +136,14 @@ validate_machine_config() {
         true|false) ;;
         *) die "invalid EPHEMERAL_HOME (expected exactly true or false)" ;;
     esac
+    if [[ -n "$SETUP_INPUT_SCRIPT" && -z "$HOME_SETUP_SCRIPT" ]]; then
+        die 'SETUP_INPUT_SCRIPT requires HOME_SETUP_SCRIPT'
+    fi
+    local key path
+    for key in HOME_SETUP_SCRIPT SETUP_INPUT_SCRIPT; do
+        path=${!key}
+        [[ -z "$path" ]] || validate_project_mount_path_lexical "$path" || die "invalid $key path '$path'"
+    done
     validate_egress_allow
     validate_readonly_paths_lexical
     validate_writable_paths_lexical

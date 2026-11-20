@@ -1,8 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-# shellcheck source=tests/lib/lifecycle-matrix.sh
-source "$ROOT/tests/lib/lifecycle-matrix.sh"
 # shellcheck source=tests/lib/lifecycle-jobs.sh
 source "$ROOT/tests/lib/lifecycle-jobs.sh"
 tmp=$(mktemp -d)
@@ -10,21 +8,22 @@ trap 'rm -rf -- "$tmp"' EXIT
 pass() { printf 'PASS %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
 mkdir -p "$tmp/worker-1" "$tmp/worker-2"
-lifecycle_fixed_cases > "$tmp/expected-fixed"
+# A small manifest exercises the progress display independently of matrix size.
+printf '%s\n' absent.up absent.stop trace.up.false trace.stop.false failed-new-container-cleanup > "$tmp/expected-fixed"
 : > "$tmp/worker-1/cases"
 : > "$tmp/worker-2/cases"
 : > "$tmp/worker-1/expected-faults"
 : > "$tmp/worker-2/expected-faults"
-[[ $(lifecycle_case_label "$tmp" absent.up) = 'CASE [matrix 1/144] absent.up' ]] || fail 'matrix numbering'
-[[ $(lifecycle_case_label "$tmp" trace.up.false) = 'CASE [discovery 1/9] trace.up.false' ]] || fail 'discovery numbering'
-[[ $(lifecycle_case_label "$tmp" failed-new-container-cleanup) = 'CASE [targeted failures 1/13] failed-new-container-cleanup' ]] || fail 'targeted numbering'
-lifecycle_progress "$tmp" | grep -Fq '0/166 known completed' || fail 'initial provisional total'
+[[ $(lifecycle_case_label "$tmp" absent.up) = 'CASE [matrix 1/2] absent.up' ]] || fail 'matrix numbering'
+[[ $(lifecycle_case_label "$tmp" trace.up.false) = 'CASE [discovery 1/2] trace.up.false' ]] || fail 'discovery numbering'
+[[ $(lifecycle_case_label "$tmp" failed-new-container-cleanup) = 'CASE [targeted failures 1/1] failed-new-container-cleanup' ]] || fail 'targeted numbering'
+lifecycle_progress "$tmp" | grep -Fq '0/5 known completed' || fail 'initial provisional total'
 printf '%s\n' 'interrupt.up.false.1.before' 'interrupt.up.false.1.barrier' > "$tmp/worker-2/expected-faults"
 [[ $(lifecycle_case_label "$tmp" interrupt.up.false.1.barrier) = 'CASE [interruptions up/false 2/2] interrupt.up.false.1.barrier' ]] || fail 'trace-local numbering'
 printf '%s\n' 'absent.up|2' 'interrupt.up.false.1.before|3' > "$tmp/worker-2/cases"
-lifecycle_progress "$tmp" | grep -Fq '2/168 known completed | matrix 1/144 | discovery 0/9 | interruptions 1/2 known (discovering) | targeted 0/13' || fail 'cross-worker progress'
+lifecycle_progress "$tmp" | grep -Fq '2/7 known completed | matrix 1/2 | discovery 0/2 | interruptions 1/2 known (discovering) | targeted 0/1' || fail 'cross-worker progress'
 awk '/^trace\./ {print $0 "|1"}' "$tmp/expected-fixed" > "$tmp/worker-1/cases"
-lifecycle_progress "$tmp" | grep -Fq '11/168 completed | matrix 1/144 | discovery 9/9 | interruptions 1/2 | targeted 0/13' || fail 'final discovered total'
+lifecycle_progress "$tmp" | grep -Fq '4/7 completed | matrix 1/2 | discovery 2/2 | interruptions 1/2 | targeted 0/1' || fail 'final discovered total'
 if lifecycle_case_label "$tmp" nonexistent >/dev/null; then fail 'unknown case accepted'; fi
 pass 'numbered case types and dynamic completion totals across workers'
 

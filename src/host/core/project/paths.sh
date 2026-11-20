@@ -132,6 +132,37 @@ check_configured_project_path() {
     esac
 }
 
+require_script_shebang() {
+    local path=$1 key=$2 prefix line=''
+    prefix=$(head -c 2 -- "$path") || return 1
+    IFS= read -r -n 255 line < "$path" || true
+    if [[ "$prefix" != '#!' || ! "$line" =~ ^'#!'[[:blank:]]*[^[:space:]] ]]; then
+        die "$key must begin with an interpreter line (#!)"
+    fi
+}
+
+resolve_setup_script_path() {
+    local path=$1 key=$2 mode=$3 relative=$1 hidden file
+    shift 3
+    # Reuse checks the established bind mount and the unchanged configuration
+    # digest. Only a new bind reads the current source on the host.
+    if [[ "$mode" != mounted ]]; then
+        relative=$(check_configured_project_path "$path" "$key") || return 1
+        file="$PROJECT_DIR/$relative"
+        [[ -f "$file" ]] || die "$key must be a readable executable regular file: $path"
+        if [[ "$mode" = initialize ]]; then
+            [[ -r "$file" && -x "$file" ]] || die "$key must be a readable executable regular file: $path"
+            require_script_shebang "$file" "$key" || return 1
+        fi
+    fi
+    for hidden in "$@"; do
+        if project_paths_overlap "$relative" "$hidden"; then
+            die "$key path '$path' conflicts with HIDDEN_PATHS path '$hidden'"
+        fi
+    done
+    printf '%s\n' "$relative"
+}
+
 # ASCII control characters are never valid in a configuration value or in a
 # path jailbox encodes into a TAB- or newline-delimited record. NUL cannot
 # appear in a Bash string, so this predicate covers every byte the framing

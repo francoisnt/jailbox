@@ -104,6 +104,20 @@ done
     check_readonly_mounts
 )
 
+# shellcheck disable=SC2030 # Setup-path fixture state stays inside this subshell.
+(
+    PROJECT_DIR=$tmp
+    HOME_SETUP_SCRIPT=setup-home.sh SETUP_INPUT_SCRIPT=setup-input.sh
+    EFFECTIVE_READONLY_PATHS=(setup-home.sh setup-input.sh)
+    touch "$PROJECT_DIR/$HOME_SETUP_SCRIPT"
+    validate_development_session full
+    printf -v expected '%q ' true 0 0 2 / "$REMOTE_PATH/$HOME_SETUP_SCRIPT" "$REMOTE_PATH/$SETUP_INPUT_SCRIPT"
+    [[ $(tail -1 "$tmp/ssh-calls") = *"$expected" ]] || fail 'attachment did not allow only the missing setup path'
+    validate_development_session launch
+    printf -v expected '%q ' true 0 0 3 / "$REMOTE_PATH/$HOME_SETUP_SCRIPT" "$REMOTE_PATH/$SETUP_INPUT_SCRIPT"
+    [[ $(tail -1 "$tmp/ssh-calls") = *"$expected" ]] || fail 'launch allowed a missing setup path'
+)
+
 # The real runtime harness has its own SCRIPT_DIR. It must scope the CLI root
 # while calling host validation and restore its directory afterward.
 (
@@ -162,7 +176,7 @@ healthy() {
     printf 'Iface Destination\neth0 01000000\n' > "$tmp/route"
     : > "$tmp/ipv6"
 }
-remote() { PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" '' true 0 0 "${paths[@]}" < "$tmp/remote"; }
+remote() { PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" '' true 0 0 "${#paths[@]}" "${paths[@]}" < "$tmp/remote"; }
 healthy
 result=$(remote)
 [[ "$result" = ok ]] || fail "healthy remote payload rejected: $result"
@@ -186,6 +200,22 @@ healthy
 sed '3d' "$tmp/mountinfo" > "$tmp/changed"
 mv "$tmp/changed" "$tmp/mountinfo"
 [[ $(remote) = mount:2 ]] || fail 'missing protected mount accepted'
+setup_path="$tmp/project/setup-input.sh"
+setup_remote() {
+    PATH="$tmp/bin:$PATH" bash "$tmp/remote" "$1" "$tmp/project" '' true 0 0 "${#paths[@]}" "${paths[@]}" "$setup_path"
+}
+healthy
+[[ $(setup_remote full) = ok ]] || fail 'attachment refused an absent setup path'
+[[ $(setup_remote launch) = mount:3 ]] || fail 'launch allowed an absent setup path'
+touch "$setup_path"
+[[ $(setup_remote full) = mount:3 ]] || fail 'attachment accepted an unprotected replacement for a setup script'
+printf '2 0 0:1 / %s ro - tmpfs tmpfs ro\n' "$setup_path" >> "$tmp/mountinfo"
+[[ $(setup_remote full) = ok ]] || fail 'attachment refused a read-only setup bind'
+healthy
+rm "$setup_path"
+ln -s "$tmp/missing-destination" "$setup_path"
+[[ $(setup_remote full) = mount:3 ]] || fail 'attachment accepted a dangling setup script link'
+rm "$setup_path"
 healthy
 head -1 "$tmp/mountinfo" >> "$tmp/duplicate"
 cat "$tmp/duplicate" >> "$tmp/mountinfo"
@@ -199,10 +229,10 @@ proxy=http://10.0.0.2:8888
 proxy_remote() {
     HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy" http_proxy="$proxy" https_proxy="$proxy" \
         NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1 \
-        PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" "$proxy" true 0 0 "${paths[@]}" < "$tmp/remote"
+        PATH="$tmp/bin:$PATH" bash -s -- full "$tmp/project" "$proxy" true 0 0 "${#paths[@]}" "${paths[@]}" < "$tmp/remote"
 }
 [[ $(proxy_remote) = ok ]] || fail 'healthy proxy session rejected'
-[[ $(PATH="$tmp/bin:$PATH" HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" true 0 0 "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'
+[[ $(PATH="$tmp/bin:$PATH" HTTP_PROXY=wrong bash "$tmp/remote" full "$tmp/project" "$proxy" true 0 0 "${#paths[@]}" "${paths[@]}") = proxy-env ]] || fail 'wrong proxy environment accepted'
 printf 'eth0 00000000\n' >> "$tmp/route"
 [[ $(proxy_remote) = direct-route ]] || fail 'direct IPv4 route accepted'
 healthy
@@ -219,7 +249,7 @@ healthy
 printf '2 0 0:1 / %s ro - tmpfs tmpfs ro\n' "$tmp/project" >> "$tmp/mountinfo"
 printf '3 0 0:1 / %s rw - tmpfs tmpfs rw\n' "$tmp/project/lane" "$tmp/project/file" >> "$tmp/mountinfo"
 lane_remote() {
-    PATH="$tmp/bin:$PATH" bash "$tmp/remote" "$1" "$tmp/project" '' false 2 0 \
+    PATH="$tmp/bin:$PATH" bash "$tmp/remote" "$1" "$tmp/project" '' false 2 0 2 \
         "$tmp/project/lane" "$tmp/project/file" / "$tmp/project"
 }
 touch -t 200001010000 "$tmp/lane-timestamp" "$tmp/project/lane"
@@ -236,7 +266,7 @@ touch -t 200001010000 "$tmp/lane-timestamp" "$tmp/project/lane"
     export -f mktemp
     [[ $(lane_remote full) = ok ]] || fail 'attachment attempted marker allocation'
     [[ $(lane_remote launch) = lane-write ]] || fail 'failed marker allocation accepted'
-    [[ $(PATH="$tmp/bin:$PATH" bash "$tmp/remote" launch "$tmp/project" '' false 1 0 \
+    [[ $(PATH="$tmp/bin:$PATH" bash "$tmp/remote" launch "$tmp/project" '' false 1 0 2 \
         "$tmp/project/file" / "$tmp/project") = ok ]] || fail 'file-only launch attempted a marker'
 )
 (
@@ -282,7 +312,7 @@ chmod 755 "$tmp/bin/stat"
 mkdir "$tmp/masked-directory"
 chmod 755 "$tmp/masked-directory"
 mask_remote() {
-    PATH="$tmp/bin:$PATH" bash "$tmp/remote" mounts "$tmp/project" '' false 0 4 \
+    PATH="$tmp/bin:$PATH" bash "$tmp/remote" mounts "$tmp/project" '' false 0 4 2 \
         file "$mask_file" directory "$tmp/masked-directory" / "$tmp/project"
 }
 mask_mounts() {

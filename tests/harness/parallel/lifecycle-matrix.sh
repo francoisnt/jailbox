@@ -138,12 +138,15 @@ TEST_CASE='independent fault coverage rejects each missing operation'
 # Paths, hashes and allocation suffixes are irrelevant to operation membership.
 cp "$ROOT/tests/fixtures/lifecycle-matrix/up.trace" "$FIXTURE/up-trace"
 cp "$ROOT/tests/fixtures/lifecycle-matrix/cleanup.trace" "$FIXTURE/cleanup-trace"
-for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network stop:false stop:true --clean:false --clean:true; do
+for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network up:home-setup stop:false stop:true --clean:false --clean:true; do
     command=${scenario%:*}; policy=${scenario#*:}
     if [[ "$policy" = resume ]]; then
         printf '%s\n' 'podman start jailbox-project-abc-proxy' 'podman start jailbox-project-abc' > "$FIXTURE/coverage"
     elif [[ "$policy" = plain-network ]]; then
         printf '%s\n' 'podman network create --label digest=abc jailbox-project-abc-net' > "$FIXTURE/coverage"
+    elif [[ "$policy" = home-setup ]]; then
+        printf '%s\n' 'ssh -F /ssh -T jailbox-project-abc /usr/local/bin/jailbox-exec-argv\ Zml4dHVyZQA=' \
+            'mv -f -- /state/.home-setup-complete.temp /state/home-setup-complete' > "$FIXTURE/coverage"
     elif [[ "$command" = up ]]; then
         cp "$FIXTURE/up-trace" "$FIXTURE/coverage"
         if [[ "$policy" != false ]]; then

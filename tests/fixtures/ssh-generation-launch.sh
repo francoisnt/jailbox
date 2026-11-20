@@ -59,7 +59,7 @@ finalize_project_path_policy() { :; }
 build_jailbox_image() { :; }
 configure_network() { :; }
 build_project_mounts() { [ "$GENERATION_FAILURE" != before ]; }
-ensure_home_volume() { :; }
+create_home_volume() { :; }
 start_jailbox_container() {
     # The new pin must already exist when the engine is first invoked.
     validate_ssh_generation

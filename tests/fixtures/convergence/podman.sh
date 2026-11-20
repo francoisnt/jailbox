@@ -14,6 +14,9 @@ case "$kind $action" in
     'image exists') [[ ${CONVERGENCE_IMAGE_MISSING:-false} != true ]] ;;
     'container exists'|'network exists'|'volume exists') [[ -f "$file" ]] ;;
     'container inspect'|'network inspect'|'volume inspect')
+        if [[ "$kind" = volume && -n ${CONVERGENCE_VOLUME_INSPECTIONS:-} ]]; then
+            printf '%s\n' "$name" >> "$CONVERGENCE_VOLUME_INSPECTIONS"
+        fi
         [[ -f "$file" ]] || exit 125
         template=${5:-}
         if [[ ${CONVERGENCE_INSPECT_ERROR:-} == "$kind" ]]; then exit 125; fi
@@ -43,6 +46,12 @@ case "$kind $action" in
                 [[ ! -f "$file.recreated" ]] || original=false
                 printf '%064d %s\n' 3 "$original" ;;
             *jailbox.config-digest*) cat "$file" ;;
+            *jailbox.home-generation*)
+                generation="$state/home-generation.$name"
+                retention=$(cat "$file")
+                token=
+                if [[ -f "$generation" ]]; then token=$(cat "$generation"); fi
+                printf '%s|%s|\n' "$retention" "$token" ;;
             *jailbox.ephemeral-home*) cat "$file" ;;
             '{{.State.Status}}') cat "$file.status" ;;
             '{{.Id}}') cat "$file.id" ;;
@@ -74,18 +83,26 @@ case "$kind $action" in
     'network create'|'volume create')
         printf '%s\n' "$*" >> "$log"
         if [[ ${CONVERGENCE_FAIL_MUTATION:-} == "$kind:before" ]]; then exit 42; fi
-        label=""
+        label="" generation=""
         while (($#)); do
-            case "$1" in --label) label=${2#*=}; shift ;; esac
+            if [[ "$1" = --label ]]; then
+                case "$2" in
+                    jailbox.home-generation=*) generation=${2#*=} ;;
+                    *) label=${2#*=} ;;
+                esac
+                shift
+            fi
             name=$1; shift
         done
         echo "$label" > "$state/$kind.$name"
+        if [[ "$kind" = volume ]]; then printf '%s\n' "$generation" > "$state/home-generation.$name"; fi
         mkdir -p "$state/home"
         if [[ ${CONVERGENCE_FAIL_MUTATION:-} == "$kind:after" ]]; then exit 42; fi
         ;;
     'network rm'|'volume rm'|'image rm')
         printf '%s\n' "$*" >> "$log"
         rm -f "$file"
+        [[ "$kind" != volume ]] || rm -f "$state/home-generation.$name"
         [[ "$kind" != network ]] || rm -f "$file.recreated"
         ;;
     *)

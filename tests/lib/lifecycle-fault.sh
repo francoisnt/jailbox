@@ -33,6 +33,9 @@ case "$name" in
         ;;
     ssh)
         case " $* " in *'bash -s -- launch '*|*'jailbox-manage-proxy enable'*|*'jailbox-manage-proxy disable'*) mutation=true ;; esac
+        if [[ -n ${LIFECYCLE_SETUP_FRAME:-} && ${!#} = "/usr/local/bin/jailbox-exec-argv $LIFECYCLE_SETUP_FRAME" ]]; then
+            mutation=true
+        fi
         if [[ ${LIFECYCLE_FAIL_SSH:-false} = true ]]; then exit 255; fi
         ;;
 esac

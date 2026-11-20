@@ -30,20 +30,29 @@ case "$1 $2" in
                 printf '%s/home-contents\n' "$state"
                 exit 0
             fi
-            awk -F= '$1 == "jailbox.ephemeral-home" {
-                if ($0 == "jailbox.ephemeral-home=true") print "true";
-                else if ($0 == "jailbox.ephemeral-home=false") print "false";
-                else print "corrupt";
-            }' "$file"
+            setup=false
+            [[ "$5" != *jailbox.home-generation* ]] || setup=true
+            awk -F= -v setup="$setup" '
+                $1 == "jailbox.ephemeral-home" {
+                    if ($0 == "jailbox.ephemeral-home=true") policy="true";
+                    else if ($0 == "jailbox.ephemeral-home=false") policy="false";
+                    else policy="corrupt";
+                }
+                $1 == "jailbox.home-generation" { generation=$2 }
+                END {
+                    if (setup == "true") print policy "|" generation "|";
+                    else print policy;
+                }
+            ' "$file"
         else
             cat "$file"
         fi
         ;;
     "volume create")
         [ "$3" = --label ] || exit 1
-        [ "$5" = --opt ] && [ "$6" = o=uid=0,gid=0 ] || exit 1
-        printf '%s' "$4" > "$(resource_file volume "$7")"
-        printf 'volume create %s\n' "$7" >> "$state/actions"
+        [ "$5" = --label ] && [ "$7" = --opt ] && [ "$8" = o=uid=0,gid=0 ] || exit 1
+        printf '%s\n' "$4" "$6" > "$(resource_file volume "$9")"
+        printf 'volume create %s\n' "$9" >> "$state/actions"
         ;;
     "volume rm"|"network rm"|"image rm")
         if [ "${FAKE_PODMAN_VANISH_NAME:-}" = "$3" ]; then

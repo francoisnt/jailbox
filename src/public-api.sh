@@ -20,6 +20,8 @@ CONFIG_SCALAR_KEYS=(
     CPU_LIMIT
     PIDS_LIMIT
     EPHEMERAL_HOME
+    HOME_SETUP_SCRIPT
+    SETUP_INPUT_SCRIPT
 )
 
 CONFIG_ARRAY_KEYS=(
@@ -35,9 +37,8 @@ FRONTEND_SCALAR_KEYS=(
     EDITOR
 )
 
-# Resource-limit defaults are literal effective values, not launch-time
-# fallbacks: an absent key and an explicitly spelled default are the same
-# configuration (and the same digest once the digest lands).
+# Resource limits have literal effective defaults. Core resolves omitted
+# EPHEMERAL_HOME from HOME_SETUP_SCRIPT before validating or hashing policy.
 CONFIG_DEFAULTS=(
     "DEV_IMAGE="
     "DEV_CONTAINERFILE="
@@ -46,7 +47,9 @@ CONFIG_DEFAULTS=(
     "MEMORY_LIMIT=4g"
     "CPU_LIMIT=2"
     "PIDS_LIMIT=256"
-    "EPHEMERAL_HOME=false"
+    "EPHEMERAL_HOME="
+    "HOME_SETUP_SCRIPT="
+    "SETUP_INPUT_SCRIPT="
     "EGRESS_ALLOW="
     "READONLY_PATHS="
     "WRITABLE_PATHS="

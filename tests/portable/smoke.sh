@@ -89,6 +89,19 @@ smoke_install_update_uninstall() {
     tar -xzf "$JAILBOX_DIR/dist/jailbox-v9.9.9.tar.gz" -C "$tmp"
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" >/dev/null
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.9' ]]
+    "$tmp/bin/jailbox" config-schema > "$tmp/schema"
+    grep -Fxq $'HOME_SETUP_SCRIPT\tscalar' "$tmp/schema"
+    grep -Fxq $'SETUP_INPUT_SCRIPT\tscalar' "$tmp/schema"
+    mkdir "$tmp/setup-project"
+    printf '#!/bin/sh\nexit 77\n' > "$tmp/setup-project/setup-home"
+    cp "$tmp/setup-project/setup-home" "$tmp/setup-project/setup-input"
+    chmod 755 "$tmp/setup-project/setup-home" "$tmp/setup-project/setup-input"
+    (
+        cd "$tmp/setup-project"
+        "$tmp/bin/jailbox" init
+        printf 'DEV_IMAGE=local/setup-test\nHOME_SETUP_SCRIPT=setup-home\nSETUP_INPUT_SCRIPT=setup-input\n' > jailbox.conf
+        "$tmp/bin/jailbox" --config jailbox.conf validate
+    )
     cmp "$tmp/jailbox-v9.9.9/README.md" "$tmp/share/jailbox/README.md"
     diff -r "$tmp/jailbox-v9.9.9/docs" "$tmp/share/jailbox/docs"
     cmp "$tmp/share/jailbox/VERSION" "$tmp/jailbox-v9.9.9/VERSION"

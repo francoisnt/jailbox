@@ -95,8 +95,18 @@ configuration; bare launch and `--no-editor` consume file configuration; `stop`,
 The [configuration key table](development.md#file-configuration-jailboxconf)
 lists defaults and meanings shared with file configuration; `EDITOR` is
 frontend-only. Machine arrays use the indexed syntax above, not comma-separated
-file syntax. Core automatically protects the selected in-project Containerfile;
-it does not add the frontend's config-file protection or editor bootstrap hosts.
+file syntax. Core automatically protects the selected in-project Containerfile
+and both selected setup scripts. The frontend adds config-file protection and
+editor bootstrap hosts.
+
+Set `JAILBOX_CONFIG_HOME_SETUP_SCRIPT` to initialize a newly created home and
+`JAILBOX_CONFIG_SETUP_INPUT_SCRIPT` to supply its stdin. The input script
+requires a home setup script and runs
+on the host with the invoking user's permissions. Omit
+`JAILBOX_CONFIG_EPHEMERAL_HOME` to use ephemeral retention with a setup script
+and persistent retention otherwise. Set it to `false` to keep an existing
+persistent home when selecting a setup script. See the
+[script contract and examples](development.md#reproducible-home-setup).
 
 ## Command reference
 
@@ -300,8 +310,8 @@ or proxy denial. Attachment checks retain the required local security checks
 but do not probe the availability of allowed websites.
 
 `stop` removes the development and proxy containers and all three project
-networks. The home is persistent by default; a home created with
-`EPHEMERAL_HOME=true` is removed last. Images and unrelated project runtime
+networks. A home created with effective `EPHEMERAL_HOME=true` is removed
+after its container. Images and unrelated project runtime
 files are preserved; SSH-generation material is removed after the development
 container. The next launch creates fresh containers and rotates both client
 and server key pairs. Stop is idempotent, succeeds when either or both containers
@@ -342,6 +352,13 @@ without its development-container object is never reused: run `stop` to remove
 it before `up`, even when requesting the same mode. These home refusals take
 precedence over a configuration digest mismatch; cleanup never runs
 automatically.
+
+Core runs setup after sandbox readiness checks and before `up` succeeds. A
+failed provider or setup command makes `up` fail. Normal launch and attachment
+refuse a surviving home whose required setup completion cannot be verified.
+Use `stop` to remove an incomplete ephemeral home. Recover any files you need
+from a persistent home before using `--clean` to recreate it. Status and
+recovery remain available with broken or missing setup inputs.
 
 The names are derived from the SHA-256 hash of the project's physical path, so
 an unrelated occupant is improbable — but if one exists, `stop` or `--clean`

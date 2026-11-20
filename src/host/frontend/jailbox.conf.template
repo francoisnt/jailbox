@@ -14,15 +14,19 @@ MEMORY_LIMIT=4g
 CPU_LIMIT=2
 PIDS_LIMIT=256
 
-# Keep home files between sandbox generations.
-EPHEMERAL_HOME=false
+# Executable project-relative script for a new sandbox home.
+HOME_SETUP_SCRIPT=
+# Optional executable HOST script for HOME_SETUP_SCRIPT stdin. Review before selecting.
+SETUP_INPUT_SCRIPT=
+# Home is ephemeral with a setup script and persistent otherwise. Uncomment to override.
+# EPHEMERAL_HOME=false
 
 # Empty prefers codium when available, otherwise code.
 # Accepted values: codium, code.
 EDITOR=
 
 # Comma-separated existing paths, relative to the project root.
-# jailbox.conf and the selected Containerfile are protected automatically.
+# jailbox.conf, the selected Containerfile, and both setup scripts are protected automatically.
 READONLY_PATHS=
 
 # Non-empty makes the project read-only except for these paths.

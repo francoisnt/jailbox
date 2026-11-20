@@ -37,8 +37,7 @@ complete_job() {
             done ;;
         fault)
             printf 'trace.%s.%s\n' "$1" "$2"
-            printf 'mkdir /fixture/state\n' > "$log/trace"
-            lifecycle_fault_cases "$log/trace" "$1" "$2" | tee -a "$log/expected-faults"
+            lifecycle_fault_cases "$root/mock-fault.trace" "$1" "$2" | tee -a "$log/expected-faults"
             ;;
         special)
             case "$1" in

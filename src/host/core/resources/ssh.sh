@@ -12,10 +12,27 @@ validation_ssh() {
         -o ServerAliveCountMax=2 "$CONTAINER_NAME" "$@"
 }
 
+encode_ssh_command() {
+    local command=$1 frame
+    shift
+    require_command base64 || return 1
+    require_command tr || return 1
+    frame=$(set -o pipefail; printf '%s\0' "$@" | base64 | tr -d '\n') || die "could not encode $command arguments"
+    # Wire limit shared with container/runtime/bin/jailbox-exec-argv.
+    [[ ${#frame} -le 49152 ]] || die "argument list too long for $command"
+    [[ -n "$frame" && "$frame" != *[!A-Za-z0-9+/=]* ]] || die "invalid $command argument encoding"
+    printf '%s' "$frame"
+}
+
+exec_ssh_command() {
+    # The frame has a shell-safe alphabet. Stdin is exclusively command data.
+    exec ssh -F "$SSH_CONFIG" -T "$CONTAINER_NAME" "/usr/local/bin/jailbox-exec-argv $1"
+}
+
 validate_development_session() {
     assert_project_path_policy_ready || return 1
-    local mode="$1" path arguments result proxy="" index payload status=0 project_rw=true kind
-    local -a paths=(/) writable=() hidden=()
+    local mode="$1" path arguments result proxy="" index payload status=0 project_rw=true kind required_readonly_count
+    local -a paths=(/) writable=() hidden=() missing_setup_paths=()
     if [[ -n "${WRITABLE_PATHS[*]-}" ]]; then
         paths+=("$REMOTE_PATH")
         project_rw=false
@@ -24,8 +41,18 @@ validate_development_session() {
         writable+=("$REMOTE_PATH/$path")
     done
     for path in "${EFFECTIVE_READONLY_PATHS[@]}"; do
-        paths+=("$REMOTE_PATH/$path")
+        # A host rename can move a live file bind. Keep its declared bind
+        # check and permit the original pathname to be absent on both sides.
+        if [[ "$mode" = full &&
+            ( "$path" = "${HOME_SETUP_SCRIPT:-}" || "$path" = "${SETUP_INPUT_SCRIPT:-}" ) &&
+            ! -e "$PROJECT_DIR/$path" && ! -L "$PROJECT_DIR/$path" ]]; then
+            missing_setup_paths+=("$REMOTE_PATH/$path")
+        else
+            paths+=("$REMOTE_PATH/$path")
+        fi
     done
+    required_readonly_count=${#paths[@]}
+    paths+=("${missing_setup_paths[@]}")
     for path in "${EFFECTIVE_HIDDEN_PATHS[@]}"; do
         kind=$(project_path_type "$PROJECT_DIR/$path") || return 1
         hidden+=("$kind" "$REMOTE_PATH/$path")
@@ -36,7 +63,8 @@ validate_development_session() {
         refuse_local_validation 'could not read local validation payload; repair the jailbox installation before retrying'
         return 1
     fi
-    printf -v arguments "%q " "$mode" "$REMOTE_PATH" "$proxy" "$project_rw" "${#writable[@]}" "${#hidden[@]}" "${writable[@]}" "${hidden[@]}" "${paths[@]}"
+    printf -v arguments "%q " "$mode" "$REMOTE_PATH" "$proxy" "$project_rw" "${#writable[@]}" "${#hidden[@]}" \
+        "$required_readonly_count" "${writable[@]}" "${hidden[@]}" "${paths[@]}"
     result=$(validation_ssh "bash -s -- $arguments" <<< "$payload" && printf '.') || status=$?
     if [[ "$status" != 0 ]]; then
         refuse_sandbox "SSH validation command failed (exit $status; transport or remote execution error)"

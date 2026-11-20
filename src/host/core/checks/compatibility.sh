@@ -44,7 +44,7 @@ refuse_sandbox() {
 # Returns nonzero or exits with recovery guidance on failure; partial outputs
 # must not authorize mutation. Launch and attach differ only in input selection.
 inspect_sandbox_compatibility() {
-    local mode="${1:-launch}"
+    local mode="${1:-launch}" setup_mode=mounted
     resolve_present_resources OBSERVED_RESOURCES \
         "container:$CONTAINER_NAME" "container:$PROXY_NAME" \
         "network:$NETWORK_NAME" "network:${NETWORK_NAME}-internal" \
@@ -70,7 +70,13 @@ inspect_sandbox_compatibility() {
             [ "$selection_status" -le 2 ] || return "$selection_status"
         fi
     fi
-    finalize_project_path_policy || return 1
+    if [[ "$mode" = launch && "$OBSERVED_DEV_STATE" != running ]]; then
+        setup_mode=bind
+        if [[ "$OBSERVED_DEV_STATE" = absent ]] && ! observed_resource_present "volume:$VOLUME_NAME"; then
+            setup_mode=initialize
+        fi
+    fi
+    finalize_project_path_policy "$setup_mode" || return 1
     validate_sandbox_structure
 }
 

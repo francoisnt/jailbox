@@ -848,41 +848,34 @@ run_home_function() (
     initialize_project_names
     EPHEMERAL_HOME="$1"
     PATH="$FIXTURE/bin:$PATH"
-    "$2"
+    shift
+    "$@"
 )
 
 test_home_creation_and_generation() {
-    local mode before output status
+    local mode output status
 
     (
         # shellcheck source=src/host/core/resources/home.sh
         source "$JAILBOX_DIR/src/host/core/resources/home.sh"
         VOLUME_NAME=test-home EPHEMERAL_HOME=false
-        resolve_present_resources() { local -n result=$1; result=(); }
         : > "$FIXTURE/home-calls"
         podman() {
             printf '%s\n' "$*" >> "$FIXTURE/home-calls"
             return 42
         }
-        if ensure_home_volume; then echo 'Accepted home creation failure' >&2; exit 1; fi
-        [[ $(cat "$FIXTURE/home-calls") = 'volume create --label jailbox.ephemeral-home=false --opt o=uid=0,gid=0 test-home' ]]
+        if create_home_volume plain; then echo 'Accepted home creation failure' >&2; exit 1; fi
+        [[ $(cat "$FIXTURE/home-calls") = 'volume create --label jailbox.ephemeral-home=false --label jailbox.home-generation=plain --opt o=uid=0,gid=0 test-home' ]]
     )
     pass 'conditional home setup propagates engine creation/ownership failure'
 
     for mode in true false; do
         new_project
-        run_home_function "$mode" ensure_home_volume >/dev/null
-        if [ "$(cat "$FAKE_PODMAN_STATE/volume.$PREFIX-home")" = "jailbox.ephemeral-home=$mode" ]; then
+        run_home_function "$mode" create_home_volume plain >/dev/null
+        if [ "$(cat "$FAKE_PODMAN_STATE/volume.$PREFIX-home")" = "jailbox.ephemeral-home=$mode"$'\n''jailbox.home-generation=plain' ]; then
             pass "new home labels effective $mode mode"
         else
             fail "new home labels effective $mode mode"
-        fi
-        before=$(actions)
-        run_home_function "$mode" ensure_home_volume >/dev/null
-        if [ "$before" = "$(actions)" ]; then
-            pass "existing home is not recreated or relabeled"
-        else
-            fail "existing home is not recreated or relabeled"
         fi
     done
     new_project

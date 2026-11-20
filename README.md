@@ -124,11 +124,12 @@ launched without an editor. Run lifecycle commands one at a time per project.
 Stopping disconnects active sessions; if the next launch fails, fix the cause
 and retry.
 
-The home directory persists by default. `EPHEMERAL_HOME=true` makes the home
+The home directory persists by default unless you select a `HOME_SETUP_SCRIPT`.
+`EPHEMERAL_HOME=true` makes the home
 created for that container generation disposable on stop. **`jailbox --clean`
 permanently deletes the project's home, runtime state, and derived images**
 as well as its containers and networks. Host project files remain in place.
-See [home retention and recovery](docs/development.md#everyday-use).
+See [reproducible home setup and recovery](docs/development.md#reproducible-home-setup).
 
 ## Security limits
 
@@ -141,6 +142,7 @@ services. Network filtering is optional; allowed domains can receive data, and
 host services listening on bridge-accessible addresses can remain reachable
 even with filtering enabled. Containers rely on the Linux kernel and container
 runtime for isolation. Persistent home contents remain sandbox-controlled.
+An optional `SETUP_INPUT_SCRIPT` runs on the host with your permissions.
 
 Read the [security guide](docs/security.md) for the full protections, path rules,
 and threat model.

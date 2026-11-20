@@ -1,7 +1,7 @@
 # commands — stop
 
 stop_jailbox() {
-    local target policy=false
+    local target policy=absent
     local -a present=() removable=()
 
     resolve_present_resources present \
@@ -24,6 +24,16 @@ stop_jailbox() {
         fi
         removable+=("$target")
     done
+    if [ -n "${removable[*]-}" ]; then
+        echo "🛑 Stopping jailbox..."
+        for target in "${removable[@]}"; do
+            remove_project_resource "$target" || return 1
+        done
+    fi
+    # A prior stop can have removed the volume before reaching its receipt.
+    if [[ "$policy" = true || "$policy" = absent ]]; then
+        remove_home_setup_record || return 1
+    fi
     if [ -z "${removable[*]-}" ]; then
         # Orphaned credentials are removable state even when no Podman object is,
         # so report the cleanup instead of claiming there was nothing to do.
@@ -36,10 +46,6 @@ stop_jailbox() {
         fi
         return 0
     fi
-    echo "🛑 Stopping jailbox..."
-    for target in "${removable[@]}"; do
-        remove_project_resource "$target"
-    done
     remove_ssh_generation || return 1
     echo "✅ Stopped"
 }

@@ -2,25 +2,24 @@
 
 validate_existing_sandbox_health() {
     if [ "$OBSERVED_DEV_STATE" = running ]; then
-        validate_running_development
+        validate_running_development || return 1
     fi
     if [ "$OBSERVED_PROXY_STATE" = running ]; then
-        validate_proxy_ready
+        validate_proxy_ready || return 1
     fi
     if [ "$OBSERVED_DEV_STATE" = running ] && [ "$OBSERVED_PROXY_STATE" = running ]; then
-        check_proxy_egress_denied
+        check_proxy_egress_denied || return 1
     fi
 }
 
 post_start_validation() {
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
-        check_downloader_proxy_config
-        check_proxy_egress_denied
-        check_proxy_egress_allowed
+        check_downloader_proxy_config || return 1
+        check_proxy_egress_denied || return 1
+        check_proxy_egress_allowed || return 1
     else
-        check_downloader_proxy_config_absent
+        check_downloader_proxy_config_absent || return 1
     fi
-    echo '✅ Sandbox is ready'
 }
 
 # One read-only attachment boundary, shared by all transport consumers. Loads
