@@ -40,19 +40,10 @@ tests. This plan is independently complete and does not depend on VM work.
 
 ### Optional host input
 
-Add `SETUP_INPUT_SCRIPT` in user-owned host configuration. The selected
-executable may live in the repository and be committed as a team convention;
-its location does not replace the user's explicit selection. Reject unsafe
-ownership, group/other write permissions, and symlink redirection for the
-configuration, provider, and relevant containing directories. Project
-configuration, including a custom `--config` file, cannot select or override
-this host executable.
-
-The frontend supplies the trusted selection through the separate host control
-`JAILBOX_SETUP_INPUT_SCRIPT`; direct machine callers may explicitly set that
-control themselves. It is not a project-policy key. Frontend launches use the
-host configuration selection rather than an inherited override. Declare these
-surfaces centrally and document their distinct trust boundaries.
+Add `SETUP_INPUT_SCRIPT` to project and machine configuration. Machine callers
+use `JAILBOX_CONFIG_SETUP_INPUT_SCRIPT`. The project may select a script in
+the repository as a team convention. Clearly document that this setting runs
+the selected executable on the host with the invoking user's permissions.
 
 Run the provider only when home setup will run, as the invoking host user,
 with no arguments and the project root as its working directory. The team is
@@ -108,7 +99,7 @@ Cover the default/explicit retention combinations for file and machine callers;
 new persistent and ephemeral homes; reuse, restart, and recreation; legacy
 homes; changed scripts; provider absence and failure; exact binary input;
 setup failure and interruption; completion publication and recovery. Prove
-that project policy cannot select host code, scripts are protected, and input
+that the selected sandbox script is protected and input
 bytes do not appear in jailbox-generated logs or resource metadata. Exercise
 permission-sensitive checks under both `0022` and `0002`.
 
@@ -120,7 +111,7 @@ attachment and failure prevents it. Preserve checkout and installed coverage.
 
 ## Implementation detail
 
-Keep configuration parsing and trusted host selection in the frontend, and
+Keep configuration parsing in the frontend, and
 home lifecycle, initialization records, readiness, and execution orchestration
 in core. Frontend calls remain public CLI child processes; it must not inspect
 Podman or private core records to decide whether setup is needed. Reuse the
