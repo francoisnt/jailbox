@@ -40,10 +40,11 @@ tests. This plan is independently complete and does not depend on VM work.
 
 ### Optional host input
 
-Add `SETUP_INPUT_SCRIPT` to project and machine configuration. Machine callers
-use `JAILBOX_CONFIG_SETUP_INPUT_SCRIPT`. The project may select a script in
-the repository as a team convention. Clearly document that this setting runs
-the selected executable on the host with the invoking user's permissions.
+Add `SETUP_INPUT_SCRIPT`, an optional project-relative executable script path,
+to project and machine configuration. Machine callers use
+`JAILBOX_CONFIG_SETUP_INPUT_SCRIPT`. Keep the provider and sandbox setup script
+in the project so their shared input format can be versioned together. Clearly
+document that the provider runs on the host with the invoking user's permissions.
 
 Run the provider only when home setup will run, as the invoking host user,
 with no arguments and the project root as its working directory. The team is
