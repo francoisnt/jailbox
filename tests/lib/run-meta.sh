@@ -8,7 +8,7 @@
 #
 # Helpers:
 #   run_log_path    <dir>                     repository-relative form for output
-#   write_run_meta  <dir>                     date, jailbox git SHA, host, podman
+#   write_run_meta  <dir>                     date, jailbox git SHA, host, CPU, podman
 #   run_meta_editor <dir> <editor-bin>        editor version/commit + remote extension
 #   run_meta_image  <dir> <name> <ref>        image ref, resolved digest, os-release
 
@@ -31,7 +31,7 @@ meta_os_pretty_name() {
 
 write_run_meta() {
     local dir="$1"
-    local date_utc sha dirty host_uname host_os podman_version
+    local date_utc sha dirty host_uname host_os host_cpu host_cpus podman_version
 
     date_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
     sha="$(git -C "$JAILBOX_DIR" rev-parse HEAD 2>/dev/null || true)"
@@ -45,6 +45,10 @@ write_run_meta() {
     fi
     host_uname="$(uname -srm 2>/dev/null || true)"
     host_os="$(meta_os_pretty_name < /etc/os-release 2>/dev/null || true)"
+    # Hosted CI machines vary in speed; the processor explains slow shards.
+    host_cpu="$(sed -n 's/^model name[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo 2>/dev/null | head -1 || true)"
+    [[ -n "$host_cpu" ]] || host_cpu="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)"
+    host_cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
     podman_version="$(podman --version 2>/dev/null || true)"
 
     meta_kv "$dir" RUN_DATE_UTC "$date_utc"
@@ -52,6 +56,8 @@ write_run_meta() {
     meta_kv "$dir" JAILBOX_GIT_DIRTY "$dirty"
     meta_kv "$dir" HOST_UNAME "$host_uname"
     meta_kv "$dir" HOST_OS "$host_os"
+    meta_kv "$dir" HOST_CPU "$host_cpu"
+    meta_kv "$dir" HOST_CPUS "$host_cpus"
     meta_kv "$dir" PODMAN_VERSION "$podman_version"
 }
 
