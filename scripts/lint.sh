@@ -50,7 +50,7 @@ done <<< "$files"
 # shellcheck source=scripts/lib/container-shells.sh
 source "$SCRIPT_DIR/lib/container-shells.sh"
 collect_container_shells src
-test_suite_directory "$PWD" portable shellcheck
+test_suite_directory "$PWD" lint shellcheck
 lint_output=$TEST_SUITE_LOG_DIR
 
 # Reuse only a successful check of identical default inputs. Discovery above

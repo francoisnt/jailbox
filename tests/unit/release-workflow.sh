@@ -25,7 +25,13 @@ grep -Fq "if: needs.previous-gates.outputs.reuse != 'true'" "$workflow"
 grep -Fq 'run: python3 scripts/lib/release-gates.py select' "$workflow"
 grep -Fq '  actions: read' "$workflow"
 gates="$ROOT/.github/workflows/test-gates.yml"
-grep -Fq '    needs: [portable, runtime, matrix-scope, matrix, matrix-pieces, editor]' "$gates"
+grep -Fq '    needs: [lint, portable, runtime, matrix-scope, matrix, matrix-pieces, editor]' "$gates"
+# ShellCheck runs once in its own gate; portable environments do not repeat it.
+lint_job=$(awk '/^  lint:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
+grep -Fxq '        run: bash tests/run lint' <<< "$lint_job"
+grep -Fq 'path: testlog/shellcheck-cache/success' <<< "$lint_job"
+portable_job=$(awk '/^  portable:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
+if grep -Fq 'shellcheck-cache' <<< "$portable_job"; then exit 1; fi
 grep -Fq '      success() && inputs.run_editor &&' "$gates"
 # Only a full, unmodified matrix produces evidence. Only PR checks may skip it.
 grep -Fq "      needs.matrix-scope.outputs.run == 'true' && inputs.lifecycle_jobs == '' &&" "$gates"

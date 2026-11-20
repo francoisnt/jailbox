@@ -11,7 +11,7 @@ import sys
 import urllib.parse
 import zipfile
 
-GATES = {"portable", "runtime", "matrix", "editor"}
+GATES = {"lint", "portable", "runtime", "matrix", "editor"}
 WORKFLOWS = {"pr-checks.yml", "test-gates.yml", "release.yml", "canary.yml"}
 PROOF_FILE = "verified-test-gates.json"
 RUNTIME_FIELDS = ("bash_version", "podman_version", "tested_at", "run_url")
@@ -53,7 +53,7 @@ def record(env):
     if not pieces or pieces["result"] != "success":
         raise ValueError("evidence requires matching matrix pieces across shards")
     if set(needs) != GATES or any(needs[gate]["result"] != "success" for gate in GATES):
-        raise ValueError("all four gates must pass")
+        raise ValueError("all five gates must pass")
     inputs.pop("matrix_change_scope", None)
     if inputs.pop("run_editor", None) is not True or any(inputs.values()):
         raise ValueError("evidence requires both editors and the pinned dependencies")

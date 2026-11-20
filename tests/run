@@ -4,12 +4,13 @@
 # Usage: tests/run [dev [SUITE ...]|GATE ...]
 #
 #   dev       Fast development checks, plus explicitly named portable suites
-#   portable  ShellCheck, product/harness tests, and distribution/install lifecycle
+#   lint      Full ShellCheck static analysis
+#   portable  Product/harness tests and distribution/install lifecycle
 #   runtime   Container security contract and headless CLI system tests
 #   matrix    Full lifecycle state and interruption matrix
 #   editor    Real VS Code/VSCodium Remote SSH and task execution
 #
-# Naming no gate runs all four in order. Prerequisites for every selected gate
+# Naming no gate runs all five in order. Prerequisites for every selected gate
 # are checked before any suite runs, so a missing dependency fails immediately
 # instead of after a long gate.
 set -euo pipefail
@@ -19,7 +20,7 @@ JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 # shellcheck source=tests/lib/logging.sh
 source "$SCRIPT_DIR/lib/logging.sh"
 
-ALL_GATES=(portable runtime matrix editor)
+ALL_GATES=(lint portable runtime matrix editor)
 
 SUITES_PASSED=0
 SUITES_FAILED=0
@@ -115,6 +116,10 @@ gate_selected() {
 # xvfb-run, so an all-gates run stays one process with one report.
 require_gate_prerequisites() {
     command -v python3 >/dev/null 2>&1 || die "python3 is required for test gates"
+    if gate_selected lint; then
+        command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the lint gate"
+    fi
+    # ShellCheck tooling suites exercise the real ShellCheck executable.
     if gate_selected portable; then
         command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the portable gate"
     fi
@@ -166,8 +171,10 @@ run_gate() {
             run_suite "generated-files" check_generated_files
             run_portable_tests
             ;;
-        portable)
+        lint)
             run_suite "shellcheck" bash "$JAILBOX_DIR/scripts/lint.sh"
+            ;;
+        portable)
             run_suite "generated-files" check_generated_files
             run_portable_tests
             run_suite "distribution" bash "$SCRIPT_DIR/portable/smoke.sh"
@@ -208,7 +215,8 @@ Development checks:
                   Partial coverage; omits full ShellCheck and distribution
 
 Test gates:
-  portable  ShellCheck, all product/harness tests, release tarball, and install lifecycle
+  lint      Full ShellCheck static analysis of every shell script
+  portable  All product/harness tests, release tarball, and install lifecycle
   runtime   Wrapper/container security contract and headless jailbox CLI system tests
   matrix    Full lifecycle state and interruption matrix with required image preparation
   editor    Build test images and verify a real Remote SSH editor session and task
@@ -236,8 +244,8 @@ else
     else
         for gate in "$@"; do
             case "$gate" in
-                portable|runtime|matrix|editor) ;;
-                *) die "unknown test gate: $gate (expected portable, runtime, matrix, or editor)" ;;
+                lint|portable|runtime|matrix|editor) ;;
+                *) die "unknown test gate: $gate (expected lint, portable, runtime, matrix, or editor)" ;;
             esac
             gate_selected "$gate" && die "duplicate test gate: $gate"
             GATES+=("$gate")

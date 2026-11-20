@@ -9,7 +9,7 @@ declare -F require_gate_prerequisites >/dev/null
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-for selected in dev portable runtime matrix editor; do
+for selected in dev lint portable runtime matrix editor; do
     status=0
     (
         die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -35,4 +35,15 @@ for missing in shellcheck git; do
     ) > "$tmp/out" 2> "$tmp/err"; then fail "dev accepted missing $missing"; fi
     grep -Fq "$missing is required" "$tmp/err"
 done
-printf 'PASS: development checks and all four gates check Python before gate-specific prerequisites\n'
+# The lint gate refuses to start without ShellCheck.
+if (
+    die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+    gate_selected() { [[ "$1" = lint ]]; }
+    command() {
+        [[ "$*" != '-v shellcheck' ]] || return 1
+        builtin command "$@"
+    }
+    require_gate_prerequisites
+) > "$tmp/out" 2> "$tmp/err"; then fail 'lint accepted missing shellcheck'; fi
+grep -Fxq 'Error: shellcheck is required for the lint gate' "$tmp/err"
+printf 'PASS: development checks and all five gates check Python before gate-specific prerequisites\n'

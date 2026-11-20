@@ -14,7 +14,7 @@ live in [docs/](docs/development.md), and
 - [Complete launch walkthrough](#5-a-complete-launch-from-request-to-editor)
 - [Attachment, cleanup, and failure](#6-attachment-stopping-cleanup-and-failure)
 - [Containment](#7-how-containment-works)
-- [Testing strategy](#8-why-the-tests-have-four-gates)
+- [Testing strategy](#8-why-the-tests-have-five-gates)
 - [Installation and release](#9-installation-versioning-and-release)
 - [Glossary](#10-glossary)
 
@@ -469,7 +469,7 @@ not writes by the host. Consult the [threat model](docs/security.md) alongside
 these mechanisms; proxy filtering is HTTP(S) mediation, not arbitrary packet
 inspection or a promise to make allowed destinations harmless.
 
-## 8. Why the tests have four gates
+## 8. Why the tests have five gates
 
 Each gate supplies different evidence. A stub can prove command ordering but
 cannot prove that Podman really mounted a file read-only. A real container can
@@ -477,7 +477,8 @@ prove that mount while still missing an editor-specific startup failure.
 
 | Gate | Main question | Approach and scope |
 |---|---|---|
-| `portable` | Do local contracts, failure handling, and the distributed installation work? | ShellCheck, generated-file checks, every product and harness suite, syntax, packaging, install/update/uninstall; fake external tools exercise controlled failures |
+| `lint` | Does every shell script pass static analysis? | Full ShellCheck; static, so CI runs it once rather than in every portable environment |
+| `portable` | Do local contracts, failure handling, and the distributed installation work? | Generated-file checks, every product and harness suite, syntax, packaging, install/update/uninstall; fake external tools exercise controlled failures |
 | `runtime` | Does the actual container enforce security and support headless use? | Real wrapper images, hardening and negative-image checks, headless CLI end-to-end tests |
 | `matrix` | What happens across partial, damaged, and interrupted lifecycle states? | Independently prepared Debian images, constructed inventories, injected failures and interruptions, observed survivors, explicit recovery |
 | `editor` | Can the supported editor actually attach and operate? | Real editor and Remote SSH, profiles, task/proof behavior, supported image combinations and network modes |
@@ -499,9 +500,9 @@ and shared-product tests for declarations, boundaries, dispatch, packaging,
 and installation. Ownership does not require separate user-facing test modes.
 
 `tests/run` validates prerequisites for all selected gates before running any.
-No argument runs all four in order, stopping on failure. Runtime and matrix are
-independent; editor prepares its own positive images. Pull requests use portable,
-runtime, and matrix; release and canary runs use all four. Python is a test-tool
+No argument runs all five in order, stopping on failure. Runtime and matrix are
+independent; editor prepares its own positive images. Pull requests, release and
+canary runs use all five. Python is a test-tool
 dependency, not currently a jailbox runtime dependency.
 
 ### What makes a useful regression
@@ -592,7 +593,7 @@ diffs help select release bumps, but semantic changes also need review because
 an unchanged command name can acquire different behavior.
 
 The machine-boundary series ships as one release unit after its implementation
-and closing verification pass all four gates. Smaller implementation plans are
+and closing verification pass all five gates. Smaller implementation plans are
 reviewable work units, not independent releases. Release tooling and exact
 version policy are described in the [automation guide](docs/automation.md#versions-and-releases).
 

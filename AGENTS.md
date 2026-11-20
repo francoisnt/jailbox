@@ -30,7 +30,7 @@ them as speculative productization or complexity without a consumer.
 - `src/container/`: wrapper/proxy image files and container-side scripts.
 - `scripts/`: repository, release, and generated-file tooling.
 - `tests/`: unit, distribution, runtime, and editor tests.
-- `.github/workflows/test-gates.yml`: reusable definition of the four CI gates.
+- `.github/workflows/test-gates.yml`: reusable definition of the five CI gates.
 - `src/public-api.sh`: canonical public configuration keys and CLI flags.
 
 Commands, flags, and configuration-key membership must come from
@@ -211,9 +211,10 @@ at the lowest useful layer and ensure the README threat model stays accurate.
 
 ## Test gates
 
-There are four primary test gates:
+There are five primary test gates:
 
 ```bash
+tests/run lint
 tests/run portable
 tests/run runtime
 tests/run matrix
@@ -224,10 +225,10 @@ tests/run editor
 its required images independently; `runtime` owns container security and the
 headless CLI system test.
 
-`tests/run` with no argument runs those same four gates in order and stops at
+`tests/run` with no argument runs those same five gates in order and stops at
 the first failing suite. It validates every selected gate's prerequisites
 before the first suite, so an environment missing Podman, an editor, or a
-display fails immediately instead of after the portable gate.
+display fails immediately instead of after the earlier gates.
 
 Keep platform coverage claims explicit and evidence-based. macOS CI currently
 runs only portable tests; runtime, matrix, and editor CI run on Linux. Explain
@@ -236,7 +237,9 @@ present portable tests, Linux results, or Intel results as Apple Silicon runtime
 verification. Record actual checks and platform/tool versions before claiming
 manual Mac coverage; distinguish a smoke check from a full gate.
 
-- `portable`: ShellCheck, generated-file checks, every suite in `tests/unit/`,
+- `lint`: full ShellCheck static analysis. Its result does not depend on the
+  host, so CI runs it once on Linux. Requires ShellCheck.
+- `portable`: generated-file checks, every suite in `tests/unit/`,
   `tests/harness/parallel/`, and `tests/harness/exclusive/`,
   syntax checks, release packaging, and the install/update/uninstall lifecycle.
 - `runtime`: wrapper-image/container security assertions and the headless CLI
@@ -307,20 +310,20 @@ new test scripts cannot silently escape ShellCheck.
   use, with an early link for automation users. Detailed development, automation,
   and security guides live in docs/ and ship alongside README.md in the installed
   package. Keep shared contracts authoritative in one guide and link to them.
-- Every pull request and push to master runs all four gates: portable, runtime,
-  matrix, and editor (both VS Code and VSCodium). The matrix runs as eight CI
+- Every pull request and push to master runs all five gates: lint, portable,
+  runtime, matrix, and editor (both VS Code and VSCodium). The matrix runs as eight CI
   shards that together cover every case. PR checks skip the matrix only when
   every file changed since the newest verified full pass on an ancestor commit
   is on the safe list in `scripts/lib/matrix-scope.py`; an unlisted path, a
   missing baseline, or any lookup failure runs the full matrix. Keep that list
   limited to files the matrix never reads. A run with a skipped matrix records
   no verified gate evidence. Auto-merge is limited to verified
-  Dependabot patch/minor GitHub Actions updates after all four gates pass; major
+  Dependabot patch/minor GitHub Actions updates after all five gates pass; major
   updates require manual review. Enforce the combined PR gates status and an
   up-to-date branch in GitHub branch protection or rulesets, not custom merge
   helpers. Configure these requirements before activating auto-merge.
-- Releases and canary runs use all four gates, always with the full matrix:
-  portable, runtime, matrix, editor.
+- Releases and canary runs use all five gates, always with the full matrix:
+  lint, portable, runtime, matrix, editor.
   Releases may reuse a verified complete passing result from the shared gate
   workflow for the exact commit, dependency combination, and required coverage,
   provided no later failure remains unresolved. Otherwise run fresh gates.
@@ -382,7 +385,7 @@ it happens.
   rewrites. When restructuring is needed, move existing text with minimal
   rewording and limit other edits to what the requested change requires.
 - The current machine-boundary series is one release unit: no release occurs
-  until all its plans are implemented and all four test gates pass. Work may
+  until all its plans are implemented and all five test gates pass. Work may
   depend on later plans when dependencies and remaining integration are
   explicitly tracked and accounted for, and all test gates continue to pass.
   Do not require temporary compatibility behavior solely for unreleased

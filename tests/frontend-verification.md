@@ -93,7 +93,7 @@ is not implemented by jailbox and needs no duplicate consumer fixture here.
 
 ## Release verification
 
-Release acceptance requires all four complete gates against the final tree,
+Release acceptance requires all five complete gates against the final tree,
 including the separate VS Code and VSCodium editor jobs. Runtime and matrix
 require Linux and Podman; editor also needs its selected editor and a display
 or Xvfb. Portable simulations cannot establish these results. Run outcomes,

@@ -63,9 +63,9 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 ### Dependabot merge policy
 
-Every PR and push to `master` runs portable, runtime, matrix, and both editor
-variants through the shared gate workflow. The `PR gates` check succeeds only
-when all four gates succeed. PR checks skip the matrix when every file changed
+Every PR and push to `master` runs lint, portable, runtime, matrix, and both
+editor variants through the shared gate workflow. The `PR gates` check succeeds
+only when all five gates succeed. PR checks skip the matrix when every file changed
 since the newest verified full pass on an ancestor commit is on the safe list
 in `scripts/lib/matrix-scope.py` (documentation, plans, editor-only and
 portable-only tests). Any other path, a missing or expired baseline, or a
@@ -146,7 +146,7 @@ behaviors were verified and which remain untested. A manual smoke result must
 not be described as a passing full runtime, matrix, or editor gate. Keep the
 README coverage statement consistent with that evidence.
 
-All four gates require Python 3: portable, runtime, and matrix use it for
+All five gates require Python 3: lint uses it for its cache key; portable, runtime, and matrix use it for
 bounded pseudoterminal tests, and editor uses it to package the proof extension.
 The CI setup scripts install it; jailbox itself does not require Python.
 Lint, portable suites, runtime stages, editor stages, and the lifecycle
@@ -171,7 +171,7 @@ Each `tests/run` invocation groups its logs under one
 for example `2026-10-08_02-00-37.123Z`. Gate and suite folders sit underneath it,
 for example `matrix/lifecycle/worker-1/running.up/`.
 `tests/run runtime matrix` runs those gates in the given order under the same
-run directory; `tests/run` groups all four gates there. Direct integration
+run directory; `tests/run` groups all five gates there. Direct integration
 scripts also create dated run directories. Existing logs are not moved.
 
 Editor runs retain each launch's stdout/stderr and native trace logs under
@@ -188,22 +188,23 @@ JAILBOX_EDITOR=codium tests/e2e/editor-smoke.sh alpine
 
 This is partial editor coverage, not a passing full editor gate.
 
-The portable lint driver (`scripts/lint.sh`) shows a single updating terminal
+The lint gate's driver (`scripts/lint.sh`) shows a single updating terminal
 progress line, occasional progress snapshots
 in redirected output, and grouped diagnostics. Detailed batch timings and output
-remain in the reported `testlog/<date-time>/portable/shellcheck` directory. Source analysis and file
+remain in the reported `testlog/<date-time>/lint/shellcheck` directory. Source analysis and file
 discovery remain enabled on cache misses; discovery also runs before cache hits.
 Successful default invocations are cached in `testlog/shellcheck-cache` using
 the ShellCheck executable, platform, and contents and names of files under
 `src/`, `scripts/`, and `tests/`, plus the declared root version source. A hit
 records reuse in the run's `cache.log`; a miss performs the full analysis.
 Custom flags, ShellCheck configuration, and external source paths bypass reuse.
-Remove `testlog/shellcheck-cache` to force a fresh check. CI retains this success
-record even when a later portable suite fails. Mocked runner tests load the real
+Remove `testlog/shellcheck-cache` to force a fresh check. ShellCheck is static
+analysis, so CI runs the lint gate once on Linux rather than in every portable
+environment, and keeps the success record between runs. Mocked runner tests load the real
 runner at execution time but leave its static analysis to its own lint entry;
 extended analysis remains enabled.
 
-Portable runs lint, generated-file checks, pooled suites, exclusive suites, and
+Portable runs generated-file checks, pooled suites, exclusive suites, and
 distribution in that order. Product tests in `tests/unit/` run in a bounded
 worker pool, with separate logs and timings under `testlog/<date-time>/portable/suites`. They
 must isolate mutable fixtures and avoid shared paths, ports, and external
@@ -261,7 +262,8 @@ their errexit behavior. Cancellation joins workers before the coordinator releas
 
 ```bash
 tests/run            # Every gate in order
-tests/run portable   # ShellCheck, product/harness tests, packaging, installer lifecycle
+tests/run lint       # Full ShellCheck static analysis
+tests/run portable   # Product/harness tests, packaging, installer lifecycle
 tests/run runtime    # Container security and headless CLI behavior (Podman)
 tests/run matrix     # Full lifecycle state and interruption matrix (Linux + Podman)
 tests/run editor     # Real Remote SSH editor behavior (Podman + GUI/xvfb)
@@ -271,12 +273,12 @@ For a specific editor, run `JAILBOX_EDITOR=code tests/run editor` or use
 `codium`. This is a test-harness selector: fixtures write the chosen editor to
 file `EDITOR`. Product launches never use `JAILBOX_EDITOR` as an override.
 
-The four gates are independent, self-contained quality gates. Naming no gate
-runs all four in order and stops at the first failing suite; it checks every
+The five gates are independent, self-contained quality gates. Naming no gate
+runs all five in order and stops at the first failing suite; it checks every
 gate's prerequisites before the first suite, so a missing Podman or editor
-fails immediately rather than after the portable gate. Pull requests, pushes to
-`master`, releases, and canary runs require all four gates. Run
-`tests/run portable` before sending a change, plus `tests/run runtime` when
+fails immediately rather than after the earlier gates. Pull requests, pushes to
+`master`, releases, and canary runs require all five gates. Run
+`tests/run lint portable` before sending a change, plus `tests/run runtime` when
 Podman is available.
 
 The full lifecycle matrix runs independently in PR, release and canary CI, as
@@ -333,7 +335,7 @@ files, symlinks, directories, FIFOs, and a directory with an unsafe mode.
 Sharing relaunch proof changes the 150-case workload.
 Establish a new 150-case baseline or compare exactly shared
 work; identical case names do not make old timings comparable. Samples remain partial coverage, never replacements
-for the four gates.
+for the five gates.
 
 Case labels separate constructed state/command cases, discovery traces,
 targeted failures, and interruption cases numbered within each trace.
@@ -460,7 +462,7 @@ either entry path. Overrides apply only to their release request.
 
 Release requests use ephemeral `release-request`, `release-request-first-major`,
 or `release-request-bump-{patch,minor,major}` tags. They never participate in
-version-tag discovery. CI reuses verified passing push results for all four
+version-tag discovery. CI reuses verified passing push results for all five
 gates on the exact commit with the pinned dependencies, provided no later
 test failure or unfinished run remains. Otherwise, it runs fresh gates.
 It always builds and validates the final archive's stamp and `--version` output

@@ -56,6 +56,67 @@ on:
         value: ${{ jobs.runtime.outputs.run_url }}
 
 jobs:
+  # ShellCheck is static analysis: its result does not depend on the host, so
+  # it runs once here instead of in every portable environment.
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install ShellCheck 0.11.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          os=$(uname -s | tr '[:upper:]' '[:lower:]')
+          arch=$(uname -m)
+          case "$arch" in arm64) arch=aarch64 ;; esac
+          curl -fsSL --retry 3 \
+            "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.${os}.${arch}.tar.gz" \
+            -o "$RUNNER_TEMP/shellcheck.tar.gz"
+          tar -xzf "$RUNNER_TEMP/shellcheck.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/shellcheck-v0.11.0" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" --version
+
+      - name: Fingerprint ShellCheck inputs
+        id: shellcheck-inputs
+        run: |
+          key=$(python3 scripts/lib/lint-cache-key.py)
+          printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+
+      - name: Restore successful ShellCheck
+        id: shellcheck-cache
+        if: steps.shellcheck-inputs.outputs.key != ''
+        uses: actions/cache/restore@v6
+        continue-on-error: true
+        with:
+          path: testlog/shellcheck-cache/success
+          key: shellcheck-v1-${{ steps.shellcheck-inputs.outputs.key }}
+
+      - name: Run lint gate
+        run: bash tests/run lint
+
+      # Save only a successful full check; the cache key covers every input.
+      - name: Save successful ShellCheck
+        if: ${{ !cancelled() && steps.shellcheck-inputs.outputs.key != '' && steps.shellcheck-cache.outputs.cache-hit != 'true' && hashFiles('testlog/shellcheck-cache/success') != '' }}
+        uses: actions/cache/save@v6
+        continue-on-error: true
+        with:
+          path: testlog/shellcheck-cache/success
+          key: shellcheck-v1-${{ steps.shellcheck-inputs.outputs.key }}
+
+      - name: Upload lint logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lint-logs
+          path: |
+            testlog/*/lint/
+          if-no-files-found: ignore
+          retention-days: 7
+
   portable:
     name: portable (${{ matrix.os }}, Bash ${{ matrix.bash }})
     runs-on: ${{ matrix.os }}
@@ -101,35 +162,11 @@ jobs:
           echo "$RUNNER_TEMP/shellcheck-v0.11.0" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" --version
 
-      - name: Fingerprint ShellCheck inputs
-        id: shellcheck-inputs
-        run: |
-          key=$(python3 scripts/lib/lint-cache-key.py)
-          printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
-
-      - name: Restore successful ShellCheck
-        id: shellcheck-cache
-        if: steps.shellcheck-inputs.outputs.key != ''
-        uses: actions/cache/restore@v6
-        continue-on-error: true
-        with:
-          path: testlog/shellcheck-cache/success
-          key: shellcheck-v1-${{ steps.shellcheck-inputs.outputs.key }}
-
       - name: Run portable gate
         run: |
           command -v bash
           bash --version
           bash tests/run portable
-
-      # ShellCheck success is reusable even if a later portable suite fails.
-      - name: Save successful ShellCheck
-        if: ${{ !cancelled() && steps.shellcheck-inputs.outputs.key != '' && steps.shellcheck-cache.outputs.cache-hit != 'true' && hashFiles('testlog/shellcheck-cache/success') != '' }}
-        uses: actions/cache/save@v6
-        continue-on-error: true
-        with:
-          path: testlog/shellcheck-cache/success
-          key: shellcheck-v1-${{ steps.shellcheck-inputs.outputs.key }}
 
       - name: Upload portable logs
         if: always()
@@ -301,7 +338,7 @@ jobs:
 
   verified-result:
     name: Record complete pinned gate result
-    needs: [portable, runtime, matrix-scope, matrix, matrix-pieces, editor]
+    needs: [lint, portable, runtime, matrix-scope, matrix, matrix-pieces, editor]
     if: >-
       success() && inputs.run_editor &&
       needs.matrix-scope.outputs.run == 'true' && inputs.lifecycle_jobs == '' &&

@@ -364,7 +364,7 @@ do not depend on resolving this investigation.
 
 `11.1-go-frontend-plan.md` owns the active migration to a native Go `jailbox`
 frontend and standalone Bash `jailcore`, including source builds, packaging,
-and verification through the existing four gates. It retains host Podman and
+and verification through the existing five gates. It retains host Podman and
 the current container security model and can ship independently of VM work.
 
 ### VM execution (deferred)
@@ -406,7 +406,7 @@ integration or its shared dependencies, including SSH setup, wrapper
 construction, networking, and generated settings. Define and maintain the change
 selection rules so dependency changes cannot silently escape the gate. Retain
 the shared gate implementation and both editor variants; releases and canaries
-continue running all four gates regardless of changed paths.
+continue running all five gates regardless of changed paths.
 
 This improves detection before merge rather than adding missing release
 validation. Assess the added CI time before selecting the trigger policy, and

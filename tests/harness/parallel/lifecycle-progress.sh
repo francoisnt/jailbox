@@ -108,7 +108,7 @@ if PATH="$tmp/bin:$PATH" DISPLAY=:fixture JAILBOX_EDITOR=code BASH_ENV="$tmp/mis
     bash "$tmp/tree/tests/run" > "$tmp/output" 2>&1; then fail 'missing matrix prerequisite accepted'; fi
 grep -Fq 'setsid is required for the matrix gate' "$tmp/output" || fail 'missing prerequisite diagnosis'
 [[ ! -s "$SUITE_TRACE" ]] || fail 'gate ran before matrix prerequisite validation'
-pass 'all four gates run once in order and prerequisites fail before any suite'
+pass 'all five gates run once in order and prerequisites fail before any suite'
 
 # Development selection uses real discovery/pool/supervision in this small tree.
 sed 's@tests/portable/smoke@tests/portable/syntax@g' "$tmp/tree/tests/portable/smoke.sh" > "$tmp/tree/tests/portable/syntax.sh"

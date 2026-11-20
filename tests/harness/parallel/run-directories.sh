@@ -33,7 +33,7 @@ for run in "$tmp"/testlog/*; do
     case "$order" in
         runtime) single=1 ;;
         'runtime matrix') mixed=1 ;;
-        'portable runtime matrix editor') all=1 ;;
+        'lint portable runtime matrix editor') all=1 ;;
         *) exit 1 ;;
     esac
     while IFS= read -r gate; do [[ -f "$run/$gate/fixture/output" ]]; done < "$run/order"
