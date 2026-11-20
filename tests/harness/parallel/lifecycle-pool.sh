@@ -252,7 +252,7 @@ lifecycle_check_piece_traces "$run"
 # A swap of two same-kind steps, a changed operand, a missing step, or a
 # different operation must each be rejected.
 # shellcheck disable=SC2016 # Literal sed expressions.
-for change in '3{h;d};4{G}' 's/tinyproxy.conf/other.conf/' '$d' '1s/network create/volume create/'; do
+for change in '3{h;d;};4{G;}' 's/tinyproxy.conf/other.conf/' '$d' '1s/network create/volume create/'; do
     piece_trace BBBB2222 99 ba9876543210 Qr34 61901 | sed "$change" > "$run/worker-2/trace.up.false.p2/events"
     if lifecycle_check_piece_traces "$run" 2> "$TEST_ROOT/piece-error"; then
         echo "FAIL: mismatched piece traces accepted ($change)" >&2; exit 1
