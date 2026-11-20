@@ -7,12 +7,24 @@ on:
         description: Run the VS Code and VSCodium editor smoke tests
         type: boolean
         default: true
+      lifecycle_jobs:
+        description: Lifecycle matrix workers per shard (1-16) for measurements; empty sizes automatically
+        type: string
+        default: ""
   workflow_call:
     inputs:
       run_editor:
         description: Run the VS Code and VSCodium editor smoke tests
         type: boolean
         default: true
+      matrix_change_scope:
+        description: Skip the lifecycle matrix when nothing it reads changed since a verified full pass
+        type: boolean
+        default: false
+      lifecycle_jobs:
+        description: Lifecycle matrix workers per shard (1-16) for measurements; empty sizes automatically
+        type: string
+        default: ""
       code_version:
         description: VS Code version override; empty uses versions.env
         type: string
@@ -169,25 +181,59 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  matrix:
-    name: matrix
+  matrix-scope:
+    name: matrix scope
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Decide whether the lifecycle matrix must run
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MATRIX_CHANGE_SCOPE: ${{ inputs.matrix_change_scope }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python3 scripts/lib/matrix-scope.py
+
+  # Each shard runs a fixed share of the full matrix; together they run it all.
+  matrix:
+    name: matrix (${{ matrix.shard }}/3)
+    needs: matrix-scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      # Skip only on an explicit decision; a missing output runs the matrix.
+      - name: Report skipped matrix
+        if: needs.matrix-scope.outputs.run == 'false'
+        run: echo "Skipped because nothing the lifecycle matrix reads changed since a verified full pass (see matrix scope)."
+
+      - name: Check out repository
+        if: needs.matrix-scope.outputs.run != 'false'
+        uses: actions/checkout@v7
+
       - name: Set up host
+        if: needs.matrix-scope.outputs.run != 'false'
         run: bash tests/ci/setup-linux.sh
 
       - name: Run matrix gate
+        if: needs.matrix-scope.outputs.run != 'false'
+        env:
+          JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/3
+          JAILBOX_LIFECYCLE_JOBS: ${{ inputs.lifecycle_jobs }}
         run: bash tests/run matrix
 
       - name: Upload matrix logs
-        if: always()
+        if: always() && needs.matrix-scope.outputs.run != 'false'
         uses: actions/upload-artifact@v7
         with:
-          name: matrix-logs
+          name: matrix-logs-${{ matrix.shard }}
           path: |
             testlog/*/matrix/
           if-no-files-found: ignore
@@ -234,9 +280,10 @@ jobs:
 
   verified-result:
     name: Record complete pinned gate result
-    needs: [portable, runtime, matrix, editor]
+    needs: [portable, runtime, matrix-scope, matrix, editor]
     if: >-
       success() && inputs.run_editor &&
+      needs.matrix-scope.outputs.run == 'true' && inputs.lifecycle_jobs == '' &&
       inputs.code_version == '' && inputs.codium_version == '' &&
       inputs.remote_ssh_version == '' && inputs.open_remote_ssh_version == ''
     runs-on: ubuntu-24.04
