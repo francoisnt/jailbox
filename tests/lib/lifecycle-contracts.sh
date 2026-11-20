@@ -20,7 +20,7 @@ declare -A LIFECYCLE_FAULT_SCENARIOS=(
 # the run, or the CI check across shards, verifies that all pieces recorded the
 # same operations in order.
 declare -A LIFECYCLE_FAULT_PIECES=(
-    [up:false]=4 [up:none]=4 [--clean:false]=2 [stop:false]=2
+    [up:false]=4 [up:none]=4 [stop:false]=2
 )
 
 validate_lifecycle_contracts() {
@@ -58,6 +58,9 @@ lifecycle_fault_piece_count() {
 
 # Focused scenarios sweep the steps that distinguish their recovery behavior.
 # Keep original trace positions so fault injection still reaches the same call.
+# --clean removes containers and networks through the same shared probe and
+# removal helpers as stop, so its sweep breaks only its own removals: the home,
+# the images and the project state. Rows still run --clean from partial states.
 lifecycle_fault_event_applies() {
     local command="$1" policy="$2" event="$3"
     case "${LIFECYCLE_COMMAND_CONTRACTS[$command]}:$policy" in
@@ -71,6 +74,9 @@ lifecycle_fault_event_applies() {
             [[ "$event" = podman\ volume\ rm\ * || "$event" = rm\ -rf\ --\ */ssh-generation\ * ]]
             ;;
         clean:true) [[ "$event" = podman\ volume\ rm\ * ]] ;;
+        clean:false)
+            [[ "$event" = podman\ volume\ rm\ * || "$event" = podman\ image\ rm\ * || "$event" = rm\ -rf\ --\ * ]]
+            ;;
         *) return 0 ;;
     esac
 }

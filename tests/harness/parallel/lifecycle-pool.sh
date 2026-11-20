@@ -31,8 +31,8 @@ for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
         done
     done
 done > "$TEST_ROOT/expected-fault-jobs"
-# The four longest sweeps stay split; changing that is a deliberate decision.
-[[ $(grep -c '\.p[1-9]|' "$TEST_ROOT/expected-fault-jobs") = 12 ]]
+# The three longest sweeps stay split; changing that is a deliberate decision.
+[[ $(grep -c '\.p[1-9]|' "$TEST_ROOT/expected-fault-jobs") = 10 ]]
 grep '^fault\.' "$TEST_ROOT/catalog" > "$TEST_ROOT/fault-jobs"
 cmp "$TEST_ROOT/expected-fault-jobs" "$TEST_ROOT/fault-jobs"
 cut -d '|' -f1 "$TEST_ROOT/catalog" | LC_ALL=C sort > "$TEST_ROOT/job-ids"
@@ -161,7 +161,7 @@ done
 pass
 
 TEST_CASE='pieces of a split sweep together run exactly the unsplit cases'
-for scenario in up:false up:none --clean:false stop:true; do
+for scenario in up:false up:none stop:false stop:true; do
     command=${scenario%:*}; policy=${scenario#*:}
     trace="$ROOT/tests/fixtures/lifecycle-matrix/up.trace"
     [[ "$command" = up ]] || trace="$ROOT/tests/fixtures/lifecycle-matrix/cleanup.trace"
@@ -325,6 +325,20 @@ for command in up stop --clean; do
     lifecycle_fault_cases "$TEST_ROOT/$trace" "$command" "$policy" > "$TEST_ROOT/faults"
     cmp "$TEST_ROOT/expected-faults" "$TEST_ROOT/faults"
 done
+pass
+
+TEST_CASE='clean sweeps break only the removals stop does not share'
+cp "$ROOT/tests/fixtures/lifecycle-matrix/cleanup.trace" "$TEST_ROOT/clean-trace"
+printf '%s\n' 'podman volume rm jailbox-project-abc-home' 'podman image rm jailbox-project-abc-image' \
+    'podman image rm jailbox-project-abc-proxy' 'rm -rf -- /state/jailbox/projects/abc' >> "$TEST_ROOT/clean-trace"
+for point in 7 8 9 10; do
+    for fault in before after barrier; do printf 'interrupt.--clean.false.%s.%s\n' "$point" "$fault"; done
+done > "$TEST_ROOT/expected-faults"
+lifecycle_fault_cases "$TEST_ROOT/clean-trace" --clean false > "$TEST_ROOT/faults"
+cmp "$TEST_ROOT/expected-faults" "$TEST_ROOT/faults"
+# Stop still breaks every one of its steps, including those --clean skips.
+lifecycle_fault_cases "$ROOT/tests/fixtures/lifecycle-matrix/cleanup.trace" stop false > "$TEST_ROOT/faults"
+[[ $(wc -l < "$TEST_ROOT/faults") = 18 ]]
 pass
 
 # External shells keep errexit active when the parent collects failed workers.

@@ -4,13 +4,7 @@ stop_jailbox() {
     local target policy=absent
     local -a present=() removable=()
 
-    resolve_present_resources present \
-        "container:$CONTAINER_NAME" \
-        "container:$PROXY_NAME" \
-        "network:$NETWORK_NAME" \
-        "network:${NETWORK_NAME}-internal" \
-        "network:${NETWORK_NAME}-external" \
-        "volume:$VOLUME_NAME"
+    resolve_project_resources present
 
     if [[ " ${present[*]} " == *" volume:$VOLUME_NAME "* ]]; then
         policy=$(home_retention_policy) || return $?
@@ -26,9 +20,7 @@ stop_jailbox() {
     done
     if [ -n "${removable[*]-}" ]; then
         echo "🛑 Stopping jailbox..."
-        for target in "${removable[@]}"; do
-            remove_project_resource "$target" || return 1
-        done
+        remove_project_resources "${removable[@]}" || return 1
     fi
     # A prior stop can have removed the volume before reaching its receipt.
     if [[ "$policy" = true || "$policy" = absent ]]; then

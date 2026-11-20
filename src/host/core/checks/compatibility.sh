@@ -45,10 +45,7 @@ refuse_sandbox() {
 # must not authorize mutation. Launch and attach differ only in input selection.
 inspect_sandbox_compatibility() {
     local mode="${1:-launch}" setup_mode=mounted
-    resolve_present_resources OBSERVED_RESOURCES \
-        "container:$CONTAINER_NAME" "container:$PROXY_NAME" \
-        "network:$NETWORK_NAME" "network:${NETWORK_NAME}-internal" \
-        "network:${NETWORK_NAME}-external" "volume:$VOLUME_NAME"
+    resolve_project_resources OBSERVED_RESOURCES
     OBSERVED_DEV_STATE=$(inspect_container_lifecycle_state "$CONTAINER_NAME") || return 1
     OBSERVED_PROXY_STATE=$(inspect_container_lifecycle_state "$PROXY_NAME") || return 1
     inspect_network_compatibility || return 1

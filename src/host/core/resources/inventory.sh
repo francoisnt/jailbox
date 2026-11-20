@@ -105,6 +105,27 @@ resolve_present_resources() {
     done
 }
 
+# Probe the project's containers, networks and home volume, plus any extra
+# targets, and record those present in the named caller array. The order is
+# removal order: containers first so the networks, the volume and images are
+# free.
+resolve_project_resources() {
+    local result_name="$1"
+    shift
+    resolve_present_resources "$result_name" \
+        "container:$CONTAINER_NAME" "container:$PROXY_NAME" \
+        "network:$NETWORK_NAME" "network:${NETWORK_NAME}-internal" \
+        "network:${NETWORK_NAME}-external" "volume:$VOLUME_NAME" "$@"
+}
+
+# Remove the given targets in order, stopping at the first failure.
+remove_project_resources() {
+    local target
+    for target in "$@"; do
+        remove_project_resource "$target" || return 1
+    done
+}
+
 remove_project_resource() {
     local kind name removal_status=0 probe_status=0
 

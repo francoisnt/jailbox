@@ -1,6 +1,5 @@
 dependency|138
-fault.--clean.false.p1|253
-fault.--clean.false.p2|245
+fault.--clean.false|210
 fault.--clean.true|52
 fault.stop.false.p1|252
 fault.stop.false.p2|252
@@ -42,8 +41,8 @@ row.mismatched-digest|32
 row.missing-dev|52
 row.missing-digest|61
 row.missing-internal|55
-row.missing-network|33
 row.missing-networks|46
+row.missing-network|33
 row.missing-proxy|101
 row.mixed|96
 row.mode-and-digest|31
@@ -64,7 +63,7 @@ row.ssh-parent-mode|28
 row.ssh-pin|10
 row.ssh-server-pair|13
 row.ssh-symlink|34
-row.stopped|42
 row.stopped-egress|67
 row.stopped-ephemeral|49
+row.stopped|42
 row.unexpected-attachment|73
