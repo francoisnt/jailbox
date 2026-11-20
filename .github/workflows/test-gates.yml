@@ -239,6 +239,27 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # Pieces of one interruption sweep may run on different shards; check that
+  # they all recorded the same operations.
+  matrix-pieces:
+    name: matrix pieces
+    needs: [matrix-scope, matrix]
+    if: needs.matrix-scope.outputs.run != 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Download matrix logs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: matrix-logs-*
+          path: matrix-logs
+
+      - name: Compare pieces across shards
+        run: bash tests/ci/check-matrix-pieces.sh 6 matrix-logs
+
   editor:
     name: editor (${{ matrix.editor_cli }})
     if: inputs.run_editor
@@ -280,7 +301,7 @@ jobs:
 
   verified-result:
     name: Record complete pinned gate result
-    needs: [portable, runtime, matrix-scope, matrix, editor]
+    needs: [portable, runtime, matrix-scope, matrix, matrix-pieces, editor]
     if: >-
       success() && inputs.run_editor &&
       needs.matrix-scope.outputs.run == 'true' && inputs.lifecycle_jobs == '' &&

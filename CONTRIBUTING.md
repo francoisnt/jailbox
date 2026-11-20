@@ -284,10 +284,12 @@ six shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
 one share; jobs are spread by recorded job time, every job belongs to exactly
 one shard, and each shard checks its own cases are complete. The longest
 interruption sweeps (`LIFECYCLE_FAULT_PIECES` in `tests/lib/lifecycle-contracts.sh`)
-run as pieces that always share a shard: each records its own trace and takes
-one contiguous share of the selected steps, and the run fails unless the pieces
-recorded the same operations in the same order (ignoring per-worker paths,
-hashes, subnets and ports).
+run as pieces that may land on different shards: each records its own trace and
+takes one contiguous share of the selected steps. The pieces must record the
+same operations in the same order (ignoring per-worker paths, hashes, subnets
+and ports). A local run checks all its pieces; in CI each shard checks its own,
+and a final `matrix pieces` job compares them across every shard's logs with
+`tests/ci/check-matrix-pieces.sh`.
 Run it locally with `tests/run matrix`; it prepares only the required Debian
 images before running
 `tests/integration/lifecycle-state.sh`, a Linux constructed-state matrix using

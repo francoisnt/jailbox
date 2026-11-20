@@ -15,11 +15,12 @@ declare -A LIFECYCLE_COMMAND_CONTRACTS=(
 declare -A LIFECYCLE_FAULT_SCENARIOS=(
     [up]='false none new-ephemeral resume plain-network home-setup' [stop]='false true' [--clean]='false true'
 )
-# Long sweeps run as several jobs that always share one machine. Each piece
+# Long sweeps run as several jobs, possibly on different machines. Each piece
 # records its own trace and takes one contiguous share of the selected steps;
-# the coordinator checks that all pieces recorded the same operations in order.
+# the run, or the CI check across shards, verifies that all pieces recorded the
+# same operations in order.
 declare -A LIFECYCLE_FAULT_PIECES=(
-    [up:false]=2 [up:none]=2 [--clean:false]=2
+    [up:false]=4 [up:none]=4 [--clean:false]=2 [stop:false]=2
 )
 
 validate_lifecycle_contracts() {

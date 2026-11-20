@@ -111,15 +111,13 @@ lifecycle_case_job() {
 }
 
 # Split the full catalog across CI machines. Timings only balance the shares:
-# every job belongs to exactly one shard whatever the history contains, and
-# the pieces of a split sweep always share a shard.
+# every job belongs to exactly one shard whatever the history contains.
 lifecycle_select_shard() {
     local run="$1" shard="$2" count="$3" timings="$4" key job
     local -A catalog_jobs=() selected=()
     awk -F '|' -v default_weight=60 -f "${BASH_SOURCE[0]%/*}/lifecycle/order-jobs.awk" "$timings" "$run/catalog" \
         > "$run/shard-weights" || return 1
-    awk -F '|' -f "${BASH_SOURCE[0]%/*}/lifecycle/shard-groups.awk" "$run/shard-weights" "$run/shard-weights" |
-        LC_ALL=C sort -t '|' -k1,1nr -k2,2 -k4,4 |
+    LC_ALL=C sort -t '|' -k1,1nr -k2,2 "$run/shard-weights" |
         awk -F '|' -v shard="$shard" -v count="$count" -f "${BASH_SOURCE[0]%/*}/lifecycle/shard-jobs.awk" \
         > "$run/shard-catalog" || return 1
     rm -f -- "$run/shard-weights"
@@ -205,24 +203,36 @@ lifecycle_fault_cases() {
     done < "$trace"
 }
 
-# Check that each split sweep piece in this run's catalog left exactly one
-# recorded trace, and that a sweep's pieces performed the same operations in
-# the same order, or their shares of the steps could misalign.
+# Check that each split sweep piece in the given runs' catalogs left exactly
+# one recorded trace across those runs, and that a sweep's pieces performed the
+# same operations in the same order, or their shares of the steps could
+# misalign. One run checks its own pieces; CI passes every shard's run.
+# Normalized traces are written to the first run.
 lifecycle_check_piece_traces() {
-    local run="$1" job kind pieces sweep normalized
-    local -a traces=()
+    local run job kind pieces sweep normalized trace
+    local -a split_jobs=() traces=()
     local -A references=()
-    while IFS='|' read -r job kind _ _ _ pieces; do
-        [[ "$kind" = fault && -n "${pieces:-}" ]] || continue
-        [[ "$job" =~ ^fault\.[a-z-]+\.[a-z][a-z-]*\.p[1-9]$ ]] || return 1
-        traces=("$run"/worker-*/"trace.${job#fault.}"/events)
-        if [[ ${#traces[@]} != 1 || ! -f "${traces[0]}" ]]; then
+    for run in "$@"; do
+        while IFS='|' read -r job kind _ _ _ pieces; do
+            [[ "$kind" = fault && -n "${pieces:-}" ]] || continue
+            [[ "$job" =~ ^fault\.[a-z-]+\.[a-z][a-z-]*\.p[1-9]$ ]] || return 1
+            split_jobs+=("$job")
+        done < "$run/catalog" || return 1
+    done
+    for job in "${split_jobs[@]}"; do
+        traces=()
+        for run in "$@"; do
+            for trace in "$run"/worker-*/"trace.${job#fault.}"/events; do
+                if [[ -f "$trace" ]]; then traces+=("$trace"); fi
+            done
+        done
+        if [[ ${#traces[@]} != 1 ]]; then
             printf 'Expected exactly one recorded trace for %s\n' "$job" >&2
             return 1
         fi
         sweep=${job#fault.}
         sweep=${sweep%.p[1-9]}
-        normalized="$run/piece-trace.${job#fault.}"
+        normalized="$1/piece-trace.${job#fault.}"
         lifecycle_worker_neutral_event < "${traces[0]}" > "$normalized" || return 1
         if [[ ! -v references[$sweep] ]]; then
             references[$sweep]=$normalized
@@ -230,7 +240,7 @@ lifecycle_check_piece_traces() {
             printf 'Pieces of the %s sweep recorded different operations\n' "$sweep" >&2
             return 1
         fi
-    done < "$run/catalog"
+    done
 }
 
 # Atomic claims allow idle workers to take the next job without a central

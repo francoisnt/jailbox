@@ -39,6 +39,7 @@ class GateTests(unittest.TestCase):
         self.needs = {name: {"result": "success", "outputs": {}} for name in gates.GATES}
         self.needs["runtime"]["outputs"] = self.runtime
         self.needs["matrix-scope"] = {"result": "success", "outputs": {"run": "true"}}
+        self.needs["matrix-pieces"] = {"result": "success", "outputs": {}}
         self.env = dict(GATE_RESULTS=json.dumps(self.needs), GATE_INPUTS=json.dumps({"run_editor": True}),
                         GITHUB_REPOSITORY=REPO, GITHUB_SHA=SHA, GITHUB_RUN_ID="10",
                         GITHUB_RUN_ATTEMPT="1", GITHUB_SERVER_URL="https://github.com")
@@ -76,6 +77,14 @@ class GateTests(unittest.TestCase):
             else:
                 needs["matrix-scope"] = scope
             with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, "full lifecycle matrix"):
+                gates.record(dict(self.env, GATE_RESULTS=json.dumps(needs)))
+        for pieces in (None, {"result": "failure", "outputs": {}}, {"result": "skipped", "outputs": {}}):
+            needs = copy.deepcopy(self.needs)
+            if pieces is None:
+                del needs["matrix-pieces"]
+            else:
+                needs["matrix-pieces"] = pieces
+            with self.subTest(pieces=pieces), self.assertRaisesRegex(ValueError, "matrix pieces"):
                 gates.record(dict(self.env, GATE_RESULTS=json.dumps(needs)))
         for scope in (True, False):
             inputs = {"run_editor": True, "matrix_change_scope": scope, "lifecycle_jobs": ""}

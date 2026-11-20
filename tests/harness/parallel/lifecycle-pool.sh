@@ -31,8 +31,8 @@ for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
         done
     done
 done > "$TEST_ROOT/expected-fault-jobs"
-# The three longest sweeps stay split; changing that is a deliberate decision.
-[[ $(grep -c '\.p[1-9]|' "$TEST_ROOT/expected-fault-jobs") = 6 ]]
+# The four longest sweeps stay split; changing that is a deliberate decision.
+[[ $(grep -c '\.p[1-9]|' "$TEST_ROOT/expected-fault-jobs") = 12 ]]
 grep '^fault\.' "$TEST_ROOT/catalog" > "$TEST_ROOT/fault-jobs"
 cmp "$TEST_ROOT/expected-fault-jobs" "$TEST_ROOT/fault-jobs"
 cut -d '|' -f1 "$TEST_ROOT/catalog" | LC_ALL=C sort > "$TEST_ROOT/job-ids"
@@ -137,12 +137,6 @@ for history in "$ROOT/tests/lib/lifecycle/timings" /dev/null "$TEST_ROOT/ascendi
             cp "$TEST_ROOT/shard-all-fixed" "$run/expected-fixed"
             lifecycle_select_shard "$run" "$shard" "$count" "$history"
             [[ -s "$run/catalog" ]]
-            # Every piece of a split sweep lands with its siblings.
-            shard_catalog=$(<"$run/catalog")
-            while IFS='|' read -r _ kind command scenario _ pieces; do
-                [[ "$kind" = fault && -n "${pieces:-}" ]] || continue
-                [[ $(grep -c "^fault\.$command\.$scenario\.p[1-9]|" <<< "$shard_catalog") = "$pieces" ]]
-            done <<< "$shard_catalog"
             cat "$run/catalog" >> "$TEST_ROOT/shard-jobs"
             cat "$run/expected-fixed" >> "$TEST_ROOT/shard-fixed"
         done
@@ -248,6 +242,34 @@ if lifecycle_check_piece_traces "$run" 2> "$TEST_ROOT/piece-error"; then
 fi
 grep -Fq 'Expected exactly one recorded trace for fault.up.false.p2' "$TEST_ROOT/piece-error"
 rm -r -- "$run/worker-3"
+lifecycle_check_piece_traces "$run"
+# Pieces on different shards are checked together: each shard's run lists only
+# its own pieces, and a piece's trace may be in any of the runs.
+other="$TEST_ROOT/piece-traces-other"
+mkdir -p "$other/worker-1"
+mv "$run/worker-2/trace.up.false.p2" "$other/worker-1/"
+grep -v '^fault.up.false.p2|' "$run/catalog" > "$TEST_ROOT/catalog-first"
+mv "$TEST_ROOT/catalog-first" "$run/catalog"
+printf '%s\n' 'fault.up.false.p2|fault|up|false|2|2' > "$other/catalog"
+lifecycle_check_piece_traces "$run"
+lifecycle_check_piece_traces "$other"
+lifecycle_check_piece_traces "$run" "$other"
+[[ -f "$run/piece-trace.up.false.p2" ]]
+cp "$other/worker-1/trace.up.false.p2/events" "$TEST_ROOT/p2-events"
+sed 's/tinyproxy.conf/other.conf/' "$TEST_ROOT/p2-events" > "$other/worker-1/trace.up.false.p2/events"
+if lifecycle_check_piece_traces "$run" "$other" 2> "$TEST_ROOT/piece-error"; then
+    echo 'FAIL: mismatched pieces on different shards accepted' >&2; exit 1
+fi
+grep -Fq 'Pieces of the up.false sweep recorded different operations' "$TEST_ROOT/piece-error"
+mkdir -p "$run/worker-2/trace.up.false.p2"
+cp "$TEST_ROOT/p2-events" "$run/worker-2/trace.up.false.p2/events"
+cp "$TEST_ROOT/p2-events" "$other/worker-1/trace.up.false.p2/events"
+if lifecycle_check_piece_traces "$run" "$other" 2> "$TEST_ROOT/piece-error"; then
+    echo 'FAIL: a piece traced on two shards was accepted' >&2; exit 1
+fi
+grep -Fq 'Expected exactly one recorded trace for fault.up.false.p2' "$TEST_ROOT/piece-error"
+rm -r -- "$other"
+printf '%s\n' 'fault.up.false.p2|fault|up|false|2|2' >> "$run/catalog"
 lifecycle_check_piece_traces "$run"
 # A swap of two same-kind steps, a changed operand, a missing step, or a
 # different operation must each be rejected.
@@ -539,9 +561,47 @@ for shard in 1/2 2/2; do
     new_coordinator_run
     grep -Fxq "shard=$shard" "$run/run-summary"
     cat "$run/completed-cases" >> "$TEST_ROOT/shard-cases"
+    # Lay the run out as CI downloads it: one directory per shard artifact.
+    mkdir -p "$TEST_ROOT/shard-logs/matrix-logs-${shard%/*}/stamp/matrix"
+    cp -R "$run" "$TEST_ROOT/shard-logs/matrix-logs-${shard%/*}/stamp/matrix/lifecycle"
 done
 LC_ALL=C sort "$TEST_ROOT/shard-cases" > "$TEST_ROOT/actual"
 cmp "$TEST_ROOT/expected-full-cases" "$TEST_ROOT/actual"
+logs="$TEST_ROOT/shard-logs"
+bash "$ROOT/tests/ci/check-matrix-pieces.sh" 2 "$logs" > "$TEST_ROOT/pieces-output"
+grep -Fq 'recorded the same operations across 2 shards' "$TEST_ROOT/pieces-output"
+grep -c '^fault\.[^|]*\.p[1-9]|' "$logs"/matrix-logs-*/stamp/matrix/lifecycle/catalog |
+    awk -F: '$2 > 0 { shards++ } END { exit shards == 2 ? 0 : 1 }'
+# Every shard's passing run is required exactly once, and pieces must match.
+check_shard_logs() {
+    local expected="$1"
+    if bash "$ROOT/tests/ci/check-matrix-pieces.sh" 2 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
+        echo "FAIL: matrix pieces accepted without: $expected" >&2; exit 1
+    fi
+    grep -Fq "$expected" "$TEST_ROOT/pieces-output"
+}
+mv "$logs/matrix-logs-2" "$TEST_ROOT/held-shard"
+check_shard_logs 'shard 2/2 has no run'
+cp -R "$logs/matrix-logs-1" "$logs/matrix-logs-2"
+check_shard_logs 'shard 1/2 has more than one run'
+rm -r -- "$logs/matrix-logs-2"
+mv "$TEST_ROOT/held-shard" "$logs/matrix-logs-2"
+summary="$logs/matrix-logs-2/stamp/matrix/lifecycle/run-summary"
+sed -i.bak 's/^exit_status=0$/exit_status=1/' "$summary"
+check_shard_logs 'shard 2/2 did not pass'
+mv "$summary.bak" "$summary"
+if bash "$ROOT/tests/ci/check-matrix-pieces.sh" 3 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
+    echo 'FAIL: matrix pieces accepted for the wrong shard count' >&2; exit 1
+fi
+grep -Fq 'is not a run of one of 3 shards' "$TEST_ROOT/pieces-output"
+for events in "$logs"/matrix-logs-2/stamp/matrix/lifecycle/worker-*/trace.*.p[1-9]/events; do
+    printf 'extra operation\n' >> "$events"
+    break
+done
+if bash "$ROOT/tests/ci/check-matrix-pieces.sh" 2 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
+    echo 'FAIL: mismatched pieces across shards accepted' >&2; exit 1
+fi
+grep -Fq 'recorded different operations' "$TEST_ROOT/pieces-output"
 for shard in 0/2 3/2 1/0 1/100 x 1/2/3; do
     if PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" JAILBOX_LIFECYCLE_SHARD="$shard" \
         bash "$tree/tests/integration/lifecycle-state.sh" > "$tree/output" 2>&1; then

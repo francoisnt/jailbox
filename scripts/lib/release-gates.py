@@ -49,6 +49,9 @@ def record(env):
     scope = needs.pop("matrix-scope", None)
     if not scope or scope["result"] != "success" or scope.get("outputs", {}).get("run") != "true":
         raise ValueError("evidence requires the full lifecycle matrix")
+    pieces = needs.pop("matrix-pieces", None)
+    if not pieces or pieces["result"] != "success":
+        raise ValueError("evidence requires matching matrix pieces across shards")
     if set(needs) != GATES or any(needs[gate]["result"] != "success" for gate in GATES):
         raise ValueError("all four gates must pass")
     inputs.pop("matrix_change_scope", None)
