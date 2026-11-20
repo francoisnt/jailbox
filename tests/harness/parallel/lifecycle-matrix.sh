@@ -148,7 +148,7 @@ for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network up:
         printf '%s\n' 'ssh -F /ssh -T jailbox-project-abc /usr/local/bin/jailbox-exec-argv\ Zml4dHVyZQA=' \
             'mv -f -- /state/.home-setup-complete.temp /state/home-setup-complete' > "$FIXTURE/coverage"
     elif [[ "$policy" = new-ephemeral ]]; then
-        grep -- --cidfile "$FIXTURE/up-trace" > "$FIXTURE/coverage"
+        grep -E -- '--cidfile|^ssh ' "$FIXTURE/up-trace" > "$FIXTURE/coverage"
         LIFECYCLE_EVENTS="$FIXTURE/coverage" "$FIXTURE/bin/podman" volume create \
             --label policy --opt o=uid=0,gid=0 home
     elif [[ "$policy" = true ]]; then

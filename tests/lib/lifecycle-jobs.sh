@@ -177,8 +177,8 @@ lifecycle_fixed_cases() {
     for baseline in networks-only missing-dev; do printf 'failed-create.%s\n' "$baseline"; done
 }
 
-# A piece of a split sweep takes one contiguous share of the selected steps,
-# keeping trace positions. Reordering inside a share cannot drop a step.
+# A piece of a split sweep takes one block of consecutive selected steps,
+# keeping trace positions; together the pieces' blocks cover every step once.
 lifecycle_fault_cases() {
     local trace="$1" command="$2" policy="$3" piece="${4:-1}" pieces="${5:-1}"
     local event point=0 selected=0 total=0 first last fault
@@ -209,7 +209,7 @@ lifecycle_fault_cases() {
 # misalign. One run checks its own pieces; CI passes every shard's run.
 # Normalized traces are written to the first run.
 lifecycle_check_piece_traces() {
-    local run job kind pieces sweep normalized trace
+    local run job kind pieces sweep normalized
     local -a split_jobs=() traces=()
     local -A references=()
     for run in "$@"; do
@@ -220,12 +220,7 @@ lifecycle_check_piece_traces() {
         done < "$run/catalog" || return 1
     done
     for job in "${split_jobs[@]}"; do
-        traces=()
-        for run in "$@"; do
-            for trace in "$run"/worker-*/"trace.${job#fault.}"/events; do
-                if [[ -f "$trace" ]]; then traces+=("$trace"); fi
-            done
-        done
+        mapfile -t traces < <(lifecycle_recorded_traces "${job#fault.}" "$@")
         if [[ ${#traces[@]} != 1 ]]; then
             printf 'Expected exactly one recorded trace for %s\n' "$job" >&2
             return 1
@@ -240,6 +235,70 @@ lifecycle_check_piece_traces() {
             printf 'Pieces of the %s sweep recorded different operations\n' "$sweep" >&2
             return 1
         fi
+    done
+}
+
+# Print the recorded trace files of KEY (command.policy[.pN]) in the given runs.
+lifecycle_recorded_traces() {
+    local key="$1" run trace
+    shift
+    for run in "$@"; do
+        for trace in "$run"/worker-*/"trace.$key"/events; do
+            if [[ -f "$trace" ]]; then printf '%s\n' "$trace"; fi
+        done
+    done
+}
+
+# After a complete run, prove what focused sweeps rely on: every step a focused
+# sweep skips appears, in the same order, in its covering sweep's trace, and no
+# sweep skips steps without a declared covering sweep. Split sweeps use their
+# first piece; the piece check proves the others identical.
+lifecycle_check_focused_traces() {
+    local command policy scenario covering key trace event skipped covered missing
+    local -a policies=() traces=()
+    for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+        read -r -a policies <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
+        for policy in "${policies[@]}"; do
+            scenario=$command:$policy
+            key=$command.$policy
+            if [[ $(lifecycle_fault_piece_count "$command" "$policy") != 1 ]]; then key=$key.p1; fi
+            mapfile -t traces < <(lifecycle_recorded_traces "$key" "$@")
+            if [[ ${#traces[@]} != 1 ]]; then
+                printf 'Expected exactly one recorded trace for %s\n' "$key" >&2
+                return 1
+            fi
+            skipped=""
+            while IFS= read -r event; do
+                lifecycle_fault_event_applies "$command" "$policy" "$event" ||
+                    skipped+=$(lifecycle_worker_neutral_event <<< "$event")$'\n'
+            done < "${traces[0]}"
+            [[ -n "$skipped" ]] || continue
+            covering=${LIFECYCLE_FAULT_COVERED_BY[$scenario]-}
+            if [[ -z "$covering" ]]; then
+                printf 'Sweep %s skips steps but declares no covering sweep\n' "$key" >&2
+                return 1
+            fi
+            [[ "$covering" != - ]] || continue
+            key=${covering/:/.}
+            if [[ $(lifecycle_fault_piece_count "${covering%%:*}" "${covering#*:}") != 1 ]]; then key=$key.p1; fi
+            mapfile -t traces < <(lifecycle_recorded_traces "$key" "$@")
+            if [[ ${#traces[@]} != 1 ]]; then
+                printf 'Expected exactly one recorded trace for %s\n' "$key" >&2
+                return 1
+            fi
+            covered=$(lifecycle_worker_neutral_event < "${traces[0]}") || return 1
+            # Walk both lists once: each skipped step must match a later covering step.
+            missing=$(awk 'NR == FNR { covering[++total] = $0; next }
+                { found = 0
+                  while (position < total) if (covering[++position] == $0) { found = 1; break }
+                  if (!found) { print; exit } }' \
+                <(printf '%s\n' "$covered") <(printf '%s' "$skipped")) || return 1
+            if [[ -n "$missing" ]]; then
+                printf 'Sweep %s.%s skips a step that %s does not perform in order: %s\n' \
+                    "$command" "$policy" "${covering/:/.}" "$missing" >&2
+                return 1
+            fi
+        done
     done
 }
 

@@ -38,8 +38,7 @@ class GateTests(unittest.TestCase):
                             tested_at="2026-10-08T01:00:00Z", run_url=URL)
         self.needs = {name: {"result": "success", "outputs": {}} for name in gates.GATES}
         self.needs["runtime"]["outputs"] = self.runtime
-        self.needs["matrix-scope"] = {"result": "success", "outputs": {"run": "true"}}
-        self.needs["matrix-pieces"] = {"result": "success", "outputs": {}}
+        self.needs["matrix-coverage"] = {"result": "success", "outputs": {}}
         self.env = dict(GATE_RESULTS=json.dumps(self.needs), GATE_INPUTS=json.dumps({"run_editor": True}),
                         GITHUB_REPOSITORY=REPO, GITHUB_SHA=SHA, GITHUB_RUN_ID="10",
                         GITHUB_RUN_ATTEMPT="1", GITHUB_SERVER_URL="https://github.com")
@@ -68,27 +67,17 @@ class GateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs)))
 
-    def test_record_requires_a_full_matrix_and_accepts_change_scope(self):
-        for scope in (None, {"result": "success", "outputs": {"run": "false"}},
-                      {"result": "success", "outputs": {}}, {"result": "failure", "outputs": {"run": "true"}}):
+    def test_record_requires_complete_matrix_coverage(self):
+        for coverage in (None, {"result": "failure", "outputs": {}}, {"result": "skipped", "outputs": {}}):
             needs = copy.deepcopy(self.needs)
-            if scope is None:
-                del needs["matrix-scope"]
+            if coverage is None:
+                del needs["matrix-coverage"]
             else:
-                needs["matrix-scope"] = scope
-            with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, "full lifecycle matrix"):
+                needs["matrix-coverage"] = coverage
+            with self.subTest(coverage=coverage), self.assertRaisesRegex(ValueError, "matrix coverage"):
                 gates.record(dict(self.env, GATE_RESULTS=json.dumps(needs)))
-        for pieces in (None, {"result": "failure", "outputs": {}}, {"result": "skipped", "outputs": {}}):
-            needs = copy.deepcopy(self.needs)
-            if pieces is None:
-                del needs["matrix-pieces"]
-            else:
-                needs["matrix-pieces"] = pieces
-            with self.subTest(pieces=pieces), self.assertRaisesRegex(ValueError, "matrix pieces"):
-                gates.record(dict(self.env, GATE_RESULTS=json.dumps(needs)))
-        for scope in (True, False):
-            inputs = {"run_editor": True, "matrix_change_scope": scope, "lifecycle_jobs": ""}
-            self.assertEqual(gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs))), self.proof)
+        inputs = {"run_editor": True, "lifecycle_jobs": ""}
+        self.assertEqual(gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs))), self.proof)
         inputs = {"run_editor": True, "lifecycle_jobs": "3"}
         with self.assertRaises(ValueError):
             gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs)))

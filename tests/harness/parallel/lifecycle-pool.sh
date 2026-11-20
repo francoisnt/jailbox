@@ -283,6 +283,74 @@ for change in '3{h;d;};4{G;}' 's/tinyproxy.conf/other.conf/' '$d' '1s/network cr
 done
 pass
 
+TEST_CASE='focused sweeps skip only steps their covering sweeps perform in order'
+run="$TEST_ROOT/focused-traces"
+# Every scenario records the cleanup or launch fixture; focused ones skip steps.
+record_focused_traces() {
+    local command policy key fixture pieces
+    local -a policies=()
+    rm -rf -- "$run"
+    for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+        read -r -a policies <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
+        for policy in "${policies[@]}"; do
+            key=$command.$policy
+            pieces=$(lifecycle_fault_piece_count "$command" "$policy")
+            [[ "$pieces" = 1 ]] || key=$key.p1
+            fixture=$TEST_ROOT/focused-up.trace
+            [[ "$command" = up ]] || fixture=$TEST_ROOT/focused-cleanup.trace
+            mkdir -p "$run/worker-1/trace.$key"
+            cp "$fixture" "$run/worker-1/trace.$key/events"
+        done
+    done
+}
+cp "$ROOT/tests/fixtures/lifecycle-matrix/up.trace" "$TEST_ROOT/focused-up.trace"
+{
+    cat "$ROOT/tests/fixtures/lifecycle-matrix/cleanup.trace"
+    printf '%s\n' 'podman volume rm jailbox-project-abc-home' 'podman image rm jailbox-project-abc-image' \
+        'rm -rf -- /state/jailbox/projects/abc'
+} > "$TEST_ROOT/focused-cleanup.trace"
+record_focused_traces
+lifecycle_check_focused_traces "$run"
+# A step only the focused sweep performs, or a reordering, is not covered.
+expect_focused_failure() {
+    if lifecycle_check_focused_traces "$run" 2> "$TEST_ROOT/focused-error"; then
+        echo "FAIL: focused sweep accepted: $1" >&2; exit 1
+    fi
+    grep -Fq "$1" "$TEST_ROOT/focused-error"
+}
+events="$run/worker-1/trace.up.new-ephemeral/events"
+awk '{ print } NR == 2 { print "chmod 600 /state/new-step" }' "$events" > "$events.new"
+mv "$events.new" "$events"
+expect_focused_failure 'Sweep up.new-ephemeral skips a step that up.none does not perform in order: chmod 600 /state/new-step'
+record_focused_traces
+sed -i.bak '1{h;d;};2{G;}' "$run/worker-1/trace.stop.true/events"
+expect_focused_failure 'Sweep stop.true skips a step that stop.false does not perform in order'
+# A repeated skipped step needs its own covering step.
+record_focused_traces
+sed -i.bak '1p' "$run/worker-1/trace.--clean.true/events"
+expect_focused_failure 'Sweep --clean.true skips a step that --clean.false does not perform in order'
+# A covering sweep's missing trace and an undeclared focus both fail.
+record_focused_traces
+rm -r -- "$run/worker-1/trace.stop.false.p1"
+expect_focused_failure 'Expected exactly one recorded trace for stop.false.p1'
+record_focused_traces
+(
+    unset 'LIFECYCLE_FAULT_COVERED_BY[stop:true]'
+    expect_focused_failure 'Sweep stop.true skips steps but declares no covering sweep'
+)
+# Declarations must name declared scenarios and end at a full sweep.
+for declaration in '[up:missing]=up:none' '[stop:true]=stop:missing' '[stop:true]=up:resume' \
+    '[stop:true]=--clean:true [--clean:true]=stop:true'; do
+    if (
+        eval "LIFECYCLE_FAULT_COVERED_BY+=($declaration)"
+        validate_lifecycle_contracts
+    ) > "$TEST_ROOT/focused-error" 2>&1; then
+        echo "FAIL: invalid covering declaration $declaration accepted" >&2; exit 1
+    fi
+    grep -Eq 'focused fault scenario|covering scenario' "$TEST_ROOT/focused-error"
+done
+pass
+
 TEST_CASE='discovered allocation faults preserve the intended exception'
 printf '%s\n' 'network create one' 'mktemp /state/.ssh-generation.XXXX' 'mkdir /state/server' > "$TEST_ROOT/trace"
 lifecycle_fault_cases "$TEST_ROOT/trace" up none > "$TEST_ROOT/faults"
@@ -308,12 +376,14 @@ pass
 TEST_CASE='ephemeral sweeps retain all three faults at the selected operations'
 printf '%s\n' 'podman run -d --name jailbox-project-abc-proxy' \
     'podman volume create --label policy jailbox-project-abc-home' \
-    'podman run -d --name jailbox-project-abc --cidfile /state/container-id' > "$TEST_ROOT/launch-trace"
+    'podman run -d --name jailbox-project-abc --cidfile /state/container-id' \
+    'ssh-keygen -t ed25519 -f /state/key' 'ssh -F /state/config jailbox-project-abc bash\ -s\ --\ launch' \
+    'ssh -F /state/config jailbox-project-abc jailbox-manage-proxy\ enable\ http://proxy' > "$TEST_ROOT/launch-trace"
 printf '%s\n' 'podman rm jailbox-project-abc' 'podman volume rm jailbox-project-abc-home' \
     'rm -rf -- /state/ssh-generation /state/key' 'rm -rf -- /state/jailbox/projects/abc' > "$TEST_ROOT/cleanup-trace"
 for command in up stop --clean; do
     case "$command" in
-        up) trace=launch-trace; policy=new-ephemeral; points=(2 3) ;;
+        up) trace=launch-trace; policy=new-ephemeral; points=(2 3 5 6) ;;
         stop) trace=cleanup-trace; policy=true; points=(2 3) ;;
         --clean) trace=cleanup-trace; policy=true; points=(2) ;;
     esac
@@ -582,15 +652,15 @@ done
 LC_ALL=C sort "$TEST_ROOT/shard-cases" > "$TEST_ROOT/actual"
 cmp "$TEST_ROOT/expected-full-cases" "$TEST_ROOT/actual"
 logs="$TEST_ROOT/shard-logs"
-bash "$ROOT/tests/ci/check-matrix-pieces.sh" 2 "$logs" > "$TEST_ROOT/pieces-output"
-grep -Fq 'recorded the same operations across 2 shards' "$TEST_ROOT/pieces-output"
+bash "$ROOT/tests/ci/check-matrix-coverage.sh" 2 "$logs" > "$TEST_ROOT/pieces-output"
+grep -Fq '2 shards ran the full matrix' "$TEST_ROOT/pieces-output"
 grep -c '^fault\.[^|]*\.p[1-9]|' "$logs"/matrix-logs-*/stamp/matrix/lifecycle/catalog |
     awk -F: '$2 > 0 { shards++ } END { exit shards == 2 ? 0 : 1 }'
 # Every shard's passing run is required exactly once, and pieces must match.
 check_shard_logs() {
     local expected="$1"
-    if bash "$ROOT/tests/ci/check-matrix-pieces.sh" 2 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
-        echo "FAIL: matrix pieces accepted without: $expected" >&2; exit 1
+    if bash "$ROOT/tests/ci/check-matrix-coverage.sh" 2 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
+        echo "FAIL: matrix coverage accepted without: $expected" >&2; exit 1
     fi
     grep -Fq "$expected" "$TEST_ROOT/pieces-output"
 }
@@ -604,15 +674,37 @@ summary="$logs/matrix-logs-2/stamp/matrix/lifecycle/run-summary"
 sed -i.bak 's/^exit_status=0$/exit_status=1/' "$summary"
 check_shard_logs 'shard 2/2 did not pass'
 mv "$summary.bak" "$summary"
-if bash "$ROOT/tests/ci/check-matrix-pieces.sh" 3 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
-    echo 'FAIL: matrix pieces accepted for the wrong shard count' >&2; exit 1
+if bash "$ROOT/tests/ci/check-matrix-coverage.sh" 3 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
+    echo 'FAIL: matrix coverage accepted for the wrong shard count' >&2; exit 1
 fi
 grep -Fq 'is not a run of one of 3 shards' "$TEST_ROOT/pieces-output"
+# A job or case absent from every shard passes each shard's own check; the
+# union must still equal the full lists derived from the checkout.
+for listing in catalog expected-fixed; do
+    for file in "$logs"/matrix-logs-*/stamp/matrix/lifecycle/"$listing"; do
+        cp "$file" "$file.bak"
+        sed '1d' "$file.bak" > "$file"
+    done
+    if [[ "$listing" = catalog ]]; then
+        check_shard_logs 'did not run exactly the full job catalog'
+    else
+        check_shard_logs 'did not run exactly the full fixed case list'
+    fi
+    for file in "$logs"/matrix-logs-*/stamp/matrix/lifecycle/"$listing"; do mv "$file.bak" "$file"; done
+done
+# Empty job lists on passing shards are the reviewer's reproduction.
+for file in "$logs"/matrix-logs-*/stamp/matrix/lifecycle/catalog; do cp "$file" "$file.bak"; : > "$file"; done
+check_shard_logs 'did not run exactly the full job catalog'
+for file in "$logs"/matrix-logs-*/stamp/matrix/lifecycle/catalog; do mv "$file.bak" "$file"; done
+# A shard number beyond the shard count is never a valid run.
+sed -i.bak 's#^shard=2/2$#shard=3/2#' "$summary"
+check_shard_logs 'is not a run of one of 2 shards'
+mv "$summary.bak" "$summary"
 for events in "$logs"/matrix-logs-2/stamp/matrix/lifecycle/worker-*/trace.*.p[1-9]/events; do
     printf 'extra operation\n' >> "$events"
     break
 done
-if bash "$ROOT/tests/ci/check-matrix-pieces.sh" 2 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
+if bash "$ROOT/tests/ci/check-matrix-coverage.sh" 2 "$logs" > "$TEST_ROOT/pieces-output" 2>&1; then
     echo 'FAIL: mismatched pieces across shards accepted' >&2; exit 1
 fi
 grep -Fq 'recorded different operations' "$TEST_ROOT/pieces-output"

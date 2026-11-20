@@ -212,6 +212,10 @@ cat "$RUN"/worker-*/cases | LC_ALL=C sort > "$RUN/case-timings" || result=1
 cut -d '|' -f1 "$RUN/case-timings" | LC_ALL=C sort > "$RUN/completed-cases"
 cmp -s "$RUN/expected-cases" "$RUN/completed-cases" || result=1
 lifecycle_check_piece_traces "$RUN" || result=1
+# A shard holds only some sweeps; CI checks focused sweeps across all shards.
+if [[ "$result" = 0 && "$LIFECYCLE_SAMPLE_MODE" = false && -z "$SHARD" ]]; then
+    lifecycle_check_focused_traces "$RUN" || result=1
+fi
 test_progress_complete 'Lifecycle: %s/%s cases completed; timings: %s/timings\n' \
     "$(wc -l < "$RUN/completed-cases")" "$(wc -l < "$RUN/expected-cases")" "$RUN"
 [[ "$result" = 0 ]] || die "worker failure or incomplete coverage; inspect $RUN"

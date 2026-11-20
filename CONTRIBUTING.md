@@ -65,11 +65,7 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 Every PR and push to `master` runs lint, portable, runtime, matrix, and both
 editor variants through the shared gate workflow. The `PR gates` check succeeds
-only when all five gates succeed. PR checks skip the matrix when every file changed
-since the newest verified full pass on an ancestor commit is on the safe list
-in `scripts/lib/matrix-scope.py` (documentation, plans, editor-only and
-portable-only tests). Any other path, a missing or expired baseline, or a
-failed lookup runs the full matrix; the `matrix scope` job logs the reason.
+only when all five gates succeed. Every run includes the full lifecycle matrix.
 
 Verified patch/minor GitHub Actions updates can enable squash auto-merge after
 the gates pass. Major updates and missing or unknown update metadata require
@@ -289,9 +285,13 @@ interruption sweeps (`LIFECYCLE_FAULT_PIECES` in `tests/lib/lifecycle-contracts.
 run as pieces that may land on different shards: each records its own trace and
 takes one contiguous share of the selected steps. The pieces must record the
 same operations in the same order (ignoring per-worker paths, hashes, subnets
-and ports). A local run checks all its pieces; in CI each shard checks its own,
-and a final `matrix pieces` job compares them across every shard's logs with
-`tests/ci/check-matrix-pieces.sh`.
+and ports). Focused sweeps interrupt only some steps; `LIFECYCLE_FAULT_COVERED_BY`
+names the sweep that interrupts the rest, and every skipped step must appear in
+order in that sweep's trace. A complete local run checks both. In CI each shard
+checks its own pieces, and a final `matrix coverage` job
+(`tests/ci/check-matrix-coverage.sh`) uses every shard's logs to check that
+together they ran exactly the full job catalog and fixed case list, then
+checks pieces and focused sweeps across shards.
 Run it locally with `tests/run matrix`; it prepares only the required Debian
 images before running
 `tests/integration/lifecycle-state.sh`, a Linux constructed-state matrix using
@@ -437,8 +437,7 @@ minimum; the Release workflow applies it when re-selecting the version and
 creates the version tag and GitHub Release only after validation passes.
 It first looks for complete passing push CI on the exact commit, using the
 same pinned dependencies and shared gate workflow. The saved result must
-confirm portable, runtime, the full matrix, and both editors; runs that skipped
-the matrix record no evidence. A later failed, cancelled,
+confirm lint, portable, runtime, the full matrix, and both editors. A later failed, cancelled,
 skipped, or unfinished test run prevents reuse. Canary runs with version
 overrides are never used as release evidence.
 

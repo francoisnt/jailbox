@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: read
-  # Matrix scope reads verified gate evidence from earlier runs.
-  actions: read
 
 jobs:
   test-gates:
@@ -16,7 +14,6 @@ jobs:
     uses: ./.github/workflows/test-gates.yml
     with:
       run_editor: true
-      matrix_change_scope: true
 
   pr-gates:
     name: PR gates

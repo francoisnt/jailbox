@@ -25,7 +25,7 @@ grep -Fq "if: needs.previous-gates.outputs.reuse != 'true'" "$workflow"
 grep -Fq 'run: python3 scripts/lib/release-gates.py select' "$workflow"
 grep -Fq '  actions: read' "$workflow"
 gates="$ROOT/.github/workflows/test-gates.yml"
-grep -Fq '    needs: [lint, portable, runtime, matrix-scope, matrix, matrix-pieces, editor]' "$gates"
+grep -Fq '    needs: [lint, portable, runtime, matrix, matrix-coverage, editor]' "$gates"
 # ShellCheck runs once in its own gate; portable environments do not repeat it.
 lint_job=$(awk '/^  lint:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
 grep -Fxq '        run: bash tests/run lint' <<< "$lint_job"
@@ -33,27 +33,18 @@ grep -Fq 'path: testlog/shellcheck-cache/success' <<< "$lint_job"
 portable_job=$(awk '/^  portable:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
 if grep -Fq 'shellcheck-cache' <<< "$portable_job"; then exit 1; fi
 grep -Fq '      success() && inputs.run_editor &&' "$gates"
-# Only a full, unmodified matrix produces evidence. Only PR checks may skip it.
-grep -Fq "      needs.matrix-scope.outputs.run == 'true' && inputs.lifecycle_jobs == '' &&" "$gates"
-grep -Fq 'run: python3 scripts/lib/matrix-scope.py' "$gates"
+# Only a full, unmodified matrix produces evidence, and every run includes it.
+grep -Fq "      inputs.lifecycle_jobs == '' &&" "$gates"
+if grep -Fq 'matrix-scope' "$gates" "$ROOT/.github/workflows/pr-checks.yml"; then exit 1; fi
 # shellcheck disable=SC2016 # Literal GitHub Actions expression.
 grep -Fq 'JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/8' "$gates"
 grep -Fxq '        shard: [1, 2, 3, 4, 5, 6, 7, 8]' "$gates"
-# Pieces of a sweep may land on different shards, so a later job compares them
-# across every shard's logs.
-pieces_job=$(awk '/^  matrix-pieces:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
-grep -Fxq '    needs: [matrix-scope, matrix]' <<< "$pieces_job"
-grep -Fxq "    if: needs.matrix-scope.outputs.run != 'false'" <<< "$pieces_job"
-grep -Fxq '          pattern: matrix-logs-*' <<< "$pieces_job"
-grep -Fxq '        run: bash tests/ci/check-matrix-pieces.sh 8 matrix-logs' <<< "$pieces_job"
-# A missing scope output must run the matrix: only an explicit false skips it.
-matrix_job=$(awk '/^  matrix:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
-[[ $(grep -c "if: needs.matrix-scope.outputs.run == 'false'$" <<< "$matrix_job") = 1 ]]
-[[ $(grep -c "needs.matrix-scope.outputs.run != 'false'$" <<< "$matrix_job") = 4 ]]
-if grep -Eq "outputs\.run (==|!=) 'true'" <<< "$matrix_job"; then exit 1; fi
-grep -Fxq '      matrix_change_scope: true' "$ROOT/.github/workflows/pr-checks.yml"
-grep -Fxq '  actions: read' "$ROOT/.github/workflows/pr-checks.yml"
-if grep -Fq 'matrix_change_scope' "$workflow" "$canary"; then exit 1; fi
+# Shards cannot see each other, so a later job checks coverage across all logs.
+coverage_job=$(awk '/^  matrix-coverage:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
+grep -Fxq '    needs: matrix' <<< "$coverage_job"
+if grep -Fq 'if:' <<< "$coverage_job"; then exit 1; fi
+grep -Fxq '          pattern: matrix-logs-*' <<< "$coverage_job"
+grep -Fxq '        run: bash tests/ci/check-matrix-coverage.sh 8 matrix-logs' <<< "$coverage_job"
 grep -Fq "inputs.code_version == '' && inputs.codium_version == ''" "$gates"
 grep -Fq "inputs.remote_ssh_version == '' && inputs.open_remote_ssh_version == ''" "$gates"
 grep -Fq 'run: python3 scripts/lib/release-gates.py record' "$gates"

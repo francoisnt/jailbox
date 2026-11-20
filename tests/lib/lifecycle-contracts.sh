@@ -22,9 +22,20 @@ declare -A LIFECYCLE_FAULT_SCENARIOS=(
 declare -A LIFECYCLE_FAULT_PIECES=(
     [up:false]=4 [up:none]=4 [stop:false]=2
 )
+# A focused sweep skips steps that another sweep also performs and interrupts.
+# Each focused scenario names that covering scenario; after a complete run every
+# skipped step must appear, in the same order, in the covering scenario's trace.
+# A chain ends at a full sweep. "-" marks launch variants that interrupt only
+# the steps they add: their other steps run with different arguments than in
+# any full sweep. A sweep that skips steps without an entry fails the run.
+declare -A LIFECYCLE_FAULT_COVERED_BY=(
+    [up:new-ephemeral]=up:none [stop:true]=stop:false
+    [--clean:true]=--clean:false [--clean:false]=stop:false
+    [up:resume]=- [up:plain-network]=- [up:home-setup]=-
+)
 
 validate_lifecycle_contracts() {
-    local command policy scenario
+    local command policy scenario covering depth
     local -a policies=()
     local -A seen=() declared=()
     public_api_validate_mapping 'lifecycle command contracts' CLI_LIFECYCLE_COMMANDS LIFECYCLE_COMMAND_CONTRACTS
@@ -49,6 +60,20 @@ validate_lifecycle_contracts() {
         [[ -v declared[$scenario] ]] || public_api_error "split fault scenario '$scenario' is not declared"
         [[ "${LIFECYCLE_FAULT_PIECES[$scenario]}" =~ ^[2-9]$ ]] || public_api_error "invalid piece count for '$scenario'"
     done
+    for scenario in "${!LIFECYCLE_FAULT_COVERED_BY[@]}"; do
+        [[ -v declared[$scenario] ]] || public_api_error "focused fault scenario '$scenario' is not declared"
+        covering=$scenario
+        for ((depth = 0; ; depth++)); do
+            covering=${LIFECYCLE_FAULT_COVERED_BY[$covering]}
+            if [[ "$covering" = - ]]; then
+                ((depth == 0)) || public_api_error "covering scenarios for '$scenario' do not end at a full sweep"
+                break
+            fi
+            [[ -v declared[$covering] ]] || public_api_error "covering scenario for '$scenario' is not declared"
+            [[ -v LIFECYCLE_FAULT_COVERED_BY[$covering] ]] || break
+            ((depth < ${#LIFECYCLE_FAULT_COVERED_BY[@]})) || public_api_error "covering scenarios for '$scenario' form a cycle"
+        done
+    done
 }
 
 # Number of jobs a fault scenario runs as; unsplit scenarios run as one.
@@ -67,8 +92,11 @@ lifecycle_fault_event_applies() {
         launch:resume) [[ "$event" = podman\ start\ * ]] ;;
         launch:plain-network) [[ "$event" = podman\ network\ create\ * && "$event" = *-net ]] ;;
         launch:home-setup) [[ "$event" = ssh\ *jailbox-exec-argv* || "$event" = mv\ *home-setup-complete* ]] ;;
+        # From home creation on, the temporary home exists and recovery must
+        # delete it, unlike the persistent home of the covering sweep.
         launch:new-ephemeral)
-            [[ "$event" = podman\ volume\ create\ * || "$event" = podman\ run\ *\ --cidfile\ * ]]
+            [[ "$event" = podman\ volume\ create\ * || "$event" = podman\ run\ *\ --cidfile\ * ||
+                "$event" = ssh\ * ]]
             ;;
         stop:true)
             [[ "$event" = podman\ volume\ rm\ * || "$event" = rm\ -rf\ --\ */ssh-generation\ * ]]
@@ -110,6 +138,8 @@ lifecycle_fault_requirements() {
             requirements=(
                 'home-creation-and-ownership|1|^podman volume create .* --opt o=uid=0\\,gid=0 '
                 'development-container|1|^podman run .* --cidfile '
+                'launch-write-probes|1|^ssh .*bash.*-s.*--.*launch'
+                'proxy-session-configuration|1|^ssh .*jailbox-manage-proxy.*enable'
             )
             ;;
         launch:false|launch:none)

@@ -311,13 +311,10 @@ new test scripts cannot silently escape ShellCheck.
   and security guides live in docs/ and ship alongside README.md in the installed
   package. Keep shared contracts authoritative in one guide and link to them.
 - Every pull request and push to master runs all five gates: lint, portable,
-  runtime, matrix, and editor (both VS Code and VSCodium). The matrix runs as eight CI
-  shards that together cover every case. PR checks skip the matrix only when
-  every file changed since the newest verified full pass on an ancestor commit
-  is on the safe list in `scripts/lib/matrix-scope.py`; an unlisted path, a
-  missing baseline, or any lookup failure runs the full matrix. Keep that list
-  limited to files the matrix never reads. A run with a skipped matrix records
-  no verified gate evidence. Auto-merge is limited to verified
+  runtime, matrix, and editor (both VS Code and VSCodium), always with the full
+  matrix. The matrix runs as eight CI shards; a final coverage job proves from
+  every shard's logs that together they ran the complete matrix. Auto-merge is
+  limited to verified
   Dependabot patch/minor GitHub Actions updates after all five gates pass; major
   updates require manual review. Enforce the combined PR gates status and an
   up-to-date branch in GitHub branch protection or rulesets, not custom merge
