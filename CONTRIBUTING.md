@@ -280,9 +280,14 @@ fails immediately rather than after the portable gate. Pull requests, pushes to
 Podman is available.
 
 The full lifecycle matrix runs independently in PR, release and canary CI, as
-three shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
+six shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
 one share; jobs are spread by recorded job time, every job belongs to exactly
-one shard, and each shard checks its own cases are complete.
+one shard, and each shard checks its own cases are complete. The longest
+interruption sweeps (`LIFECYCLE_FAULT_PIECES` in `tests/lib/lifecycle-contracts.sh`)
+run as pieces that always share a shard: each records its own trace and takes
+one contiguous share of the selected steps, and the run fails unless the pieces
+recorded the same operations in the same order (ignoring per-worker paths,
+hashes, subnets and ports).
 Run it locally with `tests/run matrix`; it prepares only the required Debian
 images before running
 `tests/integration/lifecycle-state.sh`, a Linux constructed-state matrix using

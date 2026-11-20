@@ -23,6 +23,15 @@ lifecycle_event_identity() {
     sed -E 's/(\.ssh-generation\.|gitconfig\.tmp\.|\.home-setup-complete\.)[[:alnum:]]+/\1ALLOCATED/g'
 }
 
+# Also blank what legitimately differs between workers: the fixture directory,
+# project and configuration hashes, the per-project subnet, and the SSH port.
+# Everything else must match for two workers to have performed the same operations.
+lifecycle_worker_neutral_event() {
+    lifecycle_event_identity |
+        sed -E 's#/tmp/jailbox-e2e-lifecycle\.[[:alnum:]]+#FIXTURE#g; s/[0-9a-f]{12,}/HASH/g
+            s/10\.240\.[0-9]+\./10.240.SUBNET./g; s/127\.0\.0\.1:[0-9]+:/127.0.0.1:PORT:/g'
+}
+
 lifecycle_same_fault_event() {
     local expected actual point="$3"
     [[ "$point" =~ ^[1-9][0-9]*$ ]] || return 1

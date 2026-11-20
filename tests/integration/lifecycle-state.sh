@@ -118,10 +118,20 @@ trap pool_cleanup EXIT
 trap 'exit 1' HUP INT TERM
 
 # Reserve distinct derived SSH ports and disjoint first/fallback subnet pairs
-# within this pool. Podman still owns detection of unrelated host collisions.
+# within this pool. Subnets already used on the host also count as taken: an
+# occupied first choice adds a fallback attempt to that worker's launch trace,
+# so pieces of a split sweep would record different operations.
+host_network_names=$(podman network ls --format '{{.Name}}') || die 'could not list host networks'
+if [[ -n "$host_network_names" ]]; then
+    mapfile -t host_networks <<< "$host_network_names"
+    host_subnets=$(podman network inspect "${host_networks[@]}") || die 'could not inspect host networks'
+    while IFS= read -r octet; do
+        if ((10#$octet >= 1 && 10#$octet <= 200)); then used_subnets[$((10#$octet - 1))]=true; fi
+    done < <(grep -oE '"10\.240\.[0-9]{1,3}\.0/24"' <<< "$host_subnets" | sed -E 's/^"10\.240\.([0-9]+)\..*/\1/')
+fi
 for ((slot=1; slot<=WORKERS; slot++)); do
     for ((attempt=1; ; attempt++)); do
-        [[ "$attempt" -le 100 ]] || die 'could not allocate distinct worker identities with free SSH ports outside the host ephemeral range'
+        [[ "$attempt" -le 100 ]] || die 'could not allocate distinct worker identities with free subnets and SSH ports outside the host ephemeral range'
         fixture=$(mktemp -d /tmp/jailbox-e2e-lifecycle.XXXXXXXX)
         fixture=$(cd "$fixture" && pwd -P)
         offset=$(jailbox_project_hash_port_offset "$(jailbox_project_hash_for_path "$fixture/project")")
@@ -201,6 +211,7 @@ cat "$RUN/expected-fixed" "$RUN"/worker-*/expected-faults | LC_ALL=C sort > "$RU
 cat "$RUN"/worker-*/cases | LC_ALL=C sort > "$RUN/case-timings" || result=1
 cut -d '|' -f1 "$RUN/case-timings" | LC_ALL=C sort > "$RUN/completed-cases"
 cmp -s "$RUN/expected-cases" "$RUN/completed-cases" || result=1
+lifecycle_check_piece_traces "$RUN" || result=1
 test_progress_complete 'Lifecycle: %s/%s cases completed; timings: %s/timings\n' \
     "$(wc -l < "$RUN/completed-cases")" "$(wc -l < "$RUN/expected-cases")" "$RUN"
 [[ "$result" = 0 ]] || die "worker failure or incomplete coverage; inspect $RUN"

@@ -20,9 +20,19 @@ cmp "$TEST_ROOT/expected-rows" "$TEST_ROOT/rows"
 for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
     read -r -a scenarios <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
     for scenario in "${scenarios[@]}"; do
-        printf 'fault.%s.%s|fault|%s|%s\n' "$command" "$scenario" "$command" "$scenario"
+        pieces=${LIFECYCLE_FAULT_PIECES[$command:$scenario]-}
+        if [[ -z "$pieces" ]]; then
+            printf 'fault.%s.%s|fault|%s|%s\n' "$command" "$scenario" "$command" "$scenario"
+            continue
+        fi
+        for ((piece=1; piece<=pieces; piece++)); do
+            printf 'fault.%s.%s.p%s|fault|%s|%s|%s|%s\n' "$command" "$scenario" "$piece" \
+                "$command" "$scenario" "$piece" "$pieces"
+        done
     done
 done > "$TEST_ROOT/expected-fault-jobs"
+# The three longest sweeps stay split; changing that is a deliberate decision.
+[[ $(grep -c '\.p[1-9]|' "$TEST_ROOT/expected-fault-jobs") = 6 ]]
 grep '^fault\.' "$TEST_ROOT/catalog" > "$TEST_ROOT/fault-jobs"
 cmp "$TEST_ROOT/expected-fault-jobs" "$TEST_ROOT/fault-jobs"
 cut -d '|' -f1 "$TEST_ROOT/catalog" | LC_ALL=C sort > "$TEST_ROOT/job-ids"
@@ -116,7 +126,7 @@ TEST_CASE='shards cover every job and fixed case exactly once whatever the timin
 lifecycle_fixed_cases > "$TEST_ROOT/shard-all-fixed"
 cut -d '|' -f1 "$TEST_ROOT/catalog" | awk '{ print $1 "|" NR }' > "$TEST_ROOT/ascending-history"
 for history in "$ROOT/tests/lib/lifecycle/timings" /dev/null "$TEST_ROOT/ascending-history"; do
-    for count in 1 2 3 4; do
+    for count in 1 2 3 4 6; do
         : > "$TEST_ROOT/shard-jobs"
         : > "$TEST_ROOT/shard-fixed"
         for ((shard=1; shard<=count; shard++)); do
@@ -127,6 +137,12 @@ for history in "$ROOT/tests/lib/lifecycle/timings" /dev/null "$TEST_ROOT/ascendi
             cp "$TEST_ROOT/shard-all-fixed" "$run/expected-fixed"
             lifecycle_select_shard "$run" "$shard" "$count" "$history"
             [[ -s "$run/catalog" ]]
+            # Every piece of a split sweep lands with its siblings.
+            shard_catalog=$(<"$run/catalog")
+            while IFS='|' read -r _ kind command scenario _ pieces; do
+                [[ "$kind" = fault && -n "${pieces:-}" ]] || continue
+                [[ $(grep -c "^fault\.$command\.$scenario\.p[1-9]|" <<< "$shard_catalog") = "$pieces" ]]
+            done <<< "$shard_catalog"
             cat "$run/catalog" >> "$TEST_ROOT/shard-jobs"
             cat "$run/expected-fixed" >> "$TEST_ROOT/shard-fixed"
         done
@@ -147,6 +163,101 @@ for orphan in orphan unknown-row.up trace.up.unknown; do
     if lifecycle_select_shard "$run" 1 2 /dev/null 2>/dev/null; then
         echo "FAIL: unowned case $orphan accepted" >&2; exit 1
     fi
+done
+pass
+
+TEST_CASE='pieces of a split sweep together run exactly the unsplit cases'
+for scenario in up:false up:none --clean:false stop:true; do
+    command=${scenario%:*}; policy=${scenario#*:}
+    trace="$ROOT/tests/fixtures/lifecycle-matrix/up.trace"
+    [[ "$command" = up ]] || trace="$ROOT/tests/fixtures/lifecycle-matrix/cleanup.trace"
+    lifecycle_fault_cases "$trace" "$command" "$policy" > "$TEST_ROOT/whole"
+    [[ -s "$TEST_ROOT/whole" || "$policy" = true ]]
+    for pieces in 2 3; do
+        : > "$TEST_ROOT/pieces"
+        for ((piece=1; piece<=pieces; piece++)); do
+            lifecycle_fault_cases "$trace" "$command" "$policy" "$piece" "$pieces" > "$TEST_ROOT/piece-$piece"
+            cat "$TEST_ROOT/piece-$piece" >> "$TEST_ROOT/pieces"
+        done
+        sort "$TEST_ROOT/whole" > "$TEST_ROOT/expected-pieces"
+        sort "$TEST_ROOT/pieces" > "$TEST_ROOT/actual"
+        cmp "$TEST_ROOT/expected-pieces" "$TEST_ROOT/actual"
+        [[ -z $(uniq -d "$TEST_ROOT/actual") ]]
+        # Pieces differ by at most one step (three cases), and each takes a
+        # contiguous share: every step of a piece precedes the next piece's.
+        sizes=$(for ((piece=1; piece<=pieces; piece++)); do wc -l < "$TEST_ROOT/piece-$piece"; done | sort -n)
+        (( $(tail -1 <<< "$sizes") - $(head -1 <<< "$sizes") <= 3 ))
+        for ((piece=2; piece<=pieces; piece++)); do
+            previous=$(cut -d . -f4 "$TEST_ROOT/piece-$((piece - 1))" | sort -n | tail -1)
+            next=$(cut -d . -f4 "$TEST_ROOT/piece-$piece" | sort -n | head -1)
+            [[ -z "$previous" || -z "$next" || "$previous" -lt "$next" ]]
+        done
+    done
+done
+for piece_args in '0 2' '3 2' '1 0' 'x 2'; do
+    read -r piece pieces <<< "$piece_args"
+    if lifecycle_fault_cases "$trace" up false "$piece" "$pieces" >/dev/null 2>&1; then
+        echo "FAIL: invalid piece $piece_args accepted" >&2; exit 1
+    fi
+done
+pass
+
+TEST_CASE='split sweep declarations are validated'
+for declaration in '[up:missing]=2' '[up:false]=1' '[up:false]=10' '[unknown:false]=2'; do
+    if (
+        eval "LIFECYCLE_FAULT_PIECES=($declaration)"
+        validate_lifecycle_contracts
+    ) > "$TEST_ROOT/pieces-error" 2>&1; then
+        echo "FAIL: invalid split $declaration accepted" >&2; exit 1
+    fi
+    grep -Eq 'split fault scenario|invalid piece count' "$TEST_ROOT/pieces-error"
+done
+pass
+
+TEST_CASE='pieces of a split sweep must record the same operations in the same order'
+run="$TEST_ROOT/piece-traces"
+mkdir -p "$run/worker-1/trace.up.false.p1" "$run/worker-2/trace.up.false.p2" "$run/worker-2/trace.up.none"
+# Two workers' real traces differ only in fixture, hashes, subnet, port and staging names.
+piece_trace() {
+    printf '%s\n' \
+        "podman network create --internal --subnet 10.240.$2.0/24 jailbox-project-$3-net-internal" \
+        "mkdir -p -- /tmp/jailbox-e2e-lifecycle.$1/state/jailbox/projects/$3" \
+        "chmod 644 /tmp/jailbox-e2e-lifecycle.$1/state/jailbox/projects/$3/tinyproxy-filter" \
+        "chmod 644 /tmp/jailbox-e2e-lifecycle.$1/state/jailbox/projects/$3/tinyproxy.conf" \
+        "mktemp -d /tmp/jailbox-e2e-lifecycle.$1/state/.ssh-generation.$4" \
+        "podman run -d --name jailbox-project-$3 -p 127.0.0.1:$5:2222 --label jailbox.config-digest=${3}${3}"
+}
+piece_trace AAAA1111 21 0123456789ab Xy12 63213 > "$run/worker-1/trace.up.false.p1/events"
+piece_trace BBBB2222 99 ba9876543210 Qr34 61901 > "$run/worker-2/trace.up.false.p2/events"
+printf 'unrelated\n' > "$run/worker-2/trace.up.none/events"
+printf '%s\n' 'row.absent|row|absent|plain|none|false|success|absent|refuse|none|new|absent' \
+    'fault.up.false.p1|fault|up|false|1|2' 'fault.up.false.p2|fault|up|false|2|2' \
+    'fault.up.none|fault|up|none' > "$run/catalog"
+lifecycle_check_piece_traces "$run"
+# Every piece in the catalog must have left exactly one trace.
+mv "$run/worker-2/trace.up.false.p2" "$run/missing-p2"
+if lifecycle_check_piece_traces "$run" 2> "$TEST_ROOT/piece-error"; then
+    echo 'FAIL: a missing piece trace was accepted' >&2; exit 1
+fi
+grep -Fq 'Expected exactly one recorded trace for fault.up.false.p2' "$TEST_ROOT/piece-error"
+mkdir -p "$run/worker-3/trace.up.false.p2"
+cp "$run/missing-p2/events" "$run/worker-3/trace.up.false.p2/events"
+mv "$run/missing-p2" "$run/worker-2/trace.up.false.p2"
+if lifecycle_check_piece_traces "$run" 2> "$TEST_ROOT/piece-error"; then
+    echo 'FAIL: a duplicated piece trace was accepted' >&2; exit 1
+fi
+grep -Fq 'Expected exactly one recorded trace for fault.up.false.p2' "$TEST_ROOT/piece-error"
+rm -r -- "$run/worker-3"
+lifecycle_check_piece_traces "$run"
+# A swap of two same-kind steps, a changed operand, a missing step, or a
+# different operation must each be rejected.
+# shellcheck disable=SC2016 # Literal sed expressions.
+for change in '3{h;d};4{G}' 's/tinyproxy.conf/other.conf/' '$d' '1s/network create/volume create/'; do
+    piece_trace BBBB2222 99 ba9876543210 Qr34 61901 | sed "$change" > "$run/worker-2/trace.up.false.p2/events"
+    if lifecycle_check_piece_traces "$run" 2> "$TEST_ROOT/piece-error"; then
+        echo "FAIL: mismatched piece traces accepted ($change)" >&2; exit 1
+    fi
+    grep -Fq 'Pieces of the up.false sweep recorded different operations' "$TEST_ROOT/piece-error"
 done
 pass
 
@@ -302,7 +413,7 @@ mkdir -p "$tree/tests/lib" "$tree/tests/integration" "$tree/src/host" "$tree/bin
 mkdir -p "$tree/scripts/lib"
 cp "$ROOT/scripts/lib/"{process-pool,worker-resources}.sh "$tree/scripts/lib/"
 cp "$ROOT/tests/integration/lifecycle-state.sh" "$tree/tests/integration/"
-cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts,fixture-ports}.sh "$tree/tests/lib/"
+cp "$ROOT/tests/lib/"{logging,resource-ledger,lifecycle-matrix,lifecycle-jobs,lifecycle-contracts,lifecycle-assertions,fixture-ports}.sh "$tree/tests/lib/"
 cp -R "$ROOT/tests/lib/lifecycle" "$tree/tests/lib/"
 # The fake workers never bind sockets. Model their Linux socket tables instead
 # of reading the host's /proc, which is absent on macOS. Keep the real selector.
@@ -365,8 +476,8 @@ new_coordinator_run() {
 # omits both a fault and its manifest entry still fails this comparison.
 {
     lifecycle_fixed_cases
-    while IFS='|' read -r _ _ command scenario; do
-        lifecycle_fault_cases "$tree/mock-fault.trace" "$command" "$scenario"
+    while IFS='|' read -r _ _ command scenario piece pieces; do
+        lifecycle_fault_cases "$tree/mock-fault.trace" "$command" "$scenario" "${piece:-1}" "${pieces:-1}"
     done < "$TEST_ROOT/expected-fault-jobs"
 } | LC_ALL=C sort > "$TEST_ROOT/expected-full-cases"
 [[ -z $(uniq -d "$TEST_ROOT/expected-full-cases") ]]
@@ -389,6 +500,31 @@ for workers in 1 2 4; do
     done
     [[ $(find "$tree/ledger" -name '*.ledger' | wc -l) = 0 ]]
 done
+pass
+
+TEST_CASE='workers avoid subnets already used on the host'
+# shellcheck source=src/host/core/project/hash.sh
+source "$ROOT/src/host/core/project/hash.sh"
+occupied=$(seq 1 120 | tr '\n' ' ')
+if ! PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" JAILBOX_LIFECYCLE_JOBS=4 \
+    JAILBOX_LIFECYCLE_TIMINGS=/dev/null POOL_TEST_HOST_OCTETS="$occupied" \
+    bash "$tree/tests/integration/lifecycle-state.sh" > "$tree/output" 2>&1; then
+    cat "$tree/output" >&2; exit 1
+fi
+new_coordinator_run
+for file in "$run"/worker-*/fixture; do
+    IFS= read -r fixture < "$file"
+    offset=$(jailbox_project_hash_port_offset "$(jailbox_project_hash_for_path "$fixture/project")")
+    # First and fallback octets are 1 + subnet and 1 + (subnet + 7), both above 120.
+    (( 1 + offset % 200 > 120 && 1 + (offset % 200 + 7) % 200 > 120 ))
+done
+if PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" JAILBOX_LIFECYCLE_JOBS=1 \
+    POOL_TEST_HOST_OCTETS="$(seq 1 200 | tr '\n' ' ')" \
+    bash "$tree/tests/integration/lifecycle-state.sh" > "$tree/output" 2>&1; then
+    echo 'FAIL: workers were allocated with every subnet occupied' >&2; exit 1
+fi
+grep -Fq 'could not allocate distinct worker identities with free subnets' "$tree/output"
+new_coordinator_run
 pass
 
 TEST_CASE='coordinator shards together complete the full matrix'

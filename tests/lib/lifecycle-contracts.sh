@@ -15,11 +15,17 @@ declare -A LIFECYCLE_COMMAND_CONTRACTS=(
 declare -A LIFECYCLE_FAULT_SCENARIOS=(
     [up]='false none new-ephemeral resume plain-network home-setup' [stop]='false true' [--clean]='false true'
 )
+# Long sweeps run as several jobs that always share one machine. Each piece
+# records its own trace and takes one contiguous share of the selected steps;
+# the coordinator checks that all pieces recorded the same operations in order.
+declare -A LIFECYCLE_FAULT_PIECES=(
+    [up:false]=2 [up:none]=2 [--clean:false]=2
+)
 
 validate_lifecycle_contracts() {
-    local command policy
+    local command policy scenario
     local -a policies=()
-    local -A seen=()
+    local -A seen=() declared=()
     public_api_validate_mapping 'lifecycle command contracts' CLI_LIFECYCLE_COMMANDS LIFECYCLE_COMMAND_CONTRACTS
     public_api_validate_mapping 'lifecycle fault scenarios' CLI_LIFECYCLE_COMMANDS LIFECYCLE_FAULT_SCENARIOS
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
@@ -35,8 +41,18 @@ validate_lifecycle_contracts() {
             [[ ! -v seen[$policy] ]] || public_api_error "duplicate fault scenario '$command:$policy'"
             seen[$policy]=1
             lifecycle_fault_requirements "$command" "$policy" >/dev/null || public_api_error "missing fault requirements for '$command:$policy'"
+            declared[$command:$policy]=1
         done
     done
+    for scenario in "${!LIFECYCLE_FAULT_PIECES[@]}"; do
+        [[ -v declared[$scenario] ]] || public_api_error "split fault scenario '$scenario' is not declared"
+        [[ "${LIFECYCLE_FAULT_PIECES[$scenario]}" =~ ^[2-9]$ ]] || public_api_error "invalid piece count for '$scenario'"
+    done
+}
+
+# Number of jobs a fault scenario runs as; unsplit scenarios run as one.
+lifecycle_fault_piece_count() {
+    printf '%s\n' "${LIFECYCLE_FAULT_PIECES[$1:$2]-1}"
 }
 
 # Focused scenarios sweep the steps that distinguish their recovery behavior.

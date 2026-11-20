@@ -31,8 +31,8 @@ grep -Fq '      success() && inputs.run_editor &&' "$gates"
 grep -Fq "      needs.matrix-scope.outputs.run == 'true' && inputs.lifecycle_jobs == '' &&" "$gates"
 grep -Fq 'run: python3 scripts/lib/matrix-scope.py' "$gates"
 # shellcheck disable=SC2016 # Literal GitHub Actions expression.
-grep -Fq 'JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/3' "$gates"
-grep -Fxq '        shard: [1, 2, 3]' "$gates"
+grep -Fq 'JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/6' "$gates"
+grep -Fxq '        shard: [1, 2, 3, 4, 5, 6]' "$gates"
 # A missing scope output must run the matrix: only an explicit false skips it.
 matrix_job=$(awk '/^  matrix:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
 [[ $(grep -c "if: needs.matrix-scope.outputs.run == 'false'$" <<< "$matrix_job") = 1 ]]

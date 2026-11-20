@@ -36,8 +36,12 @@ complete_job() {
                 esac
             done ;;
         fault)
-            printf 'trace.%s.%s\n' "$1" "$2"
-            lifecycle_fault_cases "$root/mock-fault.trace" "$1" "$2" | tee -a "$log/expected-faults"
+            key="$1.$2"
+            if [[ -n ${3:-} ]]; then key="$key.p$3"; fi
+            mkdir -p "$log/trace.$key"
+            cp "$root/mock-fault.trace" "$log/trace.$key/events"
+            printf 'trace.%s\n' "$key"
+            lifecycle_fault_cases "$root/mock-fault.trace" "$@" | tee -a "$log/expected-faults"
             ;;
         special)
             case "$1" in

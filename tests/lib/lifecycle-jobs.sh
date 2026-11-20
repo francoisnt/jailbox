@@ -1,27 +1,47 @@
 #!/bin/bash
 # shellcheck source=tests/lib/lifecycle-contracts.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lifecycle-contracts.sh"
+# shellcheck source=tests/lib/lifecycle-assertions.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lifecycle-assertions.sh"
 # shellcheck source=tests/lib/fixture-ports.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-ports.sh"
 # shellcheck source=scripts/lib/worker-resources.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/worker-resources.sh"
 
-# A row is one job (each command gets an independent fixture). Each fault job keeps
-# its healthy trace and every interruption in one worker's project identity.
-lifecycle_jobs() {
-    local row command policy
+# Fault jobs as key|command|policy[|piece|pieces]. A split scenario becomes one
+# job per piece; unsplit scenarios keep their single job.
+lifecycle_fault_jobs() {
+    local command policy pieces piece
     local -a policies=()
-    validate_lifecycle_contracts
-    validate_lifecycle_recovery_contracts || return 1
-    while IFS= read -r row; do
-        printf 'row.%s|row|%s\n' "${row%%|*}" "$row"
-    done < <(lifecycle_matrix_rows)
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
         read -r -a policies <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
         for policy in "${policies[@]}"; do
-            printf 'fault.%s.%s|fault|%s|%s\n' "$command" "$policy" "$command" "$policy"
+            pieces=$(lifecycle_fault_piece_count "$command" "$policy") || return 1
+            if [[ "$pieces" = 1 ]]; then
+                printf 'fault.%s.%s|%s|%s\n' "$command" "$policy" "$command" "$policy"
+                continue
+            fi
+            for ((piece = 1; piece <= pieces; piece++)); do
+                printf 'fault.%s.%s.p%s|%s|%s|%s|%s\n' "$command" "$policy" "$piece" \
+                    "$command" "$policy" "$piece" "$pieces"
+            done
         done
     done
+}
+
+# A row is one job (each command gets an independent fixture). Each fault job keeps
+# its healthy trace and its interruptions in one worker's project identity.
+lifecycle_jobs() {
+    local row key rest faults
+    validate_lifecycle_contracts
+    validate_lifecycle_recovery_contracts || return 1
+    faults=$(lifecycle_fault_jobs) || return 1
+    while IFS= read -r row; do
+        printf 'row.%s|row|%s\n' "${row%%|*}" "$row"
+    done < <(lifecycle_matrix_rows)
+    while IFS='|' read -r key rest; do
+        printf '%s|fault|%s\n' "$key" "$rest"
+    done <<< "$faults"
     printf '%s\n' 'resume|special|resume' 'removal|special|removal' \
         'dependency|special|dependency' 'inspection|special|inspection'
 }
@@ -91,14 +111,18 @@ lifecycle_case_job() {
 }
 
 # Split the full catalog across CI machines. Timings only balance the shares:
-# every job belongs to exactly one shard whatever the history contains.
+# every job belongs to exactly one shard whatever the history contains, and
+# the pieces of a split sweep always share a shard.
 lifecycle_select_shard() {
     local run="$1" shard="$2" count="$3" timings="$4" key job
     local -A catalog_jobs=() selected=()
-    awk -F '|' -v default_weight=60 -f "${BASH_SOURCE[0]%/*}/lifecycle/order-jobs.awk" "$timings" "$run/catalog" |
-        LC_ALL=C sort -t '|' -k1,1nr -k2,2 |
+    awk -F '|' -v default_weight=60 -f "${BASH_SOURCE[0]%/*}/lifecycle/order-jobs.awk" "$timings" "$run/catalog" \
+        > "$run/shard-weights" || return 1
+    awk -F '|' -f "${BASH_SOURCE[0]%/*}/lifecycle/shard-groups.awk" "$run/shard-weights" "$run/shard-weights" |
+        LC_ALL=C sort -t '|' -k1,1nr -k2,2 -k4,4 |
         awk -F '|' -v shard="$shard" -v count="$count" -f "${BASH_SOURCE[0]%/*}/lifecycle/shard-jobs.awk" \
         > "$run/shard-catalog" || return 1
+    rm -f -- "$run/shard-weights"
     while IFS='|' read -r key _; do
         [[ "$key" =~ ^[a-z][a-z0-9.-]*$ ]] || return 1
         catalog_jobs[$key]=1
@@ -134,22 +158,19 @@ lifecycle_case_selected() {
 }
 
 lifecycle_fixed_cases() {
-    local row command policy missing baseline
-    local -a policies=()
+    local row command policy missing baseline key faults
     validate_lifecycle_contracts
     validate_lifecycle_recovery_contracts || return 1
+    faults=$(lifecycle_fault_jobs) || return 1
     while IFS='|' read -r row _; do
         for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
             lifecycle_row_case_applies "$row.$command" || continue
             printf '%s.%s\n' "$row" "$command"
         done
     done < <(lifecycle_matrix_rows)
-    for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
-        read -r -a policies <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
-        for policy in "${policies[@]}"; do
-            printf 'trace.%s.%s\n' "$command" "$policy"
-        done
-    done
+    while IFS='|' read -r key _; do
+        printf 'trace.%s\n' "${key#fault.}"
+    done <<< "$faults"
     printf '%s\n' failed-new-container-cleanup
     for policy in false true; do
         for missing in false true; do printf 'failed-resume.%s.missing-proxy-%s\n' "$policy" "$missing"; done
@@ -158,16 +179,58 @@ lifecycle_fixed_cases() {
     for baseline in networks-only missing-dev; do printf 'failed-create.%s\n' "$baseline"; done
 }
 
+# A piece of a split sweep takes one contiguous share of the selected steps,
+# keeping trace positions. Reordering inside a share cannot drop a step.
 lifecycle_fault_cases() {
-    local trace="$1" command="$2" policy="$3" event point=0 fault
+    local trace="$1" command="$2" policy="$3" piece="${4:-1}" pieces="${5:-1}"
+    local event point=0 selected=0 total=0 first last fault
+    [[ "$piece" =~ ^[1-9]$ && "$pieces" =~ ^[1-9]$ && "$piece" -le "$pieces" ]] || return 1
+    while IFS= read -r event; do
+        if lifecycle_fault_event_applies "$command" "$policy" "$event"; then total=$((total + 1)); fi
+    done < "$trace"
+    first=$(((piece - 1) * total / pieces + 1))
+    last=$((piece * total / pieces))
     while IFS= read -r event; do
         point=$((point + 1))
         lifecycle_fault_event_applies "$command" "$policy" "$event" || continue
+        selected=$((selected + 1))
+        ((selected >= first && selected <= last)) || continue
         for fault in before after barrier; do
+            # Allocation is covered before creation and by killing the
+            # caller after allocation, before it receives the path. Do
+            # not invent a failed mktemp that prints a success result.
             [[ "$event" != mktemp\ * || "$fault" != after ]] || continue
             printf 'interrupt.%s.%s.%s.%s\n' "$command" "$policy" "$point" "$fault"
         done
     done < "$trace"
+}
+
+# Check that each split sweep piece in this run's catalog left exactly one
+# recorded trace, and that a sweep's pieces performed the same operations in
+# the same order, or their shares of the steps could misalign.
+lifecycle_check_piece_traces() {
+    local run="$1" job kind pieces sweep normalized
+    local -a traces=()
+    local -A references=()
+    while IFS='|' read -r job kind _ _ _ pieces; do
+        [[ "$kind" = fault && -n "${pieces:-}" ]] || continue
+        [[ "$job" =~ ^fault\.[a-z-]+\.[a-z][a-z-]*\.p[1-9]$ ]] || return 1
+        traces=("$run"/worker-*/"trace.${job#fault.}"/events)
+        if [[ ${#traces[@]} != 1 || ! -f "${traces[0]}" ]]; then
+            printf 'Expected exactly one recorded trace for %s\n' "$job" >&2
+            return 1
+        fi
+        sweep=${job#fault.}
+        sweep=${sweep%.p[1-9]}
+        normalized="$run/piece-trace.${job#fault.}"
+        lifecycle_worker_neutral_event < "${traces[0]}" > "$normalized" || return 1
+        if [[ ! -v references[$sweep] ]]; then
+            references[$sweep]=$normalized
+        elif ! cmp -s "${references[$sweep]}" "$normalized"; then
+            printf 'Pieces of the %s sweep recorded different operations\n' "$sweep" >&2
+            return 1
+        fi
+    done < "$run/catalog"
 }
 
 # Atomic claims allow idle workers to take the next job without a central

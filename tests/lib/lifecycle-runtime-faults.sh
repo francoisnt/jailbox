@@ -128,14 +128,17 @@ interrupt_at_barrier() {
 }
 
 run_mutation_faults() {
-    local command="$1" policy="$2" count point fault result inventory recovery retained trace event contract
+    local command="$1" policy="$2" piece="${3:-1}" pieces="${4:-1}" suffix=""
+    local point fault result inventory recovery retained trace contract cases interruption
     local dev_id proxy_id home_preexisting
+    local -a interruptions=()
     # recovery holds the actual CLI command to execute, not a contract name.
     validate_lifecycle_contracts
     contract=${LIFECYCLE_COMMAND_CONTRACTS[$command]}
+    if [[ "$pieces" != 1 ]]; then suffix=".p$piece"; fi
     # New-home and pre-existing-home launches exercise distinct rollback
     # ownership. Cleanup exercises stored persistent and ephemeral policy.
-    matrix_case_begin "trace.$command.$policy"
+    matrix_case_begin "trace.$command.$policy$suffix"
     trace="$LOG/$CASE_KEY/events"
     fault_baseline "$command" "$policy"
     export LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live"
@@ -143,99 +146,97 @@ run_mutation_faults() {
     expect_success "$command"
     if [[ "$policy" = home-setup ]]; then assert_setup_marker; fi
     cp "$LIFECYCLE_EVENTS" "$trace"
-    count=$(wc -l < "$LIFECYCLE_EVENTS")
     unset LIFECYCLE_EVENTS
     lifecycle_require_fault_coverage "$trace" "$command" "$policy" || matrix_die 'persistent mutation coverage regressed'
-    lifecycle_fault_cases "$trace" "$command" "$policy" >> "$LOG/expected-faults"
+    cases=$(lifecycle_fault_cases "$trace" "$command" "$policy" "$piece" "$pieces") || matrix_die 'could not select interruption cases'
+    if [[ -n "$cases" ]]; then printf '%s\n' "$cases" >> "$LOG/expected-faults"; fi
     matrix_case_pass
-    for ((point=1; point<=count; point++)); do
-        event=$(sed -n "${point}p" "$trace")
-        lifecycle_fault_event_applies "$command" "$policy" "$event" || continue
-        for fault in before after barrier; do
-            # Allocation is covered before creation and by killing the
-            # caller after allocation, before it receives the path. Do
-            # not invent a failed mktemp that prints a success result.
-            if [[ "$event" = mktemp\ * && "$fault" = after ]]; then continue; fi
-            matrix_case_begin "interrupt.$command.$policy.$point.$fault"
-            fault_baseline "$command" "$policy"
-            home_preexisting=false
-            if exists volume "$HOME_VOLUME"; then home_preexisting=true; fi
+    # The loop body runs commands that may read stdin; keep the cases off it.
+    mapfile -t interruptions <<< "$cases"
+    for interruption in "${interruptions[@]}"; do
+        [[ -n "$interruption" ]] || continue
+        fault=${interruption##*.}
+        point=${interruption%.*}
+        point=${point##*.}
+        matrix_case_begin "$interruption"
+        fault_baseline "$command" "$policy"
+        home_preexisting=false
+        if exists volume "$HOME_VOLUME"; then home_preexisting=true; fi
+        if [[ "$policy" = resume ]]; then
+            dev_id=$(podman container inspect "$PREFIX" --format '{{.Id}}')
+            proxy_id=$(podman container inspect "$PREFIX-proxy" --format '{{.Id}}')
+            podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/$CASE_KEY/networks-before"
+            filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-before"
+        fi
+        export LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE="$fault"
+        : > "$LIFECYCLE_EVENTS"
+        result=0
+        if [[ "$fault" = barrier ]]; then
+            interrupt_at_barrier "$command"
+            result=137
+        else
+            lifecycle_capture cli "$command" || result=$?
+        fi
+        cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY/events"
+        [[ $(wc -l < "$LIFECYCLE_EVENTS") -ge "$point" ]] || matrix_die 'fault point not reached'
+        lifecycle_same_fault_event "$trace" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'fault point reached a different operation'
+        unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE
+        inventory=$(fault_inventory) || matrix_die "could not observe interrupted inventory"
+        matrix_observe_fault interrupted readiness
+        if [[ "$contract" = launch ]]; then
+            if [[ "$home_preexisting" = true ]]; then assert_marker keep; fi
             if [[ "$policy" = resume ]]; then
-                dev_id=$(podman container inspect "$PREFIX" --format '{{.Id}}')
-                proxy_id=$(podman container inspect "$PREFIX-proxy" --format '{{.Id}}')
-                podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/$CASE_KEY/networks-before"
-                filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-before"
+                [[ $(podman container inspect "$PREFIX" --format '{{.Id}}') = "$dev_id" ]] || matrix_die 'interrupted resume replaced development survivor'
+                [[ $(podman container inspect "$PREFIX-proxy" --format '{{.Id}}') = "$proxy_id" ]] || matrix_die 'interrupted resume replaced proxy survivor'
+                podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/$CASE_KEY/networks-after"
+                cmp -s "$LOG/$CASE_KEY/networks-before" "$LOG/$CASE_KEY/networks-after" || matrix_die 'interrupted resume replaced networks'
+                filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-after"
+                cmp -s "$LOG/$CASE_KEY/generation-before" "$LOG/$CASE_KEY/generation-after" || matrix_die 'interrupted resume changed credentials'
+                if grep -Eq '^podman (stop|rm) ' "$LOG/$CASE_KEY/events"; then matrix_die 'interrupted resume removed or stopped survivors'; fi
+                [[ "$result" != 0 ]] || assert_service
+            elif [[ "$result" = 0 ]]; then
+                # Some idempotent operations can confirm success even
+                # after a tool reports failure. Success still owes all
+                # readiness checks, not merely surviving resources.
+                assert_service
+            elif [[ "$fault" != barrier ]]; then
+                require_absent container "$PREFIX"
+                require_absent container "$PREFIX-proxy"
+                require_absent network "$NETWORK-internal"
+                require_absent network "$NETWORK-external"
+                require_absent network "$NETWORK"
+                [[ ! -e "$GENERATION" ]] || matrix_die 'handled failure left generation material'
+                if compgen -G "$STATE/.ssh-generation.*" >/dev/null; then matrix_die 'handled failure left partial generation'; fi
+                if [[ "$home_preexisting" = false ]]; then require_absent volume "$HOME_VOLUME"; fi
             fi
-            export LIFECYCLE_EVENTS="$LOG/$CASE_KEY/events.live" LIFECYCLE_FAULT_AT="$point" LIFECYCLE_FAULT_MODE="$fault"
-            : > "$LIFECYCLE_EVENTS"
-            result=0
-            if [[ "$fault" = barrier ]]; then
-                interrupt_at_barrier "$command"
-                result=137
-            else
-                lifecycle_capture cli "$command" || result=$?
-            fi
-            cp "$LIFECYCLE_EVENTS" "$LOG/$CASE_KEY/events"
-            [[ $(wc -l < "$LIFECYCLE_EVENTS") -ge "$point" ]] || matrix_die 'fault point not reached'
-            lifecycle_same_fault_event "$trace" "$LIFECYCLE_EVENTS" "$point" || matrix_die 'fault point reached a different operation'
-            unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE
-            inventory=$(fault_inventory) || matrix_die "could not observe interrupted inventory"
-            matrix_observe_fault interrupted readiness
-            if [[ "$contract" = launch ]]; then
-                if [[ "$home_preexisting" = true ]]; then assert_marker keep; fi
-                if [[ "$policy" = resume ]]; then
-                    [[ $(podman container inspect "$PREFIX" --format '{{.Id}}') = "$dev_id" ]] || matrix_die 'interrupted resume replaced development survivor'
-                    [[ $(podman container inspect "$PREFIX-proxy" --format '{{.Id}}') = "$proxy_id" ]] || matrix_die 'interrupted resume replaced proxy survivor'
-                    podman network inspect "$NETWORK-internal" "$NETWORK-external" --format '{{.ID}}' > "$LOG/$CASE_KEY/networks-after"
-                    cmp -s "$LOG/$CASE_KEY/networks-before" "$LOG/$CASE_KEY/networks-after" || matrix_die 'interrupted resume replaced networks'
-                    filesystem_snapshot "$GENERATION" > "$LOG/$CASE_KEY/generation-after"
-                    cmp -s "$LOG/$CASE_KEY/generation-before" "$LOG/$CASE_KEY/generation-after" || matrix_die 'interrupted resume changed credentials'
-                    if grep -Eq '^podman (stop|rm) ' "$LOG/$CASE_KEY/events"; then matrix_die 'interrupted resume removed or stopped survivors'; fi
-                    [[ "$result" != 0 ]] || assert_service
-                elif [[ "$result" = 0 ]]; then
-                    # Some idempotent operations can confirm success even
-                    # after a tool reports failure. Success still owes all
-                    # readiness checks, not merely surviving resources.
-                    assert_service
-                elif [[ "$fault" != barrier ]]; then
-                    require_absent container "$PREFIX"
-                    require_absent container "$PREFIX-proxy"
-                    require_absent network "$NETWORK-internal"
-                    require_absent network "$NETWORK-external"
-                    require_absent network "$NETWORK"
-                    [[ ! -e "$GENERATION" ]] || matrix_die 'handled failure left generation material'
-                    if compgen -G "$STATE/.ssh-generation.*" >/dev/null; then matrix_die 'handled failure left partial generation'; fi
-                    if [[ "$home_preexisting" = false ]]; then require_absent volume "$HOME_VOLUME"; fi
-                fi
-                recovery=stop
-                retained=new
-                if [[ "$home_preexisting" = true ]]; then retained=keep; fi
-            else
-                assert_partial_cleanup "$policy" "$command"
-                recovery="$command"
-                retained=delete
-                if [[ "$contract:$policy" = stop:false ]]; then retained=keep; fi
-            fi
-            # These cases have valid home metadata. Stop/clean is the
-            # owning recovery for interrupted operations; execute it.
-            expect_success "$recovery"
-            if [[ "$contract:$policy" = launch:new-ephemeral || "$contract:$policy" = launch:home-setup ]]; then
-                require_absent volume "$HOME_VOLUME"
-            fi
-            if [[ "$contract" != launch ]]; then assert_cleanup "$command" "$policy"; fi
-            expect_success up
-            assert_service
-            if [[ "$policy" = home-setup ]]; then assert_setup_marker; fi
-            if [[ "$contract:$policy" = launch:none ]]; then
-                # Forced termination may leave a newly created persistent
-                # home, but it had no pre-existing user marker to retain.
-                assert_marker new
-            else
-                assert_marker "$retained"
-            fi
-            matrix_observe recovered running allow readiness
-            matrix_case_pass
-        done
+            recovery=stop
+            retained=new
+            if [[ "$home_preexisting" = true ]]; then retained=keep; fi
+        else
+            assert_partial_cleanup "$policy" "$command"
+            recovery="$command"
+            retained=delete
+            if [[ "$contract:$policy" = stop:false ]]; then retained=keep; fi
+        fi
+        # These cases have valid home metadata. Stop/clean is the
+        # owning recovery for interrupted operations; execute it.
+        expect_success "$recovery"
+        if [[ "$contract:$policy" = launch:new-ephemeral || "$contract:$policy" = launch:home-setup ]]; then
+            require_absent volume "$HOME_VOLUME"
+        fi
+        if [[ "$contract" != launch ]]; then assert_cleanup "$command" "$policy"; fi
+        expect_success up
+        assert_service
+        if [[ "$policy" = home-setup ]]; then assert_setup_marker; fi
+        if [[ "$contract:$policy" = launch:none ]]; then
+            # Forced termination may leave a newly created persistent
+            # home, but it had no pre-existing user marker to retain.
+            assert_marker new
+        else
+            assert_marker "$retained"
+        fi
+        matrix_observe recovered running allow readiness
+        matrix_case_pass
     done
 }
 
