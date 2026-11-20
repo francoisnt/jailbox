@@ -21,31 +21,42 @@ JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 # shellcheck source=versions.env
 source "$JAILBOX_DIR/versions.env"
 
-fetch() {
-    curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 "$@"
+resolve_version() {
+    local service=$1 filter=$2 response version
+    shift 2
+    if ! response="$(curl -fsSL --retry 3 --retry-all-errors --retry-max-time 45 \
+        --connect-timeout 10 --max-time 60 "$@")"; then
+        printf 'Error: could not fetch %s version after retries.\n' "$service" >&2
+        return 1
+    fi
+    if ! version="$(jq -re "$filter" <<< "$response")" || [[ -z $version || $version == *$'\n'* ]]; then
+        printf 'Error: %s returned a response without a valid version.\n' "$service" >&2
+        return 1
+    fi
+    printf '%s\n' "$version"
 }
 
-latest_codium="$(fetch https://api.github.com/repos/VSCodium/vscodium/releases/latest \
-    | jq -re '.tag_name')"
+latest_codium="$(resolve_version 'VSCodium GitHub releases' '.tag_name | strings' \
+    https://api.github.com/repos/VSCodium/vscodium/releases/latest)"
 
-latest_code="$(fetch https://update.code.visualstudio.com/api/update/linux-x64/stable/latest \
-    | jq -re '.productVersion')"
+latest_code="$(resolve_version 'VS Code update API' '.productVersion | strings' \
+    https://update.code.visualstudio.com/api/update/linux-x64/stable/latest)"
 
 # flags=17 is IncludeVersions|IncludeVersionProperties: the versions array is
 # newest-first, so the first entry without the PreRelease property is the
 # latest stable release.
-latest_remote_ssh="$(fetch \
+latest_remote_ssh="$(resolve_version 'VS Code Marketplace Remote SSH' \
+    '[.results[0].extensions[0].versions[]
+        | select(([.properties[]?
+            | select(.key == "Microsoft.VisualStudio.Code.PreRelease" and .value == "true")]
+            | length) == 0)][0].version | strings' \
     -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json;api-version=3.0-preview.1' \
-    -d '{"filters":[{"criteria":[{"filterType":7,"value":"ms-vscode-remote.remote-ssh"}]}],"flags":17}' \
-    | jq -re '[.results[0].extensions[0].versions[]
-        | select(([.properties[]?
-            | select(.key == "Microsoft.VisualStudio.Code.PreRelease" and .value == "true")]
-            | length) == 0)][0].version')"
+    -d '{"filters":[{"criteria":[{"filterType":7,"value":"ms-vscode-remote.remote-ssh"}]}],"flags":17}')"
 
-latest_open_remote_ssh="$(fetch https://open-vsx.org/api/jeanp413/open-remote-ssh \
-    | jq -re '.version')"
+latest_open_remote_ssh="$(resolve_version 'Open VSX Open Remote SSH' '.version | strings' \
+    https://open-vsx.org/api/jeanp413/open-remote-ssh)"
 
 has_new=false
 [[ "$latest_codium" == "$CODIUM_VERSION" ]] || has_new=true
