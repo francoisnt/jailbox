@@ -34,7 +34,12 @@ mkdir "$TEST_ROOT/sample"
 cp "$TEST_ROOT/catalog" "$TEST_ROOT/sample/catalog"
 lifecycle_select_sample "$TEST_ROOT/sample"
 lifecycle_fixed_cases > "$TEST_ROOT/all-fixed"
-head -50 "$TEST_ROOT/all-fixed" > "$TEST_ROOT/expected-sample"
+while IFS='|' read -r row _; do
+    for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+        printf '%s.%s\n' "$row" "$command"
+    done
+done < <(lifecycle_matrix_rows) > "$TEST_ROOT/benchmark-rows"
+head -50 "$TEST_ROOT/benchmark-rows" > "$TEST_ROOT/expected-sample"
 cmp "$TEST_ROOT/expected-sample" "$TEST_ROOT/sample/expected-fixed"
 [[ $(wc -l < "$TEST_ROOT/sample/catalog") = 17 ]]
 [[ $(grep -c '^row\.' "$TEST_ROOT/sample/catalog") = 17 ]]
@@ -58,11 +63,35 @@ grep -Fq 'Not enough declared cases' "$TEST_ROOT/short-err"
 )
 pass
 
-TEST_CASE='150-case sampling preserves trailing inspection job fields'
+TEST_CASE='standalone SSH cleanup is limited to distinct filesystem damage'
+for damage in missing symlink directory fifo parent-mode; do
+    printf '%s\n' "ssh-$damage.stop" "ssh-$damage.--clean"
+done | LC_ALL=C sort > "$TEST_ROOT/expected-ssh-cleanup"
+grep -E '^ssh-.*\.(stop|--clean)$' "$TEST_ROOT/all-fixed" | LC_ALL=C sort > "$TEST_ROOT/ssh-cleanup"
+cmp "$TEST_ROOT/expected-ssh-cleanup" "$TEST_ROOT/ssh-cleanup"
+grep '^ssh-.*\.up$' "$TEST_ROOT/all-fixed" > "$TEST_ROOT/ssh-launches"
+lifecycle_matrix_rows | sed -n 's/^\(ssh-[^|]*\)|.*/\1.up/p' > "$TEST_ROOT/expected-ssh-launches"
+cmp "$TEST_ROOT/expected-ssh-launches" "$TEST_ROOT/ssh-launches"
+while IFS='|' read -r row _; do
+    [[ "$row" = ssh-* ]] || continue
+    for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+        if grep -Fxq -- "$row.$command" "$TEST_ROOT/all-fixed"; then
+            lifecycle_case_selected "$TEST_ROOT" "$row.$command"
+        else
+            result=0
+            lifecycle_case_selected "$TEST_ROOT" "$row.$command" || result=$?
+            [[ "$result" = 1 ]]
+        fi
+    done
+done < <(lifecycle_matrix_rows)
+pass
+
+TEST_CASE='150-case sample keeps its benchmark cases and trailing inspection job fields'
 mkdir "$TEST_ROOT/extended-sample"
 sed 's/^inspection|special|inspection$/&|future-field|/' "$TEST_ROOT/catalog" > "$TEST_ROOT/extended-sample/catalog"
 lifecycle_select_sample "$TEST_ROOT/extended-sample" 150
 grep -Fxq 'inspection|special|inspection|future-field|' "$TEST_ROOT/extended-sample/catalog"
+grep -Fxq 'ssh-pin.--clean' "$TEST_ROOT/extended-sample/expected-fixed"
 pass
 
 TEST_CASE='history changes ordering without dropping or duplicating jobs'
@@ -85,10 +114,10 @@ pass
 
 TEST_CASE='discovered allocation faults preserve the intended exception'
 printf '%s\n' 'network create one' 'mktemp /state/.ssh-generation.XXXX' 'mkdir /state/server' > "$TEST_ROOT/trace"
-lifecycle_fault_cases "$TEST_ROOT/trace" up new-ephemeral > "$TEST_ROOT/faults"
+lifecycle_fault_cases "$TEST_ROOT/trace" up none > "$TEST_ROOT/faults"
 [[ $(wc -l < "$TEST_ROOT/faults") = 8 ]]
-grep -Fxq interrupt.up.new-ephemeral.2.barrier "$TEST_ROOT/faults"
-if grep -Fxq interrupt.up.new-ephemeral.2.after "$TEST_ROOT/faults"; then exit 1; fi
+grep -Fxq interrupt.up.none.2.barrier "$TEST_ROOT/faults"
+if grep -Fxq interrupt.up.none.2.after "$TEST_ROOT/faults"; then exit 1; fi
 pass
 
 TEST_CASE='focused fault scenarios retain original trace positions'
@@ -103,6 +132,28 @@ printf '%s\n' 'podman network create --label digest=abc jailbox-project-abc-net'
 lifecycle_fault_cases "$TEST_ROOT/trace" up plain-network > "$TEST_ROOT/faults"
 [[ $(wc -l < "$TEST_ROOT/faults") = 3 ]]
 grep -Fxq interrupt.up.plain-network.1.after "$TEST_ROOT/faults"
+pass
+
+TEST_CASE='ephemeral sweeps retain all three faults at the selected operations'
+printf '%s\n' 'podman run -d --name jailbox-project-abc-proxy' \
+    'podman volume create --label policy jailbox-project-abc-home' \
+    'podman run -d --name jailbox-project-abc --cidfile /state/container-id' > "$TEST_ROOT/launch-trace"
+printf '%s\n' 'podman rm jailbox-project-abc' 'podman volume rm jailbox-project-abc-home' \
+    'rm -rf -- /state/ssh-generation /state/key' 'rm -rf -- /state/jailbox/projects/abc' > "$TEST_ROOT/cleanup-trace"
+for command in up stop --clean; do
+    case "$command" in
+        up) trace=launch-trace; policy=new-ephemeral; points=(2 3) ;;
+        stop) trace=cleanup-trace; policy=true; points=(2 3) ;;
+        --clean) trace=cleanup-trace; policy=true; points=(2) ;;
+    esac
+    for point in "${points[@]}"; do
+        for fault in before after barrier; do
+            printf 'interrupt.%s.%s.%s.%s\n' "$command" "$policy" "$point" "$fault"
+        done
+    done > "$TEST_ROOT/expected-faults"
+    lifecycle_fault_cases "$TEST_ROOT/$trace" "$command" "$policy" > "$TEST_ROOT/faults"
+    cmp "$TEST_ROOT/expected-faults" "$TEST_ROOT/faults"
+done
 pass
 
 # External shells keep errexit active when the parent collects failed workers.
@@ -288,8 +339,7 @@ for sample_run in 50:1 50:4 50:8 150:1 150:4 150:8; do
     cp "$TEST_ROOT/expected-sample" "$TEST_ROOT/current-sample"
     if [[ "$size" = 150 ]]; then
         jobs=49
-        lifecycle_fixed_cases > "$TEST_ROOT/all-fixed"
-        head -144 "$TEST_ROOT/all-fixed" > "$TEST_ROOT/current-sample"
+        cp "$TEST_ROOT/benchmark-rows" "$TEST_ROOT/current-sample"
         grep '^home-inspection\.' "$TEST_ROOT/all-fixed" >> "$TEST_ROOT/current-sample"
     fi
     if ! PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" \

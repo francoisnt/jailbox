@@ -6,7 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-ports.sh"
 # shellcheck source=scripts/lib/worker-resources.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/worker-resources.sh"
 
-# A row is one job (three independent command fixtures). Each fault job keeps
+# A row is one job (each command gets an independent fixture). Each fault job keeps
 # its healthy trace and every interruption in one worker's project identity.
 lifecycle_jobs() {
     local row command policy
@@ -35,7 +35,8 @@ lifecycle_order_jobs() {
 
 # A deterministic benchmark prefix of constructed state/command cases. Keep
 # row jobs intact except for the last row's unselected commands. Fault discovery
-# and interruption sweeps belong only to the full matrix.
+# and interruption sweeps belong only to the full matrix. The benchmark keeps
+# its historical row/command combinations for repeatable measurements.
 lifecycle_select_sample() {
     local run="$1" limit="${2:-50}" job kind key rest command record count=0
     case "$limit" in 50|150) ;; *) return 1 ;; esac
@@ -77,7 +78,10 @@ lifecycle_select_sample() {
 }
 
 lifecycle_case_selected() {
-    [[ ${LIFECYCLE_SAMPLE_MODE:-false} = true ]] || return 0
+    if [[ ${LIFECYCLE_SAMPLE_MODE:-false} != true ]]; then
+        lifecycle_row_case_applies "$2"
+        return $?
+    fi
     local result=0
     grep -Fxq -- "$2" "$1/expected-fixed" || result=$?
     case "$result" in
@@ -92,7 +96,10 @@ lifecycle_fixed_cases() {
     validate_lifecycle_contracts
     validate_lifecycle_recovery_contracts || return 1
     while IFS='|' read -r row _; do
-        for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do printf '%s.%s\n' "$row" "$command"; done
+        for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
+            lifecycle_row_case_applies "$row.$command" || continue
+            printf '%s.%s\n' "$row" "$command"
+        done
     done < <(lifecycle_matrix_rows)
     for command in "${CLI_LIFECYCLE_COMMANDS[@]}"; do
         read -r -a policies <<< "${LIFECYCLE_FAULT_SCENARIOS[$command]}"
@@ -112,7 +119,7 @@ lifecycle_fault_cases() {
     local trace="$1" command="$2" policy="$3" event point=0 fault
     while IFS= read -r event; do
         point=$((point + 1))
-        lifecycle_fault_event_applies "$policy" "$event" || continue
+        lifecycle_fault_event_applies "$command" "$policy" "$event" || continue
         for fault in before after barrier; do
             [[ "$event" != mktemp\ * || "$fault" != after ]] || continue
             printf 'interrupt.%s.%s.%s.%s\n' "$command" "$policy" "$point" "$fault"

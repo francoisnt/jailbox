@@ -972,29 +972,10 @@ run_stage() {
         cd "$project_dir"
         # The wrapper seeds remote preferences after frontend up. Its public
         # exec must agree with the policy composed from the minimal fixture.
-        for config_name in "${!JAILBOX_CONFIG_@}"; do
-            unset "$config_name"
-        done
+        editor_stage_machine_policy "$stage" || exit $?
         # shellcheck disable=SC2031 # This launch initializes its own child environment.
         export JAILBOX_TEST_EDITOR_REAL JAILBOX_TEST_CLI="$JAILBOX_DIR/src/jailbox"
         JAILBOX_TEST_EDITOR_REAL=$(editor_bin) || exit $?
-        # shellcheck disable=SC2031 # Assigned from this stage immediately below.
-        export JAILBOX_CONFIG_DEV_IMAGE
-        JAILBOX_CONFIG_DEV_IMAGE=$(stage_test_image "$stage") || exit $?
-        # shellcheck disable=SC2031 # This launch sets its own config anchor.
-        export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
-        if [[ "$stage" = egress ]]; then
-            export JAILBOX_CONFIG_EGRESS_ALLOW_0=api.ipify.org
-            if [[ "${JAILBOX_TEST_EDITOR_REAL##*/}" = codium ]]; then
-                export JAILBOX_CONFIG_EGRESS_ALLOW_1=github.com
-                export JAILBOX_CONFIG_EGRESS_ALLOW_2=githubusercontent.com
-            else
-                export JAILBOX_CONFIG_EGRESS_ALLOW_1=update.code.visualstudio.com
-                export JAILBOX_CONFIG_EGRESS_ALLOW_2=vscode.download.prss.microsoft.com
-                export JAILBOX_CONFIG_EGRESS_ALLOW_3=main.vscode-cdn.net
-                export JAILBOX_CONFIG_EGRESS_ALLOW_4=vo.msecnd.net
-            fi
-        fi
         mkdir -p "$project_dir/.vscode/test-editor-bin" || exit $?
         cp "$JAILBOX_DIR/tests/fixtures/editor-smoke/editor.sh" \
             "$project_dir/.vscode/test-editor-bin/${JAILBOX_TEST_EDITOR_REAL##*/}" || exit $?
@@ -1003,15 +984,15 @@ run_stage() {
         if [[ "$stage" = debian ]]; then
             local failure="$LOG_DIR/$stage.setup-failure" setup_status=0
             export JAILBOX_TEST_EDITOR_ATTEMPT_FILE="$LOG_DIR/$stage.editor-attempt"
-            export JAILBOX_TEST_REQUIRE_HOME_SETUP=1 JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup-home.sh
-            "$JAILBOX_DIR/src/jailbox" > "$failure" 2>&1 || setup_status=$?
+            export JAILBOX_TEST_REQUIRE_HOME_SETUP=1
+            # The negative setup case uses the default ephemeral home.
+            (unset JAILBOX_CONFIG_EPHEMERAL_HOME; "$JAILBOX_DIR/src/jailbox") > "$failure" 2>&1 || setup_status=$?
             if [[ "$setup_status" = 0 || -e "$JAILBOX_TEST_EDITOR_ATTEMPT_FILE" ]] ||
                 ! grep -Fq 'HOME_SETUP_SCRIPT failed (exit 37)' "$failure"; then
                 cat "$failure" >&2
                 exit 1
             fi
             # Keep the successful home for subsequent editor tests in this stage.
-            export JAILBOX_CONFIG_EPHEMERAL_HOME=false
             printf 'EPHEMERAL_HOME=false\n' >> jailbox.conf || exit $?
             # shellcheck disable=SC2016 # Expanded by the sandbox setup script.
             printf '%s\n' '#!/bin/sh' 'touch "$HOME/.jailbox-test-home-setup"' > setup-home.sh || exit $?

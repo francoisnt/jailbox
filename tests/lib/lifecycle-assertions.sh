@@ -18,9 +18,9 @@ lifecycle_require_fault_coverage() {
 }
 
 # Normalize only allocation suffixes, retaining the operation and its operands.
-# Preparation directory names vary between otherwise identical reconstructions.
+# Staging file and directory names vary between otherwise identical fixtures.
 lifecycle_event_identity() {
-    sed -E 's/(\.ssh-generation\.)[[:alnum:]]+/\1ALLOCATED/g; s/(gitconfig\.tmp\.)[[:alnum:]]+/\1ALLOCATED/g'
+    sed -E 's/(\.ssh-generation\.|gitconfig\.tmp\.|\.home-setup-complete\.)[[:alnum:]]+/\1ALLOCATED/g'
 }
 
 lifecycle_same_fault_event() {

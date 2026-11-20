@@ -33,21 +33,29 @@ occupy_editor_subnet() {
     return 1
 }
 
-verify_editor_settings() (
-    local project=$1 stage=$2 proxy profile name index hash offset
+editor_stage_machine_policy() {
+    local stage=$1 name index editor
     for name in "${!JAILBOX_CONFIG_@}"; do unset "$name"; done
     export JAILBOX_CONFIG_DEV_IMAGE
     JAILBOX_CONFIG_DEV_IMAGE=$(stage_test_image "$stage") || return 1
     export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
-    if [[ $stage == egress ]]; then
+    if [[ $stage == debian ]]; then
+        export JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup-home.sh JAILBOX_CONFIG_EPHEMERAL_HOME=false
+    elif [[ $stage == egress ]]; then
         local hosts=(api.ipify.org)
-        if [[ $(editor_name) == codium ]]; then
+        editor=$(editor_name) || return 1
+        if [[ $editor == codium ]]; then
             hosts+=(github.com githubusercontent.com)
         else
             hosts+=(update.code.visualstudio.com vscode.download.prss.microsoft.com main.vscode-cdn.net vo.msecnd.net)
         fi
         for index in "${!hosts[@]}"; do export "JAILBOX_CONFIG_EGRESS_ALLOW_$index=${hosts[index]}"; done
     fi
+}
+
+verify_editor_settings() (
+    local project=$1 stage=$2 proxy profile hash offset
+    editor_stage_machine_policy "$stage" || return 1
     proxy=$(shell_connection_proxy "$project" "$JAILBOX_DIR/src/jailbox" "$LOG_DIR/$stage.editor-connection") || return 1
     profile=$(jailbox_editor_user_data "$project") || return 1
     python3 "$JAILBOX_DIR/tests/lib/editor/check-settings.py" "$profile/User/settings.json" "$(jailbox_ssh_config "$project")" "$proxy" || return 1

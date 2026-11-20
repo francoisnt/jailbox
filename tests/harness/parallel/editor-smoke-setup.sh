@@ -6,6 +6,9 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # Runner is checked separately; this fixture replaces its dependencies.
 # shellcheck source=/dev/null
 source "$ROOT/tests/e2e/editor-smoke.sh"
+JAILBOX_DIR=$ROOT
+# shellcheck source=tests/lib/editor/workflows.sh
+source "$ROOT/tests/lib/editor/workflows.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 export SMOKE_TRACE="$tmp/trace" SMOKE_SETTINGS="$tmp/settings"
@@ -49,6 +52,28 @@ write_fixture "$tmp/project" egress test-run
 grep -qx 'EDITOR=codium' "$tmp/project/jailbox.conf"
 grep -qx 'EGRESS_ALLOW=api.ipify.org' "$tmp/project/jailbox.conf"
 
+# The endpoint check must request the same retained setup home as the launch.
+(
+    export JAILBOX_CONFIG_EPHEMERAL_HOME=true JAILBOX_CONFIG_EGRESS_ALLOW_0=stale.example
+    export JAILBOX_CONFIG_HOME_SETUP_SCRIPT=stale.sh
+    shell_connection_proxy() {
+        [[ "$JAILBOX_CONFIG_DEV_IMAGE" = test-image &&
+            "$JAILBOX_CONFIG_READONLY_PATHS_0" = jailbox.conf &&
+            "$JAILBOX_CONFIG_HOME_SETUP_SCRIPT" = setup-home.sh &&
+            "$JAILBOX_CONFIG_EPHEMERAL_HOME" = false &&
+            ! -v JAILBOX_CONFIG_EGRESS_ALLOW_0 ]]
+    }
+    jailbox_ssh_config() { printf '/test/ssh-config\n'; }
+    jailbox_editor_user_data() { printf '%s\n' "$tmp/profile"; }
+    LOG_DIR="$tmp"
+    mkdir -p "$tmp/profile/User"
+    printf '%s\n' '{"remote.SSH.configFile":"/test/ssh-config","remote.SSH.enableAgentForwarding":false}' \
+        > "$tmp/profile/User/settings.json"
+    cp "$tmp/profile/User/settings.json" "$tmp/project/.jailbox-editor-settings.json"
+    verify_editor_settings "$tmp/project" debian
+)
+printf 'PASS: Debian editor validation queries the retained setup home policy\n'
+
 # Reopening uses the real editor directly, outside the initial-launch wrapper.
 # Exercise that path so test trust policy survives the bootstrap window closing.
 editor_bin() { printf '%s\n' "$tmp/editor"; }
@@ -89,9 +114,6 @@ JAILBOX_TEST_SEED_SETTINGS=0 bash "$wrapper" --folder-uri switched
 
 # Reopen/resume clears all previous proof before invoking the public frontend;
 # no stale task result can establish a successful new editor session.
-JAILBOX_DIR=$ROOT
-# shellcheck source=tests/lib/editor/workflows.sh
-source "$ROOT/tests/lib/editor/workflows.sh"
 PROOF_FILE=proof EXT_ACTIVATION_MARKER=activated EXT_TASK_RESULT=task-result
 cleanup_editor_workspace() {
     printf 'close\n' >> "$SMOKE_TRACE"

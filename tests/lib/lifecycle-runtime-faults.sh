@@ -150,7 +150,7 @@ run_mutation_faults() {
     matrix_case_pass
     for ((point=1; point<=count; point++)); do
         event=$(sed -n "${point}p" "$trace")
-        lifecycle_fault_event_applies "$policy" "$event" || continue
+        lifecycle_fault_event_applies "$command" "$policy" "$event" || continue
         for fault in before after barrier; do
             # Allocation is covered before creation and by killing the
             # caller after allocation, before it receives the path. Do

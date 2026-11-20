@@ -7,8 +7,8 @@ initialize_public_api_lookups
 
 # Contracts select explicit state/recovery assertions and independent required
 # operations. Sharing a contract is a claim of equivalent lifecycle behavior.
-# Launch uses each row's success/refusal expectation; stop and clean must
-# succeed in every row, with their distinct retention and removal guarantees.
+# Launch uses each row's success/refusal expectation. Standalone stop and clean
+# cases must succeed, with their distinct retention and removal guarantees.
 declare -A LIFECYCLE_COMMAND_CONTRACTS=(
     [up]=launch [stop]=stop [--clean]=clean
 )
@@ -39,22 +39,29 @@ validate_lifecycle_contracts() {
     done
 }
 
-# The extra scenarios sweep only operations absent from the creation sweeps.
+# Focused scenarios sweep the steps that distinguish their recovery behavior.
 # Keep original trace positions so fault injection still reaches the same call.
 lifecycle_fault_event_applies() {
-    local scenario="$1" event="$2"
-    case "$scenario" in
-        resume) [[ "$event" = podman\ start\ * ]] ;;
-        plain-network) [[ "$event" = podman\ network\ create\ * && "$event" = *-net ]] ;;
-        home-setup) [[ "$event" = ssh\ *jailbox-exec-argv* || "$event" = mv\ *home-setup-complete* ]] ;;
+    local command="$1" policy="$2" event="$3"
+    case "${LIFECYCLE_COMMAND_CONTRACTS[$command]}:$policy" in
+        launch:resume) [[ "$event" = podman\ start\ * ]] ;;
+        launch:plain-network) [[ "$event" = podman\ network\ create\ * && "$event" = *-net ]] ;;
+        launch:home-setup) [[ "$event" = ssh\ *jailbox-exec-argv* || "$event" = mv\ *home-setup-complete* ]] ;;
+        launch:new-ephemeral)
+            [[ "$event" = podman\ volume\ create\ * || "$event" = podman\ run\ *\ --cidfile\ * ]]
+            ;;
+        stop:true)
+            [[ "$event" = podman\ volume\ rm\ * || "$event" = rm\ -rf\ --\ */ssh-generation\ * ]]
+            ;;
+        clean:true) [[ "$event" = podman\ volume\ rm\ * ]] ;;
         *) return 0 ;;
     esac
 }
 
 # Independently maintained coverage floors for the healthy fault fixtures.
 # These describe operation roles, not a total derived from the current trace.
-# New operations are still swept automatically. Removing or replacing a required
-# operation needs an explicit review of this contract, even if launch still works.
+# Full sweeps include new operations automatically. Removing or replacing a
+# required operation needs an explicit review, even if the command still works.
 lifecycle_fault_requirements() {
     local command="$1" policy="$2" contract
     local -a requirements=()
@@ -76,7 +83,13 @@ lifecycle_fault_requirements() {
                 'setup-record-publication|1|^mv .* /.*home-setup-complete$'
             )
             ;;
-        launch:false|launch:none|launch:new-ephemeral)
+        launch:new-ephemeral)
+            requirements=(
+                'home-creation-and-ownership|1|^podman volume create .* --opt o=uid=0\\,gid=0 '
+                'development-container|1|^podman run .* --cidfile '
+            )
+            ;;
+        launch:false|launch:none)
             requirements=(
                 'internal-network|1|^podman network create .* [^ ]+-net-internal$'
                 'external-network|1|^podman network create .* [^ ]+-net-external$'
@@ -106,7 +119,16 @@ lifecycle_fault_requirements() {
                 )
             fi
             ;;
-        stop:false|stop:true|clean:false|clean:true)
+        stop:true)
+            requirements=(
+                'home-removal|1|^podman volume rm .*-home$'
+                'ssh-removal|1|^rm -rf -- .*/ssh-generation '
+            )
+            ;;
+        clean:true)
+            requirements=('home-removal|1|^podman volume rm .*-home$')
+            ;;
+        stop:false|clean:false)
             requirements=(
                 'development-stop|1|^podman stop jailbox-project-[[:xdigit:]]+$'
                 'proxy-stop|1|^podman stop .*-proxy$'
@@ -115,11 +137,9 @@ lifecycle_fault_requirements() {
                 'internal-network-removal|1|^podman network rm .*-net-internal$'
                 'external-network-removal|1|^podman network rm .*-net-external$'
             )
-            if [[ "$contract" = clean || "$policy" = true ]]; then
-                requirements+=('home-removal|1|^podman volume rm .*-home$')
-            fi
             if [[ "$contract" = clean ]]; then
                 requirements+=(
+                    'home-removal|1|^podman volume rm .*-home$'
                     'development-image-removal|1|^podman image rm .*-image$'
                     'proxy-image-removal|1|^podman image rm .*-proxy$'
                     'state-removal|1|^rm -rf -- .*/projects/[[:xdigit:]]+$'
@@ -131,6 +151,20 @@ lifecycle_fault_requirements() {
         *) printf 'Unknown fault coverage scenario: %s:%s\n' "$command" "$policy" >&2; return 1 ;;
     esac
     printf '%s\n' "${requirements[@]}"
+}
+
+# Each SSH row runs its own launch refusal and stop recovery. Standalone
+# cleanup also covers missing and unusual path types and a directory mode.
+lifecycle_row_case_applies() {
+    local row="${1%.*}" command="${1##*.}"
+    case "$row" in
+        ssh-missing|ssh-symlink|ssh-directory|ssh-fifo|ssh-parent-mode) return 0 ;;
+        ssh-*)
+            [[ "$command" =~ ^-{0,2}[A-Za-z][A-Za-z0-9-]*$ &&
+                ${LIFECYCLE_COMMAND_CONTRACTS[$command]-} = launch ]]
+            ;;
+        *) return 0 ;;
+    esac
 }
 
 # Each concrete SSH defect still owes refusal, non-mutation, and safe cleanup.

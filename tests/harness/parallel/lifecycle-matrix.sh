@@ -147,6 +147,15 @@ for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network up:
     elif [[ "$policy" = home-setup ]]; then
         printf '%s\n' 'ssh -F /ssh -T jailbox-project-abc /usr/local/bin/jailbox-exec-argv\ Zml4dHVyZQA=' \
             'mv -f -- /state/.home-setup-complete.temp /state/home-setup-complete' > "$FIXTURE/coverage"
+    elif [[ "$policy" = new-ephemeral ]]; then
+        grep -- --cidfile "$FIXTURE/up-trace" > "$FIXTURE/coverage"
+        LIFECYCLE_EVENTS="$FIXTURE/coverage" "$FIXTURE/bin/podman" volume create \
+            --label policy --opt o=uid=0,gid=0 home
+    elif [[ "$policy" = true ]]; then
+        printf '%s\n' 'podman volume rm jailbox-project-abc-home' > "$FIXTURE/coverage"
+        if [[ "$command" = stop ]]; then
+            printf '%s\n' 'rm -rf -- /state/ssh-generation /state/key' >> "$FIXTURE/coverage"
+        fi
     elif [[ "$command" = up ]]; then
         cp "$FIXTURE/up-trace" "$FIXTURE/coverage"
         if [[ "$policy" != false ]]; then
@@ -155,10 +164,8 @@ for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network up:
         fi
     else
         cp "$FIXTURE/cleanup-trace" "$FIXTURE/coverage"
-        if [[ "$command" = --clean || "$policy" = true ]]; then
-            printf '%s\n' 'podman volume rm jailbox-project-abc-home' >> "$FIXTURE/coverage"
-        fi
         if [[ "$command" = --clean ]]; then
+            printf '%s\n' 'podman volume rm jailbox-project-abc-home' >> "$FIXTURE/coverage"
             printf '%s\n' 'podman image rm jailbox-project-abc-image' 'podman image rm jailbox-project-abc-proxy' \
                 'rm -rf -- /state/jailbox/projects/abc' >> "$FIXTURE/coverage"
         else
@@ -210,6 +217,11 @@ lifecycle_same_fault_event "$FIXTURE/reference" "$FIXTURE/actual" 1
 printf '%s\n' 'rm /state/.ssh-generation.DEF456/server' > "$FIXTURE/actual"
 if lifecycle_same_fault_event "$FIXTURE/reference" "$FIXTURE/actual" 1; then echo "FAIL: $TEST_CASE" >&2; exit 1; fi
 printf '%s\n' 'mkdir /state/.ssh-generation.DEF456/other' > "$FIXTURE/actual"
+if lifecycle_same_fault_event "$FIXTURE/reference" "$FIXTURE/actual" 1; then echo "FAIL: $TEST_CASE" >&2; exit 1; fi
+printf '%s\n' 'mv -f -- /state/.home-setup-complete.ABC123 /state/home-setup-complete' > "$FIXTURE/reference"
+printf '%s\n' 'mv -f -- /state/.home-setup-complete.DEF456 /state/home-setup-complete' > "$FIXTURE/actual"
+lifecycle_same_fault_event "$FIXTURE/reference" "$FIXTURE/actual" 1
+printf '%s\n' 'mv -f -- /state/.home-setup-complete.DEF456 /other/home-setup-complete' > "$FIXTURE/actual"
 if lifecycle_same_fault_event "$FIXTURE/reference" "$FIXTURE/actual" 1; then echo "FAIL: $TEST_CASE" >&2; exit 1; fi
 pass
 

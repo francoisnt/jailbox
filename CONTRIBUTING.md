@@ -288,6 +288,9 @@ with binary stdin, and shell attachment/refusal with valid local TTYs for
 constructed-state and targeted-failure fixtures. Discovered interruption sweeps
 use status and full connection-info validation, retaining every recovery,
 identity, data, and dependency assertion without repeating both transports.
+The `new-ephemeral` sweep interrupts volume and development container
+creation. Ephemeral `stop` interrupts volume and SSH state removal, and
+ephemeral `--clean` interrupts volume removal.
 Observation records include `full` or `readiness` as their trailing field.
 The [core coverage inventory](tests/core-verification.md) maps the assertions
 and their negative controls. Fault expectations come from independent surviving-resource and
@@ -305,24 +308,26 @@ directory, exit statuses, and independent concurrent attachments.
 The recovered `missing-proxy.up` observation also verifies the command's proxy
 environment and absence of an implicit login shell.
 
-The deterministic 50- and 150-case samples retain their declared case membership
-and counts. Observations include connection, exec, and PTY shell validation;
+The deterministic 50- and 150-case samples retain their original command
+selection. Observations include connection, exec, and PTY shell validation;
 `running.up` adds the transport and concurrency assertions described above.
 Each SSH defect proves its own refusal and repaired baseline; explicit metadata
 and key-content representatives supply the final relaunch proof. Group contracts
 must match and their representative must be selected. `recovery-coverage` logs
-these assignments. This leaves the 50-case workload unchanged but changes the
-150-case workload. Establish a new 150-case baseline or compare exactly shared
+these assignments. The full matrix runs standalone cleanup for missing SSH
+files, symlinks, directories, FIFOs, and a directory with an unsafe mode.
+Sharing relaunch proof changes the 150-case workload.
+Establish a new 150-case baseline or compare exactly shared
 work; identical case names do not make old timings comparable. Samples remain partial coverage, never replacements
 for the four gates.
 
-Case labels separate the 144 matrix command cases, nine discovery traces,
-13 targeted failures, and interruption cases numbered within each trace.
+Case labels separate constructed state/command cases, discovery traces,
+targeted failures, and interruption cases numbered within each trace.
 An interactive terminal shows one updating progress line beneath case output,
 with completed/total counts by type and overall, clipped to the terminal width.
 Redirected output, CI, and saved worker logs keep plain timestamped progress
 records. Terminals with `TERM=dumb` use the same plain format. Totals marked `known` grow as traces discover interruption points;
-they become final when all nine discovery cases complete. Case numbers are
+they become final when all discovery cases complete. Case numbers are
 catalog positions, so parallel workers can start them out of order.
 
 The lifecycle suite automatically sizes its worker pool at startup using
@@ -334,8 +339,8 @@ memory reservations. Unknown memory or cgroup layouts fall back to one worker.
 The startup log reports the selection and detected resources. The pool stays
 fixed for the run. Each worker owns
 its project, derived SSH port, resources, state directory, logs, and ledger.
-It runs each claimed row's three commands on independently reconstructed state;
-each interruption group discovers and tests its trace on the same worker.
+It reconstructs the state independently for each selected command in a claimed
+row. Each interruption group discovers and tests its trace on the same worker.
 Fixture reset removes mutable resources directly and retains derived
 images for the build cache. Actual `--clean` cases still remove and verify image
 names. Final image cleanup waits until all workers and their CLI owners stop.
@@ -372,8 +377,8 @@ are outside this sample; passing it does not mean the matrix gate passed.
 The `absent.stop` case requires status to remain `absent`: stopping a project
 with no sandbox resources must not report a stopped container.
 
-For a larger sample, use `--sample-150`: all 144 constructed state/command cases
-plus the six home-inspection failure cases. The inspection job starts first to
+For a larger sample, use `--sample-150`. It runs the original 144 constructed
+state/command cases plus the six home-inspection failure cases. The inspection job starts first to
 avoid leaving its longer workload until other workers finish. It retains the
 same assertions and cleanup, and excludes discovery traces and interruption sweeps. The selection
 fails explicitly if catalog changes no longer fit these 150 cases. Compare runs
