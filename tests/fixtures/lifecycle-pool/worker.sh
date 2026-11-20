@@ -14,6 +14,7 @@ record_job() {
         done
     fi
     if [[ "$1" = fail ]]; then false; fi
+    if [[ "$1" = halt ]]; then : > "$run/stop"; fi
     printf '%s\n' "$*" >> "$run/visited-$BASHPID"
 }
 lifecycle_run_queue "$run" record_job

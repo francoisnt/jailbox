@@ -77,6 +77,49 @@ lifecycle_select_sample() {
     mv "$run/sample-catalog" "$run/catalog"
 }
 
+# Map each fixed case to the catalog job that runs it.
+lifecycle_case_job() {
+    case "$1" in
+        trace.*) printf 'fault.%s\n' "${1#trace.}" ;;
+        failed-resume.*) printf 'resume\n' ;;
+        failed-new-container-cleanup) printf 'removal\n' ;;
+        failed-create.*) printf 'dependency\n' ;;
+        home-inspection.*) printf 'inspection\n' ;;
+        ?*.?*) printf 'row.%s\n' "${1%.*}" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Split the full catalog across CI machines. Timings only balance the shares:
+# every job belongs to exactly one shard whatever the history contains.
+lifecycle_select_shard() {
+    local run="$1" shard="$2" count="$3" timings="$4" key job
+    local -A catalog_jobs=() selected=()
+    awk -F '|' -v default_weight=60 -f "${BASH_SOURCE[0]%/*}/lifecycle/order-jobs.awk" "$timings" "$run/catalog" |
+        LC_ALL=C sort -t '|' -k1,1nr -k2,2 |
+        awk -F '|' -v shard="$shard" -v count="$count" -f "${BASH_SOURCE[0]%/*}/lifecycle/shard-jobs.awk" \
+        > "$run/shard-catalog" || return 1
+    while IFS='|' read -r key _; do
+        [[ "$key" =~ ^[a-z][a-z0-9.-]*$ ]] || return 1
+        catalog_jobs[$key]=1
+    done < "$run/catalog"
+    while IFS='|' read -r key _; do
+        [[ "$key" =~ ^[a-z][a-z0-9.-]*$ ]] || return 1
+        selected[$key]=1
+    done < "$run/shard-catalog"
+    : > "$run/shard-fixed" || return 1
+    while IFS= read -r key; do
+        job=$(lifecycle_case_job "$key") || { printf 'No lifecycle job owns case %s\n' "$key" >&2; return 1; }
+        if [[ ! "$job" =~ ^[a-z][a-z0-9.-]*$ || ! -v catalog_jobs[$job] ]]; then
+            printf 'Lifecycle case %s maps to unknown job %s\n' "$key" "$job" >&2
+            return 1
+        fi
+        if [[ -v selected[$job] ]]; then printf '%s\n' "$key" >> "$run/shard-fixed" || return 1; fi
+    done < "$run/expected-fixed"
+    mv "$run/shard-catalog" "$run/catalog" || return 1
+    mv "$run/shard-fixed" "$run/expected-fixed"
+}
+
 lifecycle_case_selected() {
     if [[ ${LIFECYCLE_SAMPLE_MODE:-false} != true ]]; then
         lifecycle_row_case_applies "$2"
@@ -129,6 +172,9 @@ lifecycle_fault_cases() {
 
 # Atomic claims allow idle workers to take the next job without a central
 # dispatcher or a shared stdin. A failed claimed job is never silently retried.
+# After the coordinator records a failure, workers finish only their current job.
+# Checking after the claim means a stop recorded before any claim is always seen;
+# the abandoned claim leaves the job incomplete, so the run fails as expected.
 lifecycle_run_queue() {
     local run="$1" callback="$2" queue_fd key started
     local -a fields=()
@@ -140,6 +186,7 @@ lifecycle_run_queue() {
             [[ -d "$run/claims/$key" ]] || return 1
             continue
         fi
+        [[ ! -e "$run/stop" ]] || break
         started=$SECONDS
         "$callback" "${fields[@]:1}"
         printf '%s|%s\n' "$key" "$((SECONDS - started))" > "$run/done/$key"

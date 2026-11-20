@@ -25,8 +25,22 @@ grep -Fq "if: needs.previous-gates.outputs.reuse != 'true'" "$workflow"
 grep -Fq 'run: python3 scripts/lib/release-gates.py select' "$workflow"
 grep -Fq '  actions: read' "$workflow"
 gates="$ROOT/.github/workflows/test-gates.yml"
-grep -Fq '    needs: [portable, runtime, matrix, editor]' "$gates"
+grep -Fq '    needs: [portable, runtime, matrix-scope, matrix, editor]' "$gates"
 grep -Fq '      success() && inputs.run_editor &&' "$gates"
+# Only a full, unmodified matrix produces evidence. Only PR checks may skip it.
+grep -Fq "      needs.matrix-scope.outputs.run == 'true' && inputs.lifecycle_jobs == '' &&" "$gates"
+grep -Fq 'run: python3 scripts/lib/matrix-scope.py' "$gates"
+# shellcheck disable=SC2016 # Literal GitHub Actions expression.
+grep -Fq 'JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/3' "$gates"
+grep -Fxq '        shard: [1, 2, 3]' "$gates"
+# A missing scope output must run the matrix: only an explicit false skips it.
+matrix_job=$(awk '/^  matrix:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
+[[ $(grep -c "if: needs.matrix-scope.outputs.run == 'false'$" <<< "$matrix_job") = 1 ]]
+[[ $(grep -c "needs.matrix-scope.outputs.run != 'false'$" <<< "$matrix_job") = 4 ]]
+if grep -Eq "outputs\.run (==|!=) 'true'" <<< "$matrix_job"; then exit 1; fi
+grep -Fxq '      matrix_change_scope: true' "$ROOT/.github/workflows/pr-checks.yml"
+grep -Fxq '  actions: read' "$ROOT/.github/workflows/pr-checks.yml"
+if grep -Fq 'matrix_change_scope' "$workflow" "$canary"; then exit 1; fi
 grep -Fq "inputs.code_version == '' && inputs.codium_version == ''" "$gates"
 grep -Fq "inputs.remote_ssh_version == '' && inputs.open_remote_ssh_version == ''" "$gates"
 grep -Fq 'run: python3 scripts/lib/release-gates.py record' "$gates"

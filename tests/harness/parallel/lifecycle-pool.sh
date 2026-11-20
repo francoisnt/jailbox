@@ -112,6 +112,44 @@ if lifecycle_order_jobs "$TEST_ROOT/catalog" "$TEST_ROOT/bad-history" >/dev/null
 fi
 pass
 
+TEST_CASE='shards cover every job and fixed case exactly once whatever the timings'
+lifecycle_fixed_cases > "$TEST_ROOT/shard-all-fixed"
+cut -d '|' -f1 "$TEST_ROOT/catalog" | awk '{ print $1 "|" NR }' > "$TEST_ROOT/ascending-history"
+for history in "$ROOT/tests/lib/lifecycle/timings" /dev/null "$TEST_ROOT/ascending-history"; do
+    for count in 1 2 3 4; do
+        : > "$TEST_ROOT/shard-jobs"
+        : > "$TEST_ROOT/shard-fixed"
+        for ((shard=1; shard<=count; shard++)); do
+            run="$TEST_ROOT/shard-$count-$shard"
+            rm -rf -- "$run"
+            mkdir "$run"
+            cp "$TEST_ROOT/catalog" "$run/catalog"
+            cp "$TEST_ROOT/shard-all-fixed" "$run/expected-fixed"
+            lifecycle_select_shard "$run" "$shard" "$count" "$history"
+            [[ -s "$run/catalog" ]]
+            cat "$run/catalog" >> "$TEST_ROOT/shard-jobs"
+            cat "$run/expected-fixed" >> "$TEST_ROOT/shard-fixed"
+        done
+        sort "$TEST_ROOT/shard-jobs" > "$TEST_ROOT/actual"
+        cmp "$TEST_ROOT/expected" "$TEST_ROOT/actual"
+        sort "$TEST_ROOT/shard-fixed" > "$TEST_ROOT/actual"
+        sort "$TEST_ROOT/shard-all-fixed" > "$TEST_ROOT/expected-fixed-sorted"
+        cmp "$TEST_ROOT/expected-fixed-sorted" "$TEST_ROOT/actual"
+    done
+done
+# A fixed case without an owning catalog job fails instead of disappearing.
+for orphan in orphan unknown-row.up trace.up.unknown; do
+    run="$TEST_ROOT/shard-orphan"
+    rm -rf -- "$run"
+    mkdir "$run"
+    cp "$TEST_ROOT/catalog" "$run/catalog"
+    { cat "$TEST_ROOT/shard-all-fixed"; printf '%s\n' "$orphan"; } > "$run/expected-fixed"
+    if lifecycle_select_shard "$run" 1 2 /dev/null 2>/dev/null; then
+        echo "FAIL: unowned case $orphan accepted" >&2; exit 1
+    fi
+done
+pass
+
 TEST_CASE='discovered allocation faults preserve the intended exception'
 printf '%s\n' 'network create one' 'mktemp /state/.ssh-generation.XXXX' 'mkdir /state/server' > "$TEST_ROOT/trace"
 lifecycle_fault_cases "$TEST_ROOT/trace" up none > "$TEST_ROOT/faults"
@@ -199,6 +237,28 @@ bash "$TEST_ROOT/worker" "$ROOT" "$run" </dev/null || result=$?
 [[ "$result" != 0 && -d "$run/claims/bad" && ! -e "$run/done/bad" ]]
 bash "$TEST_ROOT/worker" "$ROOT" "$run" </dev/null
 [[ -f "$run/done/good" && ! -e "$run/done/bad" ]]
+pass
+
+TEST_CASE='after a recorded failure, workers finish their current job and claim no more'
+run="$TEST_ROOT/stop"
+mkdir -p "$run/claims" "$run/done"
+printf '%s\n' 'first|success' 'second|halt' 'third|success' > "$run/jobs"
+bash "$TEST_ROOT/worker" "$ROOT" "$run" </dev/null
+printf '%s\n' success halt > "$TEST_ROOT/expected-visits"
+cat "$run"/visited-* > "$TEST_ROOT/actual-visits"
+cmp "$TEST_ROOT/expected-visits" "$TEST_ROOT/actual-visits"
+[[ -f "$run/done/second" && ! -e "$run/done/third" ]]
+# A stop recorded between reading a job and claiming it still prevents the start.
+run="$TEST_ROOT/stop-race"
+mkdir -p "$run/claims" "$run/done"
+printf '%s\n' 'raced|success' > "$run/jobs"
+(
+    mkdir() { : > "$run/stop"; command mkdir "$@"; }
+    # shellcheck disable=SC2329 # Invoked by name through the queue callback.
+    visit() { printf '%s\n' "$*" >> "$run/visited"; }
+    lifecycle_run_queue "$run" visit </dev/null
+)
+[[ -d "$run/claims/raced" && ! -e "$run/visited" && ! -e "$run/done/raced" ]]
 pass
 
 TEST_CASE='fixture reconstruction removes mutable resources and preserves images and peers'
@@ -329,6 +389,35 @@ for workers in 1 2 4; do
     done
     [[ $(find "$tree/ledger" -name '*.ledger' | wc -l) = 0 ]]
 done
+pass
+
+TEST_CASE='coordinator shards together complete the full matrix'
+: > "$TEST_ROOT/shard-cases"
+for shard in 1/2 2/2; do
+    if ! PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" \
+        JAILBOX_LIFECYCLE_JOBS=2 JAILBOX_LIFECYCLE_SHARD="$shard" \
+        bash "$tree/tests/integration/lifecycle-state.sh" > "$tree/output" 2>&1; then
+        cat "$tree/output" >&2; exit 1
+    fi
+    grep -Fq "matrix shard $shard passed (partial coverage); logs: " "$tree/output"
+    new_coordinator_run
+    grep -Fxq "shard=$shard" "$run/run-summary"
+    cat "$run/completed-cases" >> "$TEST_ROOT/shard-cases"
+done
+LC_ALL=C sort "$TEST_ROOT/shard-cases" > "$TEST_ROOT/actual"
+cmp "$TEST_ROOT/expected-full-cases" "$TEST_ROOT/actual"
+for shard in 0/2 3/2 1/0 1/100 x 1/2/3; do
+    if PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" JAILBOX_LIFECYCLE_SHARD="$shard" \
+        bash "$tree/tests/integration/lifecycle-state.sh" > "$tree/output" 2>&1; then
+        echo "FAIL: invalid shard $shard accepted" >&2; exit 1
+    fi
+    grep -Fq 'JAILBOX_LIFECYCLE_SHARD must be INDEX/COUNT' "$tree/output"
+done
+if PATH="$tree/bin:$PATH" JAILBOX_TEST_LEDGER_DIR="$tree/ledger" JAILBOX_LIFECYCLE_SHARD=1/2 \
+    bash "$tree/tests/integration/lifecycle-state.sh" --sample-50 > "$tree/output" 2>&1; then
+    echo 'FAIL: sharded sample accepted' >&2; exit 1
+fi
+grep -Fq 'lifecycle samples cannot be sharded' "$tree/output"
 pass
 
 TEST_CASE='sample coordinator verifies 50 and 150 cases and cleans up'

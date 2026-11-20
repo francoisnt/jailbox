@@ -45,8 +45,13 @@ def run_url(server, repository, run_id, attempt):
 def record(env):
     needs = json.loads(env["GATE_RESULTS"])
     inputs = json.loads(env["GATE_INPUTS"])
+    # PR checks may skip an unaffected matrix; such runs are never evidence.
+    scope = needs.pop("matrix-scope", None)
+    if not scope or scope["result"] != "success" or scope.get("outputs", {}).get("run") != "true":
+        raise ValueError("evidence requires the full lifecycle matrix")
     if set(needs) != GATES or any(needs[gate]["result"] != "success" for gate in GATES):
         raise ValueError("all four gates must pass")
+    inputs.pop("matrix_change_scope", None)
     if inputs.pop("run_editor", None) is not True or any(inputs.values()):
         raise ValueError("evidence requires both editors and the pinned dependencies")
     identity = {"repository": env["GITHUB_REPOSITORY"], "sha": env["GITHUB_SHA"],

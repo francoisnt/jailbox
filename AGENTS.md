@@ -308,12 +308,19 @@ new test scripts cannot silently escape ShellCheck.
   and security guides live in docs/ and ship alongside README.md in the installed
   package. Keep shared contracts authoritative in one guide and link to them.
 - Every pull request and push to master runs all four gates: portable, runtime,
-  matrix, and editor (both VS Code and VSCodium). Auto-merge is limited to verified
+  matrix, and editor (both VS Code and VSCodium). The matrix runs as three CI
+  shards that together cover every case. PR checks skip the matrix only when
+  every file changed since the newest verified full pass on an ancestor commit
+  is on the safe list in `scripts/lib/matrix-scope.py`; an unlisted path, a
+  missing baseline, or any lookup failure runs the full matrix. Keep that list
+  limited to files the matrix never reads. A run with a skipped matrix records
+  no verified gate evidence. Auto-merge is limited to verified
   Dependabot patch/minor GitHub Actions updates after all four gates pass; major
   updates require manual review. Enforce the combined PR gates status and an
   up-to-date branch in GitHub branch protection or rulesets, not custom merge
   helpers. Configure these requirements before activating auto-merge.
-- Releases and canary runs use all four gates: portable, runtime, matrix, editor.
+- Releases and canary runs use all four gates, always with the full matrix:
+  portable, runtime, matrix, editor.
   Releases may reuse a verified complete passing result from the shared gate
   workflow for the exact commit, dependency combination, and required coverage,
   provided no later failure remains unresolved. Otherwise run fresh gates.

@@ -4,6 +4,9 @@ FILENAME == ARGV[1] {
     }
     duration[$1]=$2; next
 }
-{ priority=($1 in duration) ? duration[$1] : ($2 == "fault" ? 1000000000 : ($3 == "inspection" ? 100 : 0))
+# With default_weight set, unknown jobs get that weight instead of a start priority.
+{ if ($1 in duration) priority=duration[$1]
+  else if (default_weight != "") priority=default_weight
+  else priority=($2 == "fault" ? 1000000000 : ($3 == "inspection" ? 100 : 0))
   print priority "|" $0 }
 END { if (bad) print "Invalid lifecycle timing record" > "/dev/stderr" }

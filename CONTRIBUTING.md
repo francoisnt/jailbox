@@ -65,7 +65,11 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 Every PR and push to `master` runs portable, runtime, matrix, and both editor
 variants through the shared gate workflow. The `PR gates` check succeeds only
-when all four gates succeed.
+when all four gates succeed. PR checks skip the matrix when every file changed
+since the newest verified full pass on an ancestor commit is on the safe list
+in `scripts/lib/matrix-scope.py` (documentation, plans, editor-only and
+portable-only tests). Any other path, a missing or expired baseline, or a
+failed lookup runs the full matrix; the `matrix scope` job logs the reason.
 
 Verified patch/minor GitHub Actions updates can enable squash auto-merge after
 the gates pass. Major updates and missing or unknown update metadata require
@@ -275,7 +279,10 @@ fails immediately rather than after the portable gate. Pull requests, pushes to
 `tests/run portable` before sending a change, plus `tests/run runtime` when
 Podman is available.
 
-The full lifecycle matrix runs independently in PR, release and canary CI.
+The full lifecycle matrix runs independently in PR, release and canary CI, as
+three shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
+one share; jobs are spread by recorded job time, every job belongs to exactly
+one shard, and each shard checks its own cases are complete.
 Run it locally with `tests/run matrix`; it prepares only the required Debian
 images before running
 `tests/integration/lifecycle-state.sh`, a Linux constructed-state matrix using
@@ -353,10 +360,16 @@ writes `run-summary` with worker count, exit status, and elapsed seconds includi
 worker setup and final cleanup, excluding image preparation. It verifies
 completed jobs and cases against the catalog and discovered fault points before
 passing. Compare `completed-cases` between runs to check coverage as well as
-elapsed time. `JAILBOX_LIFECYCLE_TIMINGS=/absolute/path/to/previous/timings`
-prioritizes previously slow jobs; idle workers claim the next available job.
-Without history, interruption groups start first, followed by the inspection job
-and rows. History changes only order.
+elapsed time. Job history in `tests/lib/lifecycle/timings` starts slow jobs first
+and balances shards; idle workers claim the next available job. Refresh it
+from a CI run's `timings` file when jobs change noticeably; stale entries only
+affect speed. `JAILBOX_LIFECYCLE_TIMINGS=/absolute/path/to/timings` uses other
+history; with `/dev/null`, interruption groups start first, followed by the
+inspection job and rows. History never changes which cases run.
+After a worker fails, the other workers finish their current job and claim no
+more, so a failing run reports quickly and fails as incomplete.
+To measure a worker count on CI, dispatch the Test Gates workflow with
+`lifecycle_jobs`; such runs record no release evidence.
 
 For a short before/after performance comparison, prepare the Debian images once
 and run the opt-in 50-case sample with a fixed worker count:
@@ -415,7 +428,8 @@ minimum; the Release workflow applies it when re-selecting the version and
 creates the version tag and GitHub Release only after validation passes.
 It first looks for complete passing push CI on the exact commit, using the
 same pinned dependencies and shared gate workflow. The saved result must
-confirm portable, runtime, matrix, and both editors. A later failed, cancelled,
+confirm portable, runtime, the full matrix, and both editors; runs that skipped
+the matrix record no evidence. A later failed, cancelled,
 skipped, or unfinished test run prevents reuse. Canary runs with version
 overrides are never used as release evidence.
 

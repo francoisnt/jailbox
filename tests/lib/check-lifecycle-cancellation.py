@@ -17,6 +17,8 @@ failed = subprocess.run(["bash", str(script)], env=dict(env, POOL_TEST_MODE="fai
 assert failed.returncode != 0, failed.stdout
 assert b"worker failure or incomplete coverage" in failed.stdout, failed.stdout
 assert b"exit 42" in failed.stdout, failed.stdout
+assert b"other workers finish their current job and stop" in failed.stdout, failed.stdout
+assert (sorted((tree / "testlog").glob("*/matrix/lifecycle"))[-1] / "stop").exists()
 assert not list((tree / "ledger").glob("*.ledger"))
 
 with (tree / "cancel-output").open("wb") as output:

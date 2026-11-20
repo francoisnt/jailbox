@@ -38,6 +38,7 @@ class GateTests(unittest.TestCase):
                             tested_at="2026-10-08T01:00:00Z", run_url=URL)
         self.needs = {name: {"result": "success", "outputs": {}} for name in gates.GATES}
         self.needs["runtime"]["outputs"] = self.runtime
+        self.needs["matrix-scope"] = {"result": "success", "outputs": {"run": "true"}}
         self.env = dict(GATE_RESULTS=json.dumps(self.needs), GATE_INPUTS=json.dumps({"run_editor": True}),
                         GITHUB_REPOSITORY=REPO, GITHUB_SHA=SHA, GITHUB_RUN_ID="10",
                         GITHUB_RUN_ATTEMPT="1", GITHUB_SERVER_URL="https://github.com")
@@ -65,6 +66,23 @@ class GateTests(unittest.TestCase):
         for inputs in ({"run_editor": False}, {"run_editor": True, "code_version": "latest"}):
             with self.assertRaises(ValueError):
                 gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs)))
+
+    def test_record_requires_a_full_matrix_and_accepts_change_scope(self):
+        for scope in (None, {"result": "success", "outputs": {"run": "false"}},
+                      {"result": "success", "outputs": {}}, {"result": "failure", "outputs": {"run": "true"}}):
+            needs = copy.deepcopy(self.needs)
+            if scope is None:
+                del needs["matrix-scope"]
+            else:
+                needs["matrix-scope"] = scope
+            with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, "full lifecycle matrix"):
+                gates.record(dict(self.env, GATE_RESULTS=json.dumps(needs)))
+        for scope in (True, False):
+            inputs = {"run_editor": True, "matrix_change_scope": scope, "lifecycle_jobs": ""}
+            self.assertEqual(gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs))), self.proof)
+        inputs = {"run_editor": True, "lifecycle_jobs": "3"}
+        with self.assertRaises(ValueError):
+            gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs)))
 
     def test_rejects_wrong_commit_origin_branch_or_event(self):
         for change in ({"head_sha": "b" * 40}, {"head_branch": "other"}, {"event": "pull_request"},

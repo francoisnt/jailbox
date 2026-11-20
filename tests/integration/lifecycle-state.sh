@@ -24,6 +24,14 @@ case "$#:${1:-}" in
     1:--sample-150) LIFECYCLE_SAMPLE_MODE=true; LIFECYCLE_SAMPLE_SIZE=150 ;;
     *) die 'usage: tests/integration/lifecycle-state.sh [--sample-50|--sample-150]' ;;
 esac
+# INDEX/COUNT runs one deterministic share of the full matrix, for CI machines.
+SHARD=${JAILBOX_LIFECYCLE_SHARD:-}
+if [[ -n "$SHARD" ]]; then
+    if [[ ! "$SHARD" =~ ^([1-9][0-9]?)/([1-9][0-9]?)$ ]] || ((BASH_REMATCH[1] > BASH_REMATCH[2])); then
+        die 'JAILBOX_LIFECYCLE_SHARD must be INDEX/COUNT with 1 <= INDEX <= COUNT <= 99'
+    fi
+    [[ "$LIFECYCLE_SAMPLE_MODE" = false ]] || die 'lifecycle samples cannot be sharded'
+fi
 if [[ -n ${JAILBOX_LIFECYCLE_JOBS:-} ]]; then
     WORKERS=$JAILBOX_LIFECYCLE_JOBS
     WORKER_SELECTION="explicit override"
@@ -51,10 +59,15 @@ if [[ "$LIFECYCLE_SAMPLE_MODE" = true ]]; then
     printf 'Lifecycle sample: %s declared cases; partial coverage\n' "$LIFECYCLE_SAMPLE_SIZE"
     printf 'Each observed state checks status, connection-info, exec, and shell (with a PTY).\n'
 else
-    TIMINGS=${JAILBOX_LIFECYCLE_TIMINGS:-/dev/null}
+    TIMINGS=${JAILBOX_LIFECYCLE_TIMINGS:-$ROOT/tests/lib/lifecycle/timings}
     [[ -r "$TIMINGS" ]] || die "cannot read timing history: $TIMINGS"
-    lifecycle_order_jobs "$RUN/catalog" "$TIMINGS" > "$RUN/jobs"
     lifecycle_fixed_cases > "$RUN/expected-fixed"
+    if [[ -n "$SHARD" ]]; then
+        all_jobs=$(wc -l < "$RUN/catalog") || die 'could not count lifecycle jobs'
+        lifecycle_select_shard "$RUN" "${SHARD%/*}" "${SHARD#*/}" "$TIMINGS" || die 'could not select the lifecycle shard'
+        printf 'Lifecycle shard %s: %s of %s jobs\n' "$SHARD" "$(wc -l < "$RUN/catalog")" "$all_jobs"
+    fi
+    lifecycle_order_jobs "$RUN/catalog" "$TIMINGS" > "$RUN/jobs"
 fi
 export JAILBOX_TEST_LEDGER_DIR="${JAILBOX_TEST_LEDGER_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/jailbox-test-ledger}"
 ledger_begin_run lifecycle-pool
@@ -94,8 +107,10 @@ pool_cleanup() {
     fi
     local elapsed=$((SECONDS - LIFECYCLE_STARTED)) summary="$RUN/run-summary"
     if [[ "$LIFECYCLE_SAMPLE_MODE" = true ]]; then summary="$RUN/sample-summary"; fi
-    printf 'workers=%s\nelapsed_seconds=%s\nexit_status=%s\n' \
-        "$WORKERS" "$elapsed" "$result" > "$summary" || result=1
+    {
+        printf 'workers=%s\nelapsed_seconds=%s\nexit_status=%s\n' "$WORKERS" "$elapsed" "$result"
+        if [[ -n "$SHARD" ]]; then printf 'shard=%s\n' "$SHARD"; fi
+    } > "$summary" || result=1
     printf 'Lifecycle elapsed including setup and cleanup: %ss; summary: %s\n' "$elapsed" "$summary"
     exit "$result"
 }
@@ -154,6 +169,10 @@ report_worker() {
     local log=${worker_logs[$1-1]}
     test_log_drain "$log/worker.log" matrix "" || return 1
     if [[ "$2" != 0 ]]; then
+        if [[ ! -e "$RUN/stop" ]]; then
+            : > "$RUN/stop" || return 1
+            printf 'Lifecycle: a worker failed; other workers finish their current job and stop.\n'
+        fi
         matrix_failed=$((matrix_failed + 1))
         test_log_result FAIL "matrix/worker-$1 (exit $2)" "$3"
         if [[ -f "$log/worker.log" ]]; then
@@ -188,5 +207,9 @@ test_progress_complete 'Lifecycle: %s/%s cases completed; timings: %s/timings\n'
 if [[ "$LIFECYCLE_SAMPLE_MODE" = true ]]; then
     printf 'Lifecycle %s-case sample passed (partial coverage); logs: %s\n' "$LIFECYCLE_SAMPLE_SIZE" "$RUN"
 else
-    printf 'Lifecycle constructed-state matrix passed; logs: %s\n' "$RUN"
+    if [[ -n "$SHARD" ]]; then
+        printf 'Lifecycle constructed-state matrix shard %s passed (partial coverage); logs: %s\n' "$SHARD" "$RUN"
+    else
+        printf 'Lifecycle constructed-state matrix passed; logs: %s\n' "$RUN"
+    fi
 fi
