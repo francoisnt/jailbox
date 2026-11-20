@@ -200,14 +200,14 @@ jobs:
 
   # Each shard runs a fixed share of the full matrix; together they run it all.
   matrix:
-    name: matrix (${{ matrix.shard }}/6)
+    name: matrix (${{ matrix.shard }}/8)
     needs: matrix-scope
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       # Skip only on an explicit decision; a missing output runs the matrix.
       - name: Report skipped matrix
@@ -225,7 +225,7 @@ jobs:
       - name: Run matrix gate
         if: needs.matrix-scope.outputs.run != 'false'
         env:
-          JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/6
+          JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/8
           JAILBOX_LIFECYCLE_JOBS: ${{ inputs.lifecycle_jobs }}
         run: bash tests/run matrix
 
@@ -258,7 +258,7 @@ jobs:
           path: matrix-logs
 
       - name: Compare pieces across shards
-        run: bash tests/ci/check-matrix-pieces.sh 6 matrix-logs
+        run: bash tests/ci/check-matrix-pieces.sh 8 matrix-logs
 
   editor:
     name: editor (${{ matrix.editor_cli }})

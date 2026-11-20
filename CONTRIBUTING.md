@@ -280,7 +280,7 @@ fails immediately rather than after the portable gate. Pull requests, pushes to
 Podman is available.
 
 The full lifecycle matrix runs independently in PR, release and canary CI, as
-six shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
+eight shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
 one share; jobs are spread by recorded job time, every job belongs to exactly
 one shard, and each shard checks its own cases are complete. The longest
 interruption sweeps (`LIFECYCLE_FAULT_PIECES` in `tests/lib/lifecycle-contracts.sh`)

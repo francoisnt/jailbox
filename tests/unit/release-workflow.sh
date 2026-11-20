@@ -31,15 +31,15 @@ grep -Fq '      success() && inputs.run_editor &&' "$gates"
 grep -Fq "      needs.matrix-scope.outputs.run == 'true' && inputs.lifecycle_jobs == '' &&" "$gates"
 grep -Fq 'run: python3 scripts/lib/matrix-scope.py' "$gates"
 # shellcheck disable=SC2016 # Literal GitHub Actions expression.
-grep -Fq 'JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/6' "$gates"
-grep -Fxq '        shard: [1, 2, 3, 4, 5, 6]' "$gates"
+grep -Fq 'JAILBOX_LIFECYCLE_SHARD: ${{ matrix.shard }}/8' "$gates"
+grep -Fxq '        shard: [1, 2, 3, 4, 5, 6, 7, 8]' "$gates"
 # Pieces of a sweep may land on different shards, so a later job compares them
 # across every shard's logs.
 pieces_job=$(awk '/^  matrix-pieces:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
 grep -Fxq '    needs: [matrix-scope, matrix]' <<< "$pieces_job"
 grep -Fxq "    if: needs.matrix-scope.outputs.run != 'false'" <<< "$pieces_job"
 grep -Fxq '          pattern: matrix-logs-*' <<< "$pieces_job"
-grep -Fxq '        run: bash tests/ci/check-matrix-pieces.sh 6 matrix-logs' <<< "$pieces_job"
+grep -Fxq '        run: bash tests/ci/check-matrix-pieces.sh 8 matrix-logs' <<< "$pieces_job"
 # A missing scope output must run the matrix: only an explicit false skips it.
 matrix_job=$(awk '/^  matrix:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
 [[ $(grep -c "if: needs.matrix-scope.outputs.run == 'false'$" <<< "$matrix_job") = 1 ]]

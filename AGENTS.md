@@ -308,7 +308,7 @@ new test scripts cannot silently escape ShellCheck.
   and security guides live in docs/ and ship alongside README.md in the installed
   package. Keep shared contracts authoritative in one guide and link to them.
 - Every pull request and push to master runs all four gates: portable, runtime,
-  matrix, and editor (both VS Code and VSCodium). The matrix runs as six CI
+  matrix, and editor (both VS Code and VSCodium). The matrix runs as eight CI
   shards that together cover every case. PR checks skip the matrix only when
   every file changed since the newest verified full pass on an ancestor commit
   is on the safe list in `scripts/lib/matrix-scope.py`; an unlisted path, a

@@ -126,7 +126,7 @@ TEST_CASE='shards cover every job and fixed case exactly once whatever the timin
 lifecycle_fixed_cases > "$TEST_ROOT/shard-all-fixed"
 cut -d '|' -f1 "$TEST_ROOT/catalog" | awk '{ print $1 "|" NR }' > "$TEST_ROOT/ascending-history"
 for history in "$ROOT/tests/lib/lifecycle/timings" /dev/null "$TEST_ROOT/ascending-history"; do
-    for count in 1 2 3 4 6; do
+    for count in 1 2 3 4 6 8; do
         : > "$TEST_ROOT/shard-jobs"
         : > "$TEST_ROOT/shard-fixed"
         for ((shard=1; shard<=count; shard++)); do
