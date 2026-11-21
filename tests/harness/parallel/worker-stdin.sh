@@ -16,6 +16,7 @@ ledger_begin_run stdin-pool
 export LIFECYCLE_POOL_LEDGER="$LEDGER_FILE"
 ledger_begin_run stdin-worker
 ROOT="$tmp/toolroot"
+LIFECYCLE_CLI="$ROOT/src/jailbox"
 FIXTURE="$tmp/fixture"
 PROJECT="$FIXTURE/project"
 mkdir -p "$PROJECT" "$FIXTURE/bin" "$ROOT/tests/lib/sandbox" "$ROOT/tests/lib/lifecycle" "$ROOT/src/host/core"

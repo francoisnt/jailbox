@@ -49,23 +49,23 @@ bash "$tmp/source/scripts/build-tarball.sh" v1.2.3 > /dev/null
 [[ ! -e "$tmp/source/src/VERSION" ]]
 dist="$tmp/source/dist"
 mkdir "$tmp/extracted"
-tar -xzf "$dist/jailbox-v1.2.3.tar.gz" -C "$tmp/extracted"
+tar -xzf "$dist/jailbox-v1.2.3-linux-amd64.tar.gz" -C "$tmp/extracted"
 tree="$tmp/extracted/jailbox-v1.2.3"
 cmp "$tmp/source/src/host/future.sh" "$tree/host/future.sh"
 [[ ! -e "$tree/src" && ! -e "$tree/scripts" && ! -e "$tree/tests" ]]
 [[ -f "$tree/public-api.sh" ]]
 
 repack() {
-    (cd "$tmp/extracted" && tar -czf "$dist/jailbox-v1.2.3.tar.gz" jailbox-v1.2.3)
-    cp "$dist/jailbox-v1.2.3.tar.gz" "$dist/jailbox-latest.tar.gz"
+    (cd "$tmp/extracted" && tar -czf "$dist/jailbox-v1.2.3-linux-amd64.tar.gz" jailbox-v1.2.3)
+    cp "$dist/jailbox-v1.2.3-linux-amd64.tar.gz" "$dist/jailbox-latest-linux-amd64.tar.gz"
     (
         cd "$dist"
         if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum jailbox-v1.2.3.tar.gz jailbox-latest.tar.gz install.sh
+            sha256sum ./*.tar.gz install.sh
         else
-            shasum -a 256 jailbox-v1.2.3.tar.gz jailbox-latest.tar.gz install.sh
+            shasum -a 256 ./*.tar.gz install.sh
         fi
-    ) > "$dist/SHA256SUMS"
+    ) | sed 's@  [.]\/@  @' > "$dist/SHA256SUMS"
 }
 reject_artifact() {
     repack
@@ -102,9 +102,23 @@ cp "$tmp/original-installer" "$dist/install.sh"
 cp "$tmp/original-installer" "$tree/install.sh"
 repack
 bash "$ROOT/scripts/validate-release.sh" v1.2.3 "$dist"
+# A program stamped for another version is rejected even with the right
+# platform, including one the validator cannot run on this host.
+helper="$tree/libexec/linux-arm64/jailbox-container"
+cp -p "$helper" "$tmp/helper"
+python3 -c 'import sys
+data = open(sys.argv[1], "rb").read()
+stale = data.replace(b"jailbox-build-version:1.2.3:", b"jailbox-build-version:1.2.4:")
+assert stale != data
+open(sys.argv[1], "wb").write(stale)' "$helper"
+reject_artifact
+grep -Fq 'packaged program for linux-arm64 is not stamped with 1.2.3' "$tmp/err"
+cp -p "$tmp/helper" "$helper"
+repack
+bash "$ROOT/scripts/validate-release.sh" v1.2.3 "$dist"
 printf 'bad\n' > "$dist/SHA256SUMS"
 if bash "$ROOT/scripts/validate-release.sh" v1.2.3 "$dist" > /dev/null 2>&1; then exit 1; fi
 repack
-printf 'different' >> "$dist/jailbox-latest.tar.gz"
+printf 'different' >> "$dist/jailbox-latest-linux-amd64.tar.gz"
 if bash "$ROOT/scripts/validate-release.sh" v1.2.3 "$dist" > /dev/null 2>&1; then exit 1; fi
 echo 'Version and artifact tests passed'

@@ -170,8 +170,7 @@ validate_dev_image() {
 
 build_jailbox_image() {
     local install_cache_bust
-
-    install_cache_bust=$(jailbox_install_cache_bust)
+    install_cache_bust=$(jailbox_install_cache_bust) || return 1
     # Resolve once and feed the immutable identity to FROM. A moved local tag
     # must not reuse a wrapper built from the previous base through cached FROM
     # resolution. Missing images may be fetched; automatic refresh is separate.
@@ -189,14 +188,8 @@ build_jailbox_image() {
     [ -n "$SELECTED_DEV_IMAGE_ID" ] || die 'development image inspection returned no identity'
 
     echo "📦 Building jailbox image..."
-    if ! podman build \
-        -t "$JAILBOX_IMAGE" \
-        -f "$SCRIPT_DIR/container/Containerfile.wrapper" \
-        --pull=never \
-        --build-arg DEV_IMAGE="$SELECTED_DEV_IMAGE_ID" \
-        --build-arg JAILBOX_INSTALL_CACHE_BUST="$install_cache_bust" \
-        --build-arg USER_ID="$MY_UID" \
-        "$SCRIPT_DIR/container"; then
+    if ! build_wrapper_image "$SELECTED_DEV_IMAGE_ID" "$JAILBOX_IMAGE" "$MY_UID" \
+        "$install_cache_bust" "$SCRIPT_DIR/container"; then
         {
             echo ""
             echo "Error: jailbox image build failed."
@@ -222,6 +215,37 @@ build_jailbox_image() {
     ((MANAGED_ID <= 60000)) || die 'unsupported managed image identity'
 }
 
+# Stage only wrapper inputs, with the helper for the selected image architecture.
+# The staging directory belongs to this build, including when Podman fails.
+build_wrapper_image() (
+    local base_image_id="$1" tag="$2" uid="$3" cache="$4" sources="$5"
+    local architecture version program wrapper_stage
+    architecture=$(podman image inspect "$base_image_id" --format '{{.Architecture}}') || return 1
+    case "$architecture" in
+        amd64|arm64) ;;
+        *) printf 'Error: unsupported development image architecture: %s (expected amd64 or arm64).\n' "$architecture" >&2; return 1 ;;
+    esac
+    version=$(jailbox_version) || return 1
+    program="$SCRIPT_DIR/libexec/linux-$architecture/jailbox-container"
+    require_private_program "$program" || return 1
+    wrapper_stage=$(mktemp -d "${TMPDIR:-/tmp}/jailbox-wrapper.XXXXXX") || return 1
+    cleanup_wrapper_context() {
+        local status=$?
+        rm -rf -- "$wrapper_stage" || { ((status != 0)) || status=1; }
+        exit "$status"
+    }
+    trap cleanup_wrapper_context EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    cp -p -- "$sources/Containerfile.wrapper" "$sources/setup.sh" "$sources/select-user-id.awk" "$wrapper_stage/" || return 1
+    cp -Rp -- "$sources/runtime" "$wrapper_stage/runtime" || return 1
+    cp -- "$program" "$wrapper_stage/jailbox-container" || return 1
+    podman build -t "$tag" -f "$wrapper_stage/Containerfile.wrapper" --pull=never --arch "$architecture" \
+        --build-arg "DEV_IMAGE=$base_image_id" --build-arg "USER_ID=$uid" \
+        --build-arg "JAILBOX_INSTALL_CACHE_BUST=$cache" --build-arg "JAILBOX_VERSION=$version" "$wrapper_stage"
+)
+
 build_current_proxy_image() {
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         podman build -t "$PROXY_IMAGE" -f "$SCRIPT_DIR/container/tinyproxy/Containerfile" "$SCRIPT_DIR/container/tinyproxy"
@@ -231,7 +255,8 @@ build_current_proxy_image() {
 jailbox_install_cache_bust() (
     cd "$SCRIPT_DIR" || return 1
     # These payloads are streamed by the host, never copied into a built image.
-    find container -path 'container/checks' -prune -o -type f -print0 \
+    # -H follows container/ itself when it is a symlink, as in test fixtures.
+    find -H container \( -path 'container/checks' -o -path 'container/cmd' -o -path 'container/internal' \) -prune -o -type f -print0 \
         | sort -z \
         | xargs -0 cksum \
         | cksum \

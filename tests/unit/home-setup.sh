@@ -72,10 +72,12 @@ for key in HOME_SETUP_SCRIPT SETUP_INPUT_SCRIPT; do
 done
 JAILBOX_CONFIG_HIDDEN_PATHS_0=provider expect_exit 1 'conflicts with HIDDEN_PATHS' up
 JAILBOX_CONFIG_HOME_SETUP_SCRIPT='' expect_exit 1 'SETUP_INPUT_SCRIPT requires HOME_SETUP_SCRIPT' up
-printf '#!/bin/bash\nexit 42\n' > "$FIXTURE/bin/base64"
-chmod 755 "$FIXTURE/bin/base64"
-expect_exit 1 'could not encode jailbox up home setup arguments' up
-rm "$FIXTURE/bin/base64"
+runtime="$FIXTURE/runtime"
+mkdir -p "$runtime/libexec"
+cp -p "$ROOT/src/jailbox" "$runtime/jailbox"
+for asset in host container public-api.sh; do ln -s "$ROOT/src/$asset" "$runtime/$asset"; done
+cp -p "$ROOT/tests/fixtures/exec/encoder.sh" "$runtime/libexec/jailbox-core"
+CONVERGENCE_CLI="$runtime/jailbox" expect_exit 1 'could not encode jailbox up home setup arguments' up
 [[ ! -e "$CONVERGENCE_LOG" && ! -e "$FIXTURE/calls" ]]
 
 CONVERGENCE_SESSION_RESULT=hardening expect_exit 1 'live process hardening' up

@@ -27,10 +27,14 @@ for cache_scenario in prepare contract failure; do
         # shellcheck disable=SC2329
         podman() {
             if [[ "$1" = run && "$*" = *'-u jailbox'* ]]; then printf '1000\n'; fi
-            if [[ "$1 $2" = 'image inspect' ]]; then printf 'immutable-base\n'; fi
+            if [[ "$1 $2" = 'image inspect' ]]; then
+                if [[ $5 = '{{.Architecture}}' ]]; then printf 'arm64\n'; else printf 'immutable-base\n'; fi
+            fi
             if [[ "$1" = build && "$*" = *Containerfile.wrapper* ]]; then
                 local context=${!#}
-                if [[ "$context" = "$ROOT/src/container" ]]; then
+                [[ " $* " = *' --arch arm64 '* && " $* " = *' JAILBOX_VERSION=dev '* ]] || return 1
+                cmp -s "$context/jailbox-container" "$ROOT/src/libexec/linux-arm64/jailbox-container" || return 1
+                if [[ $(ls -ld "$context/runtime/bin/jailbox-start") != -rw-------* ]]; then
                     printf 'canonical\n' >> "$fixture/$cache_scenario/builds"
                     [[ "$cache_scenario" != failure ]] || return 7
                 else

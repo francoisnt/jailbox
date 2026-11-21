@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-python3 -I -B "$ROOT/tests/lib/forwarding-test.py"
 
 # Exercise the public CLI with a deterministic engine and a socket-backed SSH
 # double. The runtime gate covers OpenSSH and the actual container bind mounts.

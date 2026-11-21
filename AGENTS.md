@@ -75,8 +75,8 @@ Jailbox runtime must not patch or modify externally installed editor extensions
 to work around upstream bugs.
 
 Runtime sources and the installer live under `src/`; tests, maintenance tools,
-plans, and documentation remain at the repository root. Packaging copies `src/`
-contents to the bundle root and adds `README.md`, `LICENSE`, and `docs/`. Checkout and installed
+plans, and documentation remain at the repository root. Packaging copies runtime
+files to the bundle root and adds `README.md`, `LICENSE`, and `docs/`. Checkout and installed
 paths differ: source callers use `src/jailbox`, while installed runtime paths
 remain relative to the executable. Keep both layouts covered by tests.
 
@@ -189,6 +189,29 @@ remain relative to the executable. Keep both layouts covered by tests.
   behavior warrants them; test conditional invocation when relevant, not merely
   the arrangement of helpers.
 
+## Go code
+
+- Keep one Go module rooted at `src/`. Put a role's entry point under its
+  existing layer's `cmd/` and its private packages under that layer's
+  `internal/`. Common packages under `src/internal/` import no role code.
+  Core and container import only their own and shared packages. The frontend
+  reaches core through the public CLI.
+- The first two numbers of the `go` directive in `src/go.mod` name the Go
+  series (`go 1.27` or `go 1.27.0` both mean 1.27), read by
+  `scripts/go-series.sh`. Leave the directive and any `toolchain` line in
+  whatever form Go's tools write. CI, releases, and the root `Containerfile`
+  use the latest patch release of that series. One gate run and one release
+  package each use a single exact Go release from `scripts/go-version.sh`;
+  releases reuse gate results only when they tested that exact release.
+  Move to a newer series deliberately, in both files, before the current one
+  leaves support; the scheduled canary fails once it has. Build through
+  `scripts/build-programs.sh` with the local toolchain and cgo disabled.
+  Checkout builds stamp `dev` and write to the ignored `src/libexec/`.
+- Use `gofmt` and `go vet`. Put Go unit tests alongside their packages.
+  Exclude Go sources and tests from runtime bundles. Use the standard library
+  and `golang.org/x/sys` where a needed OS call is unavailable in the standard
+  library. Keep Python in repository tooling and tests.
+
 ## Security invariants
 
 Changes must preserve these properties unless the user explicitly requests a
@@ -230,18 +253,19 @@ the first failing suite. It validates every selected gate's prerequisites
 before the first suite, so an environment missing Podman, an editor, or a
 display fails immediately instead of after the earlier gates.
 
-Keep platform coverage claims explicit and evidence-based. macOS CI currently
-runs only portable tests; runtime, matrix, and editor CI run on Linux. Explain
+Keep platform coverage claims explicit and evidence-based. macOS CI runs portable
+tests and release installs. Runtime, matrix, and editor CI run on Linux. Explain
 the hosted Mac virtualization limitation in user documentation, and do not
 present portable tests, Linux results, or Intel results as Apple Silicon runtime
 verification. Record actual checks and platform/tool versions before claiming
 manual Mac coverage; distinguish a smoke check from a full gate.
 
-- `lint`: full ShellCheck static analysis. Its result does not depend on the
-  host, so CI runs it once on Linux. Requires ShellCheck.
+- `lint`: full ShellCheck, Go formatting, and `go vet`. CI runs it once on
+  Linux. Requires ShellCheck and Go from the series in `src/go.mod`.
 - `portable`: generated-file checks, every suite in `tests/unit/`,
   `tests/harness/parallel/`, and `tests/harness/exclusive/`,
-  syntax checks, release packaging, and the install/update/uninstall lifecycle.
+  syntax checks, Go tests, cross-platform builds, release packaging, and the
+  install/update/uninstall lifecycle.
 - `runtime`: wrapper-image/container security assertions and the headless CLI
   system test. Requires Linux and Podman.
 - `matrix`: required Debian image preparation and the full lifecycle state and
@@ -276,8 +300,8 @@ During development, run `tests/run dev` and the suites affected by the change.
 For plans written before the dev suite existed, use dev and affected suites
 instead of their blanket local portable requirement, unless the user explicitly
 requests the full portable gate.
-The dev gate includes ShellCheck of staged, unstaged, and untracked shell files
-using their current worktree contents. Full ShellCheck and portable coverage
+The dev gate includes Go checks and ShellCheck of staged, unstaged, and
+untracked shell files using their current worktree contents. Full ShellCheck and portable coverage
 belong to CI; do not run full portable routinely after each local change.
 `tests/run dev attachment exec` adds named product or harness suites to the fast defaults;
 this is partial coverage, not a fifth acceptance gate. Full portable still

@@ -19,9 +19,13 @@ expect_success </dev/null
 source "$ROOT/src/host/core/commands/exec.sh"
 # shellcheck source=src/host/core/resources/ssh.sh
 source "$ROOT/src/host/core/resources/ssh.sh"
+# shellcheck source=src/host/core/configuration/helpers.sh
+source "$ROOT/src/host/core/configuration/helpers.sh"
+# shellcheck source=src/host/core/configuration/version.sh
+source "$ROOT/src/host/core/configuration/version.sh"
+REMOTE_PATH=/home/jailbox/project
 SCRIPT_DIR="$ROOT/src"
 transport_exec() (
-    require_command() { command -v "$1" >/dev/null; }
     load_environment_config() { return 0; }
     validate_attachment() { SSH_CONFIG=$GENERATION/ssh_config; CONTAINER_NAME=$PREFIX; }
     run_exec "$@"
@@ -121,13 +125,24 @@ fi
 [[ ! -s "$FIXTURE/output" ]] || fail 'command ran after cd failure'
 
 # Even a complete-looking encoded frame cannot mask producer failure.
-mkdir "$FIXTURE/encoder-tools"
-cp "$ROOT/tests/fixtures/exec/base64.sh" "$FIXTURE/encoder-tools/base64"
-chmod 755 "$FIXTURE/encoder-tools/base64"
+mkdir -p "$FIXTURE/encoder-tools/libexec"
+cp "$ROOT/tests/fixtures/exec/encoder.sh" "$FIXTURE/encoder-tools/libexec/jailbox-core"
+chmod 755 "$FIXTURE/encoder-tools/libexec/jailbox-core"
 for interrupt in false true; do
-    if PATH="$FIXTURE/encoder-tools:$PATH" EXEC_INTERRUPT_ENCODE="$interrupt" transport_exec printf should-not-run > "$FIXTURE/output" 2> "$FIXTURE/error"; then
+    if SCRIPT_DIR="$FIXTURE/encoder-tools" EXEC_INTERRUPT_ENCODE="$interrupt" transport_exec printf should-not-run > "$FIXTURE/output" 2> "$FIXTURE/error"; then
         fail 'failed/interrupted encoder accepted'
     fi
     [[ ! -s "$FIXTURE/output" ]] || fail 'command ran after encoding failure'
 done
 printf 'PASS: shared codec preserves lookup and stops on producer or directory failure\n'
+
+# Missing or stale programs fail before SSH.
+if SCRIPT_DIR="$FIXTURE/project" transport_exec true > "$FIXTURE/out" 2> "$FIXTURE/err"; then fail 'missing encoder accepted'; fi
+grep -Fq 'jailbox helper is missing' "$FIXTURE/err"
+ln -s "$ROOT/src/libexec" "$FIXTURE/project/libexec"
+printf '9.9.9\n' > "$FIXTURE/project/VERSION"
+if SCRIPT_DIR="$FIXTURE/project" transport_exec true > "$FIXTURE/out" 2> "$FIXTURE/err"; then fail 'stale encoder accepted'; fi
+grep -Fq 'jailbox helper version mismatch' "$FIXTURE/err"
+if "$CONVERGENCE_CONTAINER_PROGRAM" 9.9.9 exec "$FIXTURE/project" cHdkAA== > "$FIXTURE/out" 2> "$FIXTURE/err"; then fail 'stale decoder accepted'; fi
+[[ ! -s "$FIXTURE/out" ]]
+grep -Fq 'jailbox helper version mismatch' "$FIXTURE/err"

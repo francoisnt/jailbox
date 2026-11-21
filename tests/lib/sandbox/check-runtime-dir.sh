@@ -11,7 +11,7 @@ refute_write() { if true 2>/dev/null > "$1"; then exit 1; fi; }
 refute_append() { if true 2>/dev/null >> "$1"; then exit 1; fi; }
 
 test -d /run/jailbox-sshd
-test -x /usr/local/bin/jailbox-exec-argv
+test -x /usr/local/lib/jailbox/jailbox-container
 test -x /usr/local/bin/jailbox-write-editor-settings
 test -r /usr/local/lib/jailbox/authentication-mount.awk
 test -r /usr/local/lib/jailbox/readonly-mount.awk
@@ -24,8 +24,8 @@ for helper in /usr/local/bin/jailbox-*; do
     test -x "$helper"
     test "$(stat -c %a "$helper")" = 755
 done
-test "$(/usr/local/bin/jailbox-exec-argv cHdkAA==)" = /home/jailbox/project
-refute /usr/local/bin/jailbox-exec-argv Y2F0
+test "$(/usr/local/lib/jailbox/jailbox-container dev exec /home/jailbox/project cHdkAA==)" = /home/jailbox/project
+refute /usr/local/lib/jailbox/jailbox-container dev exec /home/jailbox/project Y2F0
 refute_write /run/jailbox-sshd/probe
 refute_append /run/jailbox-sshd/authorized_keys
 refute test -e /run/jailbox-sshd/session.conf

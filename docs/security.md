@@ -190,7 +190,8 @@ arguments to reach hidden files, follow symlinks, traverse parent directories,
 load configuration and plugins, and use host credentials or network services.
 
 Jailbox resolves each executable on the host and rejects paths inside the
-project or a container-writable mount. That check covers the executable path.
+project or a container-writable mount. Forwarding also requires jailbox's
+installation and runtime programs to live outside those locations.
 Review any code the program loads separately, including the interpreter named
 by a script's first line and helpers, hooks, and plugins under the project
 tree. Another host process with write access can replace an executable at its

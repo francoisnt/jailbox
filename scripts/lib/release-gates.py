@@ -15,6 +15,13 @@ GATES = {"lint", "portable", "runtime", "matrix", "editor"}
 WORKFLOWS = {"pr-checks.yml", "test-gates.yml", "release.yml", "canary.yml"}
 PROOF_FILE = "verified-test-gates.json"
 RUNTIME_FIELDS = ("bash_version", "podman_version", "tested_at", "run_url")
+GO_VERSION = re.compile(r"1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+
+
+def go_release(value):
+    if not isinstance(value, str) or not GO_VERSION.fullmatch(value):
+        raise ValueError("missing or invalid Go release")
+    return value
 
 
 def timestamp(value):
@@ -49,14 +56,22 @@ def record(env):
     coverage = needs.pop("matrix-coverage", None)
     if not coverage or coverage["result"] != "success":
         raise ValueError("evidence requires complete matrix coverage across shards")
+    # Every gate in the run set up this one exact Go release.
+    toolchain = needs.pop("go-version", None)
+    if not toolchain or toolchain["result"] != "success":
+        raise ValueError("evidence requires the Go release every gate used")
+    go_version = go_release(toolchain["outputs"].get("version"))
     if set(needs) != GATES or any(needs[gate]["result"] != "success" for gate in GATES):
         raise ValueError("all five gates must pass")
+    # A release may request its own resolved Go release, which is recorded.
+    if inputs.pop("go_version", "") not in ("", go_version):
+        raise ValueError("gates did not use the requested Go release")
     if inputs.pop("run_editor", None) is not True or any(inputs.values()):
         raise ValueError("evidence requires both editors and the pinned dependencies")
     identity = {"repository": env["GITHUB_REPOSITORY"], "sha": env["GITHUB_SHA"],
                 "run_id": int(env["GITHUB_RUN_ID"]), "attempt": int(env["GITHUB_RUN_ATTEMPT"])}
     url = run_url(env["GITHUB_SERVER_URL"], identity["repository"], identity["run_id"], identity["attempt"])
-    return {"schema": 1, **identity,
+    return {"schema": 2, **identity, "go_version": go_version,
             "gates": {gate: "success" for gate in sorted(GATES)},
             "runtime": runtime_metadata(needs["runtime"]["outputs"], url)}
 
@@ -102,7 +117,7 @@ def workflow(run):
     return run["path"].split("@", 1)[0].removeprefix(".github/workflows/")
 
 
-def select(api, repository, sha, branch, current_run, server):
+def select(api, repository, sha, branch, current_run, server, go_version):
     def history():
         runs = api.collection(f"runs?head_sha={urllib.parse.quote(sha)}", "workflow_runs")
         return [run for run in runs if run["id"] != current_run and run["head_sha"] == sha
@@ -130,7 +145,11 @@ def select(api, repository, sha, branch, current_run, server):
                 and (run["status"] != "completed" or run["conclusion"] != "success")):
             raise ValueError("a later test run is unfinished or did not pass")
     proof = api.proof(candidate)
-    expected = {"schema": 1, "repository": repository, "sha": sha,
+    # Packaging builds with the newest Go patch release. Results from another
+    # release of Go do not cover the release being built.
+    if proof.get("go_version") != go_version:
+        raise ValueError(f"gate evidence tested Go {proof.get('go_version')}, the release uses Go {go_version}")
+    expected = {"schema": 2, "repository": repository, "sha": sha, "go_version": go_version,
                 "run_id": candidate["id"], "attempt": candidate["run_attempt"],
                 "gates": {gate: "success" for gate in GATES}}
     if any(proof.get(key) != value for key, value in expected.items()):
@@ -157,7 +176,7 @@ def main():
         metadata = select(GitHub(os.environ["GITHUB_REPOSITORY"]),
                           os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"],
                           os.environ["DEFAULT_BRANCH"], int(os.environ["GITHUB_RUN_ID"]),
-                          os.environ["GITHUB_SERVER_URL"])
+                          os.environ["GITHUB_SERVER_URL"], go_release(os.environ["GO_VERSION"]))
         outputs.update(metadata, reuse="true")
         print(f"Reusing complete passing CI: {metadata['run_url']}")
     except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError,

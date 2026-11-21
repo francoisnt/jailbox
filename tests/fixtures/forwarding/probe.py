@@ -1,20 +1,21 @@
-"""Convergence SSH double. Connect to the actual named host Unix socket."""
+"""Convergence SSH double. Connect to the real host service's Unix socket."""
 
 import os
 import socket
+import struct
 import sys
-from pathlib import Path
 
-root, state, challenge = sys.argv[1:]
-sys.path.insert(0, str(Path(root) / "src/container/runtime/lib/jailbox"))
-from forward_protocol import receive, send
-
+state, challenge = sys.argv[1:]
 os.chdir(state)
 with socket.socket(socket.AF_UNIX) as sock:
     sock.settimeout(2)
     sock.connect("requests.sock")
-    send(sock, b"P", challenge.encode("ascii"))
-    kind, value = receive(sock, 64)
-    if kind != b"P":
-        raise SystemExit(1)
-    print(value.decode("ascii"))
+    sock.sendall(struct.pack("!cI", b"P", len(challenge)) + challenge.encode("ascii"))
+    with sock.makefile("rb") as stream:
+        kind, size = struct.unpack("!cI", stream.read(5))
+        if kind != b"P" or size != 64:
+            raise SystemExit(1)
+        response = stream.read(size)
+        if len(response) != size:
+            raise SystemExit(1)
+        print(response.decode("ascii"))

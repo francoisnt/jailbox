@@ -20,13 +20,18 @@ if select_id 1000; then fail 'exhausted IDs accepted'; fi
 printf 'PASS: unused user/group selection, preferred ID, root refusal and exhaustion\n'
 
 PROJECT_DEV_IMAGE=test-dev JAILBOX_IMAGE=test-wrapper MY_UID=1000
+fixture_architecture=amd64
 probe_status=0
 probe_output=$'1002\n1002\n'
 # shellcheck disable=SC2329 # Called by production build helper.
 podman() {
     case "$1 $2" in
-        'image exists'|'build -t') return 0 ;;
-        'image inspect') printf 'immutable-image\n' ;;
+        'image exists') return 0 ;;
+        'build -t')
+            printf '%s\n' "$*" > "$fixture/build"
+            cmp -s "${!#}/jailbox-container" "$ROOT/src/libexec/linux-$fixture_architecture/jailbox-container" ;;
+        'image inspect')
+            if [[ $5 = '{{.Architecture}}' ]]; then printf '%s\n' "$fixture_architecture"; else printf 'immutable-image\n'; fi ;;
         'run --rm')
             [[ "$*" = *'--network=none'* && "$*" = *'--read-only'* && "$*" = *'--entrypoint /bin/sh'* ]] || return 99
             printf '%s' "$probe_output"
@@ -36,6 +41,15 @@ podman() {
 }
 build_jailbox_image > "$fixture/output"
 [[ "$MANAGED_ID" = 1002 ]]
+fixture_architecture=arm64
+build_jailbox_image > "$fixture/output"
+grep -q -- '--arch arm64' "$fixture/build"
+rm "$fixture/build"
+fixture_architecture=386
+if (build_jailbox_image) > "$fixture/output" 2>&1; then fail 'unsupported image architecture accepted'; fi
+grep -q 'unsupported development image architecture: 386' "$fixture/output"
+[[ ! -e "$fixture/build" ]]
+fixture_architecture=amd64
 for probe_output in $'1002\n1002' $'1002\n1002\n\n' '' $'0\n0' $'01002\n01002' $'1002\n1003' $'60001\n60001' $'1002\n1002\nnoise'; do
     if (build_jailbox_image) > "$fixture/output" 2>&1; then fail 'malformed image identity accepted'; fi
 done

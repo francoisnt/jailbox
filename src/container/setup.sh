@@ -74,25 +74,25 @@ case "$PKG_MGR" in
     apt)
         apt-get update
         apt-get install -y \
-            openssh-server bash curl git procps ca-certificates tar python3 \
+            openssh-server bash curl git procps ca-certificates tar \
             libc6 libstdc++6
         apt-get clean && rm -rf /var/lib/apt/lists/*
         ;;
     apk)
         apk add --no-cache \
-            openssh bash curl git procps ca-certificates tar python3 shadow \
+            openssh bash curl git procps ca-certificates tar shadow \
             musl libgcc libstdc++ flock \
             gcompat krb5-libs webkit2gtk-4.1
         ;;
     dnf)
         dnf install -y \
-            openssh-server bash curl git procps-ng ca-certificates tar python3 \
+            openssh-server bash curl git procps-ng ca-certificates tar \
             glibc libgcc libstdc++
         dnf clean all
         ;;
     yum)
         yum install -y \
-            openssh-server bash curl git procps ca-certificates tar python3 \
+            openssh-server bash curl git procps ca-certificates tar \
             glibc libgcc libstdc++
         yum clean all
         ;;
@@ -217,6 +217,8 @@ EOF
 # ── jailbox runtime helpers ───────────────────────────────────────────────────
 install_runtime_tree /tmp/jailbox-container/runtime/bin /usr/local/bin 0755
 install_runtime_tree /tmp/jailbox-container/runtime/lib /usr/local/lib 0644
+install_runtime_tree /tmp/jailbox-container/program /usr/local/lib/jailbox 0755
+/usr/local/lib/jailbox/jailbox-container "${1:?missing jailbox version}" version
 
 # Reapply the prefix after the distribution's login profile sets its PATH.
 profile=/etc/profile.d/jailbox-forward-path.sh

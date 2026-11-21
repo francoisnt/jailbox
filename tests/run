@@ -4,7 +4,7 @@
 # Usage: tests/run [dev [SUITE ...]|GATE ...]
 #
 #   dev       Fast development checks, plus explicitly named portable suites
-#   lint      Full ShellCheck static analysis
+#   lint      Full ShellCheck, Go formatting and vet
 #   portable  Product/harness tests and distribution/install lifecycle
 #   runtime   Container security contract and headless CLI system tests
 #   matrix    Full lifecycle state and interruption matrix
@@ -116,6 +116,7 @@ gate_selected() {
 # xvfb-run, so an all-gates run stays one process with one report.
 require_gate_prerequisites() {
     command -v python3 >/dev/null 2>&1 || die "python3 is required for test gates"
+    command -v go >/dev/null 2>&1 || die "go is required for test gates (see src/go.mod for the Go series)"
     if gate_selected lint; then
         command -v shellcheck >/dev/null 2>&1 || die "shellcheck is required for the lint gate"
     fi
@@ -161,20 +162,38 @@ check_generated_files() {
     bash "$JAILBOX_DIR/scripts/gen-public-api.sh" --check
 }
 
+run_go_tests() (
+    cd "$JAILBOX_DIR/src" || return 1
+    CGO_ENABLED=0 GOTOOLCHAIN=local GOWORK=off go test -mod=readonly -count=1 ./...
+)
+
+compile_windows_shared() (
+    cd "$JAILBOX_DIR/src" || return 1
+    CGO_ENABLED=0 GOTOOLCHAIN=local GOWORK=off GOOS=windows GOARCH=amd64 go build -mod=readonly ./internal/...
+)
+
 run_gate() {
     local -a editor_stages
 
+    if [[ "$1" != lint ]]; then
+        run_suite "build-programs" bash "$JAILBOX_DIR/scripts/build-programs.sh"
+    fi
     case "$1" in
         dev)
+            run_suite "go-check" bash "$JAILBOX_DIR/scripts/check-go.sh"
+            run_suite "go-test" run_go_tests
             run_suite "syntax" bash "$SCRIPT_DIR/portable/syntax.sh"
             run_suite "shellcheck-worktree" bash "$JAILBOX_DIR/scripts/lint.sh" --worktree
             run_suite "generated-files" check_generated_files
             run_portable_tests
             ;;
         lint)
+            run_suite "go-check" bash "$JAILBOX_DIR/scripts/check-go.sh"
             run_suite "shellcheck" bash "$JAILBOX_DIR/scripts/lint.sh"
             ;;
         portable)
+            run_suite "go-test" run_go_tests
+            run_suite "windows-shared-build" compile_windows_shared
             run_suite "generated-files" check_generated_files
             run_portable_tests
             run_suite "distribution" bash "$SCRIPT_DIR/portable/smoke.sh"
@@ -215,7 +234,7 @@ Development checks:
                   Partial coverage; omits full ShellCheck and distribution
 
 Test gates:
-  lint      Full ShellCheck static analysis of every shell script
+  lint      Full ShellCheck, gofmt, and go vet
   portable  All product/harness tests, release tarball, and install lifecycle
   runtime   Wrapper/container security contract and headless jailbox CLI system tests
   matrix    Full lifecycle state and interruption matrix with required image preparation

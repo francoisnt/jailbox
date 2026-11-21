@@ -51,6 +51,16 @@ jobs:
             echo "Pins already match latest upstream; nothing to test."
           fi
 
+  # Fail the scheduled run once the Go series in src/go.mod stops receiving
+  # fixes, so the series is updated before it falls out of support.
+  go-support:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check that the Go series is supported
+        run: bash scripts/go-version.sh
+
   # VSCodium's build commit names the REH server directory and cannot be
   # resolved from release metadata (upstream/stable.json carries Microsoft's
   # commit, not VSCodium's), so install the .deb and read `codium --version`.

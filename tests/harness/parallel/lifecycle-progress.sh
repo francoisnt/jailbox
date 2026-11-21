@@ -36,6 +36,15 @@ cp "$ROOT/tests/lib/logging.sh" "$tmp/tree/tests/lib/"
 cp "$ROOT/tests/lib/portable-pool.sh" "$ROOT/tests/lib/run-suite.py" "$tmp/tree/tests/lib/"
 mkdir -p "$tmp/tree/scripts/lib"
 cp "$ROOT/scripts/lib/"{process-pool,worker-resources}.sh "$tmp/tree/scripts/lib/"
+mkdir -p "$tmp/tree/src"
+cat > "$tmp/tree/scripts/build-programs.sh" <<'BUILD'
+#!/bin/bash
+printf 'scripts/build-programs|%s\n' "$*" >> "$SUITE_TRACE"
+exit "${FIXTURE_BUILD_STATUS:-0}"
+BUILD
+# shellcheck disable=SC2016 # These stand-ins trace their own argument lists.
+printf '#!/bin/bash\nprintf "go|%%s\n" "$*" >> "$SUITE_TRACE"\n' > "$tmp/bin/go"
+chmod 755 "$tmp/bin/go"
 printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/podman"
 chmod +x "$tmp/bin/podman"
 cp "$tmp/bin/podman" "$tmp/bin/setsid"
@@ -55,21 +64,25 @@ for option in --help -h; do
 done
 pass 'help prints without timestamps or test execution'
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime > "$tmp/output"
-[[ $(wc -l < "$SUITE_TRACE") -eq 2 ]] || fail 'default runtime suite count'
+[[ $(wc -l < "$SUITE_TRACE") -eq 3 ]] || fail 'default runtime build and suite count'
 if grep -q lifecycle "$SUITE_TRACE"; then fail 'matrix assertions overlap runtime'; fi
 : > "$SUITE_TRACE"
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" matrix > "$tmp/output"
-printf 'integration/wrapper-images|--prepare-only debian\nintegration/lifecycle-state|\n' > "$tmp/expected"
+printf 'scripts/build-programs|\nintegration/wrapper-images|--prepare-only debian\nintegration/lifecycle-state|\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'matrix must prepare only its images and run its own assertions'
 : > "$SUITE_TRACE"
 if PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime-full > "$tmp/output" 2>&1; then fail 'removed runtime-full alias accepted'; fi
 [[ ! -s "$SUITE_TRACE" ]] || fail 'suite ran before option validation'
 pass 'runtime and matrix own separate assertions; matrix prepares its own images'
+if PATH="$tmp/bin:$PATH" FIXTURE_BUILD_STATUS=42 bash "$tmp/tree/tests/run" runtime > "$tmp/output" 2>&1; then
+    fail 'runtime accepted a failed helper build'
+fi
+[[ $(cat "$SUITE_TRACE") = 'scripts/build-programs|' ]] || fail 'runtime ran after a failed helper build'
 : > "$SUITE_TRACE"
 GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY="$tmp/summary" JAILBOX_TEST_LOG_ACTIVE=false JAILBOX_TEST_LOG_SCRIPT='' \
     PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime > "$tmp/ci-output"
-grep -Fxq '| runtime | 2 | 0 | 0s |' "$tmp/summary" || \
-    grep -Eq '^\| runtime \| 2 \| 0 \| [0-9]+s \|$' "$tmp/summary"
+grep -Fxq '| runtime | 3 | 0 | 0s |' "$tmp/summary" || \
+    grep -Eq '^\| runtime \| 3 \| 0 \| [0-9]+s \|$' "$tmp/summary"
 grep -Eq '^\[[0-9:]+\] jailbox tests .* UTC$' "$tmp/ci-output"
 pass 'CI gate summary and compact UTC console timestamps'
 : > "$SUITE_TRACE"
@@ -77,7 +90,7 @@ pass 'CI gate summary and compact UTC console timestamps'
 
 # The default dispatch includes every gate once, with matrix before editor.
 mkdir -p "$tmp/tree/scripts" "$tmp/tree/tests/unit" "$tmp/tree/tests/harness/parallel" "$tmp/tree/tests/harness/exclusive" "$tmp/tree/tests/portable"
-for suite in scripts/lint scripts/gen-tested-matrix scripts/gen-public-api tests/portable/smoke tests/e2e/editor-smoke; do
+for suite in scripts/lint scripts/check-go scripts/gen-tested-matrix scripts/gen-public-api tests/portable/smoke tests/e2e/editor-smoke; do
     # shellcheck disable=SC2016 # Generated fixture expands its own environment.
     printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/$suite.sh"
 done
@@ -85,14 +98,21 @@ cp "$tmp/bin/podman" "$tmp/bin/shellcheck"
 cp "$tmp/bin/podman" "$tmp/bin/code"
 PATH="$tmp/bin:$PATH" DISPLAY=:fixture JAILBOX_EDITOR=code bash "$tmp/tree/tests/run" > "$tmp/output"
 cat > "$tmp/expected" <<'EXPECTED'
+scripts/check-go|
 scripts/lint|
+scripts/build-programs|
+go|test -mod=readonly -count=1 ./...
+go|build -mod=readonly ./internal/...
 scripts/gen-tested-matrix|--check
 scripts/gen-public-api|--check
 tests/portable/smoke|
+scripts/build-programs|
 integration/wrapper-images|
 e2e/headless|
+scripts/build-programs|
 integration/wrapper-images|--prepare-only debian
 integration/lifecycle-state|
+scripts/build-programs|
 integration/wrapper-images|--prepare-only debian fedora
 tests/e2e/editor-smoke|
 EXPECTED
@@ -122,15 +142,15 @@ for suite in fast slow new harness-fast harness-slow; do
 done
 : > "$SUITE_TRACE"
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev > "$tmp/output"
-printf 'tests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nharness-fast\n' > "$tmp/expected"
+printf 'scripts/build-programs|\nscripts/check-go|\ngo|test -mod=readonly -count=1 ./...\ntests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nharness-fast\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'dev defaults, discovery, or phase ownership'
 grep -Fq 'Development checks passed — partial coverage' "$tmp/output"
-[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 6 ]] || fail 'wrong dev result labels'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 9 ]] || fail 'wrong dev result labels'
 : > "$SUITE_TRACE"
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev slow slow.sh fast harness-slow > "$tmp/output"
-printf 'tests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nslow\nharness-fast\nharness-slow\n' > "$tmp/expected"
+printf 'scripts/build-programs|\nscripts/check-go|\ngo|test -mod=readonly -count=1 ./...\ntests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nslow\nharness-fast\nharness-slow\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'explicit additions were omitted or duplicated'
-[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 8 ]] || fail 'wrong explicit-suite result labels'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 11 ]] || fail 'wrong explicit-suite result labels'
 : > "$SUITE_TRACE"
 if bash "$tmp/tree/tests/run" dev missing > "$tmp/output" 2>&1; then fail 'unknown dev suite accepted'; fi
 [[ ! -s "$SUITE_TRACE" ]] || fail 'dev started before validating selection'

@@ -4,11 +4,13 @@ USER root
 
 ARG USER_ID=1000
 ARG JAILBOX_INSTALL_CACHE_BUST=""
+ARG JAILBOX_VERSION
 
 COPY select-user-id.awk /tmp/jailbox-container/
 COPY setup.sh /tmp/jailbox-container/
 COPY runtime/ /tmp/jailbox-container/runtime/
-RUN : "$JAILBOX_INSTALL_CACHE_BUST" && sh /tmp/jailbox-container/setup.sh && rm -rf /tmp/jailbox-container
+COPY jailbox-container /tmp/jailbox-container/program/jailbox-container
+RUN : "$JAILBOX_INSTALL_CACHE_BUST" && sh /tmp/jailbox-container/setup.sh "$JAILBOX_VERSION" && rm -rf /tmp/jailbox-container
 
 # The prefix is under the immutable SSH bind. Disabled sessions have no
 # directory there, including for programs started directly with podman exec.

@@ -3,9 +3,9 @@ set -euo pipefail
 command=${!#}
 if [[ -n ${CONVERGENCE_FORWARD_ROOT:-} ]]; then
     case "$command" in
-        '/usr/local/bin/jailbox-forward-client --hold') exec /bin/cat >/dev/null ;;
-        '/usr/local/bin/jailbox-forward-client --probe '*)
-            exec python3 -I -B "$CONVERGENCE_FORWARD_ROOT/tests/fixtures/forwarding/probe.py" "$CONVERGENCE_FORWARD_ROOT" \
+        '/usr/local/lib/jailbox/jailbox-container dev hold') exec /bin/cat >/dev/null ;;
+        '/usr/local/lib/jailbox/jailbox-container dev probe '*)
+            exec python3 -I -B "$CONVERGENCE_FORWARD_ROOT/tests/fixtures/forwarding/probe.py" \
                 "${2%/ssh-generation/ssh_config}/forwarding" "${command##* }"
             ;;
         '/bin/bash -c '*|'/bin/bash -lc '*) exit 0 ;;
@@ -17,13 +17,13 @@ if [[ "$command" = 'cd /home/jailbox/project && exec bash -il' ]]; then
     cd "${CONVERGENCE_SHELL_DIRECTORY:-$CONVERGENCE_ENGINE}" || exit 1
     exec bash --noprofile --norc -il
 fi
-if [[ "$command" = '/usr/local/bin/jailbox-exec-argv '* ]]; then
+if [[ "$command" = '/usr/local/lib/jailbox/jailbox-container dev exec /home/jailbox/project '* ]]; then
     [[ " $* " = *' -T '* ]] || exit 99
     if [[ -n ${CONVERGENCE_EXEC_WAIT:-} ]]; then
         printf '%s\n' "$$" > "$CONVERGENCE_EXEC_WAIT"
         exec "$CONVERGENCE_REAL_SLEEP" 30
     fi
-    exec bash "$CONVERGENCE_EXEC_HELPER" "${command#* }"
+    exec bash "$CONVERGENCE_EXEC_HELPER" "${command##* }"
 fi
 # Model SSH eagerly reading input even for commands that do not need it.
 if [[ ${CONVERGENCE_DRAIN_STDIN:-false} = true && "$command" != 'bash -s -- '* ]]; then cat >/dev/null; fi

@@ -241,14 +241,8 @@ run_case() {
     test_phase_begin wrapper-image-build || return 1
     # Build jailbox wrapper
     install_cache_bust=$(wrapper_install_cache_bust) || return 1
-    if ! test_log_capture "$build_log" podman build \
-            -t "$wrapper_image" \
-            -f "$JAILBOX_DIR/src/container/Containerfile.wrapper" \
-            --pull=never \
-            --build-arg "DEV_IMAGE=${test_image_id}" \
-            --build-arg "JAILBOX_INSTALL_CACHE_BUST=$install_cache_bust" \
-            --build-arg "USER_ID=$(id -u)" \
-            "$wrapper_context"; then
+    if ! test_log_capture "$build_log" test_build_wrapper "$test_image_id" "$wrapper_image" \
+        "$install_cache_bust" "$wrapper_context"; then
         if [ "$expect_wrapper_failure" = true ] && grep -Eq "already exists in the dev image|already belongs to existing image user" "$build_log"; then
             pass "wrapper image build rejects unsafe user conflict"
             return 0
@@ -356,11 +350,8 @@ run_case() {
     # restrictive-input build above remains the one used for contract checks.
     if [[ "$stage" = debian ]]; then
         test_phase_begin canonical-wrapper-cache || return 1
-        if ! test_log_capture "$log_dir/$stage.canonical-build.log" podman build \
-            -t "$wrapper_image" -f "$JAILBOX_DIR/src/container/Containerfile.wrapper" \
-            --pull=never --build-arg "DEV_IMAGE=$test_image_id" \
-            --build-arg "JAILBOX_INSTALL_CACHE_BUST=$install_cache_bust" \
-            --build-arg "USER_ID=$(id -u)" "$JAILBOX_DIR/src/container"; then
+        if ! test_log_capture "$log_dir/$stage.canonical-build.log" test_build_wrapper \
+            "$test_image_id" "$wrapper_image" "$install_cache_bust" "$JAILBOX_DIR/src/container"; then
             fail 'canonical wrapper cache preparation'
             tail -20 "$log_dir/$stage.canonical-build.log" >&2
             return 1
@@ -374,6 +365,17 @@ wrapper_install_cache_bust() (
     # shellcheck source=src/host/core/resources/images.sh
     source "$JAILBOX_DIR/src/host/core/resources/images.sh"
     jailbox_install_cache_bust
+)
+
+test_build_wrapper() (
+    SCRIPT_DIR=$JAILBOX_DIR/src
+    # shellcheck source=src/host/core/configuration/version.sh
+    source "$SCRIPT_DIR/host/core/configuration/version.sh"
+    # shellcheck source=src/host/core/configuration/helpers.sh
+    source "$SCRIPT_DIR/host/core/configuration/helpers.sh"
+    # shellcheck source=src/host/core/resources/images.sh
+    source "$SCRIPT_DIR/host/core/resources/images.sh"
+    build_wrapper_image "$1" "$2" "$(id -u)" "$3" "$4"
 )
 
 # shellcheck source=tests/lib/stage-pool.sh

@@ -27,14 +27,15 @@ clean up sandboxes without an editor.
 
 ### 1. Check requirements
 
-You need Podman (rootless preferred), Bash 4.4+, OpenSSH client tools, GNU
-coreutils or compatible utilities, and a SHA-256 utility. For the editor
+You need Linux or macOS on amd64 or arm64, Podman (rootless preferred), Bash
+4.4+, OpenSSH client tools, GNU coreutils or compatible utilities, and a
+SHA-256 utility. For the editor
 workflow, install VS Code or VSCodium and its Remote SSH extension. Your project
 needs a compatible development image or Containerfile/Dockerfile.
 See [full requirements and setup](docs/development.md#requirements).
 
-**Linux runs all integration tests. macOS currently has portable-test coverage
-only; real container and editor behavior on Mac remains unverified.**
+**Linux runs all integration tests. macOS CI covers portable tests and release
+installation. Container and editor behavior on Mac remains unverified.**
 [Platform coverage](docs/development.md#tested-configurations) explains the limits.
 
 ### 2. Install
@@ -43,10 +44,10 @@ only; real container and editor behavior on Mac remains unverified.**
 curl -fsSL https://github.com/francoisnt/jailbox/releases/latest/download/install.sh | bash
 ```
 
-The URL selects the latest published installer, which downloads its matching
-release archive and checks its SHA-256 checksum before installation. To install
-a specific release, replace `latest/download` in the URL with
-`download/vX.Y.Z` (using the desired version).
+The installer selects the archive for your Linux or macOS host and verifies
+its SHA-256 checksum. The archive includes the programs jailbox needs at
+runtime. To install a specific release, download its `install.sh` from
+`releases/download/vX.Y.Z` using the desired tag.
 
 ### 3. Launch your project
 

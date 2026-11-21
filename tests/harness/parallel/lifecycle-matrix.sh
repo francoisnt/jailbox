@@ -145,7 +145,7 @@ for scenario in up:false up:none up:new-ephemeral up:resume up:plain-network up:
     elif [[ "$policy" = plain-network ]]; then
         printf '%s\n' 'podman network create --label digest=abc jailbox-project-abc-net' > "$FIXTURE/coverage"
     elif [[ "$policy" = home-setup ]]; then
-        printf '%s\n' 'ssh -F /ssh -T jailbox-project-abc /usr/local/bin/jailbox-exec-argv\ Zml4dHVyZQA=' \
+        printf '%s\n' 'ssh -F /ssh -T jailbox-project-abc /usr/local/lib/jailbox/jailbox-container\ dev\ exec\ /home/jailbox/project\ Zml4dHVyZQA=' \
             'mv -f -- /state/.home-setup-complete.temp /state/home-setup-complete' > "$FIXTURE/coverage"
     elif [[ "$policy" = new-ephemeral ]]; then
         grep -E -- '--cidfile|^ssh ' "$FIXTURE/up-trace" > "$FIXTURE/coverage"

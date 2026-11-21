@@ -11,6 +11,8 @@ source "$SCRIPT_DIR/host/core/project/identity.sh"
 source "$SCRIPT_DIR/host/core/project/paths.sh"
 # shellcheck source=src/host/core/configuration/version.sh
 source "$SCRIPT_DIR/host/core/configuration/version.sh"
+# shellcheck source=src/host/core/configuration/helpers.sh
+source "$SCRIPT_DIR/host/core/configuration/helpers.sh"
 # shellcheck source=src/host/core/configuration/load.sh
 source "$SCRIPT_DIR/host/core/configuration/load.sh"
 # shellcheck source=src/host/core/configuration/digest.sh

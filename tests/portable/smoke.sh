@@ -8,6 +8,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAILBOX_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# shellcheck source=tests/lib/release-platform.sh
+source "$JAILBOX_DIR/tests/lib/release-platform.sh"
+platform=$(test_release_platform)
+release_version=v9.9.9
+archive="jailbox-$release_version-$platform.tar.gz"
+latest="jailbox-latest-$platform.tar.gz"
+
 cd "$JAILBOX_DIR"
 
 tmp_dirs=()
@@ -20,7 +27,7 @@ cleanup() {
         rm -rf "$dir"
     done
     rmdir "$TMP_PARENT" 2>/dev/null || true
-    rm -f dist/jailbox-v9.9.9.tar.gz dist/jailbox-latest.tar.gz
+
 }
 trap cleanup EXIT
 
@@ -57,15 +64,16 @@ reject_macos_system_bash() {
 build_release_tarball() {
     section "release tarball"
     bash scripts/build-tarball.sh v9.9.9
-    test -f dist/jailbox-v9.9.9.tar.gz
-    test -f dist/jailbox-latest.tar.gz
-    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/runtime/bin/jailbox-exec-argv
-    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/host/core/resources/forwarding/main.py
-    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/runtime/lib/jailbox/forward_client.py
-    cmp -s dist/jailbox-v9.9.9.tar.gz dist/jailbox-latest.tar.gz
-    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/install.sh
-    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/public-api.sh
-    if tar -tzf dist/jailbox-latest.tar.gz | grep -Eq "^jailbox-v9.9.9/(src|scripts|tests|plans)/"; then return 1; fi
+    local list path
+    list=$(tar -tzf "dist/$latest")
+    for path in libexec/jailbox-core libexec/linux-amd64/jailbox-container libexec/linux-arm64/jailbox-container install.sh public-api.sh; do
+        grep -Fxq "jailbox-$release_version/$path" <<< "$list"
+    done
+    cmp -s "dist/$archive" "dist/$latest"
+    if grep -Eq '(^jailbox-v9\.9\.9/(src|scripts|tests|plans)/|[.](go|py)$|/go[.]mod$|/go[.]sum$)' <<< "$list"; then
+        return 1
+    fi
+    bash "$SCRIPT_DIR/release-install.sh" "$JAILBOX_DIR/dist" "$release_version" "$platform"
 }
 
 smoke_install_update_uninstall() {
@@ -79,9 +87,10 @@ smoke_install_update_uninstall() {
     cmp README.md "$tmp/share/jailbox/README.md"
     diff -r docs "$tmp/share/jailbox/docs"
     cmp src/install.sh "$tmp/share/jailbox/install.sh"
-    test -x "$tmp/share/jailbox/container/runtime/bin/jailbox-exec-argv"
-    test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/encode-argv.sh"
-    test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/argv_codec.py"
+    test -x "$tmp/share/jailbox/libexec/jailbox-core"
+    test -x "$tmp/share/jailbox/libexec/linux-amd64/jailbox-container"
+    test -x "$tmp/share/jailbox/libexec/linux-arm64/jailbox-container"
+    test ! -e "$tmp/share/jailbox/go.mod"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/readonly-mount.awk"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/authentication-mount.awk"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/process-hardening.awk"
@@ -90,7 +99,7 @@ smoke_install_update_uninstall() {
     test -r "$tmp/share/jailbox/container/checks/validate-session.sh"
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox dev' ]]
 
-    tar -xzf "$JAILBOX_DIR/dist/jailbox-v9.9.9.tar.gz" -C "$tmp"
+    tar -xzf "$JAILBOX_DIR/dist/$archive" -C "$tmp"
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" >/dev/null
     [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.9' ]]
     "$tmp/bin/jailbox" config-schema > "$tmp/schema"
@@ -117,10 +126,15 @@ smoke_install_update_uninstall() {
     diff -r "$tmp/jailbox-v9.9.9/docs" "$tmp/share/jailbox/docs"
     cmp "$tmp/share/jailbox/VERSION" "$tmp/jailbox-v9.9.9/VERSION"
 
-    # Updating from another stamped tree replaces the installed identity.
-    printf '9.9.10\n' > "$tmp/jailbox-v9.9.9/VERSION"
-    JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" >/dev/null
-    [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.10' ]]
+    # A mismatched helper cannot replace a working installation. Use the intact
+    # dev build: editing a binary breaks its macOS code signature, and the OS
+    # would kill it before it reports the mismatch. Rename a fresh copy into
+    # place, because macOS can keep the signature of an overwritten file cached.
+    cp -p src/libexec/jailbox-core "$tmp/jailbox-v9.9.9/libexec/jailbox-core.new"
+    mv -f "$tmp/jailbox-v9.9.9/libexec/jailbox-core.new" "$tmp/jailbox-v9.9.9/libexec/jailbox-core"
+    if JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" bash "$tmp/jailbox-v9.9.9/install.sh" > "$tmp/install-error" 2>&1; then return 1; fi
+    grep -q 'jailbox helper version mismatch' "$tmp/install-error"
+    [[ $("$tmp/bin/jailbox" --version) == 'jailbox 9.9.9' ]]
 
     JAILBOX_INSTALL_DIR="$tmp/share/jailbox" JAILBOX_BIN_DIR="$tmp/bin" ./src/install.sh >/dev/null
     test -L "$tmp/bin/jailbox"

@@ -31,14 +31,14 @@ case "$name" in
     mkdir|cp|chmod|mv|rm|mktemp)
         case " $* " in *"$XDG_STATE_HOME/"*) mutation=true ;; esac
         ;;
-    python3)
-        case "${3:-} ${4:-}" in
-            */forwarding/main.py\ publish|*/forwarding/main.py\ start) mutation=true ;;
+    jailbox-core)
+        case "${2:-}" in
+            publish|start) mutation=true ;;
         esac
         ;;
     ssh)
         case " $* " in *'bash -s -- launch '*|*'jailbox-manage-proxy enable'*|*'jailbox-manage-proxy disable'*) mutation=true ;; esac
-        if [[ -n ${LIFECYCLE_SETUP_FRAME:-} && ${!#} = "/usr/local/bin/jailbox-exec-argv $LIFECYCLE_SETUP_FRAME" ]]; then
+        if [[ -n ${LIFECYCLE_SETUP_FRAME:-} && ${!#} = "/usr/local/lib/jailbox/jailbox-container dev exec /home/jailbox/project $LIFECYCLE_SETUP_FRAME" ]]; then
             mutation=true
         fi
         if [[ ${LIFECYCLE_FAIL_SSH:-false} = true ]]; then exit 255; fi

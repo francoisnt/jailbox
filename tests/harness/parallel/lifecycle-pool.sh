@@ -824,6 +824,7 @@ grep -Eq "^owner $$ " "$LIFECYCLE_POOL_LEDGER"
 CLI
 chmod 755 "$TEST_ROOT/toolroot/src/jailbox"
 ROOT="$TEST_ROOT/toolroot"
+LIFECYCLE_CLI="$ROOT/src/jailbox"
 PATH="$tree/bin:$PATH" cli up
 grep '^owner ' "$LIFECYCLE_POOL_LEDGER" > "$TEST_ROOT/pool-owner"
 grep '^owner ' "$LEDGER_FILE" > "$TEST_ROOT/worker-owner"

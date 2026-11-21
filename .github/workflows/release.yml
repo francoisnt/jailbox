@@ -76,8 +76,23 @@ jobs:
           echo "Selected version: $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  # The release builds with the newest Go patch release. Earlier gate results
+  # are reused only when they tested that exact release.
+  go-version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve the Go release
+        id: resolve
+        run: |
+          version=$(bash scripts/go-version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   previous-gates:
     runs-on: ubuntu-24.04
+    needs: go-version
     outputs:
       reuse: ${{ steps.lookup.outputs.reuse }}
       bash_version: ${{ steps.lookup.outputs.bash_version }}
@@ -91,18 +106,82 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GO_VERSION: ${{ needs.go-version.outputs.version }}
         run: python3 scripts/lib/release-gates.py select
 
   test-gates:
-    needs: previous-gates
+    needs: [go-version, previous-gates]
     if: needs.previous-gates.outputs.reuse != 'true'
     uses: ./.github/workflows/test-gates.yml
+    with:
+      go_version: ${{ needs.go-version.outputs.version }}
+
+  package:
+    runs-on: ubuntu-24.04
+    needs: [select-version, go-version]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ needs.go-version.outputs.version }}
+          cache-dependency-path: src/go.sum
+      - name: Build and validate release archives
+        env:
+          VERSION: ${{ needs.select-version.outputs.version }}
+        run: bash scripts/build-tarball.sh "$VERSION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: |
+            dist/jailbox-${{ needs.select-version.outputs.version }}-*.tar.gz
+            dist/jailbox-latest-*.tar.gz
+            dist/install.sh
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  install:
+    name: Install release (${{ matrix.platform }})
+    needs: [select-version, package]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: macos-15-intel
+            platform: darwin-amd64
+          - runner: macos-15
+            platform: darwin-arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+          path: dist
+      - name: Install macOS host prerequisites
+        if: runner.os == 'macOS'
+        run: |
+          for formula in bash coreutils; do
+            brew list "$formula" >/dev/null || brew install "$formula"
+          done
+          printf '%s/bin\n' "$(brew --prefix bash)" >> "$GITHUB_PATH"
+          printf '%s/libexec/gnubin\n' "$(brew --prefix coreutils)" >> "$GITHUB_PATH"
+      - name: Test native install
+        env:
+          VERSION: ${{ needs.select-version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: bash tests/portable/release-install.sh dist "$VERSION" "$PLATFORM"
 
   publish:
     runs-on: ubuntu-24.04
-    needs: [select-version, previous-gates, test-gates]
+    needs: [select-version, previous-gates, test-gates, package, install]
     if: >-
       always() && needs.select-version.result == 'success' && needs.previous-gates.result == 'success' &&
+      needs.package.result == 'success' && needs.install.result == 'success' &&
       ((needs.previous-gates.outputs.reuse == 'true' && needs.test-gates.result == 'skipped') ||
        (needs.previous-gates.outputs.reuse == 'false' && needs.test-gates.result == 'success'))
     outputs:
@@ -114,10 +193,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Build and validate release tarball
-        env:
-          VERSION: ${{ needs.select-version.outputs.version }}
-        run: bash scripts/build-tarball.sh "$VERSION"
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+          path: dist
 
       - name: Create and push release tag
         env:
@@ -133,8 +212,8 @@ jobs:
         with:
           tag_name: ${{ needs.select-version.outputs.version }}
           files: |
-            dist/jailbox-${{ needs.select-version.outputs.version }}.tar.gz
-            dist/jailbox-latest.tar.gz
+            dist/jailbox-${{ needs.select-version.outputs.version }}-*.tar.gz
+            dist/jailbox-latest-*.tar.gz
             dist/install.sh
             dist/SHA256SUMS
 

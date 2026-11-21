@@ -13,13 +13,14 @@ validation_ssh() {
 }
 
 encode_ssh_command() {
-    require_command base64 || return 1
-    "$BASH" -p "$SCRIPT_DIR/container/runtime/lib/jailbox/encode-argv.sh" "$@"
+    core_tool encode "$@"
 }
 
 exec_ssh_command() {
     # The frame has a shell-safe alphabet. Stdin is exclusively command data.
-    exec ssh -F "$SSH_CONFIG" -T "$CONTAINER_NAME" "/usr/local/bin/jailbox-exec-argv $1"
+    local helper
+    helper=$(container_helper_command) || return 1
+    exec ssh -F "$SSH_CONFIG" -T "$CONTAINER_NAME" "$helper exec $REMOTE_PATH $1"
 }
 
 validate_development_session() {

@@ -79,6 +79,7 @@ case "$kind $action" in
         esac
         ;;
     'image inspect')
+        if [[ ${5:-} = '{{.Architecture}}' ]]; then printf 'amd64\n'; exit 0; fi
         if [[ "$name" == *-proxy ]]; then echo "$CONVERGENCE_PROXY_IMAGE"; else echo "$CONVERGENCE_IMAGE"; fi
         ;;
     'network create'|'volume create')

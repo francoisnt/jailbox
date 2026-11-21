@@ -19,13 +19,13 @@ for binding in 'RELEASE_EVENT: ${{ github.event_name }}' \
     'BUMP: ${{ inputs.bump }}'; do
     grep -Fq "$binding" "$workflow"
 done
-grep -Fq 'needs: [select-version, previous-gates, test-gates]' "$workflow"
+grep -Fq 'needs: [select-version, previous-gates, test-gates, package, install]' "$workflow"
 grep -Fq 'uses: ./.github/workflows/test-gates.yml' "$workflow"
 grep -Fq "if: needs.previous-gates.outputs.reuse != 'true'" "$workflow"
 grep -Fq 'run: python3 scripts/lib/release-gates.py select' "$workflow"
 grep -Fq '  actions: read' "$workflow"
 gates="$ROOT/.github/workflows/test-gates.yml"
-grep -Fq '    needs: [lint, portable, runtime, matrix, matrix-coverage, editor]' "$gates"
+grep -Fq '    needs: [go-version, lint, portable, runtime, matrix, matrix-coverage, editor]' "$gates"
 # ShellCheck runs once in its own gate; portable environments do not repeat it.
 lint_job=$(awk '/^  lint:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$gates")
 grep -Fxq '        run: bash tests/run lint' <<< "$lint_job"
@@ -51,9 +51,33 @@ grep -Fq 'run: python3 scripts/lib/release-gates.py record' "$gates"
 
 if grep -Eq 'run_editor: *false' "$workflow"; then exit 1; fi
 grep -Fxq '            dist/install.sh' "$workflow"
+for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+    grep -Fxq "            platform: $platform" "$workflow"
+done
+grep -Fq "needs.install.result == 'success'" "$workflow"
+# One gate run and its release package use one exact Go release: the newest
+# patch of the src/go.mod series, whatever form Go's tools give the directive.
+for file in "$workflow" "$gates"; do
+    if grep -Fq 'go-version-file:' "$file" || grep -Fq 'check-latest:' "$file"; then exit 1; fi
+done
+# shellcheck disable=SC2016 # Match the workflow expression literally.
+resolved='${{ needs.go-version.outputs.version }}'
+[[ $(grep -cF "go-version: $resolved" "$gates") = 5 ]]
+[[ $(grep -cFx '    needs: go-version' "$gates") = 5 ]]
+# shellcheck disable=SC2016 # Match the workflow command literally.
+grep -Fq 'version=$(bash scripts/go-version.sh "$REQUESTED")' "$gates"
+[[ $(grep -cF "go-version: $resolved" "$workflow") = 1 ]]
+grep -Fq "GO_VERSION: $resolved" "$workflow"
+grep -Fq "go_version: $resolved" "$workflow"
+# shellcheck disable=SC2016 # Match the workflow command literally.
+grep -Fq 'version=$(bash scripts/go-version.sh)' "$workflow"
+go_series=$(bash "$ROOT/scripts/go-series.sh")
+grep -Fq "golang:$go_series-trixie " "$ROOT/Containerfile"
+canary_go=$(awk '/^  go-support:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$canary")
+grep -Fxq '        run: bash scripts/go-version.sh' <<< "$canary_go"
 awk -f "$ROOT/tests/lib/release-order.awk" "$workflow"
 # shellcheck disable=SC2016 # Match the validator invocation literally.
-grep -Fq 'bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$DIST_DIR"' "$ROOT/scripts/build-tarball.sh"
+grep -Fq 'bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$stage"' "$ROOT/scripts/build-tarball.sh"
 grep -Fq 'git push origin ":refs/tags/' "$workflow"
 # Scope assertions to the recorder jobs: unrelated success guards do not count.
 release_record=$(awk '/^  record-compatibility:/{found=1;next} found && /^  [[:alnum:]_-]+:/{exit} found' "$workflow")

@@ -18,7 +18,7 @@ grep -Fq 'tried 20 subnet candidates' "$fixture/err"
 if (
     PROJECT_DEV_IMAGE=review-image DEV_TARGET_STAGE=dev PKG_MANAGER=apk MY_UID=1000
     jailbox_install_cache_bust() { printf '123\n'; }
-    podman() { case "$1 $2" in 'image exists') return 0 ;; 'image inspect') printf 'image-id\n' ;; *) return 42 ;; esac; }
+    podman() { case "$1 $2" in 'image exists') return 0 ;; 'image inspect') if [[ $5 = '{{.Architecture}}' ]]; then printf 'amd64\n'; else printf 'image-id\n'; fi ;; *) return 42 ;; esac; }
     build_jailbox_image
 ) > "$fixture/out" 2> "$fixture/err"; then fail 'image failure accepted'; fi
 grep -Fq 'Error: jailbox image build failed.' "$fixture/err"

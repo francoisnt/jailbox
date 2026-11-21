@@ -1,3 +1,4 @@
 dist/
 testlog/
 __pycache__/
+/src/libexec/

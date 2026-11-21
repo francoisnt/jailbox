@@ -1,3 +1,0 @@
-#!/bin/bash
-set -euo pipefail
-exec "/usr/bin/python3" -I -B /usr/local/lib/jailbox/argv_codec.py /home/jailbox/project "$@"

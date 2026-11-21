@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run shellcheck on all shell scripts in the repository.
+# Run ShellCheck on all shell scripts. The lint gate also runs scripts/check-go.sh.
 #
 # Usage: scripts/lint.sh [--worktree] [--format <fmt>]
 # --worktree checks changed shell files only; other flags go to ShellCheck.

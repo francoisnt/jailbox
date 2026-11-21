@@ -37,6 +37,10 @@ on:
         description: Open Remote SSH version override; empty uses versions.env
         type: string
         default: ""
+      go_version:
+        description: Exact Go release for every gate; empty uses the newest patch of the src/go.mod series
+        type: string
+        default: ""
     outputs:
       runtime_bash_version:
         description: Bash observed by the successful Linux runtime gate
@@ -52,15 +56,46 @@ on:
         value: ${{ jobs.runtime.outputs.run_url }}
 
 jobs:
+  # Every gate in a run uses one exact Go release, so recorded evidence names
+  # the compiler that all of them tested.
+  go-version:
+    name: Go version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Resolve the Go release
+        id: resolve
+        env:
+          REQUESTED: ${{ inputs.go_version }}
+        run: |
+          if [[ -n "$REQUESTED" ]]; then
+            version=$(bash scripts/go-version.sh "$REQUESTED")
+          else
+            version=$(bash scripts/go-version.sh)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   # ShellCheck is static analysis: its result does not depend on the host, so
   # it runs once here instead of in every portable environment.
   lint:
+    needs: go-version
     name: lint
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ needs.go-version.outputs.version }}
+          cache-dependency-path: src/go.sum
 
       - name: Install ShellCheck 0.11.0
         shell: bash
@@ -114,6 +149,7 @@ jobs:
           retention-days: 7
 
   portable:
+    needs: go-version
     name: portable (${{ matrix.os }}, Bash ${{ matrix.bash }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -129,6 +165,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ needs.go-version.outputs.version }}
+          cache-dependency-path: src/go.sum
 
       - name: Build Bash 4.4
         if: matrix.bash == '4.4'
@@ -175,6 +217,7 @@ jobs:
           retention-days: 7
 
   runtime:
+    needs: go-version
     name: runtime
     outputs:
       bash_version: ${{ steps.versions.outputs.bash_version }}
@@ -186,6 +229,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ needs.go-version.outputs.version }}
+          cache-dependency-path: src/go.sum
 
       - name: Set up host
         run: bash tests/ci/setup-linux.sh
@@ -216,6 +265,7 @@ jobs:
 
   # Each shard runs a fixed share of the full matrix; together they run it all.
   matrix:
+    needs: go-version
     name: matrix (${{ matrix.shard }}/8)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -226,6 +276,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ needs.go-version.outputs.version }}
+          cache-dependency-path: src/go.sum
 
       - name: Set up host
         run: bash tests/ci/setup-linux.sh
@@ -268,6 +324,7 @@ jobs:
         run: bash tests/ci/check-matrix-coverage.sh 8 matrix-logs
 
   editor:
+    needs: go-version
     name: editor (${{ matrix.editor_cli }})
     if: inputs.run_editor
     runs-on: ubuntu-24.04
@@ -281,6 +338,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ needs.go-version.outputs.version }}
+          cache-dependency-path: src/go.sum
 
       - name: Set up host with editors
         env:
@@ -308,7 +371,7 @@ jobs:
 
   verified-result:
     name: Record complete pinned gate result
-    needs: [lint, portable, runtime, matrix, matrix-coverage, editor]
+    needs: [go-version, lint, portable, runtime, matrix, matrix-coverage, editor]
     if: >-
       success() && inputs.run_editor &&
       inputs.lifecycle_jobs == '' &&

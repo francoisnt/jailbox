@@ -37,14 +37,3 @@ check_container_syntax() {
         sh -n "$script" || return 1
     done
 }
-
-check_runtime_python_syntax() {
-    python3 -I -B -c '
-from pathlib import Path
-import ast
-import sys
-
-for file in Path(sys.argv[1]).rglob("*.py"):
-    ast.parse(file.read_bytes(), filename=str(file))
-' "$1"
-}

@@ -13,6 +13,6 @@ case "$2" in
     *) printf 'Unexpected installer request\n' >&2; exit 1 ;;
 esac
 case "${2##*/}" in
-    jailbox-latest.tar.gz|SHA256SUMS) cp "$assets/${2##*/}" "$4" ;;
+    jailbox-latest-*.tar.gz|SHA256SUMS) cp "$assets/${2##*/}" "$4" ;;
     *) printf 'Unexpected installer asset\n' >&2; exit 1 ;;
 esac

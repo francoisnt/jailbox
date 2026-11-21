@@ -2,6 +2,10 @@
 # New runtime files must ship and install without a second inventory.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=tests/lib/release-platform.sh
+source "$ROOT/tests/lib/release-platform.sh"
+platform=$(test_release_platform)
+asset="jailbox-latest-$platform.tar.gz"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/source"
@@ -9,7 +13,7 @@ cp -R "$ROOT/src" "$ROOT/scripts" "$ROOT/docs" "$tmp/source/"
 cp "$ROOT/README.md" "$ROOT/LICENSE" "$tmp/source/"
 printf 'future runtime dependency\n' > "$tmp/source/src/container/runtime/lib/jailbox/future.data"
 bash "$tmp/source/scripts/build-tarball.sh" v9.8.7 > "$tmp/build.log" 2>&1
-tar -xzf "$tmp/source/dist/jailbox-v9.8.7.tar.gz" -C "$tmp"
+tar -xzf "$tmp/source/dist/jailbox-v9.8.7-$platform.tar.gz" -C "$tmp"
 bundle=$tmp/jailbox-v9.8.7
 cmp "$ROOT/LICENSE" "$bundle/LICENSE"
 diff -r "$ROOT/docs" "$bundle/docs"
@@ -30,7 +34,17 @@ for mask in 0022 0002; do
     (cd "$tmp/project-$mask"; umask "$mask"; "$JAILBOX_BIN_DIR/jailbox" init)
     cmp "$ROOT/src/host/frontend/jailbox.conf.template" "$tmp/project-$mask/jailbox.conf"
 done
+# A checkout install uses explicitly built programs. Without them it fails
+# clearly and leaves the working installation in place.
+rm -rf "$tmp/source/src/libexec"
+if "$installer_bash" "$tmp/source/src/install.sh" > "$tmp/install.log" 2>&1; then exit 1; fi
+grep -Fq 'missing jailbox program libexec/jailbox-core' "$tmp/install.log"
+[[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.7' ]]
+[[ ! -e "$tmp/source/src/libexec" ]]
+bash "$tmp/source/scripts/build-programs.sh" > "$tmp/build.log" 2>&1
 "$installer_bash" "$tmp/source/src/install.sh" > "$tmp/install.log" 2>&1
+[[ -x "$JAILBOX_INSTALL_DIR/libexec/jailbox-core" ]]
+[[ -x "$JAILBOX_INSTALL_DIR/libexec/linux-amd64/jailbox-container" && ! -e "$JAILBOX_INSTALL_DIR/libexec/native" ]]
 cmp "$ROOT/LICENSE" "$JAILBOX_INSTALL_DIR/LICENSE"
 # Source checkout installation includes the same guides.
 diff -r "$ROOT/docs" "$JAILBOX_INSTALL_DIR/docs"
@@ -54,7 +68,7 @@ for mask in 0022 0002; do
     cmp "$INSTALLER_PINNED_ASSETS/install.sh" "$JAILBOX_INSTALL_DIR/install.sh"
     diff -r "$ROOT/docs" "$JAILBOX_INSTALL_DIR/docs"
     printf '%s\n' \
-        'https://github.com/francoisnt/jailbox/releases/download/v9.8.7/jailbox-latest.tar.gz' \
+        "https://github.com/francoisnt/jailbox/releases/download/v9.8.7/$asset" \
         'https://github.com/francoisnt/jailbox/releases/download/v9.8.7/SHA256SUMS' > "$tmp/expected-requests"
     cmp "$tmp/expected-requests" "$INSTALLER_REQUESTS"
 done
@@ -63,13 +77,23 @@ done
 cat "$INSTALLER_ASSETS/install.sh" | PATH="$tmp/download-tools:$PATH" "$installer_bash" > "$tmp/install.log" 2>&1
 [[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.8' ]]
 printf '%s\n' \
-    'https://github.com/francoisnt/jailbox/releases/download/v9.8.8/jailbox-latest.tar.gz' \
+    "https://github.com/francoisnt/jailbox/releases/download/v9.8.8/$asset" \
     'https://github.com/francoisnt/jailbox/releases/download/v9.8.8/SHA256SUMS' > "$tmp/expected-requests"
 cmp "$tmp/expected-requests" "$INSTALLER_REQUESTS"
+# A saved installer run inside a project with its own VERSION file,
+# container/ and host/ directories still downloads its release instead of
+# treating the project as a local bundle.
+mkdir -p "$tmp/saved-project/container" "$tmp/saved-project/host"
+printf '9.8.7\n' > "$tmp/saved-project/VERSION"
+cp "$INSTALLER_ASSETS/install.sh" "$tmp/saved-project/install.sh"
+: > "$INSTALLER_REQUESTS"
+(cd "$tmp/saved-project" && PATH="$tmp/download-tools:$PATH" "$installer_bash" install.sh > "$tmp/install.log" 2>&1)
+[[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.8' ]]
+cmp "$tmp/expected-requests" "$INSTALLER_REQUESTS"
 # A corrupt download must fail before replacing the installed release.
-printf 'corrupt\n' >> "$INSTALLER_ASSETS/jailbox-latest.tar.gz"
+printf 'corrupt\n' >> "$INSTALLER_ASSETS/$asset"
 if cat "$INSTALLER_ASSETS/install.sh" | PATH="$tmp/download-tools:$PATH" "$installer_bash" > "$tmp/install.log" 2>&1; then exit 1; fi
-grep -Fq 'checksum verification failed for jailbox-latest.tar.gz' "$tmp/install.log"
+grep -Fq "checksum verification failed for $asset" "$tmp/install.log"
 [[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.8' ]]
 # Explicit pinning selects the old release's alias and checksum file together.
 : > "$INSTALLER_REQUESTS"
@@ -78,9 +102,25 @@ cat "$INSTALLER_ASSETS/install.sh" | PATH="$tmp/download-tools:$PATH" \
     "$installer_bash" > "$tmp/install.log" 2>&1
 [[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.7' ]]
 printf '%s\n' \
-    'https://github.com/francoisnt/jailbox/releases/download/v9.8.7/jailbox-latest.tar.gz' \
+    "https://github.com/francoisnt/jailbox/releases/download/v9.8.7/$asset" \
     'https://github.com/francoisnt/jailbox/releases/download/v9.8.7/SHA256SUMS' > "$tmp/expected-requests"
 cmp "$tmp/expected-requests" "$INSTALLER_REQUESTS"
+# Unsupported platforms fail before making any request or replacing a release.
+cat > "$tmp/download-tools/uname" <<'STUB'
+#!/bin/bash
+case "$1" in -s) printf '%s\n' "$TEST_OS" ;; -m) printf '%s\n' "$TEST_ARCH" ;; esac
+STUB
+chmod 755 "$tmp/download-tools/uname"
+for scenario in 'FreeBSD x86_64' 'Linux riscv64'; do
+    read -r TEST_OS TEST_ARCH <<< "$scenario"
+    : > "$INSTALLER_REQUESTS"
+    if cat "$INSTALLER_PINNED_ASSETS/install.sh" | PATH="$tmp/download-tools:$PATH" TEST_OS="$TEST_OS" TEST_ARCH="$TEST_ARCH" "$installer_bash" > "$tmp/out" 2>&1; then
+        exit 1
+    fi
+    grep -Fq 'unsupported host' "$tmp/out"
+    [[ ! -s "$INSTALLER_REQUESTS" ]]
+done
+rm "$tmp/download-tools/uname"
 # Restore the versioned installation for the failure checks below.
 "$installer_bash" "$bundle/install.sh" > "$tmp/install.log" 2>&1
 printf 'keep\n' > "$JAILBOX_INSTALL_DIR/preserved"

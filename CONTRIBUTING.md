@@ -19,9 +19,13 @@ glossary. The guide describes the implemented frontend and machine boundary.
 └── README.md
 ```
 
-Run the checkout CLI as `src/jailbox`, or install it with `bash src/install.sh`.
-Releases flatten `src/` into the bundle root and add `README.md`, `LICENSE`, and `docs/`; maintenance
-scripts and tests do not ship.
+Install the latest Go release of the series in `src/go.mod` (for example any
+1.27.x for `go 1.27`) and run `bash scripts/build-programs.sh`
+before using the checkout CLI as `src/jailbox`. Rebuild after changing a Go
+helper. The build writes to the ignored `src/libexec/` directory.
+`bash src/install.sh` installs those built programs and fails if they are
+missing. Releases package the runtime files and
+platform binaries with `README.md`, `LICENSE`, and `docs/`.
 
 The `src/host/` tree runs on the developer machine. The `src/container/` tree is
 copied into images or executed inside containers. Repository maintenance
@@ -126,7 +130,7 @@ The macOS portable gate also needs GNU coreutils and findutils. Run
 `bash tests/ci/setup-portable.sh` to install the test dependencies; for local
 runs, put their Homebrew `libexec/gnubin` directories on `PATH`.
 
-macOS CI runs only the portable gate. Engine and transport doubles in those
+macOS CI runs the portable gate and native release installation checks. Engine and transport doubles in those
 tests verify contracts, not real Podman Machine integration. Runtime, matrix,
 and editor CI jobs run on Linux. Unlike Linux hosts, Macs need a Linux VM to
 run Podman containers. GitHub's hosted ARM Mac runners are already VMs and
@@ -144,7 +148,9 @@ README coverage statement consistent with that evidence.
 
 All five gates require Python 3: lint uses it for its cache key; portable, runtime, and matrix use it for
 bounded pseudoterminal tests, and editor uses it to package the proof extension.
-The CI setup scripts install it; jailbox itself does not require Python.
+CI installs Python for those tools. The gates also use the latest Go release of
+the `src/go.mod` series for formatting, analysis, tests, and helper builds. Runtime binaries ship
+with each release.
 Lint, portable suites, runtime stages, editor stages, and the lifecycle
 matrix share a Bash process pool
 and resource detection. Worker counts adapt to available CPUs and memory,
@@ -464,9 +470,9 @@ or `release-request-bump-{patch,minor,major}` tags. They never participate in
 version-tag discovery. CI reuses verified passing push results for all five
 gates on the exact commit with the pinned dependencies, provided no later
 test failure or unfinished run remains. Otherwise, it runs fresh gates.
-It always builds and validates the final archive's stamp and `--version` output
-against the selected version before creating the release tag. It publishes those same validated
-archive bytes, the identical `latest` alias, `install.sh`, and their checksums.
+It builds and validates all four platform archives, then tests installation
+on each native platform before creating the release tag. It publishes those
+archives, their platform-specific `latest` aliases, `install.sh`, and checksums.
 Packaging stamps `src/install.sh` with the selected release version. The
 standalone installer and the archive’s installer are identical and download
 assets from that fixed release by default. The README’s latest URL selects the

@@ -17,7 +17,7 @@ choose an image, configure access, and troubleshoot your session.
 
 ## Requirements
 
-- **Linux or macOS** with **Podman** (rootless preferred)
+- **Linux or macOS on amd64 or arm64** with **Podman** (rootless preferred)
 - **Bash 4.4 or newer** (`brew install bash` on macOS)
 - **GNU coreutils or compatible utilities**, including `realpath` with `-e`,
   `-m`, and `--relative-to`, and `sort -z`. Installation, launch, validation,
@@ -32,8 +32,8 @@ choose an image, configure access, and troubleshoot your session.
   image (see [Project image requirements](#project-image-requirements) and
   [Recipes](#recipes))
 
-**macOS coverage is limited to portable tests; container and editor integration
-on a Mac remain unverified.** Our hosted Mac CI runners cannot start the Linux VM
+**macOS CI covers portable tests and release installation. Container and editor
+integration on a Mac remain unverified.** Our hosted Mac CI runners cannot start the Linux VM
 that Podman requires. See [Tested Configurations](#tested-configurations).
 
 On macOS, install coreutils and put its commands first on `PATH` before installing
@@ -47,6 +47,14 @@ export PATH="$(brew --prefix bash)/bin:$(brew --prefix coreutils)/libexec/gnubin
 Add that `export` line to your shell startup file to retain it in new terminals.
 On Linux, install your distribution's `coreutils` package if it is missing.
 The installer does not install system packages or edit shell startup files.
+
+Release archives include the host program and the Linux programs for amd64 and
+arm64 development images. Jailbox selects the program for the development
+image's architecture, including when the host emulates that architecture.
+Go is needed only to build the programs in a source checkout. Run `bash scripts/build-programs.sh`
+before running commands that use these programs or installing with
+`bash src/install.sh`. The checkout build accepts any Go release of the series
+named in `src/go.mod`, such as 1.27.x for `go 1.27`.
 
 ## Everyday use
 
@@ -142,10 +150,8 @@ cleanup leaves resources behind.
 
 ### Forward selected host commands
 
-Set `HOST_COMMAND_POLICY=jailbox.host-policy` in `jailbox.conf`. The host
-needs Python 3 and each approved executable on its `PATH`. The wrapper
-image installs Python 3 for `jailbox exec` argument decoding and forwarding,
-including in sandboxes with forwarding disabled. This policy permits
+Set `HOST_COMMAND_POLICY=jailbox.host-policy` in `jailbox.conf`. Make each
+approved executable available on the host's `PATH`. This policy permits
 `notify-send "Build finished"` inside the sandbox.
 
 ```text
@@ -479,4 +485,4 @@ Each row identifies the tested commit, editor/extension versions, VSCodium serve
 commit, development image tags, and the Bash/Podman versions observed by the Linux
 runtime gate.
 These are historical results, not proof for other mixtures or today's master.
-macOS coverage remains portable only.
+macOS coverage remains limited to portable contracts and release installation.

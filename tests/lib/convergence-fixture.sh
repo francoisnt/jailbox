@@ -29,7 +29,7 @@ PREFIX=$(jailbox_resource_prefix_for_path "$FIXTURE/project")
 HASH=$(jailbox_project_hash_for_path "$FIXTURE/project")
 GENERATION="$XDG_STATE_HOME/jailbox/projects/$HASH/ssh-generation"
 
-launch() { (cd "$FIXTURE/project" && "$ROOT/src/jailbox" "$@"); }
+launch() { (cd "$FIXTURE/project" && "${CONVERGENCE_CLI:-$ROOT/src/jailbox}" "$@"); }
 expect_success() {
     if ! launch up > "$FIXTURE/output" 2>&1; then cat "$FIXTURE/output"; exit 1; fi
 }
@@ -57,12 +57,9 @@ assert_no_mutation() {
 write_convergence_exec_helper() {
     export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
     export CONVERGENCE_EXEC_PROJECT="${1:-$CONVERGENCE_ENGINE}"
-    export CONVERGENCE_EXEC_CODEC="$ROOT/src/container/runtime/lib/jailbox/argv_codec.py"
-    export CONVERGENCE_EXEC_PYTHON
-    CONVERGENCE_EXEC_PYTHON=$(command -v python3) || return 1
-    # shellcheck disable=SC2016 # The fixture wrapper inherits these paths.
-    sed -e 's|"/usr/bin/python3"|"$CONVERGENCE_EXEC_PYTHON"|' \
-        -e 's|/usr/local/lib/jailbox/argv_codec.py|"$CONVERGENCE_EXEC_CODEC"|' \
-        -e 's|/home/jailbox/project|"$CONVERGENCE_EXEC_PROJECT"|' \
-        "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+    export CONVERGENCE_CONTAINER_PROGRAM="$ROOT/src/libexec/native/jailbox-container"
+    cat > "$CONVERGENCE_EXEC_HELPER" <<'HELPER'
+#!/bin/bash
+exec "$CONVERGENCE_CONTAINER_PROGRAM" dev exec "$CONVERGENCE_EXEC_PROJECT" "$@"
+HELPER
 }

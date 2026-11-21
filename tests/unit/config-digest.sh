@@ -638,9 +638,9 @@ echo ""
     after=$(jailbox_install_cache_bust)
     [[ "$after" != "$before" ]]
     mkdir -p "$SCRIPT_DIR/container/runtime/bin"
-    printf 'decoder\n' > "$SCRIPT_DIR/container/runtime/bin/jailbox-exec-argv"
+    printf 'decoder\n' > "$SCRIPT_DIR/container/runtime/bin/jailbox-test-runtime-helper"
     before=$(jailbox_install_cache_bust)
-    printf 'changed decoder\n' >> "$SCRIPT_DIR/container/runtime/bin/jailbox-exec-argv"
+    printf 'changed decoder\n' >> "$SCRIPT_DIR/container/runtime/bin/jailbox-test-runtime-helper"
     [[ $(jailbox_install_cache_bust) != "$before" ]]
     mkdir -p "$SCRIPT_DIR/container/runtime/lib/jailbox"
     before=$(jailbox_install_cache_bust)
@@ -655,6 +655,12 @@ echo ""
     # shellcheck disable=SC1091 # Extract the real preparation helper, not main.
     source "$FIXTURE/wrapper-cache.sh"
     [[ $(JAILBOX_DIR=${SCRIPT_DIR%/src} wrapper_install_cache_bust) = "$(jailbox_install_cache_bust)" ]]
+    # A runtime tree that links container/, like the lifecycle fixture, reuses
+    # the same wrapper build inputs.
+    expected=$(jailbox_install_cache_bust)
+    mkdir "$FIXTURE/linked-runtime"
+    ln -s "$SCRIPT_DIR/container" "$FIXTURE/linked-runtime/container"
+    [[ $(SCRIPT_DIR="$FIXTURE/linked-runtime" jailbox_install_cache_bust) = "$expected" ]]
 )
 pass 'image cache tracks image inputs without depending on streamed validation'
 echo "Configuration digest: $PASSED passed, $FAILED failed"

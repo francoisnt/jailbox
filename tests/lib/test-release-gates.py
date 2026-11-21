@@ -19,6 +19,7 @@ spec.loader.exec_module(gates)
 REPO = "owner/project"
 SHA = "a" * 40
 URL = "https://github.com/owner/project/actions/runs/10/attempts/1"
+GO = "1.27.4"
 
 
 class FakeAPI:
@@ -39,19 +40,20 @@ class GateTests(unittest.TestCase):
         self.needs = {name: {"result": "success", "outputs": {}} for name in gates.GATES}
         self.needs["runtime"]["outputs"] = self.runtime
         self.needs["matrix-coverage"] = {"result": "success", "outputs": {}}
+        self.needs["go-version"] = {"result": "success", "outputs": {"version": GO}}
         self.env = dict(GATE_RESULTS=json.dumps(self.needs), GATE_INPUTS=json.dumps({"run_editor": True}),
                         GITHUB_REPOSITORY=REPO, GITHUB_SHA=SHA, GITHUB_RUN_ID="10",
-                        GITHUB_RUN_ATTEMPT="1", GITHUB_SERVER_URL="https://github.com")
+                        GITHUB_RUN_ATTEMPT="1", GITHUB_SERVER_URL="https://github.com", GO_VERSION=GO)
         self.proof = gates.record(self.env)
         self.run = dict(id=10, run_attempt=1, head_sha=SHA, head_branch="master", event="push",
                         path=".github/workflows/pr-checks.yml", repository={"full_name": REPO},
                         head_repository={"full_name": REPO}, status="completed", conclusion="success",
                         run_started_at="2026-10-08T00:00:00Z", updated_at="2026-10-08T02:00:00Z")
 
-    def select(self, runs=None, proof=None):
+    def select(self, runs=None, proof=None, go_version=GO):
         return gates.select(FakeAPI(runs if runs is not None else [self.run],
                                     proof if proof is not None else self.proof),
-                            REPO, SHA, "master", 99, "https://github.com")
+                            REPO, SHA, "master", 99, "https://github.com", go_version)
 
     def test_exact_success_preserves_metadata(self):
         self.assertEqual(self.select(), self.runtime)
@@ -82,6 +84,32 @@ class GateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs)))
 
+    def test_record_names_the_one_go_release_all_gates_used(self):
+        self.assertEqual(self.proof["go_version"], GO)
+        for toolchain in (None, {"result": "failure", "outputs": {"version": GO}},
+                          {"result": "success", "outputs": {}},
+                          {"result": "success", "outputs": {"version": "1.27"}},
+                          {"result": "success", "outputs": {"version": "go1.27.4"}}):
+            needs = copy.deepcopy(self.needs)
+            if toolchain is None:
+                del needs["go-version"]
+            else:
+                needs["go-version"] = toolchain
+            with self.subTest(toolchain=toolchain), self.assertRaises(ValueError):
+                gates.record(dict(self.env, GATE_RESULTS=json.dumps(needs)))
+        # A release passes its resolved Go release; gates must have used it.
+        inputs = {"run_editor": True, "go_version": GO}
+        self.assertEqual(gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs))), self.proof)
+        with self.assertRaises(ValueError):
+            gates.record(dict(self.env, GATE_INPUTS=json.dumps(dict(inputs, go_version="1.27.5"))))
+
+    def test_release_with_another_go_patch_runs_fresh_gates(self):
+        with self.assertRaisesRegex(ValueError, "tested Go 1.27.4, the release uses Go 1.27.5"):
+            self.select(go_version="1.27.5")
+        old = {key: value for key, value in self.proof.items() if key != "go_version"}
+        with self.assertRaises(ValueError):
+            self.select(proof=dict(old, schema=1))
+
     def test_rejects_wrong_commit_origin_branch_or_event(self):
         for change in ({"head_sha": "b" * 40}, {"head_branch": "other"}, {"event": "pull_request"},
                        {"path": ".github/workflows/canary.yml"},
@@ -90,7 +118,7 @@ class GateTests(unittest.TestCase):
                 self.select([dict(self.run, **change)])
 
     def test_rejects_missing_partial_stale_or_mismatched_proof(self):
-        for key, value in (("sha", "b" * 40), ("schema", 2), ("repository", "fork/project"),
+        for key, value in (("sha", "b" * 40), ("schema", 1), ("repository", "fork/project"),
                            ("run_id", 9), ("attempt", 2),
                            ("gates", {"portable": "success"})):
             with self.subTest(key=key), self.assertRaises(ValueError):
@@ -150,7 +178,7 @@ class GateTests(unittest.TestCase):
         rerun = dict(self.run, run_attempt=2, status="in_progress", conclusion=None)
         with patch.object(api, "collection", side_effect=[[self.run], [rerun]]):
             with self.assertRaisesRegex(ValueError, "CI changed"):
-                gates.select(api, REPO, SHA, "master", 99, "https://github.com")
+                gates.select(api, REPO, SHA, "master", 99, "https://github.com", GO)
 
     def test_artifact_attempt_expiry_and_zip_validation(self):
         api = gates.GitHub(REPO)
@@ -198,9 +226,13 @@ class GateTests(unittest.TestCase):
                 ("true", "skipped", "success", "failure", False),
                 ("", "skipped", "success", "success", False)):
             context = {"needs.previous-gates.outputs.reuse": reuse, "needs.test-gates.result": fresh,
-                       "needs.previous-gates.result": lookup, "needs.select-version.result": version}
+                       "needs.previous-gates.result": lookup, "needs.select-version.result": version,
+                       "needs.package.result": "success", "needs.install.result": "success"}
             self.assertEqual(evaluate(condition, context), success)
             if success:
+                for job in ("package", "install"):
+                    for result in ("failure", "skipped", "cancelled"):
+                        self.assertFalse(evaluate(condition, {**context, f"needs.{job}.result": result}))
                 fresh_names = {"bash_version": "runtime_bash_version", "podman_version": "runtime_podman_version",
                                "tested_at": "tested_at", "run_url": "test_run_url"}
                 for name, expression in outputs:

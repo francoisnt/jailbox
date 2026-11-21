@@ -39,11 +39,7 @@ version="${1:-}"
     die "refusing to package an existing VERSION stamp"
 
 release_name="$APP_NAME-$version"
-stage_dir="$DIST_DIR/$release_name"
-tarball="$DIST_DIR/$release_name.tar.gz"
-latest_tarball="$DIST_DIR/$APP_NAME-latest.tar.gz"
-checksums_file="$DIST_DIR/SHA256SUMS"
-installer="$DIST_DIR/install.sh"
+platforms=(linux-amd64 linux-arm64 darwin-amd64 darwin-arm64)
 
 for script in "$ROOT_DIR/src/install.sh" "$ROOT_DIR/src/jailbox" "$ROOT_DIR/src/public-api.sh"; do
     bash -n "$script" || die "invalid shell syntax: $script"
@@ -53,11 +49,17 @@ while IFS= read -r script; do
 done < <(find "$ROOT_DIR/src/host" "$ROOT_DIR/scripts" -type f -name '*.sh' -print)
 source "$ROOT_DIR/scripts/lib/container-shells.sh"
 check_container_syntax "$ROOT_DIR/src" || die 'invalid container shell source'
-(cd "$ROOT_DIR" && check_runtime_python_syntax src) || die 'invalid runtime Python source'
 
-rm -rf "$stage_dir" "$tarball" "$latest_tarball" "$checksums_file" "$installer"
-mkdir -p "$stage_dir"
+mkdir -p "$DIST_DIR"
+stage=$(mktemp -d "$DIST_DIR/.build.XXXXXX")
+trap 'rm -rf -- "$stage"' EXIT
+stage_dir="$stage/$release_name"
+mkdir "$stage_dir"
+# Preserve automatic runtime discovery and omit build-only Go packages.
 cp -R "$ROOT_DIR/src/." "$stage_dir/"
+rm -rf -- "$stage_dir/go.mod" "$stage_dir/go.sum" "$stage_dir/internal" "$stage_dir/libexec" \
+    "$stage_dir/container/cmd" "$stage_dir/container/internal" \
+    "$stage_dir/host/core/cmd" "$stage_dir/host/core/internal"
 
 for path in "${RELEASE_PATHS[@]}"; do
     [ -e "$ROOT_DIR/$path" ] || die "missing release path: $path"
@@ -67,20 +69,29 @@ done
 printf '%s\n' "${version#v}" > "$stage_dir/VERSION"
 sed "s/^RELEASE_VERSION=\"\"$/RELEASE_VERSION=\"$version\"/" \
     "$ROOT_DIR/src/install.sh" > "$stage_dir/install.sh"
-# Ensure entry-point scripts remain executable after copying into the stage dir.
-chmod 755 "$stage_dir/jailbox" "$stage_dir/install.sh"
-chmod 755 "$stage_dir"/container/*.sh
-cp "$stage_dir/install.sh" "$installer"
+chmod 755 "$stage_dir/jailbox" "$stage_dir/install.sh" "$stage_dir"/container/*.sh
+cp "$stage_dir/install.sh" "$stage/install.sh"
 
-# Build from inside dist so the archive has a clean top-level directory.
-(cd "$DIST_DIR" && tar -czf "$release_name.tar.gz" "$release_name")
-cp "$tarball" "$latest_tarball"
-rm -rf "$stage_dir"
-
-# Checksums use bare filenames so `sha256sum --check` works from the
-# download directory.
-(cd "$DIST_DIR" && sha256 "$release_name.tar.gz" "$APP_NAME-latest.tar.gz" install.sh > SHA256SUMS)
-
-bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$DIST_DIR"
-
-echo "$tarball"
+# Build every program once, then give each archive its own core program.
+programs="$stage/programs"
+bash "$ROOT_DIR/scripts/build-programs.sh" --release "$programs" "${version#v}"
+assets=()
+for platform in "${platforms[@]}"; do
+    rm -rf -- "$stage_dir/libexec"
+    mkdir -p "$stage_dir/libexec/linux-amd64" "$stage_dir/libexec/linux-arm64"
+    cp -p -- "$programs/core/$platform/jailbox-core" "$stage_dir/libexec/jailbox-core"
+    for arch in amd64 arm64; do
+        cp -p -- "$programs/linux-$arch/jailbox-container" "$stage_dir/libexec/linux-$arch/jailbox-container"
+    done
+    asset="$release_name-$platform.tar.gz"
+    latest="$APP_NAME-latest-$platform.tar.gz"
+    (cd "$stage" && tar -czf "$asset" "$release_name")
+    cp "$stage/$asset" "$stage/$latest"
+    assets+=("$asset" "$latest")
+done
+(cd "$stage" && sha256 "${assets[@]}" install.sh > SHA256SUMS)
+bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$stage"
+for asset in "${assets[@]}" install.sh SHA256SUMS; do
+    mv -f -- "$stage/$asset" "$DIST_DIR/$asset"
+done
+printf 'dist/%s\n' "${assets[@]}"

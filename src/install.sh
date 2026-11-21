@@ -92,10 +92,13 @@ download_file() {
 installer_bundle_is_available() {
     # A piped installer must download its release, regardless of the working directory.
     [ -n "$SOURCE_FILE" ] || return 1
-    # Recognize local bundles before checking their basic shape, so a broken
-    # local tree does not silently select the network bootstrap path.
-    [ -e "$SOURCE_DIR/VERSION" ] || [ -e "$SOURCE_DIR/jailbox" ] ||
-        [ -d "$SOURCE_DIR/host" ] || [ -d "$SOURCE_DIR/container" ]
+    # The unstamped checkout copy always installs the files beside it.
+    [ -n "$RELEASE_VERSION" ] || return 0
+    # A published installer installs the files beside it only inside its own
+    # release. Saved anywhere else, for example in a project with its own
+    # VERSION file or container/ directory, it downloads its release.
+    [ -f "$SOURCE_DIR/jailbox" ] && [ -f "$SOURCE_DIR/VERSION" ] || return 1
+    [ "$(cat "$SOURCE_DIR/VERSION")" = "${RELEASE_VERSION#v}" ]
 }
 
 absolute_path() {
@@ -156,8 +159,37 @@ validate_source_tree() {
     done
 }
 
+release_platform() {
+    local system machine
+    system=$(uname -s) || return 1
+    machine=$(uname -m) || return 1
+    case "$system" in Linux) system=linux ;; Darwin) system=darwin ;; *) die "unsupported host OS: $system" ;; esac
+    case "$machine" in
+        x86_64|amd64) machine=amd64 ;;
+        aarch64|arm64) machine=arm64 ;;
+        *) die "unsupported host architecture: $machine" ;;
+    esac
+    printf '%s-%s\n' "$system" "$machine"
+}
+
+validate_programs() {
+    local path version=dev
+    for path in libexec/jailbox-core libexec/linux-amd64/jailbox-container libexec/linux-arm64/jailbox-container; do
+        [ -f "$SOURCE_DIR/$path" ] && [ -x "$SOURCE_DIR/$path" ] ||
+            die "missing jailbox program $path. Build checkout programs with scripts/build-programs.sh or reinstall from a release."
+    done
+    if [ -f "$SOURCE_DIR/VERSION" ]; then
+        version=$(cat "$SOURCE_DIR/VERSION") || die "could not read the jailbox version"
+    fi
+    "$SOURCE_DIR/libexec/jailbox-core" "$version" version ||
+        die "incompatible jailbox program. Build checkout programs or download the release for your platform."
+}
+
 install_from_release() {
-    local tmp_dir tarball checksums tar_list expected actual release_dir
+    local tmp_dir tarball checksums tar_list expected actual release_dir platform asset
+
+    platform=$(release_platform) || exit 1
+    asset="$APP_NAME-latest-$platform.tar.gz"
 
     tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_NAME}.install.XXXXXX")"
     RELEASE_TMP_DIR="$tmp_dir"
@@ -166,18 +198,18 @@ install_from_release() {
     }
     trap cleanup_release_download EXIT
 
-    tarball="$tmp_dir/$APP_NAME-latest.tar.gz"
+    tarball="$tmp_dir/$asset"
     checksums="$tmp_dir/SHA256SUMS"
     tar_list="$tmp_dir/tar.list"
 
     echo "Downloading jailbox..."
-    download_file "$RELEASE_BASE_URL/$APP_NAME-latest.tar.gz" "$tarball"
+    download_file "$RELEASE_BASE_URL/$asset" "$tarball"
     download_file "$RELEASE_BASE_URL/SHA256SUMS" "$checksums"
 
-    expected="$(awk -v file="$APP_NAME-latest.tar.gz" '$2 == file { print $1; exit }' "$checksums")"
-    [ -n "$expected" ] || die "checksum file does not include $APP_NAME-latest.tar.gz"
+    expected="$(awk -v file="$asset" '$2 == file { print $1; exit }' "$checksums")"
+    [ -n "$expected" ] || die "checksum file does not include $asset"
     actual="$(sha256 "$tarball" | awk '{ print $1 }')"
-    [ "$actual" = "$expected" ] || die "checksum verification failed for $APP_NAME-latest.tar.gz"
+    [ "$actual" = "$expected" ] || die "checksum verification failed for $asset"
 
     tar -tzf "$tarball" > "$tar_list"
     release_dir="$(sed -n '1{s#/.*##;p;q;}' "$tar_list")"
@@ -196,6 +228,10 @@ copy_bundle() {
 
     tmp_dir="$1"
     cp -R "$SOURCE_DIR/." "$tmp_dir/" || die "could not copy installer bundle"
+    # Checkout-only build inputs are never part of an installed runtime.
+    rm -rf -- "$tmp_dir/go.mod" "$tmp_dir/go.sum" "$tmp_dir/internal" \
+        "$tmp_dir/container/cmd" "$tmp_dir/container/internal" \
+        "$tmp_dir/host/core/cmd" "$tmp_dir/host/core/internal" "$tmp_dir/libexec/native"
     # Release bundles include these documents; checkouts keep them above src/.
     for document in README.md LICENSE; do
         if [ ! -f "$tmp_dir/$document" ]; then
@@ -220,6 +256,7 @@ install_jailbox() {
     local parent_dir tmp_dir backup_dir
 
     validate_source_tree
+    validate_programs
     # Streamed installs reach this check in the downloaded bundle's installer.
     # Recovery/help remain available even when runtime utilities are missing.
     # shellcheck source=src/host/prerequisites.sh

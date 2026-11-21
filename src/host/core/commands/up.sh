@@ -60,7 +60,7 @@ bring_up_sandbox() {
         # Classify launch inputs before the wrapper build. Mount construction
         # repeats this to catch subsequent path replacement.
         finalize_project_path_policy mounted || return 1
-        build_jailbox_image
+        build_jailbox_image || return 1
     fi
     if [ "$OBSERVED_PROXY_STATE" = absent ]; then
         build_current_proxy_image || return 1

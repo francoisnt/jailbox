@@ -91,8 +91,8 @@ lifecycle_fault_event_applies() {
     case "${LIFECYCLE_COMMAND_CONTRACTS[$command]}:$policy" in
         launch:resume) [[ "$event" = podman\ start\ * ]] ;;
         launch:plain-network) [[ "$event" = podman\ network\ create\ * && "$event" = *-net ]] ;;
-        launch:host-forwarding) [[ "$event" = python3\ *forwarding/main.py\ * ]] ;;
-        launch:home-setup) [[ "$event" = ssh\ *jailbox-exec-argv* || "$event" = mv\ *home-setup-complete* ]] ;;
+        launch:host-forwarding) [[ "$event" = jailbox-core\ dev\ * ]] ;;
+        launch:home-setup) [[ "$event" = ssh\ *jailbox-container*exec* || "$event" = mv\ *home-setup-complete* ]] ;;
         # From home creation on, the temporary home exists and recovery must
         # delete it, unlike the persistent home of the covering sweep.
         launch:new-ephemeral)
@@ -131,13 +131,13 @@ lifecycle_fault_requirements() {
             ;;
         launch:host-forwarding)
             requirements=(
-                'forwarding-policy-publication|1|^python3 .*forwarding/main[.]py publish '
-                'forwarding-transport-start|1|^python3 .*forwarding/main[.]py start '
+                'forwarding-policy-publication|1|^jailbox-core dev publish '
+                'forwarding-transport-start|1|^jailbox-core dev start '
             )
             ;;
         launch:home-setup)
             requirements=(
-                'setup-execution|1|^ssh .*jailbox-exec-argv'
+                'setup-execution|1|^ssh .*jailbox-container.*exec'
                 'setup-record-publication|1|^mv .* /.*home-setup-complete$'
             )
             ;;

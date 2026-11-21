@@ -491,17 +491,16 @@ can break existing inputs without changing a declaration name.
 
 ### Installing a fixed release
 
-The published installer downloads the latest release by default, including when
-you save it and rerun it later. To select a fixed release, set
-`JAILBOX_RELEASE_BASE_URL` on the Bash process running the installer. For example,
-replace `v0.8.0` with your chosen published tag:
+Download `install.sh` from the selected tag. A saved installer keeps using
+its release's assets after a newer release is published.
 
 ```bash
-curl -fsSL https://github.com/francoisnt/jailbox/releases/latest/download/install.sh | \
-  JAILBOX_RELEASE_BASE_URL=https://github.com/francoisnt/jailbox/releases/download/v0.8.0 bash
+version=vX.Y.Z # Replace with the desired published tag.
+curl -fsSLO "https://github.com/francoisnt/jailbox/releases/download/$version/install.sh"
+bash install.sh
 ```
 
-Each release contains its own `jailbox-latest.tar.gz` alias and `SHA256SUMS`.
-The override selects both files from that release. With the default latest URL,
-a release published between the two downloads can cause a checksum mismatch;
-installation stops before replacing the installed copy. Retry the command.
+The installer selects `jailbox-latest-OS-ARCH.tar.gz` and verifies it against
+that release's `SHA256SUMS`. Each release also publishes the same archive as
+`jailbox-vX.Y.Z-OS-ARCH.tar.gz`. The supported hosts are Linux and macOS on
+amd64 and arm64. Release installations include the host and sandbox programs.

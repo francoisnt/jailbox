@@ -4,7 +4,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lifecycle-logging.sh"
 
 lifecycle_setup() {
-    local tool variable
+    local tool variable asset
     # Reuse production existence semantics; fixture expectations and survivor
     # assertions remain independent of this primitive observation.
     # shellcheck source=src/host/core/resources/inventory.sh
@@ -23,10 +23,19 @@ lifecycle_setup() {
     export JAILBOX_TEST_LEDGER_DIR="${JAILBOX_TEST_LEDGER_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/jailbox-test-ledger}"
     export XDG_STATE_HOME="$FIXTURE/state"
     export LIFECYCLE_REAL_BIN="$FIXTURE/real"
-    for tool in podman ssh ssh-keygen mkdir cp chmod mv rm mktemp python3; do
+    for tool in podman ssh ssh-keygen mkdir cp chmod mv rm mktemp; do
         ln -s "$(command -v "$tool")" "$LIFECYCLE_REAL_BIN/$tool"
         ln -s "$ROOT/tests/lib/lifecycle-fault.sh" "$FIXTURE/bin/$tool"
     done
+    # Interpose the private executable only in this worker's runtime tree.
+    local runtime="$FIXTURE/runtime"
+    mkdir -p "$runtime/libexec"
+    cp -p "$ROOT/src/jailbox" "$runtime/jailbox"
+    for asset in host container public-api.sh; do ln -s "$ROOT/src/$asset" "$runtime/$asset"; done
+    for asset in linux-amd64 linux-arm64; do ln -s "$ROOT/src/libexec/$asset" "$runtime/libexec/$asset"; done
+    ln -s "$ROOT/src/libexec/jailbox-core" "$LIFECYCLE_REAL_BIN/jailbox-core"
+    ln -s "$ROOT/tests/lib/lifecycle-fault.sh" "$runtime/libexec/jailbox-core"
+    LIFECYCLE_CLI="$runtime/jailbox"
     ledger_begin_run lifecycle-worker
     printf '%s\n' "$LEDGER_FILE" > "$LOG/ledger"
     ledger_record_project_resources "$PROJECT"
@@ -41,7 +50,7 @@ lifecycle_setup() {
     ACTIVE_PID=""
     git -C "$PROJECT" init -q
     # shellcheck disable=SC2016 # Positional arguments belong to the child shell.
-    test_log_capture "$LOG/init" bash -c 'cd "$1" && "$2" init' _ "$PROJECT" "$ROOT/src/jailbox"
+    test_log_capture "$LOG/init" bash -c 'cd "$1" && "$2" init' _ "$PROJECT" "$LIFECYCLE_CLI"
     chmod 755 "$PROJECT"
     chmod 644 "$PROJECT/jailbox.conf"
     # Remove inherited launch policy: fixtures specify their entire policy.
@@ -58,7 +67,7 @@ cli_exec() {
     # it can reap the separately isolated CLI process group.
     LEDGER_FILE="$LIFECYCLE_POOL_LEDGER" ledger_record_owner "$BASHPID" || exit 1
     cd "$PROJECT" || exit 1
-    exec setsid env PATH="$FIXTURE/bin:$PATH" "$ROOT/src/jailbox" "$@"
+    exec setsid env PATH="$FIXTURE/bin:$PATH" "$LIFECYCLE_CLI" "$@"
 }
 
 matrix_case_begin() {

@@ -45,13 +45,16 @@ Core also owns optional host command forwarding. It snapshots the selected
 policy before publishing wrappers and runs a separate SSH connection with a
 reverse Unix socket. A wrapper sends its arguments and working directory
 through that socket. The host checks the snapshot, pins the project directory
-for the command, and relays the three standard streams. Stop and clean retire
+for the command, and relays the three standard streams. Each request has its
+own Go worker process and working directory. Stop and clean retire
 the connection before removing sandbox resources. See the
 [forwarding security rules](docs/security.md#host-command-forwarding).
 
-Runtime sources live under `src/`. Packaging flattens that directory into the
-bundle root and adds `README.md`, `LICENSE`, and `docs/`; repository tooling stays outside
-the bundle. Source execution uses `src/jailbox`, while installed paths stay unchanged.
+Runtime sources and the Go module live under `src/`. The core program handles
+host forwarding and encodes SSH command arguments. The container program
+decodes those arguments and implements the forwarding client. Both use the
+shared codec in `src/internal/` and require the caller's release version to
+match. The Bash frontend reaches core through the public CLI.
 
 This is one repository, one installed `jailbox` executable, and one release.
 The frontend/core boundary is a division of responsibilities inside that product.
@@ -485,8 +488,8 @@ prove that mount while still missing an editor-specific startup failure.
 
 | Gate | Main question | Approach and scope |
 |---|---|---|
-| `lint` | Does every shell script pass static analysis? | Full ShellCheck; static, so CI runs it once rather than in every portable environment |
-| `portable` | Do local contracts, failure handling, and the distributed installation work? | Generated-file checks, every product and harness suite, syntax, packaging, install/update/uninstall; fake external tools exercise controlled failures |
+| `lint` | Does the source pass static checks? | Full ShellCheck, Go formatting, and `go vet` |
+| `portable` | Do local contracts, failure handling, and the distributed installation work? | Go tests, generated-file checks, product and harness suites, syntax, cross-platform builds, and install/update/uninstall |
 | `runtime` | Does the actual container enforce security and support headless use? | Real wrapper images, hardening and negative-image checks, headless CLI end-to-end tests |
 | `matrix` | What happens across partial, damaged, and interrupted lifecycle states? | Independently prepared Debian images, constructed inventories, injected failures and interruptions, observed survivors, explicit recovery |
 | `editor` | Can the supported editor actually attach and operate? | Real editor and Remote SSH, profiles, task/proof behavior, supported image combinations and network modes |
@@ -510,8 +513,7 @@ and installation. Ownership does not require separate user-facing test modes.
 `tests/run` validates prerequisites for all selected gates before running any.
 No argument runs all five in order, stopping on failure. Runtime and matrix are
 independent; editor prepares its own positive images. Pull requests, release and
-canary runs use all five. Python is a test-tool
-dependency, not currently a jailbox runtime dependency.
+canary runs use all five. Python supports repository tooling and test fixtures.
 
 ### What makes a useful regression
 
@@ -581,11 +583,11 @@ run relevant cases under both `0022` and `0002` umasks.
 
 ## 9. Installation, versioning, and release
 
-The installed artifact contains the host and container programs needed at
-runtime. Packaging copies the complete `src/` tree into the bundle root and
-adds README and the version stamp. Installation checks the basic bundle shape
-and copies its contents recursively, so new runtime files need no separate
-installer inventory. Downloaded archives are checksum-verified; failed extraction
+Each archive ships the core program for one host platform and both Linux
+container programs. Packaging copies the runtime files into the bundle root
+with the documentation and version stamp. The installer verifies the host
+program's version before copying the bundle. The wrapper build stages the
+Linux program for the development image's architecture. Downloaded archives are checksum-verified; failed extraction
 or copying stops installation. Packaging and installation regressions verify
 that new runtime files survive both steps. README ships with the runtime; the
 architecture and contributor guides remain repository-only. See the
