@@ -1,0 +1,66 @@
+# 13. Image environment in sandbox sessions (draft)
+
+## Intent
+
+Status: draft, pending the open details below. This document does not
+authorize implementation. It is independent of the Go series and is numbered
+after `12-go-vm-frontend-plan.md`.
+
+### Problem
+
+Every jailbox session (terminal, editor, `jailbox exec`, home setup) arrives
+through the sandbox's SSH server, which builds each session's environment from
+scratch. Variables the development image sets with `ENV`, such as `PATH`,
+`GOPATH`, `JAVA_HOME`, or `LANG`, are lost. With the official `golang` image,
+for example, `go` is not found. Today the only exception is the image `PATH`,
+which `jailbox-start` passes on when host command forwarding is enabled.
+
+### Required behavior
+
+- Every session type sees the development image's `ENV` variables with their
+  image values: interactive login shells, `ssh` with a remote command, the
+  editor's Remote SSH server, `jailbox exec`, and home setup.
+- Jailbox keeps control of these names, which never take image values:
+  `HOME`, `USER`, `LOGNAME`, `SHELL`, `PWD`, `HOSTNAME`, `TERM`, the proxy
+  variables (`HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, `https_proxy`,
+  `NO_PROXY`, `no_proxy`), and names starting with `JAILBOX_`.
+- The image `PATH` applies in every session type, including login shells whose
+  distribution profile resets `PATH`. When forwarding is enabled, the
+  host-command directory stays first.
+- Values come from the development image and are recorded during the wrapper
+  build; none pass through the host. They are data and are never evaluated as
+  shell code.
+- A variable whose name or value cannot be delivered exactly (for example a
+  value containing a double quote or a newline) is left out, and the wrapper
+  build prints a warning naming it. The launch continues.
+- Update the image requirements in `docs/development.md` and the session
+  description in `docs/security.md`.
+
+Replace the existing special case: the `PATH` handover in
+`ssh_session_environment` in `src/container/runtime/bin/jailbox-start`,
+including its "image PATH cannot be used for SSH host forwarding" refusal,
+moves to the general mechanism. Return the root `Containerfile` to plain `ENV`
+for Go, removing its `/usr/local/bin` links and `go.env` edits.
+
+### Acceptance
+
+The runtime gate builds an image whose `ENV` sets `PATH`, a value with spaces,
+an excluded name, and a value that cannot be delivered. Each session type sees
+the expected values, the build warns about the undeliverable one, and proxy
+values stay jailbox's in egress mode. Unit tests cover the filtering.
+
+### Open details
+
+The final exclusion list (for example the SSH server's own `SSH_*` variables),
+the delivery mechanism and its quoting across supported OpenSSH versions, and
+how the login-shell `PATH` restore combines with the existing forwarding
+profile script.
+
+## Implementation detail
+
+The wrapper build's `RUN` step already sees the image's `ENV`, so
+`src/container/setup.sh` can record the filtered variables under
+`/usr/local/lib/jailbox/`. `jailbox-start` can add them to its single server
+`SetEnv` directive (sshd uses only the first). The profile script installed
+from `src/container/runtime/lib/jailbox/forward-path.sh` can restore the
+recorded `PATH` after the distribution profile, reading the record as data.
