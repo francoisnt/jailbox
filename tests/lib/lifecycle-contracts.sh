@@ -13,7 +13,7 @@ declare -A LIFECYCLE_COMMAND_CONTRACTS=(
     [up]=launch [stop]=stop [--clean]=clean
 )
 declare -A LIFECYCLE_FAULT_SCENARIOS=(
-    [up]='false none new-ephemeral resume plain-network home-setup' [stop]='false true' [--clean]='false true'
+    [up]='false none new-ephemeral resume plain-network home-setup host-forwarding' [stop]='false true' [--clean]='false true'
 )
 # Long sweeps run as several jobs, possibly on different machines. Each piece
 # records its own trace and takes one contiguous share of the selected steps;
@@ -31,7 +31,7 @@ declare -A LIFECYCLE_FAULT_PIECES=(
 declare -A LIFECYCLE_FAULT_COVERED_BY=(
     [up:new-ephemeral]=up:none [stop:true]=stop:false
     [--clean:true]=--clean:false [--clean:false]=stop:false
-    [up:resume]=- [up:plain-network]=- [up:home-setup]=-
+    [up:resume]=- [up:plain-network]=- [up:home-setup]=- [up:host-forwarding]=-
 )
 
 validate_lifecycle_contracts() {
@@ -91,6 +91,7 @@ lifecycle_fault_event_applies() {
     case "${LIFECYCLE_COMMAND_CONTRACTS[$command]}:$policy" in
         launch:resume) [[ "$event" = podman\ start\ * ]] ;;
         launch:plain-network) [[ "$event" = podman\ network\ create\ * && "$event" = *-net ]] ;;
+        launch:host-forwarding) [[ "$event" = python3\ *forwarding/main.py\ * ]] ;;
         launch:home-setup) [[ "$event" = ssh\ *jailbox-exec-argv* || "$event" = mv\ *home-setup-complete* ]] ;;
         # From home creation on, the temporary home exists and recovery must
         # delete it, unlike the persistent home of the covering sweep.
@@ -127,6 +128,12 @@ lifecycle_fault_requirements() {
             ;;
         launch:plain-network)
             requirements=('plain-network|1|^podman network create .* [^ ]+-net$')
+            ;;
+        launch:host-forwarding)
+            requirements=(
+                'forwarding-policy-publication|1|^python3 .*forwarding/main[.]py publish '
+                'forwarding-transport-start|1|^python3 .*forwarding/main[.]py start '
+            )
             ;;
         launch:home-setup)
             requirements=(

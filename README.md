@@ -143,6 +143,10 @@ host services listening on bridge-accessible addresses can remain reachable
 even with filtering enabled. Containers rely on the Linux kernel and container
 runtime for isolation. Persistent home contents remain sandbox-controlled.
 An optional `SETUP_INPUT_SCRIPT` runs on the host with your permissions.
+If you enable `HOST_COMMAND_POLICY`, sandbox programs can invoke the host
+commands you approve. Those commands run with your host permissions and can
+reach files and networks the sandbox cannot. Review both the launch
+configuration and the selected policy before enabling forwarding.
 
 Read the [security guide](docs/security.md) for the full protections, path rules,
 and threat model.

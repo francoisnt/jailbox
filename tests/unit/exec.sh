@@ -5,9 +5,8 @@ export CONVERGENCE_REAL_SLEEP
 CONVERGENCE_REAL_SLEEP=$(command -v sleep)
 # shellcheck source=tests/lib/convergence-fixture.sh
 source "$ROOT/tests/lib/convergence-fixture.sh"
-export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper" CONVERGENCE_DRAIN_STDIN=true
-# shellcheck disable=SC2016 # The fixture decoder expands its working directory.
-sed 's|^cd /home/jailbox/project |cd "$CONVERGENCE_ENGINE" |' "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+write_convergence_exec_helper
+export CONVERGENCE_DRAIN_STDIN=true
 export TMPDIR="$FIXTURE/tmp"
 mkdir -m 700 "$TMPDIR"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -20,11 +19,11 @@ expect_success </dev/null
 source "$ROOT/src/host/core/commands/exec.sh"
 # shellcheck source=src/host/core/resources/ssh.sh
 source "$ROOT/src/host/core/resources/ssh.sh"
+SCRIPT_DIR="$ROOT/src"
 transport_exec() (
     require_command() { command -v "$1" >/dev/null; }
     load_environment_config() { return 0; }
     validate_attachment() { SSH_CONFIG=$GENERATION/ssh_config; CONTAINER_NAME=$PREFIX; }
-    die() { fail "$@"; }
     run_exec "$@"
 )
 # shellcheck disable=SC2016 # Shell syntax is deliberately literal argv data.
@@ -44,6 +43,10 @@ for status in 0 1 42 126 127 130 255; do
     [[ "$result" = "$status" ]] || fail "status $status became $result"
 done
 result=0
+# shellcheck disable=SC2016 # The remote shell signals itself.
+transport_exec bash -c 'kill -s PIPE "$$"; exit 42' > "$FIXTURE/output" 2> "$FIXTURE/error" || result=$?
+[[ "$result" = 141 ]] || fail 'exec lost the command default SIGPIPE disposition'
+result=0
 launch exec bash -c 'exit 42' > "$FIXTURE/output" 2> "$FIXTURE/error" || result=$?
 [[ "$result" = 42 ]] || fail 'CLI lost remote failure status'
 result=0
@@ -57,7 +60,8 @@ for arguments in none delimiter empty; do
     [[ "$result" = 2 ]] || fail 'missing command accepted'
 done
 # Decoder corruption, missing delimiter, empty command, extra frames, and limit.
-for frame in '' '!' Y2F0 Y2F0AA Y2F0AA==junk AA==; do
+truncated=$(printf 'printf\0should-not-run' | base64)
+for frame in '' '!' Y2F0 Y2F0AA Y2F0AA==junk AA== "$truncated"; do
     if bash "$CONVERGENCE_EXEC_HELPER" "$frame" < /dev/null > "$FIXTURE/output" 2> "$FIXTURE/error"; then fail "accepted frame $frame"; fi
     [[ -z $(find "$TMPDIR" -type f -print) ]] || fail 'decoder leaked temporary data'
 done
@@ -105,35 +109,25 @@ cmp "$FIXTURE/expected" "$FIXTURE/two"
 [[ -z $(find "$TMPDIR" -type f -print) ]] || fail 'successful decoder leaked data'
 printf 'PASS: exec argv, stdin, framing, limits, statuses, concurrency, and cleanup\n'
 
-# Pre-exec failures must clean decoded bytes and must never run the command.
-frame=$(printf '%s\0' printf executed | base64 | tr -d '\n')
-if CONVERGENCE_ENGINE="$FIXTURE/missing-directory" bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output" 2> "$FIXTURE/error"; then fail 'missing working directory accepted'; fi
-[[ ! -s "$FIXTURE/output" && -z $(find "$TMPDIR" -type f -print) ]] || fail 'cd failure executed or leaked data'
-mkdir "$FIXTURE/decoder-tools"
-export EXEC_REAL_MKTEMP EXEC_REAL_RM
-EXEC_REAL_MKTEMP=$(command -v mktemp)
-EXEC_REAL_RM=$(command -v rm)
-cp "$ROOT/tests/fixtures/exec/mktemp.sh" "$FIXTURE/decoder-tools/mktemp"
-cp "$ROOT/tests/fixtures/exec/rm.sh" "$FIXTURE/decoder-tools/rm"
-chmod 755 "$FIXTURE/decoder-tools/"*
-PATH="$FIXTURE/decoder-tools:$PATH" bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output"
-[[ $(cat "$FIXTURE/output") = executed ]] || fail 'secure decoder allocation failed'
-if PATH="$FIXTURE/decoder-tools:$PATH" EXEC_FAIL_TEMP=true bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output" 2> "$FIXTURE/error"; then fail 'mktemp failure accepted'; fi
-[[ ! -s "$FIXTURE/output" ]] || fail 'command ran after mktemp failure'
-for signal in HUP INT TERM; do
-    if PATH="$FIXTURE/decoder-tools:$PATH" EXEC_INTERRUPT_TEMP="$signal" bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output" 2> "$FIXTURE/error"; then fail 'allocation interruption accepted'; fi
-    [[ ! -s "$FIXTURE/output" && -z $(find "$TMPDIR" -type f -print) ]] || fail 'allocation interruption executed or leaked data'
-done
-if PATH="$FIXTURE/decoder-tools:$PATH" EXEC_FAIL_CLEANUP=true bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output" 2> "$FIXTURE/error"; then fail 'cleanup failure accepted'; fi
-[[ ! -s "$FIXTURE/output" ]] || fail 'command ran after cleanup failure'
-# Injected deletion failure intentionally leaves the fixture file for its owner.
-find "$TMPDIR" -type f -exec rm -f {} +
-printf 'PASS: decoder allocation, cleanup, and directory failures stop execution\n'
-# A decoder producer can publish complete-looking bytes and still fail.
-cp "$ROOT/tests/fixtures/exec/base64.sh" "$FIXTURE/decoder-tools/base64"
-chmod 755 "$FIXTURE/decoder-tools/base64"
+# The shared decoder retains Bash command lookup without using temporary files.
+printf '%s\n' 'printf "text script executed"' > "$CONVERGENCE_ENGINE/no-shebang"
+chmod 755 "$CONVERGENCE_ENGINE/no-shebang"
+frame=$(printf './no-shebang\0' | base64)
+TMPDIR="$FIXTURE/missing-tmpdir" bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output"
+[[ $(cat "$FIXTURE/output") = 'text script executed' ]] || fail 'decoder lost Bash text-file lookup'
+if CONVERGENCE_EXEC_PROJECT="$FIXTURE/missing-directory" bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output" 2> "$FIXTURE/error"; then
+    fail 'missing working directory accepted'
+fi
+[[ ! -s "$FIXTURE/output" ]] || fail 'command ran after cd failure'
+
+# Even a complete-looking encoded frame cannot mask producer failure.
+mkdir "$FIXTURE/encoder-tools"
+cp "$ROOT/tests/fixtures/exec/base64.sh" "$FIXTURE/encoder-tools/base64"
+chmod 755 "$FIXTURE/encoder-tools/base64"
 for interrupt in false true; do
-    if PATH="$FIXTURE/decoder-tools:$PATH" EXEC_INTERRUPT_DECODE="$interrupt" bash "$CONVERGENCE_EXEC_HELPER" "$frame" > "$FIXTURE/output" 2> "$FIXTURE/error"; then fail 'failed/interrupted decoder accepted'; fi
-    [[ ! -s "$FIXTURE/output" && -z $(find "$TMPDIR" -type f -print) ]] || fail 'failed/interrupted decoder executed or leaked data'
+    if PATH="$FIXTURE/encoder-tools:$PATH" EXEC_INTERRUPT_ENCODE="$interrupt" transport_exec printf should-not-run > "$FIXTURE/output" 2> "$FIXTURE/error"; then
+        fail 'failed/interrupted encoder accepted'
+    fi
+    [[ ! -s "$FIXTURE/output" ]] || fail 'command ran after encoding failure'
 done
-printf 'PASS: decoder producer failure and interruption preserve cleanup\n'
+printf 'PASS: shared codec preserves lookup and stops on producer or directory failure\n'

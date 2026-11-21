@@ -6,7 +6,7 @@
 # necessary but never sufficient for reuse or attachment; structural validation
 # stays a separate requirement.
 #
-# The digest covers references, not content: a mutable or re-pulled DEV_IMAGE
+# The digest covers the host command policy snapshot and other input references: a mutable or re-pulled DEV_IMAGE
 # tag, edited Containerfile bytes, and changed build-context contents never
 # change it. Only the exact jailbox version, the effective machine
 # configuration values, and the identity of the selected Containerfile do.
@@ -160,6 +160,10 @@ config_digest_stream() {
         done
     done
 
+    if [[ -n "${HOST_COMMAND_POLICY:-}" ]]; then
+        is_config_digest_value "$FORWARD_POLICY_DIGEST" || die "internal error: missing host command policy digest"
+        printf 'host-command-policy\t%s\n' "$FORWARD_POLICY_DIGEST"
+    fi
     config_digest_containerfile_record "$mode"
 }
 

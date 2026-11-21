@@ -19,6 +19,12 @@ fault_baseline() {
         launch:new-ephemeral)
             construct absent egress none true
             ;;
+        launch:host-forwarding)
+            construct absent plain none true
+            export JAILBOX_CONFIG_HOST_COMMAND_POLICY=host-policy
+            printf 'hostname\n' > "$PROJECT/host-policy"
+            chmod 644 "$PROJECT/host-policy"
+            ;;
         launch:home-setup)
             construct absent plain none true
             export JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup-home.sh LIFECYCLE_SETUP_FRAME
@@ -145,6 +151,7 @@ run_mutation_faults() {
     : > "$LIFECYCLE_EVENTS"
     expect_success "$command"
     if [[ "$policy" = home-setup ]]; then assert_setup_marker; fi
+    if [[ "$policy" = host-forwarding ]]; then assert_forwarding_ready; fi
     cp "$LIFECYCLE_EVENTS" "$trace"
     unset LIFECYCLE_EVENTS
     lifecycle_require_fault_coverage "$trace" "$command" "$policy" || matrix_die 'persistent mutation coverage regressed'
@@ -206,6 +213,7 @@ run_mutation_faults() {
                 require_absent network "$NETWORK-external"
                 require_absent network "$NETWORK"
                 [[ ! -e "$GENERATION" ]] || matrix_die 'handled failure left generation material'
+                [[ ! -e "$STATE/forwarding" ]] || matrix_die 'handled failure left forwarding state'
                 if compgen -G "$STATE/.ssh-generation.*" >/dev/null; then matrix_die 'handled failure left partial generation'; fi
                 if [[ "$home_preexisting" = false ]]; then require_absent volume "$HOME_VOLUME"; fi
             fi
@@ -221,13 +229,16 @@ run_mutation_faults() {
         # These cases have valid home metadata. Stop/clean is the
         # owning recovery for interrupted operations; execute it.
         expect_success "$recovery"
-        if [[ "$contract:$policy" = launch:new-ephemeral || "$contract:$policy" = launch:home-setup ]]; then
+        [[ ! -e "$STATE/forwarding" ]] || matrix_die 'recovery left forwarding state'
+        if [[ "$contract:$policy" = launch:new-ephemeral || "$contract:$policy" = launch:home-setup ||
+            "$contract:$policy" = launch:host-forwarding ]]; then
             require_absent volume "$HOME_VOLUME"
         fi
         if [[ "$contract" != launch ]]; then assert_cleanup "$command" "$policy"; fi
         expect_success up
         assert_service
         if [[ "$policy" = home-setup ]]; then assert_setup_marker; fi
+        if [[ "$policy" = host-forwarding ]]; then assert_forwarding_ready; fi
         if [[ "$contract:$policy" = launch:none ]]; then
             # Forced termination may leave a newly created persistent
             # home, but it had no pre-existing user marker to retain.
@@ -238,6 +249,12 @@ run_mutation_faults() {
         matrix_observe recovered running allow readiness
         matrix_case_pass
     done
+}
+
+assert_forwarding_ready() {
+    local result
+    result=$(cd "$PROJECT" && "$ROOT/src/jailbox" exec hostname) || matrix_die 'forwarding did not accept the host command'
+    [[ "$result" = "$(hostname)" ]] || matrix_die 'forwarded hostname did not run on the host'
 }
 
 assert_setup_marker() {

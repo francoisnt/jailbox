@@ -63,6 +63,7 @@ case "$kind $action" in
             *'{{.NetworkID}}'*) printf '%064d\n' 3 ;;
             '{{(index .Subnets 0).Subnet}}'|'{{ (index .Subnets 0).Subnet }}') echo 10.240.57.0/24 ;;
             '{{.Mountpoint}}') echo "$state/home" ;;
+            '{{json .Mounts}}') printf '[{"Type":"volume","RW":true,"Source":"%s"}]\n' "$state/home" ;;
             *'.Gateway'*) echo 10.89.0.1 ;;
             *'unsafe authentication'* ) exit 125 ;;
             *'overlay'* ) echo ok ;;
@@ -164,6 +165,7 @@ case "$kind $action" in
                 rm -f "$state/container.$name" "$state/container.$name."*
                 ;;
             exec)
+                if [[ ${3:-} = /bin/bash && -n ${CONVERGENCE_FORWARD_ROOT:-} ]]; then exit 0; fi
                 [[ ${CONVERGENCE_PROXY_FAILURE:-} != true ]] || exit 125
                 printf 'HTTP/1.0 403 Forbidden\r\n\r\n'
                 ;;

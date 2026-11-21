@@ -5,7 +5,10 @@ reset_fixture() {
     local name
     unset LIFECYCLE_EVENTS LIFECYCLE_FAULT_AT LIFECYCLE_FAULT_MODE LIFECYCLE_FAIL_SSH LIFECYCLE_FAIL_REMOVE
     unset LIFECYCLE_FAIL_HOME_INSPECT
-    unset LIFECYCLE_SETUP_FRAME JAILBOX_CONFIG_HOME_SETUP_SCRIPT
+    unset LIFECYCLE_SETUP_FRAME JAILBOX_CONFIG_HOME_SETUP_SCRIPT JAILBOX_CONFIG_HOST_COMMAND_POLICY
+    if [[ -d "$STATE/forwarding" ]]; then
+        (cd "$PROJECT" && "$ROOT/src/jailbox" stop) >/dev/null || matrix_die 'could not retire forwarding fixture'
+    fi
     for name in "$PREFIX" "$PREFIX-proxy"; do
         if exists container "$name"; then podman rm -f "$name" >/dev/null; fi
     done

@@ -23,7 +23,7 @@ lifecycle_setup() {
     export JAILBOX_TEST_LEDGER_DIR="${JAILBOX_TEST_LEDGER_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/jailbox-test-ledger}"
     export XDG_STATE_HOME="$FIXTURE/state"
     export LIFECYCLE_REAL_BIN="$FIXTURE/real"
-    for tool in podman ssh ssh-keygen mkdir cp chmod mv rm mktemp; do
+    for tool in podman ssh ssh-keygen mkdir cp chmod mv rm mktemp python3; do
         ln -s "$(command -v "$tool")" "$LIFECYCLE_REAL_BIN/$tool"
         ln -s "$ROOT/tests/lib/lifecycle-fault.sh" "$FIXTURE/bin/$tool"
     done

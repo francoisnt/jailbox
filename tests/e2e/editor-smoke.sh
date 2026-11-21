@@ -741,6 +741,9 @@ validate_proof() {
     assert_proof_contains "$proof_path" "run_id=$run_id" "proof file belongs to this test run" || rc=1
     assert_proof_contains "$proof_path" "workspace_writable=yes" "remote workspace is writable" || rc=1
     assert_proof_contains "$proof_path" "pwd=/home/jailbox/project" "probe cwd is the mounted remote workspace" || rc=1
+    if [[ "$stage" = debian ]]; then
+        assert_proof_contains "$proof_path" "hostname=$(hostname)" "editor shell task resolves the forwarded host command" || rc=1
+    fi
 
     if [[ "$stage" == "egress" ]]; then
         assert_proof_contains "$proof_path" "proxy_configured=yes" "editor task inherits SSH proxy configuration" || rc=1
@@ -957,7 +960,9 @@ run_stage() {
     # seeding the editor cache into a retained home before launch.
     if [[ "$stage" = debian ]]; then
         EDITOR_CACHE_SEEDED=0
-        printf 'HOME_SETUP_SCRIPT=setup-home.sh\n' >> "$project_dir/jailbox.conf" || return 1
+        printf 'HOME_SETUP_SCRIPT=setup-home.sh\nHOST_COMMAND_POLICY=editor-host-policy\n' >> "$project_dir/jailbox.conf" || return 1
+        printf 'hostname\n' > "$project_dir/editor-host-policy" || return 1
+        chmod 644 "$project_dir/editor-host-policy" || return 1
         printf '#!/bin/sh\nexit 37\n' > "$project_dir/setup-home.sh" || return 1
         chmod 755 "$project_dir/setup-home.sh" || return 1
     elif ! seed_editor_server_cache "$project_dir" "$stage"; then

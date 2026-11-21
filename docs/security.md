@@ -171,6 +171,38 @@ scripts can print diagnostics, so keep secrets out of diagnostics and the
 sandbox script's stdout. Any credentials installed by setup or cached by its
 tools belong to the sandbox home and follow its retention policy.
 
+## Host command forwarding
+
+Forwarding is off until you set `HOST_COMMAND_POLICY` in the launch
+configuration. Review both that configuration and the selected policy file
+before launch, especially if an earlier sandbox could write either file.
+Core mounts the selected file read-only and keeps a private snapshot on the
+host. Edits take effect after `jailbox stop` and a fresh launch.
+
+Any sandbox process that reaches the forwarding socket can request the
+invocations listed in the policy. The host checks every request against the
+snapshot. Approved commands run with your host permissions and launch
+environment. Their filesystem and network access can bypass writable,
+read-only, hidden-path, and egress rules that apply inside the container.
+Jailbox refuses requests from working directories covered by `HIDDEN_PATHS`.
+Argument patterns limit spelling. Approved programs can still use path
+arguments to reach hidden files, follow symlinks, traverse parent directories,
+load configuration and plugins, and use host credentials or network services.
+
+Jailbox resolves each executable on the host and rejects paths inside the
+project or a container-writable mount. That check covers the executable path.
+Review any code the program loads separately, including the interpreter named
+by a script's first line and helpers, hooks, and plugins under the project
+tree. Another host process with write access can replace an executable at its
+retained path.
+
+The service uses a dedicated connection authenticated with the sandbox's
+pinned SSH host key. Stopping revokes the endpoint and terminates active
+foreground command groups while the service is alive. If the connection
+breaks, a command may have completed some or all of its effects. Jailbox
+reports interruption and never retries the command. Abrupt service death or
+programs that detach can leave host processes running.
+
 ## Network enforcement
 
 **How egress enforcement works:** When `EGRESS_ALLOW` is set, jailbox places

@@ -8,6 +8,8 @@ set -eu
 proof=.jailbox-editor-proof
 run_id=$(cat .jailbox-editor-run-id)
 test -n "$run_id"
+# Status must be checked before it is masked by the proof-file write.
+host_name=$(hostname)
 
 write_probe=.jailbox-editor-write-check.$$
 : > "$write_probe"
@@ -16,7 +18,7 @@ write_probe=.jailbox-editor-write-check.$$
     echo "run_id=$run_id"
     echo "whoami=$(whoami)"
     echo "uid=$(id -u)"
-    echo "hostname=$(hostname)"
+    echo "hostname=$host_name"
     echo "pwd=$(pwd)"
     echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "REMOTE_CONTAINERS=${REMOTE_CONTAINERS:-}"

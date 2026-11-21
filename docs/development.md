@@ -140,6 +140,51 @@ a persistent home, jailbox keeps that home for recovery and blocks normal
 launches until you recover or delete it. Follow the recovery diagnostic if
 cleanup leaves resources behind.
 
+### Forward selected host commands
+
+Set `HOST_COMMAND_POLICY=jailbox.host-policy` in `jailbox.conf`. The host
+needs Python 3 and each approved executable on its `PATH`. The wrapper
+image installs Python 3 for `jailbox exec` argument decoding and forwarding,
+including in sandboxes with forwarding disabled. This policy permits
+`notify-send "Build finished"` inside the sandbox.
+
+```text
+# One message argument.
+notify-send \
+    {{.*}}
+```
+
+Jailbox puts wrappers for approved names first in the sandbox's normal
+`PATH`. Jailbox refuses names that collide with required helpers or are
+shadowed by shell builtins. Use an explicit sandbox executable path to run
+the local version.
+The wrapper passes arguments unchanged and runs the program from the
+corresponding project directory on the host. Relative path arguments are
+interpreted by the host program from that directory. Absolute arguments keep
+their original spelling. The command receives pipes for stdin, stdout, and
+stderr, so pipelines and exit statuses work. Interactive terminal programs
+require a separate design.
+
+Jailbox writes a diagnostic to stderr when it refuses a request or loses the
+connection. Those failures can share an exit code with a host command.
+
+Each logical policy line describes one complete invocation. Spaces and tabs
+separate arguments. Use single or double quotes to group literal text,
+`''` for an empty argument, and backslash to make the next character
+literal. `{{regex}}` matches part or all of a single argument, including
+inside quotes. Regexes use byte-oriented POSIX extended syntax in the C
+locale. Dot matches newlines. Group repetition expressions next to the
+closing delimiter, as in `{{([0-9]{2})}}`. A line-ending backslash at an
+argument boundary joins the next line. Blank lines and lines starting with
+`#` can appear between definitions. Inline `#` is literal text.
+Exactly one definition must match all the arguments. Policies are limited to
+32 KiB, argument patterns to 512 bytes, and matching runs with a deadline.
+
+Use `jailbox stop` followed by your launch command to apply policy edits or
+recover failed forwarding. A running service retains the policy it started
+with. Read [the host forwarding security rules](security.md#host-command-forwarding)
+before approving a command.
+
 ### Updating
 
 Re-run the [install command](../README.md#quick-start) to get the latest published release. It cleanly replaces the previous install
@@ -259,6 +304,7 @@ external config directly rather than a symlinked spelling.
 | `EPHEMERAL_HOME` | `true` with setup, otherwise `false` | Exact lowercase `true` or `false`. `true` deletes the home on stop. Empty or other values are invalid. |
 | `HOME_SETUP_SCRIPT` | — | Executable project-relative script run in a newly created sandbox home |
 | `SETUP_INPUT_SCRIPT` | — | Executable project-relative host script whose stdout supplies setup input |
+| `HOST_COMMAND_POLICY` | — | Project-relative file granting selected host command invocations |
 | `EDITOR` | `codium`, then `code` | Editor preference (`codium` or `code`); frontend-only, file-exclusive key |
 | `EGRESS_ALLOW` | unset (unrestricted) | Comma-separated domain allowlist; enables egress control |
 | `READONLY_PATHS` | — | Comma-separated existing project paths mounted read-only |

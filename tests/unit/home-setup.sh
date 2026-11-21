@@ -11,10 +11,7 @@ SETUP_TEST_REAL_RM=$(command -v rm)
 source "$ROOT/tests/lib/convergence-fixture.sh"
 
 export SETUP_TEST_PROJECT="$FIXTURE/project" SETUP_TEST_ROOT="$FIXTURE"
-export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
-# shellcheck disable=SC2016 # The decoder expands the simulated project path.
-sed 's|^cd /home/jailbox/project |cd "$SETUP_TEST_PROJECT" |' \
-    "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+write_convergence_exec_helper "$SETUP_TEST_PROJECT"
 state=${GENERATION%/*}
 record=$state/home-setup-complete
 volume="$CONVERGENCE_ENGINE/volume.$PREFIX-home"

@@ -136,6 +136,7 @@ expected_stream=$(printf '%s\n' \
     $'scalar\tEPHEMERAL_HOME\tfalse' \
     $'scalar\tHOME_SETUP_SCRIPT\t' \
     $'scalar\tSETUP_INPUT_SCRIPT\t' \
+    $'scalar\tHOST_COMMAND_POLICY\t' \
     $'array\tEGRESS_ALLOW\t2' \
     $'value\ta.example.com' \
     $'value\tb.example.com' \
@@ -152,7 +153,7 @@ assert_eq "canonical stream is byte-exact" \
 # Golden digest for the stream above. Regenerate it deliberately whenever the
 # digest inputs or encoding change; a change here is an ordinary within-release
 # digest change, not a compatibility break, because the exact version is hashed.
-GOLDEN_DIGEST="a550af6da0db25e35d953197a156ef4d46407d41a4a4280a24d48abe68a06730"
+GOLDEN_DIGEST="47d44b30fad9da780148f119f0513c219b32b78f56c4227e99807cb1c9f9e977"
 assert_eq "golden digest vector" \
     "$GOLDEN_DIGEST" "$(digest_of "$VECTOR_DIR" launch "${VECTOR_ENV[@]}")"
 

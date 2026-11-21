@@ -69,9 +69,7 @@ for editor in code codium; do
     cmp "$FIXTURE/filter.expected" "$XDG_STATE_HOME/jailbox/projects/$HASH/tinyproxy-filter"
     grep -Fq -- "$FIXTURE/project/jailbox.conf:/home/jailbox/project/jailbox.conf:Z,ro" "$CONVERGENCE_LOG"
     launch connection-info > "$FIXTURE/records"
-    export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
-    # shellcheck disable=SC2016 # The decoder expands its fixture directory.
-    sed 's|^cd /home/jailbox/project |cd "$CONVERGENCE_ENGINE" |' "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+    write_convergence_exec_helper
     # exec.sh owns exhaustive argv/stdin fidelity. Here the contract is that
     # file-derived bootstrap policy is accepted by each machine consumer.
     launch exec printf '%s' attached > "$FIXTURE/actual"

@@ -44,6 +44,7 @@ validate_attachment() {
     validate_ssh_state_path || return 1
     validate_configured_readonly_paths || return 1
     require_compatible_home || return 1
+    capture_forwarding_policy || return 1
     compute_config_digest attach || return 1
     require_compatible_project_resources attach || return 1
     inspect_sandbox_compatibility attach || return 1
@@ -51,6 +52,7 @@ validate_attachment() {
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then
         [ "$OBSERVED_PROXY_STATE" = running ] || die "proxy is $OBSERVED_PROXY_STATE; run 'jailbox up' before attaching"
     fi
+    validate_forwarding_reuse || return 1
     validate_running_development || return 1
     validate_proxy_ready || return 1
     if [ -n "${EGRESS_ALLOW[*]-}" ]; then

@@ -81,8 +81,19 @@ ssh_session_environment() (
         done
         bypass=localhost,127.0.0.1
     fi
-    printf 'SetEnv HTTP_PROXY=%s HTTPS_PROXY=%s http_proxy=%s https_proxy=%s NO_PROXY=%s no_proxy=%s\n' \
+    printf 'SetEnv HTTP_PROXY=%s HTTPS_PROXY=%s http_proxy=%s https_proxy=%s NO_PROXY=%s no_proxy=%s' \
         "$proxy" "$proxy" "$proxy" "$proxy" "$bypass" "$bypass"
+    if [ -d "$SSHD_RUNTIME_DIR/host-commands" ]; then
+        # sshd parses -o SetEnv as a config line. Only one literal token
+        # may be appended, so reject bytes it could interpret as syntax.
+        case "$PATH" in
+            ''|*[!a-zA-Z0-9_./:+-]*)
+                echo 'Error: image PATH cannot be used for SSH host forwarding' >&2
+                exit 1 ;;
+        esac
+        printf ' PATH=%s' "$PATH"
+    fi
+    printf '\n'
 )
 
 for dir in / /run "$SSHD_RUNTIME_DIR"; do check_path "$dir" directory; done

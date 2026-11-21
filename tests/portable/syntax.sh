@@ -13,3 +13,4 @@ done <<< "$scripts"
 # shellcheck source=scripts/lib/container-shells.sh
 source scripts/lib/container-shells.sh
 check_container_syntax src
+check_runtime_python_syntax src

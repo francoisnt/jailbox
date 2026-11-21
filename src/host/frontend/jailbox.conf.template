@@ -18,6 +18,9 @@ PIDS_LIMIT=256
 HOME_SETUP_SCRIPT=
 # Optional executable HOST script for HOME_SETUP_SCRIPT stdin. Review before selecting.
 SETUP_INPUT_SCRIPT=
+
+# Optional project-relative policy for commands run on the host.
+HOST_COMMAND_POLICY=
 # Home is ephemeral with a setup script and persistent otherwise. Uncomment to override.
 # EPHEMERAL_HOME=false
 

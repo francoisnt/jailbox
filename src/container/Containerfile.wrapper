@@ -10,6 +10,9 @@ COPY setup.sh /tmp/jailbox-container/
 COPY runtime/ /tmp/jailbox-container/runtime/
 RUN : "$JAILBOX_INSTALL_CACHE_BUST" && sh /tmp/jailbox-container/setup.sh && rm -rf /tmp/jailbox-container
 
+# The prefix is under the immutable SSH bind. Disabled sessions have no
+# directory there, including for programs started directly with podman exec.
+ENV PATH="/run/jailbox-sshd/host-commands:${PATH}"
 USER jailbox
 EXPOSE 2222
 CMD ["/usr/local/bin/jailbox-start"]

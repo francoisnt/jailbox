@@ -574,6 +574,13 @@ EOF
             fail 'home setup under sandbox restrictions'
             return 1
         fi
+        test_phase_begin host-forwarding || return 1
+        if assert_host_forwarding "$project_dir" "$ctr" "$dev_image" "$log_dir/$stage.forwarding"; then
+            pass 'host forwarding uses the pinned SSH connection and preserves binary streams'
+        else
+            fail 'host forwarding through the real sandbox'
+            return 1
+        fi
     fi
 }
 
@@ -620,6 +627,97 @@ assert_home_setup() (
         fi
         "$JAILBOX_DIR/src/jailbox" stop || return 1
     done
+)
+
+assert_host_forwarding() (
+    local project=$1 prefix=$2 image=$3 log=$4 mode status config generation state key
+    mkdir -p "$log/bin" || return 1
+    cp "$JAILBOX_DIR/tests/fixtures/forwarding/host-command.py" "$log/bin/forwarded-command" || return 1
+    chmod 755 "$log/bin/forwarded-command" || return 1
+    cd "$project" || return 1
+    mkdir -p forward-sub || return 1
+    mkdir -p forward-hidden-parent/hidden || return 1
+    chmod 755 forward-hidden-parent forward-hidden-parent/hidden || return 1
+    printf 'test argument\n' > forwarding-marker || return 1
+    printf 'hidden fixture\n' > forward-hidden-parent/hidden/forwarding-marker || return 1
+    printf '%s\n' 'forwarded-command directory ../forwarding-marker' 'forwarded-command directory forwarding-marker' \
+        'forwarded-command stream' 'forwarded-command terminal' > host-policy || return 1
+    chmod 644 host-policy || return 1
+    printf 'DEV_IMAGE=%s\nHOST_COMMAND_POLICY=host-policy\nREADONLY_PATHS=jailbox.conf,forward.conf\nHIDDEN_PATHS=forward-hidden-parent/hidden\n' \
+        "$image" > forward.conf || return 1
+    for key in "${!JAILBOX_CONFIG_@}"; do unset "$key"; done
+    export PATH="$log/bin:$PATH" FORWARDING_TEST_HOST=launch-time-host
+    local cli="$JAILBOX_DIR/src/jailbox"
+    local -a machine=(env "JAILBOX_CONFIG_DEV_IMAGE=$image" JAILBOX_CONFIG_HOST_COMMAND_POLICY=host-policy
+        JAILBOX_CONFIG_HIDDEN_PATHS_0=forward-hidden-parent/hidden
+        JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf JAILBOX_CONFIG_READONLY_PATHS_1=forward.conf "$cli")
+    config=$(jailbox_ssh_config "$project") || return 1
+    state=$(dirname "$(dirname "$config")")/forwarding
+    # A present policy file alone grants nothing.
+    env JAILBOX_CONFIG_DEV_IMAGE="$image" "$cli" up || return 1
+    [[ ! -e "$state" ]] || return 1
+    if podman exec "$prefix" /bin/bash -c 'command -v forwarded-command'; then return 1; fi
+    "$cli" stop || return 1
+    for mode in file machine; do
+        case "$mode" in
+            file) "$cli" --config forward.conf --no-editor || return 1 ;;
+            machine) "${machine[@]}" up || return 1 ;;
+        esac
+        printf 'binary\0\377stdin\n\n' > "$log/input"
+        printf 'error\0\377\n' > "$log/expected-error"
+        status=0
+        "${machine[@]}" exec forwarded-command stream < "$log/input" > "$log/output" 2> "$log/error" || status=$?
+        [[ $status = 42 ]] && cmp -s "$log/input" "$log/output" && cmp -s "$log/expected-error" "$log/error" || return 1
+        printf '%s\n' "$project/forward-sub" launch-time-host 'test argument' > "$log/expected-directory"
+        ssh -T -F "$config" "$prefix" \
+            'cd /home/jailbox/project/forward-sub && FORWARDING_TEST_HOST=container forwarded-command directory ../forwarding-marker' \
+            > "$log/output" || return 1
+        cmp -s "$log/expected-directory" "$log/output" || return 1
+        ssh -tt -F "$config" "$prefix" \
+            'cd /home/jailbox/project && exec bash -lc "forwarded-command terminal"' </dev/null |
+            tr -d '\r' | grep -Fxq 'False False False' || return 1
+        if ssh -T -F "$config" "$prefix" \
+            'cd /home/jailbox/project && forwarded-command stream --unexpected'; then return 1; fi
+        if ssh -T -F "$config" "$prefix" \
+            'cd /home/jailbox/project && printf changed > host-policy' 2>/dev/null; then return 1; fi
+        generation=$(cat "${config%/*}/container-id") || return 1
+        "${machine[@]}" up || return 1
+        [[ $(cat "${config%/*}/container-id") = "$generation" ]] || return 1
+        printf '# edited on the host\n' >> host-policy || return 1
+        if "${machine[@]}" up > "$log/refusal" 2>&1; then return 1; fi
+        grep -Fq 'jailbox stop' "$log/refusal" || return 1
+        # The original snapshot still authorizes this invocation.
+        status=0
+        podman exec -i -w /home/jailbox/project "$prefix" forwarded-command stream \
+            < "$log/input" > "$log/output" 2> "$log/error" || status=$?
+        [[ $status = 42 ]] && cmp -s "$log/input" "$log/output" || return 1
+        "$cli" stop || return 1
+        [[ ! -e "$state" ]] || return 1
+    done
+    "${machine[@]}" up || return 1
+    podman exec "$prefix" /bin/rm /run/jailbox-forward.sock || return 1
+    if "${machine[@]}" up > "$log/refusal" 2>&1; then return 1; fi
+    grep -Fq 'jailbox stop' "$log/refusal" || return 1
+    if podman exec -w /home/jailbox/project "$prefix" forwarded-command stream > "$log/output" 2> "$log/error"; then return 1; fi
+    grep -Fq 'service unavailable' "$log/error" || return 1
+    "$cli" stop || return 1
+    "${machine[@]}" up || return 1
+    "${machine[@]}" exec forwarded-command terminal | grep -Fxq 'False False False' || return 1
+    # The mount follows its ancestor's rename. The host must still recognize
+    # the backing directory, which the sandbox sees as empty.
+    podman exec -w /home/jailbox/project "$prefix" /bin/bash -c '
+        mv -- forward-hidden-parent forward-moved-parent &&
+        test -d forward-moved-parent/hidden &&
+        test ! -e forward-moved-parent/hidden/forwarding-marker
+    ' || return 1
+    [[ -f forward-moved-parent/hidden/forwarding-marker ]] || return 1
+    if podman exec -w /home/jailbox/project/forward-moved-parent/hidden "$prefix" \
+        forwarded-command directory forwarding-marker > "$log/output" 2> "$log/error"; then
+        return 1
+    fi
+    [[ ! -s "$log/output" ]] && grep -Fq 'working directory is hidden by HIDDEN_PATHS' "$log/error" || return 1
+    "$cli" stop || return 1
+    [[ ! -e "$state" ]]
 )
 
 # Exercise ephemeral generations and image cleanup across wrapper distributions.

@@ -53,3 +53,16 @@ assert_no_mutation() {
         echo 'refusal mutated state'; cat "$CONVERGENCE_LOG"; exit 1
     fi
 }
+
+write_convergence_exec_helper() {
+    export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
+    export CONVERGENCE_EXEC_PROJECT="${1:-$CONVERGENCE_ENGINE}"
+    export CONVERGENCE_EXEC_CODEC="$ROOT/src/container/runtime/lib/jailbox/argv_codec.py"
+    export CONVERGENCE_EXEC_PYTHON
+    CONVERGENCE_EXEC_PYTHON=$(command -v python3) || return 1
+    # shellcheck disable=SC2016 # The fixture wrapper inherits these paths.
+    sed -e 's|"/usr/bin/python3"|"$CONVERGENCE_EXEC_PYTHON"|' \
+        -e 's|/usr/local/lib/jailbox/argv_codec.py|"$CONVERGENCE_EXEC_CODEC"|' \
+        -e 's|/home/jailbox/project|"$CONVERGENCE_EXEC_PROJECT"|' \
+        "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+}

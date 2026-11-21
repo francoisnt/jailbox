@@ -140,7 +140,7 @@ validate_machine_config() {
         die 'SETUP_INPUT_SCRIPT requires HOME_SETUP_SCRIPT'
     fi
     local key path
-    for key in HOME_SETUP_SCRIPT SETUP_INPUT_SCRIPT; do
+    for key in HOME_SETUP_SCRIPT SETUP_INPUT_SCRIPT HOST_COMMAND_POLICY; do
         path=${!key}
         [[ -z "$path" ]] || validate_project_mount_path_lexical "$path" || die "invalid $key path '$path'"
     done

@@ -60,6 +60,8 @@ build_release_tarball() {
     test -f dist/jailbox-v9.9.9.tar.gz
     test -f dist/jailbox-latest.tar.gz
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/runtime/bin/jailbox-exec-argv
+    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/host/core/resources/forwarding/main.py
+    tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/container/runtime/lib/jailbox/forward_client.py
     cmp -s dist/jailbox-v9.9.9.tar.gz dist/jailbox-latest.tar.gz
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/install.sh
     tar -tzf dist/jailbox-latest.tar.gz | grep -Fx jailbox-v9.9.9/public-api.sh
@@ -78,6 +80,8 @@ smoke_install_update_uninstall() {
     diff -r docs "$tmp/share/jailbox/docs"
     cmp src/install.sh "$tmp/share/jailbox/install.sh"
     test -x "$tmp/share/jailbox/container/runtime/bin/jailbox-exec-argv"
+    test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/encode-argv.sh"
+    test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/argv_codec.py"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/readonly-mount.awk"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/authentication-mount.awk"
     test -r "$tmp/share/jailbox/container/runtime/lib/jailbox/process-hardening.awk"
@@ -92,6 +96,13 @@ smoke_install_update_uninstall() {
     "$tmp/bin/jailbox" config-schema > "$tmp/schema"
     grep -Fxq $'HOME_SETUP_SCRIPT\tscalar' "$tmp/schema"
     grep -Fxq $'SETUP_INPUT_SCRIPT\tscalar' "$tmp/schema"
+    grep -Fxq $'HOST_COMMAND_POLICY\tscalar' "$tmp/schema"
+    mkdir "$tmp/forward-project"
+    printf 'hostname\n' > "$tmp/forward-project/policy"
+    (
+        cd "$tmp/forward-project"
+        JAILBOX_CONFIG_DEV_IMAGE=local/forwarding-test JAILBOX_CONFIG_HOST_COMMAND_POLICY=policy "$tmp/bin/jailbox" validate
+    )
     mkdir "$tmp/setup-project"
     printf '#!/bin/sh\nexit 77\n' > "$tmp/setup-project/setup-home"
     cp "$tmp/setup-project/setup-home" "$tmp/setup-project/setup-input"

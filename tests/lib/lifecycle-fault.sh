@@ -31,6 +31,11 @@ case "$name" in
     mkdir|cp|chmod|mv|rm|mktemp)
         case " $* " in *"$XDG_STATE_HOME/"*) mutation=true ;; esac
         ;;
+    python3)
+        case "${3:-} ${4:-}" in
+            */forwarding/main.py\ publish|*/forwarding/main.py\ start) mutation=true ;;
+        esac
+        ;;
     ssh)
         case " $* " in *'bash -s -- launch '*|*'jailbox-manage-proxy enable'*|*'jailbox-manage-proxy disable'*) mutation=true ;; esac
         if [[ -n ${LIFECYCLE_SETUP_FRAME:-} && ${!#} = "/usr/local/bin/jailbox-exec-argv $LIFECYCLE_SETUP_FRAME" ]]; then

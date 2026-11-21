@@ -108,6 +108,14 @@ and persistent retention otherwise. Set it to `false` to keep an existing
 persistent home when selecting a setup script. See the
 [script contract and examples](development.md#reproducible-home-setup).
 
+Set `JAILBOX_CONFIG_HOST_COMMAND_POLICY` to enable host forwarding for
+machine launches. Use the same project-relative path on `up` and attachment
+commands. Core protects the file read-only and includes its exact contents in
+the configuration digest. Run `stop` before launching with changed contents
+or after a forwarding failure. `status`, `stop`, and `--clean`
+remain available with missing or invalid policy input. See the
+[policy syntax and usage](development.md#forward-selected-host-commands).
+
 ## Command reference
 
 This is the complete CLI reference. Bare launch, `--no-editor`, `--config`,
@@ -143,7 +151,7 @@ It uses the same complete attachment checks as `connection-info`, and never
 creates, starts, repairs, or replaces resources. Arguments after `exec` (and
 its optional leading `--`) are passed literally, including empty arguments;
 binary stdin belongs exclusively to the command, even during validation.
-The installed Bash decoder starts the command in `/home/jailbox/project`.
+The installed exec helper starts the command in `/home/jailbox/project`.
 No login shell is added: request one explicitly with
 `jailbox exec -- bash -lc 'your command'` when needed. The SSH session retains
 the generated uppercase and lowercase HTTP/HTTPS/NO_PROXY environment policy.

@@ -12,6 +12,8 @@ stop_jailbox() {
             printf "Warning: home '%s' has corrupt retention metadata; preserving it.\n" "$VOLUME_NAME" >&2
     fi
 
+    retire_forwarding || return 1
+
     for target in "${present[@]}"; do
         if [[ "$target" = "volume:$VOLUME_NAME" && "$policy" != true ]]; then
             continue

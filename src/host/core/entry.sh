@@ -29,6 +29,8 @@ source "$SCRIPT_DIR/host/core/resources/proxy.sh"
 source "$SCRIPT_DIR/host/core/resources/downloader.sh"
 # shellcheck source=src/host/core/resources/home.sh
 source "$SCRIPT_DIR/host/core/resources/home.sh"
+# shellcheck source=src/host/core/resources/forwarding.sh
+source "$SCRIPT_DIR/host/core/resources/forwarding.sh"
 # shellcheck source=src/host/core/resources/container.sh
 source "$SCRIPT_DIR/host/core/resources/container.sh"
 # shellcheck source=src/host/core/resources/runtime-files.sh

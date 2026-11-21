@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+if [[ ${1:-} = -- ]]; then
+    shift
+    frame=$(/bin/bash -p /usr/local/lib/jailbox/encode-argv.sh 'forwarded command' "$@") || exit 1
+    set -- -- "$frame"
+fi
+exec /usr/bin/python3 -I -B /usr/local/lib/jailbox/forward_client.py "$@"

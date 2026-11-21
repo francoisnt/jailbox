@@ -53,6 +53,7 @@ while IFS= read -r script; do
 done < <(find "$ROOT_DIR/src/host" "$ROOT_DIR/scripts" -type f -name '*.sh' -print)
 source "$ROOT_DIR/scripts/lib/container-shells.sh"
 check_container_syntax "$ROOT_DIR/src" || die 'invalid container shell source'
+(cd "$ROOT_DIR" && check_runtime_python_syntax src) || die 'invalid runtime Python source'
 
 rm -rf "$stage_dir" "$tarball" "$latest_tarball" "$checksums_file" "$installer"
 mkdir -p "$stage_dir"

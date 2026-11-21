@@ -13,15 +13,8 @@ validation_ssh() {
 }
 
 encode_ssh_command() {
-    local command=$1 frame
-    shift
     require_command base64 || return 1
-    require_command tr || return 1
-    frame=$(set -o pipefail; printf '%s\0' "$@" | base64 | tr -d '\n') || die "could not encode $command arguments"
-    # Wire limit shared with container/runtime/bin/jailbox-exec-argv.
-    [[ ${#frame} -le 49152 ]] || die "argument list too long for $command"
-    [[ -n "$frame" && "$frame" != *[!A-Za-z0-9+/=]* ]] || die "invalid $command argument encoding"
-    printf '%s' "$frame"
+    "$BASH" -p "$SCRIPT_DIR/container/runtime/lib/jailbox/encode-argv.sh" "$@"
 }
 
 exec_ssh_command() {

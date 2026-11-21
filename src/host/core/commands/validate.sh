@@ -8,5 +8,7 @@ run_validate() {
     validate_configured_readonly_paths || return 1
     validate_local_build_inputs || return 1
     finalize_project_path_policy || return 1
+    capture_forwarding_policy || return 1
+    describe_forwarding_policy || return 1
     printf 'Configuration and local launch inputs are valid; sandbox health and build success were not checked.\n'
 }

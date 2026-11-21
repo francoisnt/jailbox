@@ -18,8 +18,7 @@ attachment_records() (
 )
 export CONVERGENCE_SSH_LOG="$FIXTURE/ssh-calls"
 ATTACH_PYTHON=$(command -v python3)
-export CONVERGENCE_EXEC_HELPER="$FIXTURE/exec-helper"
-sed "s|^cd /home/jailbox/project |cd \"\$CONVERGENCE_ENGINE\" |" "$ROOT/src/container/runtime/bin/jailbox-exec-argv" > "$CONVERGENCE_EXEC_HELPER"
+write_convergence_exec_helper
 printf 'attachment\0input\377\n' > "$FIXTURE/exec-input"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 observe() {

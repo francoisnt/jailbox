@@ -56,6 +56,10 @@ finalize_project_path_policy() {
         relative=$(resolve_setup_script_path "$path" "$key" "$setup_mode" "${hidden[@]}") || return 1
         readonly+=("$relative")
     done
+    if [[ -n "${HOST_COMMAND_POLICY:-}" ]]; then
+        relative=$(resolve_forwarding_policy_path "${hidden[@]}") || return 1
+        readonly+=("$relative")
+    fi
     if [[ -n "$SELECTED_DEV_CONTAINERFILE_INPUT" ]]; then
         classified=$(classify_trusted_file "$SELECTED_DEV_CONTAINERFILE_INPUT" "launch input") || return 1
         relative=${classified#*$'\t'}

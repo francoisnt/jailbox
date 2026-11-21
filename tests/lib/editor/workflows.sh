@@ -41,6 +41,7 @@ editor_stage_machine_policy() {
     export JAILBOX_CONFIG_READONLY_PATHS_0=jailbox.conf
     if [[ $stage == debian ]]; then
         export JAILBOX_CONFIG_HOME_SETUP_SCRIPT=setup-home.sh JAILBOX_CONFIG_EPHEMERAL_HOME=false
+        export JAILBOX_CONFIG_HOST_COMMAND_POLICY=editor-host-policy
     elif [[ $stage == egress ]]; then
         local hosts=(api.ipify.org)
         editor=$(editor_name) || return 1
@@ -104,7 +105,11 @@ verify_editor_workflows() {
     local project=$1 stage=$2 ctr=$3 selected other hosts image
     image=$(stage_test_image "$stage") || return 1
     editor_reopen "$project" "$stage" "$ctr" reopen || return 1
-    editor_reopen "$project" "$stage" "$ctr" resume || return 1
+    # Debian also verifies forwarding, whose stopped SSH connection requires
+    # a fresh generation. The other stages exercise ordinary resume.
+    if [[ "$stage" != debian ]]; then
+        editor_reopen "$project" "$stage" "$ctr" resume || return 1
+    fi
     [[ $stage == egress ]] || return 0
     cleanup_editor_workspace "$project" "$ctr" || return 1
     selected=$(editor_name) || return 1

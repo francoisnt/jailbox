@@ -16,6 +16,7 @@ LAUNCH_PREVIOUS_JOB=''
 LAUNCH_SETUP_PROVIDER=''
 LAUNCH_SETUP_INPUT_FD=''
 LAUNCH_SETUP_OUTPUT_FD=''
+LAUNCH_FORWARDING=false
 
 run_up() {
     prepare_launch || return $?
@@ -43,10 +44,13 @@ bring_up_sandbox() {
     # The digest is the compatibility gate for every policy-bearing resource
     # that outlives a single launch, so it is computed — and every surviving
     # resource checked against it — before anything is built or created.
+    capture_forwarding_policy || return 1
     compute_config_digest launch || return 1
     require_compatible_project_resources || return 1
     inspect_sandbox_compatibility || return 1
+    validate_forwarding_reuse || return 1
     if [ "$OBSERVED_DEV_STATE" = absent ]; then
+        describe_forwarding_policy || return 1
         if [[ -n "$HOME_SETUP_SCRIPT" ]] && ! observed_resource_present "volume:$VOLUME_NAME"; then
             setup_mode=initialize
             setup_frame=$(encode_ssh_command 'jailbox up home setup' "./$HOME_SETUP_SCRIPT") || return 1
@@ -86,6 +90,11 @@ bring_up_sandbox() {
             record_launch_resource_attempt "volume:$VOLUME_NAME"
             create_home_volume "${setup_generation:-plain}" || return $?
         fi
+        if [[ -n "$HOST_COMMAND_POLICY" ]]; then
+            validate_forwarding_home_storage || return 1
+            LAUNCH_FORWARDING=true
+            publish_forwarding_policy || return 1
+        fi
         record_launch_resource_attempt "container:$CONTAINER_NAME"
         start_jailbox_container || return $?
     elif [ "$OBSERVED_DEV_STATE" != running ]; then
@@ -99,8 +108,15 @@ bring_up_sandbox() {
     validate_proxy_ready || return 1
     configure_downloader_proxy || return $?
     post_start_validation || return 1
+    if [[ "$LAUNCH_FORWARDING" = true ]]; then
+        start_forwarding || return 1
+    fi
     if [[ -n "$setup_generation" ]]; then
         run_home_setup "$setup_frame" "$setup_generation" || return $?
+        if [[ "$LAUNCH_FORWARDING" = true ]]; then
+            require_forwarding_health ||
+                fail_sandbox_readiness 'host forwarding is unavailable after home setup'
+        fi
     fi
     echo '✅ Sandbox is ready'
     trap - EXIT HUP INT TERM
@@ -283,6 +299,7 @@ reset_launch_attempts() {
     LAUNCH_SETUP_PROVIDER=''
     LAUNCH_SETUP_INPUT_FD=''
     LAUNCH_SETUP_OUTPUT_FD=''
+    LAUNCH_FORWARDING=false
 }
 
 # Record before attempting creation, excluding resources in the preflight
@@ -331,6 +348,10 @@ rollback_launch_on_exit() {
 rollback_launch() {
     local target kind name probe failed=false dependent=false state path index
     local dev_retained=false proxy_retained=false home_removed=false needed
+    if [[ "$LAUNCH_FORWARDING" = true ]] && ! retire_forwarding; then
+        failed=true
+        printf 'Error: rollback could not retire host forwarding state.\n' >&2
+    fi
     # 1. Remove only attempted containers, development before proxy. Never stop
     # a pre-existing survivor; a remaining development container needs its proxy.
     for name in "$CONTAINER_NAME" "$PROXY_NAME"; do

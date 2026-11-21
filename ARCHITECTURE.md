@@ -41,6 +41,14 @@ including for editor SSH libraries that ignore client `SetEnv` directives.
 Core passes the live proxy address through the container environment and
 validates it on reuse; startup validates the address before creating SSH options.
 
+Core also owns optional host command forwarding. It snapshots the selected
+policy before publishing wrappers and runs a separate SSH connection with a
+reverse Unix socket. A wrapper sends its arguments and working directory
+through that socket. The host checks the snapshot, pins the project directory
+for the command, and relays the three standard streams. Stop and clean retire
+the connection before removing sandbox resources. See the
+[forwarding security rules](docs/security.md#host-command-forwarding).
+
 Runtime sources live under `src/`. Packaging flattens that directory into the
 bundle root and adds `README.md`, `LICENSE`, and `docs/`; repository tooling stays outside
 the bundle. Source execution uses `src/jailbox`, while installed paths stay unchanged.

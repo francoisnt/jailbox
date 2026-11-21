@@ -1,6 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 command=${!#}
+if [[ -n ${CONVERGENCE_FORWARD_ROOT:-} ]]; then
+    case "$command" in
+        '/usr/local/bin/jailbox-forward-client --hold') exec /bin/cat >/dev/null ;;
+        '/usr/local/bin/jailbox-forward-client --probe '*)
+            exec python3 -I -B "$CONVERGENCE_FORWARD_ROOT/tests/fixtures/forwarding/probe.py" "$CONVERGENCE_FORWARD_ROOT" \
+                "${2%/ssh-generation/ssh_config}/forwarding" "${command##* }"
+            ;;
+        '/bin/bash -c '*|'/bin/bash -lc '*) exit 0 ;;
+    esac
+fi
 if [[ "$command" = 'cd /home/jailbox/project && exec bash -il' ]]; then
     [[ " $* " = *' -tt -- '* && -t 0 && -t 1 ]] || exit 99
     # Model the fixed transport without loading the test host's login files.

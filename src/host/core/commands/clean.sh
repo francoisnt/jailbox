@@ -10,6 +10,7 @@ clean_jailbox() {
 
     # Every target is probed before anything is removed.
     resolve_project_resources present "${images[@]}"
+    retire_forwarding || return 1
 
     printf "Warning: --clean permanently deletes this project's home and runtime state, and removes its three derived image names.\n" >&2
     echo "🧹 Cleaning up..."
