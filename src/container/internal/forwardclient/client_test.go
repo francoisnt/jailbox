@@ -38,8 +38,11 @@ func interruptedClient() {
 		fmt.Println("ready")
 		forwardproto.Receive(server, forwardproto.Chunk)
 	}()
-	forward(client, "", "unused")
-	os.Exit(4)
+	status, err := forward(client, "", "unused")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+	}
+	os.Exit(status)
 }
 
 func TestStream(t *testing.T) {

@@ -71,8 +71,9 @@ func forward(conn net.Conn, relative, frame string) (int, error) {
 	go func() {
 		select {
 		case sig := <-signals:
-			conn.Close()
 			fmt.Fprintln(os.Stderr, "Error: host command forwarding interrupted. Command outcome is unknown.")
+			// Process exit closes the socket. Closing it here would wake
+			// stream and let it report a connection error first.
 			os.Exit(128 + int(sig.(syscall.Signal)))
 		case <-finished:
 		}
