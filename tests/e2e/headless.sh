@@ -157,6 +157,27 @@ assert_local_forwarding() {
     fail "$desc"
 }
 
+# Host forwarding needs remote Unix-socket forwards, which OpenSSH only allows
+# with AllowTcpForwarding yes. PermitListen none must still refuse remote TCP
+# listeners inside the container. Require the forwarding refusal itself, so a
+# connection failure cannot pass as a refusal.
+assert_remote_tcp_forwarding_refused() {
+    local config="$1" ctr="$2" port="$3" desc="$4" output
+
+    if output=$(timeout 15 ssh -F "$config" -T -o ExitOnForwardFailure=yes \
+        -R "127.0.0.1:${port}:127.0.0.1:2222" "$ctr" true 2>&1); then
+        fail "$desc"
+        return 0
+    fi
+    if [[ $output == *"remote port forwarding failed"* ]]; then
+        pass "$desc"
+    else
+        echo "  Remote forwarding diagnostic:"
+        printf '    %s\n' "${output//$'\n'/$'\n'    }"
+        fail "$desc"
+    fi
+}
+
 # ── stub VS Code ──────────────────────────────────────────────────────────────
 # Minimal stub: answer extension inventory and validate launch arguments/settings.
 # The real SSH assertions run after jailbox exits, while the container is up.
@@ -294,6 +315,8 @@ EOF
         fail 'public shell terminal and login behavior'
     fi
     assert_local_forwarding "$ssh_cfg" "$ctr" "$forward_port" "SSH local forwarding works"
+    assert_remote_tcp_forwarding_refused "$ssh_cfg" "$ctr" "$forward_port" \
+        "SSH refuses remote TCP listeners in the container"
 
     # Mounts
     assert_ssh "$ssh_cfg" "$ctr" "home writable" "test -w \"\$HOME\""

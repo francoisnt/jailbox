@@ -188,6 +188,11 @@ fi
 # Both ChallengeResponseAuthentication (pre-8.7) and
 # KbdInteractiveAuthentication (8.7+) are set to cover all OpenSSH versions.
 #
+# Host command forwarding places a Unix socket in the container through a
+# remote forward. OpenSSH refuses every remote forward, Unix sockets included,
+# unless AllowTcpForwarding allows remote forwarding. PermitListen none keeps
+# remote TCP listeners refused; it does not apply to Unix sockets.
+#
 # Authentication material is prepared on the host once per container and mounted
 # read-only under /run/jailbox-sshd. keep-id preserves StrictModes ownership.
 # Mutable daemon state lives separately on the managed-user-owned /run tmpfs.
@@ -204,7 +209,8 @@ ChallengeResponseAuthentication no
 KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 UsePAM no
-AllowTcpForwarding local
+AllowTcpForwarding yes
+PermitListen none
 AllowAgentForwarding no
 X11Forwarding no
 AllowStreamLocalForwarding yes

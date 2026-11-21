@@ -18,8 +18,10 @@ default; choose additional restrictions to match your work.
 - Rootless Podman containers (`--userns=keep-id`)
 - Fresh client and server SSH key pairs per container, with strict pinned host-key checking
 - No container runtime sockets mounted
-- Strict sshd configuration (key auth only, local TCP forwarding only,
-  agent and X11 forwarding explicitly disabled in client and server policy)
+- Strict sshd configuration (key auth only, local TCP forwarding only, no TCP
+  listeners opened inside the container, agent and X11 forwarding explicitly
+  disabled in client and server policy; the host may place Unix sockets in
+  the container, which host command forwarding uses)
 - Optional egress control: when `EGRESS_ALLOW` is set, the container is
   placed on an internal-only network with no direct external route and no
   DNS; an unprivileged tinyproxy sidecar is the only outbound gateway,
