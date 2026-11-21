@@ -1,9 +1,14 @@
-# Keeps GitHub Actions references current via bump PRs (pr-checks runs on them).
-# Editor/REH/extension and base-image pins are NOT managed here — those live in
-# versions.env and advance through the canary workflow (see plans/version-pinning-plan.md).
+# Keeps GitHub Actions references and Go module dependencies current via bump
+# PRs (pr-checks runs on them; only Actions updates are eligible for auto-merge).
+# Editor/REH/extension pins live in versions.env and advance through the canary
+# workflow. Base-image pins in versions.env are updated by hand.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "gomod"
+    directory: "/src"
     schedule:
       interval: "weekly"
