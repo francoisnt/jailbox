@@ -30,8 +30,9 @@ on:
       - "release-request-bump-minor"
       - "release-request-bump-major"
 
+# Only jobs that push tags, commits or the release get write access.
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 # One release at a time: parallel runs would select the same version and
@@ -178,6 +179,8 @@ jobs:
 
   publish:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     needs: [select-version, previous-gates, test-gates, package, install]
     if: >-
       always() && needs.select-version.result == 'success' && needs.previous-gates.result == 'success' &&
@@ -208,7 +211,7 @@ jobs:
           git push origin "$VERSION"
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ needs.select-version.outputs.version }}
           files: |
@@ -222,6 +225,8 @@ jobs:
   # but would clutter the tag list.
   cleanup-request:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     needs: [publish]
     if: ${{ always() && github.event_name == 'push' }}
     steps:
@@ -235,6 +240,8 @@ jobs:
     needs: [select-version, publish]
     if: always() && needs.select-version.result == 'success' && needs.publish.result == 'success'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:

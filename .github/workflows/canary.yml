@@ -16,9 +16,9 @@ on:
         type: boolean
         default: false
 
+# Only the jobs that push pin bumps or file issues get write access.
 permissions:
-  contents: write
-  issues: write
+  contents: read
 
 concurrency: canary
 
@@ -101,6 +101,9 @@ jobs:
     needs: [resolve, codium-commit, test-gate]
     if: always() && needs.resolve.outputs.run_suite == 'true'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      issues: write
     steps:
       - uses: actions/checkout@v7
 
@@ -126,6 +129,8 @@ jobs:
     needs: [resolve, codium-commit, test-gate, report]
     if: always() && needs.test-gate.result == 'success' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:

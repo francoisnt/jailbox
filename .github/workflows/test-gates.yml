@@ -55,6 +55,12 @@ on:
         description: Original test run and attempt
         value: ${{ jobs.runtime.outputs.run_url }}
 
+# Gates run third-party editors, extensions and images. Keep their token
+# read-only even when a caller holds write access, and do not save it in the
+# checkout's Git configuration.
+permissions:
+  contents: read
+
 jobs:
   # Every gate in a run uses one exact Go release, so recorded evidence names
   # the compiler that all of them tested.
@@ -67,6 +73,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Resolve the Go release
         id: resolve
@@ -90,6 +98,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -165,6 +175,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -229,6 +241,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -276,6 +290,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -313,6 +329,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download matrix logs
         uses: actions/download-artifact@v8
@@ -338,6 +356,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -380,6 +400,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Record verified gate evidence
         env:
           GATE_RESULTS: ${{ toJSON(needs) }}
