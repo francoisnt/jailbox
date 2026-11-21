@@ -395,7 +395,7 @@ Required integration with existing code:
 
 - Extend the root `Containerfile` with the compatible Podman client and both
   editors' headless gate prerequisites for jailbox self-development. The Go
-  toolchain is owned by `11.1-go-frontend-plan.md`; keep development tools out
+  toolchain is owned by `10.1.1-go-helper-plan.md`. Keep development tools out
   of the minimal guest base.
 - Extend canonical declarations and generation in `src/public-api.sh` and
   `scripts/gen-public-api.sh` for VM settings and guest-core inputs, including
