@@ -17,7 +17,7 @@ for proxy in '' http://10.0.0.2:8888; do
 done
 # A live editor can report different effective settings than the profile file.
 # Keep the comparison strict and identify the artifact and differing field.
-printf '%s\n' '{"remote.SSH.configFile":"/tmp/ssh","remote.SSH.enableAgentForwarding":false}' > "$TMP/effective.json"
+printf '%s\n' '{"remote.SSH.configFile":"/tmp/ssh","remote.SSH.enableAgentForwarding":false,"remote.autoForwardPorts":false}' > "$TMP/effective.json"
 if python3 "$ROOT/tests/lib/editor/check-settings.py" "$TMP/effective.json" /tmp/ssh http://10.0.0.2:8888 > "$TMP/out" 2>&1; then
     fail 'missing effective proxy accepted'
 fi

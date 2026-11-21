@@ -131,6 +131,16 @@ default; choose additional restrictions to match your work.
   container-engine socket is mounted into it
 - Without `EGRESS_ALLOW`, the container has unrestricted outbound internet
   access
+- The editor can open ports on your host. With automatic port forwarding on,
+  it opens a port on your host's `127.0.0.1` for each port a sandbox program
+  listens on, which can take a fixed port that a host tool expects. The
+  generated editor profile sets `remote.autoForwardPorts` to `false`, but this
+  is only a default: remote settings in the sandbox home and workspace
+  settings such as `.vscode/settings.json` take priority. Sandbox code can
+  always write the remote settings, and can write workspace settings wherever
+  the project's path policy leaves them writable. When a project reopens, the editor can also restore ports
+  forwarded earlier in that project. Check the editor's Ports view to see
+  which ports are open
 - Host services listening on `0.0.0.0` (local dev servers, LLM runtimes,
   databases) remain reachable from the container through the Podman bridge
   gateway IP — even in egress mode, since the internal network's bridge

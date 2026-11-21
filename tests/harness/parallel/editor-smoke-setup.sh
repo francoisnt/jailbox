@@ -67,7 +67,7 @@ grep -qx 'EGRESS_ALLOW=api.ipify.org' "$tmp/project/jailbox.conf"
     jailbox_editor_user_data() { printf '%s\n' "$tmp/profile"; }
     LOG_DIR="$tmp"
     mkdir -p "$tmp/profile/User"
-    printf '%s\n' '{"remote.SSH.configFile":"/test/ssh-config","remote.SSH.enableAgentForwarding":false}' \
+    printf '%s\n' '{"remote.SSH.configFile":"/test/ssh-config","remote.SSH.enableAgentForwarding":false,"remote.autoForwardPorts":false}' \
         > "$tmp/profile/User/settings.json"
     cp "$tmp/profile/User/settings.json" "$tmp/project/.jailbox-editor-settings.json"
     verify_editor_settings "$tmp/project" debian

@@ -119,7 +119,8 @@ async function activate() {
     const sshSettings = vscode.workspace.getConfiguration('remote.SSH');
     const settings = {
         'remote.SSH.configFile': sshSettings.get('configFile'),
-        'remote.SSH.enableAgentForwarding': sshSettings.get('enableAgentForwarding')
+        'remote.SSH.enableAgentForwarding': sshSettings.get('enableAgentForwarding'),
+        'remote.autoForwardPorts': vscode.workspace.getConfiguration('remote').get('autoForwardPorts')
     };
     const proxy = vscode.workspace.getConfiguration('http').get('proxy');
     if (proxy) settings['http.proxy'] = proxy;

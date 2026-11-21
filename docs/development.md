@@ -370,7 +370,10 @@ jailbox follows a clean layered approach:
    `~/.local/state/jailbox/projects/` and VS Code/VSCodium user profiles under
    `~/.local/state/jailbox/editor-profiles/`. Both use `XDG_STATE_HOME` instead
    of `~/.local/state` when set. Unset or empty uses the default; relative paths
-   are rejected.
+   are rejected. The profile turns automatic port forwarding off by default;
+   forward a port yourself from the editor's Ports view when you need one.
+   Settings the sandbox can write override this default; see
+   [when ports can still open](security.md#important-realities).
 
 **What remains unavoidable** (due to Remote SSH limitations):
 - An OpenSSH server is still required

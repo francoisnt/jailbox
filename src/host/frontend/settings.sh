@@ -33,6 +33,7 @@ render_editor_settings() {
     cat <<EOF_SETTINGS
 {
   "remote.SSH.enableAgentForwarding": false,
+  "remote.autoForwardPorts": false,
   "remote.SSH.configFile": $config_json$proxy_line
 }
 EOF_SETTINGS

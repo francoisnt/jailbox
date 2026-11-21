@@ -5,7 +5,8 @@ import sys
 
 path, ssh_config, proxy_url = sys.argv[1:]
 expected = {"remote.SSH.configFile": ssh_config,
-            "remote.SSH.enableAgentForwarding": False}
+            "remote.SSH.enableAgentForwarding": False,
+            "remote.autoForwardPorts": False}
 if proxy_url:
     expected["http.proxy"] = proxy_url
 settings_path = pathlib.Path(path)
