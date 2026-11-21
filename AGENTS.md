@@ -305,15 +305,14 @@ untracked shell files using their current worktree contents. Full ShellCheck and
 belong to CI; do not run full portable routinely after each local change.
 `tests/run dev attachment exec` adds named product or harness suites to the fast defaults;
 this is partial coverage, not a fifth acceptance gate. Full portable still
-includes every discovered product and harness suite. Run it locally only when
-explicitly requested or when a specific failure or coverage gap justifies it;
-state that reason before running it. Repeat affected checks when subsequent
-changes or failures invalidate their results.
-Also run `tests/run runtime`
-for host, container, SSH, mount, network, or lifecycle changes when Podman is
-available. Run `tests/run matrix` for lifecycle or matrix changes when its
-prerequisites are available. Run `tests/run editor` for editor integration changes. If a required
-gate cannot run in the current environment, state that clearly in the handoff.
+includes every discovered product and harness suite. Repeat affected checks
+when subsequent changes or failures invalidate their results.
+The five gates run in CI, not locally. Do not run `tests/run lint`, `portable`,
+`runtime`, `matrix`, or `editor` (or bare `tests/run`) unless the user
+explicitly asks. In the handoff, name the gates whose CI results the change
+depends on, for example `runtime` for host, container, SSH, mount, network, or
+lifecycle changes, `matrix` for lifecycle or matrix changes, and `editor` for
+editor integration changes.
 
 Permission-sensitive test fixtures must explicitly set the permissions required
 by their scenario rather than inherit the caller's umask. Verify relevant
@@ -369,7 +368,7 @@ creating a patch solely because adjacent replacements cannot be written.
 Do not leave the replacement in a
 temporary directory outside the tree, and never stage or commit a `.new` file.
 Verify the replacement before handing it over — at minimum a syntax check, and
-the affected gates against a copied tree that already carries the change — and
+the dev gate and affected suites against a copied tree that already carries the change — and
 state in the handoff that the rename is still outstanding and what breaks until
 it happens.
 
@@ -556,6 +555,7 @@ uploaded artifacts, not raw Actions job logs, and cannot recover expired or
 deleted artifacts. If the service fails, try authenticated GitHub access when
 available and state the remaining access limitation before asking for files.
 
-Summarize the behavioral result, list the gates actually run, identify anything
+Summarize the behavioral result, list the local checks actually run and the CI
+gates the change still depends on, identify anything
 that could not be verified, and mention remaining worktree files relevant to the
 task. Do not report a gate as passing when only part of it ran.
