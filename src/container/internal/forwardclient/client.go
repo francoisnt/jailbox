@@ -56,6 +56,12 @@ func run(operation string, args []string) (int, error) {
 	if err != nil {
 		return 1, errors.New("service unavailable. Run 'jailbox stop' then 'jailbox up'")
 	}
+	return forward(conn, relative, frame)
+}
+
+// forward sends one request over conn and streams it. A signal ends the
+// program at once, because the host command's outcome is then unknown.
+func forward(conn net.Conn, relative, frame string) (int, error) {
 	defer conn.Close()
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)

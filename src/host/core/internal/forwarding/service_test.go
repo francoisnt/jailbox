@@ -137,7 +137,8 @@ func newSocketFixtureWith(t *testing.T, copyProgram bool) socketFixture {
 	t.Setenv("FORWARDING_TEST_HOST", "launch-time-host")
 	policy := "forwarded-command stream\nforwarded-command args '' {{.*}} {{.*}}\n" +
 		"forwarded-command directory {{.*}}\nforwarded-command hold\n" +
-		"forwarded-command effect one\nforwarded-command effect {{.*}}\nforwarded-command terminal\n"
+		"forwarded-command effect one\nforwarded-command effect {{.*}}\nforwarded-command terminal\n" +
+		"forwarded-command first-line\n"
 	writeFixture(t, fixture.project+"/policy", policy, 0644)
 	frame := fixture.mustTool(t, nil, "capture", fixture.project, "policy")
 	manifest := fixture.mustTool(t, frame, "describe", fixture.project, source)
@@ -262,6 +263,12 @@ func TestSocketRequests(t *testing.T) {
 					got.kind, got.result, len(got.stdout), got.stderr, err)
 			}
 		})
+	}
+	// The command closes stdin while far more input than a pipe holds is still
+	// arriving. Its later output and exit status must still come through.
+	input := append([]byte("first line\n"), bytes.Repeat([]byte("more input\n"), 200000)...)
+	if got := require("", input, "first-line"); got != (execution{'X', "\x00", "first line\nstill running\n", ""}) {
+		t.Fatalf("command that stops reading stdin early: %#v", got)
 	}
 	if got := require("", nil, "args", "", "\xff\n'$x*", "hello world\n"); got != (execution{'X', "\x00", "\x00\xff\n'$x*\x00hello world\n\x00", ""}) {
 		t.Fatalf("argument preservation: %#v", got)
@@ -605,5 +612,39 @@ func TestForwardingRuntimeLocations(t *testing.T) {
 	saved := manifest{RuntimePaths: [][]byte{[]byte(runtime)}}
 	if err := saved.checkStorage(project); err == nil || !strings.Contains(err.Error(), "container-writable mount") {
 		t.Fatalf("mount-writable runtime: %v", err)
+	}
+}
+
+// Podman on macOS reports volume paths inside its virtual machine, which need
+// not exist on the host. Storage checks resolve the existing host prefix,
+// including symlinks, keep the rest of the path, and refuse a dangling link.
+func TestMountSourceOutsideHost(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	tail := filepath.Join("machine", "volumes", "home", "_data")
+	if got, err := resolveMountSource(filepath.Join(link, tail)); err != nil || got != filepath.Join(root, tail) {
+		t.Fatalf("virtual machine path: %q, %v", got, err)
+	}
+	saved := manifest{SSH: []byte("/bin/sh"),
+		Executables: map[string][]byte{"tool": []byte(filepath.Join(root, "machine", "bin", "tool"))}}
+	if err := saved.checkStorage(filepath.Join(link, tail)); err != nil {
+		t.Fatalf("virtual machine volume without host programs: %v", err)
+	}
+	// Only the resolved symlink shows that this missing directory covers the program.
+	if err := saved.checkStorage(filepath.Join(link, "machine")); err == nil || !strings.Contains(err.Error(), "container-writable mount") {
+		t.Fatalf("host program under a resolved virtual machine path: %v", err)
+	}
+	dangling := filepath.Join(root, "dangling")
+	if err := os.Symlink(filepath.Join(root, "missing"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	if err := saved.checkStorage(filepath.Join(dangling, "_data")); err == nil || !strings.Contains(err.Error(), "could not resolve") {
+		t.Fatalf("dangling link in a mount source: %v", err)
 	}
 }

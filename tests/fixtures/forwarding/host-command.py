@@ -13,6 +13,14 @@ if mode == "stream":
     sys.stdout.buffer.write(data)
     sys.stderr.buffer.write(b"error\0\xff\n")
     sys.exit(42)
+elif mode == "first-line":
+    # Like `head -1`, stop reading while input is still arriving, then keep
+    # writing output after stdin is closed.
+    sys.stdout.buffer.write(sys.stdin.buffer.readline())
+    sys.stdout.flush()
+    os.close(0)
+    time.sleep(0.2)
+    print("still running", flush=True)
 elif mode == "args":
     sys.stdout.buffer.write(b"\0".join(map(os.fsencode, sys.argv[2:])) + b"\0")
 elif mode == "directory":
