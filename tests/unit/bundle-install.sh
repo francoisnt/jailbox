@@ -135,7 +135,43 @@ STUB
 chmod 755 "$tmp/tools/cp"
 if PATH="$tmp/tools:$PATH" "$installer_bash" "$bundle/install.sh" > "$tmp/out" 2>&1; then exit 1; fi
 grep -Fq 'could not copy installer bundle' "$tmp/out"
-[[ $(cat "$JAILBOX_INSTALL_DIR/preserved") == keep && ! -e "$JAILBOX_INSTALL_DIR/partial" ]]
-[[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.7' ]]
-[[ -z $(find "$tmp/share" -maxdepth 1 -name '.jailbox.install.*' -print) ]]
-echo 'PASS: recursive packaging/installation and preservation after failed copying'
+assert_preserved_install() {
+    [[ $(cat "$JAILBOX_INSTALL_DIR/preserved") == keep && ! -e "$JAILBOX_INSTALL_DIR/partial" ]]
+    [[ $("$JAILBOX_BIN_DIR/jailbox" --version) == 'jailbox 9.8.7' ]]
+    [[ -z $(find "$tmp/share" -maxdepth 1 -name '.jailbox.install.*' -print) ]]
+}
+assert_preserved_install
+rm "$tmp/tools/cp"
+
+# Fail after moving the old bundle aside, then after replacing it while
+# publishing a command in a new bin directory.
+cat > "$tmp/tools/mv" <<'STUB'
+#!/bin/bash
+if [[ -f "$1/.jailbox-install" && ! -e "$1/preserved" ]]; then
+    exit 23
+fi
+exec /bin/mv "$@"
+STUB
+cat > "$tmp/tools/ln" <<'STUB'
+#!/bin/bash
+exit 24
+STUB
+chmod 755 "$tmp/tools/mv" "$tmp/tools/ln"
+for mask in 0022 0002; do
+    if (umask "$mask"; PATH="$tmp/tools:$PATH" "$installer_bash" "$tmp/source/src/install.sh") > "$tmp/out" 2>&1; then
+        exit 1
+    fi
+    grep -Fq 'could not publish the installation' "$tmp/out"
+    assert_preserved_install
+done
+rm "$tmp/tools/mv"
+for mask in 0022 0002; do
+    if (umask "$mask"; PATH="$tmp/tools:$PATH" JAILBOX_BIN_DIR="$tmp/alternate-bin" \
+        "$installer_bash" "$tmp/source/src/install.sh") > "$tmp/out" 2>&1; then
+        exit 1
+    fi
+    grep -Fq 'could not publish the jailbox command' "$tmp/out"
+    [[ ! -L "$tmp/alternate-bin/jailbox" ]]
+    assert_preserved_install
+done
+echo 'PASS: recursive packaging/installation and preservation after failed updates'

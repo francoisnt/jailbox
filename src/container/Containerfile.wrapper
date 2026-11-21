@@ -17,4 +17,6 @@ RUN : "$JAILBOX_INSTALL_CACHE_BUST" && sh /tmp/jailbox-container/setup.sh "$JAIL
 ENV PATH="/run/jailbox-sshd/host-commands:${PATH}"
 USER jailbox
 EXPOSE 2222
+# Clear the base image's entrypoint so Podman runs the wrapper's default command.
+ENTRYPOINT []
 CMD ["/usr/local/bin/jailbox-start"]

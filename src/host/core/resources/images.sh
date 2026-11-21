@@ -35,10 +35,8 @@ assert_dev_image_state_initialized() {
         die "internal error: development image state is not initialized"
 }
 
-# Validation probes execute the dev image (including any entrypoint it
-# defines) before jailbox's runtime hardening applies. The probes only run
-# short shell one-liners, so constrain them: no network, no capabilities, no
-# privilege escalation.
+# Probes select their own entrypoint and run before jailbox's runtime hardening
+# applies. Run them without a network, capabilities, or privilege escalation.
 podman_probe() {
     podman run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges "$@"
 }
@@ -136,9 +134,9 @@ validate_dev_image() {
     echo "🔍 Validating dev image..."
 
     USABLE_SHELL=""
-    if podman_probe "$PROJECT_DEV_IMAGE" /bin/sh -c "exit 0" 2>/dev/null; then
+    if podman_probe --entrypoint /bin/sh "$PROJECT_DEV_IMAGE" -c "exit 0" 2>/dev/null; then
         USABLE_SHELL="/bin/sh"
-    elif podman_probe "$PROJECT_DEV_IMAGE" bash -c "exit 0" 2>/dev/null; then
+    elif podman_probe --entrypoint bash "$PROJECT_DEV_IMAGE" -c "exit 0" 2>/dev/null; then
         USABLE_SHELL="bash"
     fi
 
@@ -152,11 +150,9 @@ validate_dev_image() {
     fi
 
     # shellcheck disable=SC2016  # Expanded inside the image.
-    PKG_MANAGER=$(podman_probe "$PROJECT_DEV_IMAGE" "$USABLE_SHELL" -c \
+    if ! PKG_MANAGER=$(podman_probe --entrypoint "$USABLE_SHELL" "$PROJECT_DEV_IMAGE" -c \
         'for pm in apt-get apk dnf yum; do command -v "$pm" >/dev/null 2>&1 && echo "$pm" && exit 0; done; exit 1' \
-        2>/dev/null || true)
-
-    if [ -z "$PKG_MANAGER" ]; then
+        2>/dev/null) || [ -z "$PKG_MANAGER" ]; then
         echo "Error: dev image has no supported package manager (apt-get, apk, dnf, yum)." >&2
         echo "Dev image: $PROJECT_DEV_IMAGE"
         echo "This looks like a production or distroless image."

@@ -263,6 +263,14 @@ run_case() {
     # performs every wrapper/container assertion.
     [ "$PREPARE_ONLY" = false ] || return 0
 
+    if [[ "$stage" = uid-owned-by-other-user ]]; then
+        if ! test_validate_dev_image "$test_image"; then
+            fail 'image probes work with a custom entrypoint'
+            return 1
+        fi
+        pass 'image probes work with a custom entrypoint'
+    fi
+
     managed_id=$(podman run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges \
         --read-only --entrypoint id "$wrapper_image" -u jailbox) || return 1
     [[ "$managed_id" =~ ^[1-9][0-9]{0,4}$ ]] || return 1
@@ -358,6 +366,12 @@ run_case() {
         fi
     fi
 }
+
+test_validate_dev_image() (
+    # shellcheck source=src/host/core/resources/images.sh
+    source "$JAILBOX_DIR/src/host/core/resources/images.sh"
+    PROJECT_DEV_IMAGE="$1" validate_dev_image
+)
 
 wrapper_install_cache_bust() (
     # Preparation and the CLI must identify the same wrapper build inputs.

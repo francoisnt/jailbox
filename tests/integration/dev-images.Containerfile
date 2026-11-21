@@ -26,6 +26,8 @@ FROM node:22-bookworm AS uid-owned-by-other-user
 ARG HOST_UID=1000
 RUN if [ "${HOST_UID}" != 1000 ]; then useradd -m -u "${HOST_UID}" -s /bin/bash appuser; fi
 USER node
+# The wrapper and image probes must use their own commands on this base image.
+ENTRYPOINT ["/bin/sh", "-c", "exit 24"]
 
 # ── Managed user conflict ────────────────────────────────────────────────────
 # jailbox pre-exists. container/setup.sh must fail clearly instead of reusing

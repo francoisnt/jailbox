@@ -252,8 +252,20 @@ copy_bundle() {
     printf '%s\n' "$APP_NAME" > "$tmp_dir/$MARKER_FILE"
 }
 
-install_jailbox() {
-    local parent_dir tmp_dir backup_dir
+rollback_install() {
+    local status=$?
+    if [ "$published" = true ] && ! mv "$TARGET_DIR" "$stage/new"; then
+        printf 'Error: could not move the replacement aside during rollback. Update files are in %s\n' "$stage" >&2
+    elif [ -d "$stage/previous" ] && ! mv "$stage/previous" "$TARGET_DIR"; then
+        printf 'Error: could not restore the previous installation from %s\n' "$stage/previous" >&2
+    elif ! rm -rf "$stage"; then
+        printf 'Error: could not remove temporary update files at %s\n' "$stage" >&2
+    fi
+    exit "$status"
+}
+
+install_jailbox() (
+    local parent_dir stage published=false
 
     validate_source_tree
     validate_programs
@@ -269,18 +281,11 @@ install_jailbox() {
     parent_dir="$(dirname "$TARGET_DIR")"
     mkdir -p "$parent_dir"
 
-    tmp_dir="$(mktemp -d "$parent_dir/.${APP_NAME}.install.XXXXXX")"
-    backup_dir=""
+    stage="$(mktemp -d "$parent_dir/.${APP_NAME}.install.XXXXXX")" || die "could not stage installation"
+    trap rollback_install EXIT
 
-    cleanup() {
-        [ -n "$tmp_dir" ] && [ -d "$tmp_dir" ] && rm -rf "$tmp_dir"
-        if [ -n "$backup_dir" ] && [ -d "$backup_dir" ] && [ ! -d "$TARGET_DIR" ]; then
-            mv "$backup_dir" "$TARGET_DIR"
-        fi
-    }
-    trap cleanup EXIT
-
-    copy_bundle "$tmp_dir"
+    mkdir -m 700 "$stage/new" || die "could not prepare replacement directory"
+    copy_bundle "$stage/new"
 
     if [ -e "$LINK_PATH" ] && [ ! -L "$LINK_PATH" ]; then
         die "$LINK_PATH already exists and is not a symlink"
@@ -296,28 +301,24 @@ install_jailbox() {
 
     if [ -d "$TARGET_DIR" ]; then
         assert_replaceable_target_dir
-        backup_dir="$(mktemp -d "$parent_dir/.${APP_NAME}.backup.XXXXXX")"
-        rmdir "$backup_dir"
-        mv "$TARGET_DIR" "$backup_dir"
+        mv "$TARGET_DIR" "$stage/previous" || die "could not move the previous installation aside"
     fi
 
-    mv "$tmp_dir" "$TARGET_DIR"
-    tmp_dir=""
-    ln -sfn "$TARGET_DIR/jailbox" "$LINK_PATH"
-
-    if [ -n "$backup_dir" ] && [ -d "$backup_dir" ]; then
-        rm -rf "$backup_dir"
-        backup_dir=""
+    mv "$stage/new" "$TARGET_DIR" || die "could not publish the installation"
+    published=true
+    if [ ! -L "$LINK_PATH" ] || [ "$(readlink "$LINK_PATH")" != "$TARGET_DIR/jailbox" ]; then
+        ln -sfn "$TARGET_DIR/jailbox" "$LINK_PATH" || die "could not publish the jailbox command at $LINK_PATH"
     fi
 
     trap - EXIT
+    rm -rf "$stage" || die "jailbox was installed, but could not remove update files at $stage"
 
     echo "jailbox installed to $LINK_PATH"
     case ":$PATH:" in
         *":$BIN_DIR:"*) ;;
         *) echo "Note: $BIN_DIR is not in PATH." ;;
     esac
-}
+)
 
 uninstall_jailbox() {
     assert_safe_target_dir

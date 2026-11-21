@@ -120,6 +120,7 @@ case "$kind $action" in
             run)
                 if [[ "$*" == *--rm* ]]; then
                     printf 'probe\n' >> "$log"
+                    [[ " $* " = *' --entrypoint /bin/sh '* || " $* " = *' --entrypoint bash '* ]] || exit 24
                     [[ "$*" != *'for pm in'* ]] || echo apt-get
                     [[ "$*" != *'id -u jailbox; id -g jailbox'* ]] || printf '1000\n1000\n'
                     exit 0

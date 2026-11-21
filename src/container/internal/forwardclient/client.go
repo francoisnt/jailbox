@@ -104,6 +104,27 @@ func probe(challenge string) error {
 	return err
 }
 
+func forwardInput(conn net.Conn, stdin io.Reader, credit <-chan struct{}) {
+	buf := make([]byte, forwardproto.Chunk)
+	for range credit {
+		n, err := stdin.Read(buf)
+		// The host can close its input while output and the exit
+		// status are still waiting to be read.
+		if n != 0 {
+			if err := forwardproto.Send(conn, 'I', buf[:n]); err != nil {
+				return
+			}
+			continue
+		}
+		if err == io.EOF {
+			forwardproto.Send(conn, 'I', nil)
+			return
+		}
+		conn.Close()
+		return
+	}
+}
+
 func stream(conn net.Conn, directory, frame string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	if err := forwardproto.Send(conn, 'D', []byte(directory)); err != nil {
 		return 1, err
@@ -113,26 +134,7 @@ func stream(conn net.Conn, directory, frame string, stdin io.Reader, stdout, std
 	}
 	credit := make(chan struct{}, 1)
 	defer close(credit)
-	go func() {
-		buf := make([]byte, forwardproto.Chunk)
-		for range credit {
-			n, err := stdin.Read(buf)
-			if n != 0 {
-				if writeErr := forwardproto.Send(conn, 'I', buf[:n]); writeErr != nil {
-					conn.Close()
-					return
-				}
-				continue
-			}
-			if err == io.EOF {
-				if err := forwardproto.Send(conn, 'I', nil); err == nil {
-					return
-				}
-			}
-			conn.Close()
-			return
-		}
-	}()
+	go forwardInput(conn, stdin, credit)
 	for {
 		kind, data, err := forwardproto.Receive(conn, forwardproto.Chunk)
 		if err != nil {

@@ -394,6 +394,8 @@ jailbox follows a clean layered approach:
   (system-wide) so they are available to the `jailbox` user.
 - Include `bash` (preferred) or a working `/bin/sh`.
 - Provide a supported package manager (`apt-get`, `apk`, `dnf`, or `yum`).
+- Jailbox starts its own SSH server. Any setup performed by your image's
+  entrypoint must be available through the image build or your session setup.
 - The installed OpenSSH server must support `SetEnv` (introduced in OpenSSH
   7.8). Wrapper builds check this feature and report an error if unavailable.
   Proxy delivery does not require the newer server `Include` directive.

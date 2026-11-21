@@ -136,9 +136,8 @@ assert_ssh_forwarding_disabled() (
     grep -Fxq 'x11forwarding no' <<< "$policy"
 )
 
-# host/core/resources/images.sh validation probes execute the dev image (including its
-# entrypoint) before any jailbox runtime hardening applies, so podman_probe
-# must supply its own constraints: no network and no capabilities.
+# Image validation probes run before jailbox runtime hardening applies, so
+# podman_probe must supply its own constraints: no network and no capabilities.
 # Sourcing happens inside the command substitutions because resources/images.sh
 # defines jailbox_install_cache_bust, which would otherwise shadow this
 # harness's version of that helper.
@@ -151,7 +150,7 @@ assert_probe_hardening() {
         source "$JAILBOX_DIR/src/host/core/resources/images.sh"
         # shellcheck source=src/host/core/commands/validate.sh
         source "$JAILBOX_DIR/src/host/core/commands/validate.sh"
-        podman_probe "$image" /bin/sh -c 'ls /sys/class/net' 2>/dev/null || true
+        podman_probe --entrypoint /bin/sh "$image" -c 'ls /sys/class/net' 2>/dev/null || true
     )
     if [ "$interfaces" = "lo" ]; then
         pass "dev-image probe has no network interfaces"
@@ -164,7 +163,7 @@ assert_probe_hardening() {
         source "$JAILBOX_DIR/src/host/core/resources/images.sh"
         # shellcheck source=src/host/core/commands/validate.sh
         source "$JAILBOX_DIR/src/host/core/commands/validate.sh"
-        podman_probe "$image" /bin/sh -c 'grep ^CapEff: /proc/self/status' 2>/dev/null || true
+        podman_probe --entrypoint /bin/sh "$image" -c 'grep ^CapEff: /proc/self/status' 2>/dev/null || true
     )
     case "$capabilities" in
         *0000000000000000)

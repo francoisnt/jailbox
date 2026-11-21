@@ -68,6 +68,37 @@ func TestStream(t *testing.T) {
 	}
 }
 
+func TestInputWriteErrorKeepsExitStatusReadable(t *testing.T) {
+	for _, input := range []string{"", "unread input"} {
+		t.Run(fmt.Sprintf("stdin=%q", input), func(t *testing.T) {
+			client, server := net.Pipe()
+			defer client.Close()
+			defer server.Close()
+			// Fail writes while leaving the server able to send its result.
+			if err := client.SetWriteDeadline(time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if err := client.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			credit := make(chan struct{}, 1)
+			credit <- struct{}{}
+			close(credit)
+			forwardInput(client, strings.NewReader(input), credit)
+
+			result := make(chan error, 1)
+			go func() { result <- forwardproto.Send(server, 'X', []byte{37}) }()
+			kind, data, err := forwardproto.Receive(client, forwardproto.Chunk)
+			if err != nil || kind != 'X' || !bytes.Equal(data, []byte{37}) {
+				t.Fatalf("could not read the exit status: %q %v %v", kind, data, err)
+			}
+			if err := <-result; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 // A service refusal is reported as such, with status 125, so callers can tell
 // it apart from the host command's own failures.
 func TestStreamRefusal(t *testing.T) {
