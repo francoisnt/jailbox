@@ -18,9 +18,11 @@ lifecycle_require_fault_coverage() {
 }
 
 # Normalize only allocation suffixes, retaining the operation and its operands.
-# Staging file and directory names vary between otherwise identical fixtures.
+# Staging file and directory names vary between otherwise identical fixtures,
+# and forwarding start receives the newly created container's random ID.
 lifecycle_event_identity() {
-    sed -E 's/(\.ssh-generation\.|gitconfig\.tmp\.|\.home-setup-complete\.)[[:alnum:]]+/\1ALLOCATED/g'
+    sed -E 's/(\.ssh-generation\.|gitconfig\.tmp\.|\.home-setup-complete\.)[[:alnum:]]+/\1ALLOCATED/g
+        s/^(jailbox-core [^ ]+ start [^ ]+ )[0-9a-f]{64}( |$)/\1CONTAINER\2/'
 }
 
 # Also blank what legitimately differs between workers: the fixture directory,

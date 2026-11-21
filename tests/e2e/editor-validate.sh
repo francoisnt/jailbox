@@ -8,8 +8,10 @@ set -eu
 proof=.jailbox-editor-proof
 run_id=$(cat .jailbox-editor-run-id)
 test -n "$run_id"
-# Status must be checked before it is masked by the proof-file write.
-host_name=$(hostname)
+# Minimal images such as Fedora's have no hostname command. Where the test
+# forwards hostname, it requires the host's name in the proof, which a failed
+# call cannot produce.
+host_name=$(hostname 2>/dev/null) || host_name=
 
 write_probe=.jailbox-editor-write-check.$$
 : > "$write_probe"
