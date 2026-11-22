@@ -3,11 +3,9 @@
 #
 # Usage: scripts/gen-tested-matrix.sh [--write|--check]
 #   (default)  print the generated block to stdout
-#   --write    replace the block between the markers in docs/development.md
-#   --check    fail when the development guide block differs from regeneration, when the
-#              tinyproxy Containerfile FROM drifted from BASE_IMAGE_ALPINE, or
-#              when dev-images.Containerfile ARG defaults drifted from
-#              versions.env
+#   --write    replace the block between the markers in docs/development.md and
+#              write BASE_IMAGE_ALPINE into the tinyproxy Containerfile FROM line
+#   --check    fail when either generated output differs from versions.env
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,6 +15,7 @@ JAILBOX_DIR="$(dirname "$SCRIPT_DIR")"
 source "$JAILBOX_DIR/versions.env"
 
 DOCUMENT="$JAILBOX_DIR/docs/development.md"
+PROXY_CONTAINERFILE="$JAILBOX_DIR/src/container/tinyproxy/Containerfile"
 BEGIN_MARKER='<!-- BEGIN GENERATED: tested-matrix -->'
 END_MARKER='<!-- END GENERATED: tested-matrix -->'
 
@@ -81,6 +80,17 @@ write_block() {
     mv "$tmp" "$DOCUMENT"
 }
 
+# Replace the first FROM line. Copying the content back keeps the shipped
+# file's mode.
+write_proxy_from() {
+    local tmp
+    tmp="$(mktemp)"
+    trap 'rm -f "$tmp"' RETURN
+    awk -v image="$BASE_IMAGE_ALPINE" '!done && /^FROM / { print "FROM " image; done = 1; next } { print }' \
+        "$PROXY_CONTAINERFILE" > "$tmp"
+    cat "$tmp" > "$PROXY_CONTAINERFILE"
+}
+
 check_block() {
     local failed=0
 
@@ -94,28 +104,18 @@ check_block() {
     fi
 
     local tinyproxy_from
-    tinyproxy_from="$(awk '/^FROM /{print $2; exit}' "$JAILBOX_DIR/src/container/tinyproxy/Containerfile")"
+    tinyproxy_from="$(awk '/^FROM /{print $2; exit}' "$PROXY_CONTAINERFILE")"
     if [[ "$tinyproxy_from" != "$BASE_IMAGE_ALPINE" ]]; then
-        echo "container/tinyproxy/Containerfile FROM ($tinyproxy_from) != BASE_IMAGE_ALPINE ($BASE_IMAGE_ALPINE)" >&2
+        echo "src/container/tinyproxy/Containerfile FROM ($tinyproxy_from) != BASE_IMAGE_ALPINE ($BASE_IMAGE_ALPINE); run: bash scripts/gen-tested-matrix.sh --write" >&2
         failed=1
     fi
-
-    local key expected actual
-    for key in BASE_IMAGE_DEBIAN BASE_IMAGE_ALPINE BASE_IMAGE_FEDORA; do
-        expected="${!key}"
-        actual="$(sed -n "s/^ARG $key=//p" "$JAILBOX_DIR/tests/integration/dev-images.Containerfile")"
-        if [[ "$actual" != "$expected" ]]; then
-            echo "dev-images.Containerfile ARG $key ($actual) != versions.env ($expected)" >&2
-            failed=1
-        fi
-    done
 
     return "$failed"
 }
 
 case "${1:-}" in
     "")        gen_block ;;
-    --write)   write_block ;;
+    --write)   write_block; write_proxy_from ;;
     --check)   check_block ;;
     *) echo "usage: $(basename "$0") [--write|--check]" >&2; exit 2 ;;
 esac

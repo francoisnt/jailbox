@@ -1,8 +1,8 @@
-# Intentionally pinned: update this Alpine minor version deliberately rather
-# than floating on latest, and keep it aligned with BASE_IMAGE_ALPINE in
-# versions.env (jailbox builds this file at runtime, so it cannot source the
-# pin file itself; scripts/gen-tested-matrix.sh --check enforces alignment).
-FROM alpine:3.21
+# Pinned to an Alpine minor version rather than latest. The FROM line is
+# written from BASE_IMAGE_ALPINE in versions.env by
+# scripts/gen-tested-matrix.sh --write; change the pin there, not here.
+# (jailbox builds this file at runtime, where versions.env is not shipped.)
+FROM alpine:3.24
 RUN apk add --no-cache tinyproxy
 COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
 EXPOSE 8888

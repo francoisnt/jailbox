@@ -2,11 +2,11 @@
 # Each stage is a plain OS base that tests/integration/wrapper-images.sh wraps with
 # container/Containerfile.wrapper and exercises a distinct scenario.
 
-# Base image pins live in versions.env; wrapper-images.sh passes them as build
-# args. Defaults here must match (checked by scripts/gen-tested-matrix.sh --check).
-ARG BASE_IMAGE_DEBIAN=debian:12
-ARG BASE_IMAGE_ALPINE=alpine:3.21
-ARG BASE_IMAGE_FEDORA=fedora:41
+# Base image pins live only in versions.env; wrapper-images.sh passes them as
+# build args. There are no defaults, so a missing pin fails the build.
+ARG BASE_IMAGE_DEBIAN
+ARG BASE_IMAGE_ALPINE
+ARG BASE_IMAGE_FEDORA
 
 # ── OS matrix ────────────────────────────────────────────────────────────────
 # These three stages verify that container/setup.sh works across all supported

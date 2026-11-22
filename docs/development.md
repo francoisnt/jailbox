@@ -470,7 +470,7 @@ latest-version failures only file issues.
 | Container OS | VS Code 1.147.0 | VSCodium 1.143.17232 |
 |---|---|---|
 | Debian 12 | ✅ | ✅ |
-| Alpine 3.21 | — | ✅ |
+| Alpine 3.24 | — | ✅ |
 | Fedora 41 | ✅ | ✅ |
 
 VS Code Remote SSH does not support Alpine SSH hosts; that combination is
