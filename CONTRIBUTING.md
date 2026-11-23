@@ -43,9 +43,9 @@ must provide complete mappings; omissions fail explicitly. The portable gate
 checks these contracts and development-guide configuration-key coverage. After changing
 command help or membership, run `bash scripts/gen-public-api.sh --write` to
 refresh the generated command reference in `docs/automation.md`.
-The tested-version table in `docs/development.md` and the tinyproxy
-Containerfile `FROM` line are generated from `versions.env` by
-`bash scripts/gen-tested-matrix.sh --write`.
+The tested-version table in `docs/development.md` and the `FROM` lines of the
+tinyproxy Containerfile and the `jailbox init` Containerfile template are
+generated from `versions.env` by `bash scripts/gen-tested-matrix.sh --write`.
 Declare sandbox lifecycle commands in `CLI_LIFECYCLE_COMMANDS` and other
 commands in `CLI_OTHER_COMMANDS`; the lifecycle matrix consumes the former
 directly. These describe command responsibilities, not dispatch sequences.
@@ -90,6 +90,18 @@ Configure GitHub's merge requirements before activating the automation:
 GitHub enforces required checks, branch freshness, and reviews; the workflow
 does not duplicate those settings or approve PRs. Existing major action tags
 remain unchanged, so most current Dependabot proposals still require manual review.
+
+### Base-image updates
+
+Dependabot opens PRs for the Node test image tag. The Debian, Alpine, and
+Fedora pins in `versions.env` are updated by hand in a reviewed PR. Alpine is
+the base of the egress proxy image and Debian the base of the Containerfile
+that `jailbox init` writes, so their updates change what users get; Fedora is
+test coverage only. The scheduled canary files one `canary` issue when Docker
+Official Images has a newer stable series. To update, run
+`bash scripts/bump-base-image.sh debian:13` (with the image the issue names),
+commit the result, and open a PR. Mention a new Debian or Alpine base in the
+release notes. Closing the issue without a bump skips that series.
 
 ### Local checks
 

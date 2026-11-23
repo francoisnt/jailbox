@@ -461,11 +461,15 @@ test results for the relevant macOS, architecture, Podman, image, and editor ver
 The release gate installs the exact versions pinned in
 [`versions.env`](https://github.com/francoisnt/jailbox/blob/master/versions.env) — editors, Remote SSH extensions, the
 VSCodium REH server, and container base images — so a green gate vouches for
-this specific matrix. A daily canary workflow tests every new upstream
-release against the full suite and advances the pins automatically when it
-passes; failures are tracked as `canary`-labeled issues. Alpine/VSCodium is
+this specific matrix. A daily canary workflow tests new editor and extension
+releases against the full suite and advances those pins when it passes.
+Failures are tracked as `canary`-labeled issues. Alpine/VSCodium is
 a best-effort tier: the pinned combination is release-blocking, while
 latest-version failures only file issues.
+
+The canary also files an issue when a newer stable Debian, Alpine, or Fedora
+image series is available. Base images ship as defaults, so a maintainer
+bumps them in a PR, where the gates test the new image.
 
 | Container OS | VS Code 1.147.0 | VSCodium 1.143.17232 |
 |---|---|---|

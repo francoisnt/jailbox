@@ -1,11 +1,13 @@
 #!/bin/bash
 # Generate the development guide "Tested Configurations" block from versions.env.
 #
-# Usage: scripts/gen-tested-matrix.sh [--write|--check]
+# Usage: scripts/gen-tested-matrix.sh [--write|--check|--outputs]
 #   (default)  print the generated block to stdout
-#   --write    replace the block between the markers in docs/development.md and
-#              write BASE_IMAGE_ALPINE into the tinyproxy Containerfile FROM line
-#   --check    fail when either generated output differs from versions.env
+#   --write    replace the block between the markers in docs/development.md,
+#              write BASE_IMAGE_ALPINE into the tinyproxy Containerfile FROM line,
+#              and write BASE_IMAGE_DEBIAN into the jailbox init template FROM
+#   --check    fail when any generated output differs from versions.env
+#   --outputs  print the repository paths that --write changes
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,6 +18,9 @@ source "$JAILBOX_DIR/versions.env"
 
 DOCUMENT="$JAILBOX_DIR/docs/development.md"
 PROXY_CONTAINERFILE="$JAILBOX_DIR/src/container/tinyproxy/Containerfile"
+INIT_TEMPLATE="$JAILBOX_DIR/src/host/frontend/Containerfile.template"
+# The init template is copied into user projects, so it names the registry.
+INIT_IMAGE="docker.io/library/$BASE_IMAGE_DEBIAN"
 BEGIN_MARKER='<!-- BEGIN GENERATED: tested-matrix -->'
 END_MARKER='<!-- END GENERATED: tested-matrix -->'
 
@@ -33,11 +38,15 @@ $BEGIN_MARKER
 The release gate installs the exact versions pinned in
 [\`versions.env\`](https://github.com/francoisnt/jailbox/blob/master/versions.env) — editors, Remote SSH extensions, the
 VSCodium REH server, and container base images — so a green gate vouches for
-this specific matrix. A daily canary workflow tests every new upstream
-release against the full suite and advances the pins automatically when it
-passes; failures are tracked as \`canary\`-labeled issues. Alpine/VSCodium is
+this specific matrix. A daily canary workflow tests new editor and extension
+releases against the full suite and advances those pins when it passes.
+Failures are tracked as \`canary\`-labeled issues. Alpine/VSCodium is
 a best-effort tier: the pinned combination is release-blocking, while
 latest-version failures only file issues.
+
+The canary also files an issue when a newer stable Debian, Alpine, or Fedora
+image series is available. Base images ship as defaults, so a maintainer
+bumps them in a PR, where the gates test the new image.
 
 | Container OS | VS Code $CODE_VERSION | VSCodium $CODIUM_VERSION |
 |---|---|---|
@@ -64,31 +73,59 @@ assert_markers() {
     fi
 }
 
-write_block() {
-    local block_file tmp
-    block_file="$(mktemp)"
-    tmp="$(mktemp)"
-    trap 'rm -f "$block_file" "$tmp"' RETURN
-
+# Print the guide with a fresh generated block. ENVIRON passes the block
+# without awk's escape processing.
+render_block() {
+    local block
     assert_markers
-    gen_block > "$block_file"
-    awk -v begin="$BEGIN_MARKER" -v end="$END_MARKER" -v block_file="$block_file" '
-        $0 == begin { skip = 1; while ((getline line < block_file) > 0) print line; next }
+    block=$(gen_block) || return 1
+    BLOCK=$block awk -v begin="$BEGIN_MARKER" -v end="$END_MARKER" '
+        $0 == begin { skip = 1; print ENVIRON["BLOCK"]; next }
         $0 == end   { skip = 0; next }
         !skip       { print }
-    ' "$DOCUMENT" > "$tmp"
-    mv "$tmp" "$DOCUMENT"
+    ' "$DOCUMENT"
 }
 
-# Replace the first FROM line. Copying the content back keeps the shipped
-# file's mode.
-write_proxy_from() {
-    local tmp
-    tmp="$(mktemp)"
-    trap 'rm -f "$tmp"' RETURN
-    awk -v image="$BASE_IMAGE_ALPINE" '!done && /^FROM / { print "FROM " image; done = 1; next } { print }' \
-        "$PROXY_CONTAINERFILE" > "$tmp"
-    cat "$tmp" > "$PROXY_CONTAINERFILE"
+# Print FILE with its first FROM line naming IMAGE; fail without a FROM line.
+render_from() {
+    local file=$1 image=$2
+    awk -v image="$image" '
+        !done && /^FROM / { print "FROM " image; done = 1; next }
+        { print }
+        END { if (!done) exit 1 }
+    ' "$file" || {
+        echo "${file#"$JAILBOX_DIR"/} has no FROM line to update" >&2
+        return 1
+    }
+}
+
+# Prepare every output and confirm each file is writable before writing any,
+# so invalid input or a read-only file changes nothing. Writing over the
+# existing files keeps their modes. A write that still fails midway (a full
+# disk) can leave some files updated; restore the --outputs files from Git.
+write_all() {
+    local document proxy init output
+    document=$(render_block) || return 1
+    proxy=$(render_from "$PROXY_CONTAINERFILE" "$BASE_IMAGE_ALPINE") || return 1
+    init=$(render_from "$INIT_TEMPLATE" "$INIT_IMAGE") || return 1
+    for output in "$DOCUMENT" "$PROXY_CONTAINERFILE" "$INIT_TEMPLATE"; do
+        if [[ ! -w "$output" ]]; then
+            echo "${output#"$JAILBOX_DIR"/} is not writable; nothing was changed" >&2
+            return 1
+        fi
+    done
+    printf '%s\n' "$document" > "$DOCUMENT" &&
+        printf '%s\n' "$proxy" > "$PROXY_CONTAINERFILE" &&
+        printf '%s\n' "$init" > "$INIT_TEMPLATE"
+}
+
+check_from() {
+    local file=$1 image=$2 name=$3 current
+    current="$(awk '/^FROM /{print $2; exit}' "$file")"
+    if [[ "$current" != "$image" ]]; then
+        echo "${file#"$JAILBOX_DIR"/} FROM ($current) != $name ($image); run: bash scripts/gen-tested-matrix.sh --write" >&2
+        return 1
+    fi
 }
 
 check_block() {
@@ -103,19 +140,20 @@ check_block() {
         failed=1
     fi
 
-    local tinyproxy_from
-    tinyproxy_from="$(awk '/^FROM /{print $2; exit}' "$PROXY_CONTAINERFILE")"
-    if [[ "$tinyproxy_from" != "$BASE_IMAGE_ALPINE" ]]; then
-        echo "src/container/tinyproxy/Containerfile FROM ($tinyproxy_from) != BASE_IMAGE_ALPINE ($BASE_IMAGE_ALPINE); run: bash scripts/gen-tested-matrix.sh --write" >&2
-        failed=1
-    fi
+    check_from "$PROXY_CONTAINERFILE" "$BASE_IMAGE_ALPINE" BASE_IMAGE_ALPINE || failed=1
+    check_from "$INIT_TEMPLATE" "$INIT_IMAGE" 'docker.io/library/ + BASE_IMAGE_DEBIAN' || failed=1
 
     return "$failed"
 }
 
 case "${1:-}" in
     "")        gen_block ;;
-    --write)   write_block; write_proxy_from ;;
+    --write)   write_all ;;
     --check)   check_block ;;
-    *) echo "usage: $(basename "$0") [--write|--check]" >&2; exit 2 ;;
+    --outputs)
+        for output in "$DOCUMENT" "$PROXY_CONTAINERFILE" "$INIT_TEMPLATE"; do
+            printf '%s\n' "${output#"$JAILBOX_DIR"/}"
+        done
+        ;;
+    *) echo "usage: $(basename "$0") [--write|--check|--outputs]" >&2; exit 2 ;;
 esac

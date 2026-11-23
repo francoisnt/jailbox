@@ -5,6 +5,8 @@ name: Canary
 # full gate-equivalent suite at those versions; on green, canary-report.sh
 # pushes the pin bump directly to master (guarded: only if master still
 # equals the tested SHA), on failure it files a deduped "canary" issue.
+# A newer stable Debian, Alpine, or Fedora image series also gets a "canary"
+# issue; base images ship as defaults, so a maintainer bumps them in a PR.
 
 on:
   schedule:
@@ -60,6 +62,21 @@ jobs:
 
       - name: Check that the Go series is supported
         run: bash scripts/go-version.sh
+
+  base-images:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Report newer stable base images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/canary-base-images.sh
 
   # VSCodium's build commit names the REH server directory and cannot be
   # resolved from release metadata (upstream/stable.json carries Microsoft's
