@@ -11,7 +11,7 @@ that fails when it drifts. This extends the approach already used for
 configuration and commands in `src/public-api.sh`.
 
 This plan is independent of the Go series. It assumes the Alpine 3.24 bump
-and the `versions.env` cleanup are committed, including the `FROM` rewrite
+and the `versions.env` cleanup are committed, including the `FROM` rewrites
 that `scripts/gen-tested-matrix.sh --write` performs.
 
 ### Required changes
@@ -72,10 +72,27 @@ that `scripts/gen-tested-matrix.sh --write` performs.
    programs. Remove the `FROM` rewrite and its check from
    `scripts/gen-tested-matrix.sh`. `scripts/validate-release.sh` requires the
    rendered file in each release archive.
+10. **Project template base image from `versions.env` at build time.** The
+    Containerfile that `jailbox init` writes, from
+    `src/host/frontend/Containerfile.template`, gets its base image from
+    `BASE_IMAGE_DEBIAN` the same way item 9 handles the proxy: a visible
+    placeholder in the committed file, rendered by `scripts/build-programs.sh`
+    under `libexec/`. The rendered `FROM` keeps the fully qualified registry
+    name (`docker.io/library/` followed by the pin), so the written file still
+    resolves on hosts without short-name configuration. `jailbox init` copies
+    the rendered file; when it needs one and the file is missing, it refuses
+    with the guidance item 9 uses. Remove the template's `FROM` rewrite and
+    check from `scripts/gen-tested-matrix.sh`. Update
+    `tests/unit/frontend-init.sh`, which compares the written file with the
+    committed template, and `tests/unit/base-image-updates.sh`, which checks
+    both `FROM` rewrites. Each lifecycle matrix worker runs
+    jailbox from a private runtime tree in `tests/lib/lifecycle-runtime.sh`
+    that links individual `libexec/` entries; include both rendered files
+    there.
 
 ### Constraints
 
-- The rendering in item 9 accepts only a single container image reference
+- The rendering in items 9 and 10 accepts only a single container image reference
   (no whitespace, newlines, or other characters that could add Containerfile
   instructions), and fails the build otherwise.
 - Behavior, generated files, and release archives are otherwise unchanged:
@@ -93,14 +110,16 @@ that `scripts/gen-tested-matrix.sh --write` performs.
 
 - For each item, changing the single declaration changes every consumer, or
   a check fails with a message naming the stale copy. Regression tests show
-  this for items 1, 3, 7, 8, and 9.
+  this for items 1, 3, 7, 8, 9, and 10.
 - The proxy and SSH ports, the state directory, and the managed ID range
   behave exactly as before; the dev gate passes, and CI's runtime and matrix
   gates pass.
-- A checkout without built programs fails a filtered launch with the existing
-  "build checkout programs" guidance.
-- Each release archive contains the rendered proxy Containerfile, and its
-  base image matches `BASE_IMAGE_ALPINE`.
+- A checkout without built programs fails a filtered launch, and a
+  `jailbox init` that would write a Containerfile, with the existing "build
+  checkout programs" guidance.
+- Each release archive contains the rendered proxy Containerfile and project
+  template, whose base images match `BASE_IMAGE_ALPINE` and
+  `docker.io/library/` followed by `BASE_IMAGE_DEBIAN`.
 
 ## Implementation detail
 
