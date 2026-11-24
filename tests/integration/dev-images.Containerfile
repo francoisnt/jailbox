@@ -22,7 +22,7 @@ FROM ${BASE_IMAGE_FEDORA} AS fedora
 # ── Arbitrary existing user conflict ──────────────────────────────────────────
 # The host UID already belongs to a non-managed image user. container/setup.sh
 # must allocate another ID without renaming, reusing, or chowning that user's files.
-FROM node:22-bookworm AS uid-owned-by-other-user
+FROM node:25-bookworm AS uid-owned-by-other-user
 ARG HOST_UID=1000
 RUN if [ "${HOST_UID}" != 1000 ]; then useradd -m -u "${HOST_UID}" -s /bin/bash appuser; fi
 USER node
