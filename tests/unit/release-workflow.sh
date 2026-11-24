@@ -8,11 +8,8 @@ pr_checks="$ROOT/.github/workflows/pr-checks.yml"
 
 job() { awk -v job="  $2:" '$0 == job {found=1; next} found && /^  [[:alnum:]_-]+:/ {exit} found' "$1"; }
 
-for tag in release-request release-request-first-major \
-    release-request-bump-patch release-request-bump-minor release-request-bump-major; do
-    [[ "$tag" != v[0-9]*.[0-9]*.[0-9]* ]]
-    grep -Fxq "      - \"$tag\"" "$workflow"
-done
+grep -Fxq '      - "release-request"' "$workflow"
+grep -Fxq '      - "release-request-*"' "$workflow"
 
 # Ensure the real workflow connects both inputs to the tested decoder, keeps
 # all gates as publication prerequisites, and builds only before tagging.
@@ -119,19 +116,22 @@ if grep -Fq 'contents: write' "$gates"; then exit 1; fi
 awk -f "$ROOT/tests/lib/release-order.awk" "$workflow"
 # shellcheck disable=SC2016 # Match the validator invocation literally.
 grep -Fq 'bash "$ROOT_DIR/scripts/validate-release.sh" "$version" "$stage"' "$ROOT/scripts/build-tarball.sh"
-grep -Fq 'git push origin ":refs/tags/' "$workflow"
+grep -Fxq '        run: bash scripts/select-release-request.sh --cleanup' "$workflow"
 # Scope assertions to the recorder jobs: unrelated success guards do not count.
 release_record=$(job "$workflow" record-compatibility)
 grep -Fxq '    needs: [select-version, publish]' <<< "$release_record"
 # shellcheck disable=SC2016 # Match the output expressions literally.
-for binding in 'bash_version: ${{ needs.test-gates.outputs.runtime_bash_version }}' \
-    'podman_version: ${{ needs.test-gates.outputs.runtime_podman_version }}' \
-    'tested_at: ${{ needs.test-gates.outputs.tested_at }}' \
-    'run_url: ${{ needs.test-gates.outputs.test_run_url }}'; do
-    grep -Fxq "      $binding" <<< "$publish_job"
+for mapping in 'bash_version RUNTIME_BASH_VERSION runtime_bash_version' \
+    'podman_version RUNTIME_PODMAN_VERSION runtime_podman_version' \
+    'tested_at TESTED_AT tested_at' 'run_url TEST_RUN_URL test_run_url'; do
+    read -r publish_output variable gate_output <<< "$mapping"
+    grep -Fxq "      $publish_output: \${{ needs.test-gates.outputs.$gate_output }}" <<< "$publish_job"
+    grep -Fxq "          $variable: \${{ needs.test-gates.outputs.$gate_output }}" <<< "$publish_job"
+    grep -Fxq "          $variable: \${{ needs.publish.outputs.$publish_output }}" <<< "$release_record"
 done
 # shellcheck disable=SC2016 # Checkout must survive deletion of the request tag.
-grep -Fxq '          ref: ${{ github.sha }}' <<< "$release_record"
+grep -Fxq '          ref: ${{ needs.select-version.outputs.commit }}' <<< "$release_record"
 # shellcheck disable=SC2016 # Preserve the tested commit in release history.
-grep -Fxq '          TESTED_COMMIT: ${{ github.sha }}' <<< "$release_record"
+grep -Fxq '          TESTED_COMMIT: ${{ needs.select-version.outputs.commit }}' <<< "$release_record"
+grep -Fxq '    if: always() && needs.select-version.result == '\''success'\'' && needs.publish.result == '\''success'\''' <<< "$release_record"
 echo 'Release workflow contract passed'

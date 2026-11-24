@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+import time
+
+assert sys.argv[1:6] == ["-a", "never", "exec", "--sandbox", "read-only"]
+assert "--skip-git-repo-check" in sys.argv
+assert "--json" in sys.argv
+assert sys.argv[sys.argv.index("-c") + 1] == 'model_reasoning_effort="low"'
+prompt = sys.stdin.read()
+assert "required upgrade actions first" in prompt
+assert "each about one user-facing topic" in prompt
+assert "short bold topic label" in prompt
+assert "describe the final behavior of features introduced within this range" in prompt
+assert "The interface, dependency, and verification sections are generated separately" in prompt
+assert "Work from this input alone" in prompt
+if "CODEX_EXPECT_INTERFACE_CHANGE" in os.environ:
+    assert os.environ["CODEX_EXPECT_INTERFACE_CHANGE"] in prompt
+    assert os.environ["CODEX_EXPECT_DEPENDENCY_CHANGE"] in prompt
+if "CODEX_EXPECT_SUMMARY" in os.environ:
+    assert os.environ["CODEX_EXPECT_SUMMARY"] in prompt
+    assert os.environ["CODEX_EXPECT_PLAN"] in prompt
+    assert not Path.cwd().is_relative_to(Path(os.environ["CODEX_REPO"]))
+def emit(kind, **fields):
+    print(json.dumps({"type": kind, **fields}), flush=True)
+
+
+print("Codex fixture startup warning", file=sys.stderr, flush=True)
+tool = {"id": "read", "type": "command_execution", "command": "git status --short"}
+emit("item.started", item=tool)
+emit("item.completed", item={**tool, "aggregated_output": "Tool result omitted from terminal"})
+if "CODEX_FIXTURE_PIDS" in os.environ:
+    Path(os.environ["CODEX_FIXTURE_PIDS"]).write_text(f"{os.getppid()} {os.getpid()}\n")
+with Path(os.environ["CODEX_CALLS"]).open("a") as stream:
+    stream.write("draft\n")
+mode = os.environ.get("CODEX_TEST_MODE")
+if mode == "timeout":
+    time.sleep(60)
+if mode == "fail":
+    emit("error", message="Fixture connection lost")
+    emit("turn.failed", error={"message": "Fixture connection lost"})
+    sys.exit(1)
+markdown = Path(os.environ["CODEX_MARKDOWN"]).read_bytes()
+emit("item.completed", item={"type": "agent_message", "text": markdown.decode("utf-8")})
+Path(sys.argv[sys.argv.index("--output-last-message") + 1]).write_bytes(markdown)

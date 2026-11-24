@@ -481,8 +481,9 @@ that buffer their own output can delay individual lines.
 Releases are initiated manually and gated in CI: `scripts/release.sh`
 previews the automatic version and allows a higher bump interactively or with
 `--bump patch|minor|major`. It pushes an ephemeral request tag carrying that
-minimum; the Release workflow applies it when re-selecting the version and
-creates the version tag and GitHub Release only after validation passes.
+minimum and the optional highlights. The Release workflow re-selects the
+version and prepares a draft with the notes and assets after validation.
+Publishing the draft creates the version tag at the tested commit.
 Each release runs lint, portable, runtime, the full matrix, and both editors on
 the exact release commit. The gates and versioned package build use the same Go
 release. The workflow validates the package before publication and records the
@@ -495,20 +496,37 @@ Run `just release` or `bash scripts/release.sh` to see the automatic selection,
 optionally raise the bump, and confirm dispatch. Use `--bump minor` or
 `--bump major` to specify a minimum explicitly. `--bump patch` is also accepted.
 The higher of the automatic and requested bumps wins locally and in CI.
-`--yes` skips prompts. `--dry-run` and `--print-version` are non-interactive and
-honor `--bump`.
-Start the Actions Release workflow from the default branch. It offers the
+`--yes` skips prompts and still drafts highlights when Codex is available.
+To enable drafting, install the Codex CLI, sign in with `codex login`, and put
+`codex` on your PATH. The release script prepares the Git context and runs
+Codex once with read-only access, low reasoning effort, and a 60-second limit.
+Codex's diagnostics and any tool calls appear on stderr. Tool calls start
+with `[CODEX TOOL]`, and the terminal bar shows elapsed time between messages.
+The script falls back to Git commit titles if Codex is unavailable or the
+draft fails validation.
+
+`just release --dry-run` uses the same bump selection and highlight drafting
+as a local release, with verification marked pending. It stops before creating or
+pushing a request tag. It uses local tags if the fetch fails, and falls back
+to Git titles if Codex is unavailable. Use `--dry-run --yes` to skip the bump
+prompt. `--print-version` prints only the chosen version.
+
+You can also start the Actions Release workflow from the default branch.
+This uses Git commit titles for highlights and offers the
 same minimum-bump choice, defaulting to `auto`. A major bump before 1.0 produces
 `v1.0.0`; `--first-major` remains
 available only before 1.0 and cannot be combined with an explicit bump in
 either entry path. Overrides apply only to their release request.
 
-Release requests use ephemeral `release-request`, `release-request-first-major`,
-or `release-request-bump-{patch,minor,major}` tags. They never participate in
-version-tag discovery. CI builds and validates all four platform archives and
-tests installation on each native platform before creating the release tag.
-It publishes those
-archives, their platform-specific `latest` aliases, `install.sh`, and checksums.
+Local requests use annotated tags named `release-request-<object-id>`,
+`release-request-first-major-<object-id>`, or
+`release-request-bump-<level>-<object-id>`. CI uses the annotation's highlights
+when its previous release and tested commit match CI's selection.
+CI builds and validates all four platform archives and tests installation on
+each native platform. It uploads the archives, their platform-specific
+`latest` aliases, `install.sh`, and checksums to the draft. A failed upload
+leaves the version untagged, and a retry replaces the draft. If writing
+`releases.csv` fails after publication, rerun the failed reporting job.
 Packaging stamps `src/install.sh` with the selected release version. The
 standalone installer and the archive’s installer are identical and download
 assets from that fixed release by default. The README’s latest URL selects the

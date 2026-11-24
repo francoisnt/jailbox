@@ -9,6 +9,7 @@ FIRST_MAJOR=false
 PRINT_VERSION=false
 REQUESTED_BUMP=""
 AUTOMATIC_BUMP=""
+RELEASE_HIGHLIGHTS=""
 
 usage() {
     cat <<EOF_USAGE
@@ -23,8 +24,9 @@ Options:
   --yes              Accept defaults without prompting
   --first-major      Release v1.0.0
   --bump LEVEL       Minimum bump: patch, minor, or major (never lowers policy)
-  --dry-run          Print the selected version without dispatching
-  --print-version    Print only the selected version (used by the workflow)
+  --dry-run          Preview the selected version and release notes without dispatching
+                     Use --yes to skip the bump prompt for unattended previews
+  --print-version    Print only the selected version
   --help             Show this help
 
 Environment:
@@ -110,7 +112,8 @@ bump_version() {
 
 # Return the highest local version tag, if any.
 latest_tag() {
-    git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1
+    git -C "$ROOT_DIR" for-each-ref --count=1 --sort=-v:refname \
+        --format='%(refname:strip=2)' 'refs/tags/v[0-9]*.[0-9]*.[0-9]*'
 }
 
 # Fetch remote tags so local release decisions include published releases.
@@ -208,21 +211,21 @@ ensure_release_branch_synced() {
 }
 
 # Select SELECTED_VERSION/BUMP_REASON from published tags and the public API
-# diff. Shared by local runs and the CI workflow (--print-version), so both
-# always agree on the version policy.
+# diff. Local requests and CI both use this selector.
 select_release_version() {
-    local latest api_change
-
-    latest="$(latest_tag)" || die 'could not inspect latest release tag'
-    [ -n "$latest" ] || latest="v0.0.0"
-    validate_version "$latest"
-
-    if [ "$latest" = "v0.0.0" ]; then
-        api_change=initial
-    else
-        api_change="$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$latest")" || die 'could not compare public API'
+    TARGET_COMMIT=$(git -C "$ROOT_DIR" rev-parse --verify 'HEAD^{commit}') ||
+        die 'could not resolve the release commit'
+    PREVIOUS_TAG=$(latest_tag) || die 'could not inspect latest release tag'
+    PREVIOUS_COMMIT=""
+    API_CHANGE=initial
+    if [ -n "$PREVIOUS_TAG" ]; then
+        validate_version "$PREVIOUS_TAG"
+        PREVIOUS_COMMIT=$(git -C "$ROOT_DIR" rev-parse --verify "refs/tags/$PREVIOUS_TAG^{commit}") ||
+            die 'could not resolve the previous release commit'
+        API_CHANGE=$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$PREVIOUS_COMMIT" "$TARGET_COMMIT") ||
+            die 'could not compare public API'
     fi
-    select_version "$latest" "$api_change"
+    select_version "${PREVIOUS_TAG:-v0.0.0}" "$API_CHANGE"
 }
 
 # Map public API diff status to the release bump policy.
@@ -235,13 +238,20 @@ suggest_bump() {
     elif [ "$(version_major "$latest")" -ge 1 ] && [ "$api_change" = removed ]; then
         SUGGESTED_BUMP="major"
         BUMP_REASON="Public API items were removed"
-    elif [ "$api_change" = removed ] || \
-        { [ "$(version_major "$latest")" -ge 1 ] && [ "$api_change" = added ]; }; then
+    elif [ "$api_change" = removed ]; then
         SUGGESTED_BUMP="minor"
-        BUMP_REASON="Public API items changed"
+        BUMP_REASON="Public API items were removed before v1.0.0"
+    elif [ "$api_change" = added ]; then
+        BUMP_REASON="Public API items were added"
+        if [ "$(version_major "$latest")" -ge 1 ]; then
+            SUGGESTED_BUMP="minor"
+        else
+            SUGGESTED_BUMP="patch"
+            BUMP_REASON+=" before v1.0.0"
+        fi
     else
         SUGGESTED_BUMP="patch"
-        BUMP_REASON="No breaking public API changes"
+        BUMP_REASON="Public API items were unchanged"
     fi
 }
 
@@ -255,7 +265,7 @@ select_version() {
     case "$REQUESTED_BUMP:$SUGGESTED_BUMP" in
         major:patch|major:minor|minor:patch)
             SUGGESTED_BUMP=$REQUESTED_BUMP
-            BUMP_REASON="Manual minimum bump: $REQUESTED_BUMP"
+            BUMP_REASON="Requested minimum bump $REQUESTED_BUMP (policy: $BUMP_REASON)"
             ;;
     esac
 
@@ -274,7 +284,7 @@ select_version() {
     fi
 
     validate_version "$SELECTED_VERSION"
-    if git -C "$ROOT_DIR" rev-parse --verify --quiet "$SELECTED_VERSION" >/dev/null; then
+    if git -C "$ROOT_DIR" rev-parse --verify --quiet "refs/tags/$SELECTED_VERSION" >/dev/null; then
         die "tag already exists: $SELECTED_VERSION"
     else
         status=$?
@@ -300,8 +310,7 @@ choose_bump() {
         major:*|minor:patch) ;;
         *) REQUESTED_BUMP=$answer ;;
     esac
-    select_release_version
-    printf 'Selected version: %s\n' "$SELECTED_VERSION"
+    select_version "${PREVIOUS_TAG:-v0.0.0}" "$API_CHANGE"
 }
 
 # Ask before dispatching the release workflow unless --yes was supplied.
@@ -317,32 +326,38 @@ confirm_release() {
     esac
 }
 
-# Trigger the release workflow with a plain git push — no gh dependency.
-# An ephemeral release-request tag (never matching v*.*.*) starts the
-# workflow, which re-selects the version with the same policy, runs the full
-# release gate, and creates the version tag and GitHub Release only after the
-# gate passes, so a failed run leaves no stale version tag. The workflow
-# deletes the request tag when it finishes; --force covers a leftover marker
-# from an interrupted run.
+# Push the annotation directly. The ref includes its object ID so a workflow
+# can identify the triggering annotation even when a ref has been overwritten.
 dispatch_release() {
-    local request_tag
+    local request_tag tagger request_object
 
     request_tag="release-request"
     [ "$FIRST_MAJOR" = true ] && request_tag="release-request-first-major"
     [ -z "$REQUESTED_BUMP" ] || request_tag="release-request-bump-$REQUESTED_BUMP"
-    git -C "$ROOT_DIR" push --force origin "HEAD:refs/tags/$request_tag"
+    tagger=$(git -C "$ROOT_DIR" -c user.name='jailbox release request' \
+        -c user.email='release-request@jailbox.invalid' var GIT_COMMITTER_IDENT) ||
+        die 'could not create release request tagger'
+    request_object=$(
+        printf 'object %s\ntype commit\ntag %s\ntagger %s\n\njailbox release highlights v1\n%s\n%s\n%s\n%s\n' \
+            "$TARGET_COMMIT" "$request_tag" "$tagger" \
+            "$PREVIOUS_TAG" "$PREVIOUS_COMMIT" "$TARGET_COMMIT" "$RELEASE_HIGHLIGHTS" |
+            git -C "$ROOT_DIR" mktag
+    ) || die 'could not create annotated release request'
+    request_tag+="-$request_object"
+    git -C "$ROOT_DIR" push origin "$request_object:refs/tags/$request_tag"
     echo "Pushed $request_tag; the release workflow will tag and publish after the gate passes."
     echo "Follow it in GitHub Actions (Release workflow)."
 }
 
 # Coordinate version selection, confirmation, and workflow dispatch.
 main() {
+    local status
+
     parse_args "$@"
     require_command git
     require_command bash
 
-    # Machine-readable mode for the workflow's select-version job: version
-    # only on stdout, no prompts, no dispatch.
+    # Machine-readable output for callers that only need the version.
     if [ "$PRINT_VERSION" = true ]; then
         refresh_tags
         select_release_version
@@ -350,6 +365,7 @@ main() {
         return 0
     fi
 
+    require_command python3
     if [ "$DRY_RUN" != true ]; then
         ensure_clean_tree
         ensure_origin_remote
@@ -361,16 +377,24 @@ main() {
         ensure_no_local_only_version_tags
     fi
     select_release_version
-    echo "Selected version: $SELECTED_VERSION"
-    echo "Bump reason:"
-    printf '%s\n' "$BUMP_REASON" | sed 's/^/  /'
+    choose_bump
+    RELEASE_HIGHLIGHTS=$(python3 -B "$ROOT_DIR/scripts/lib/release_notes.py" \
+        draft "$PREVIOUS_COMMIT" "$TARGET_COMMIT") || {
+        status=$?
+        if [[ "$status" == 130 ]]; then
+            return 130
+        fi
+        die 'could not prepare release highlights'
+    }
+    printf 'Selected version: %s\nBump reason: %s\n\n' "$SELECTED_VERSION" "$BUMP_REASON"
+    RELEASE_HIGHLIGHTS=$RELEASE_HIGHLIGHTS python3 -B "$ROOT_DIR/scripts/lib/release_notes.py" render \
+        "$SELECTED_VERSION" "$PREVIOUS_TAG" "$PREVIOUS_COMMIT" "$TARGET_COMMIT"
 
     if [ "$DRY_RUN" = true ]; then
         echo "Dry run: no release dispatched."
         return 0
     fi
 
-    choose_bump
     confirm_release
     dispatch_release
 }

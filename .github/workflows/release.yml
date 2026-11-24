@@ -5,7 +5,7 @@ name: Release
 # release-request tag — plain git, no gh dependency. The version is selected
 # in CI with the same policy as scripts/release.sh. Dependency pins must be
 # current. Each release runs all five gates on the commit being packaged.
-# Tags are created only after all validation succeeds.
+# GitHub creates the version tag when the completed draft is published.
 on:
   workflow_dispatch:
     inputs:
@@ -25,32 +25,34 @@ on:
   push:
     tags:
       - "release-request"
-      - "release-request-first-major"
-      - "release-request-bump-patch"
-      - "release-request-bump-minor"
-      - "release-request-bump-major"
+      - "release-request-*"
 
 # Only jobs that push tags, commits or the release get write access.
 permissions:
   contents: read
 
 # One release at a time: parallel runs would select the same version and
-# race on the tag push.
+# race to publish.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
   select-version:
+    if: github.event_name != 'push' || !github.event.deleted
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.select.outputs.version }}
+      commit: ${{ steps.select.outputs.commit }}
+      previous_tag: ${{ steps.select.outputs.previous_tag }}
+      previous_commit: ${{ steps.select.outputs.previous_commit }}
+      highlights: ${{ steps.select.outputs.highlights }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
-          # Full history and tags: version selection reads the latest tag and
-          # diffs host/public-api.sh against it.
+          # Full history and tags for the version baseline and request annotation.
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Require a release from the default branch
@@ -79,10 +81,7 @@ jobs:
           REQUEST_TAG: ${{ github.ref_name }}
           FIRST_MAJOR: ${{ inputs.first_major }}
           BUMP: ${{ inputs.bump }}
-        run: |
-          version="$(bash scripts/select-release-request.sh)"
-          echo "Selected version: $version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+        run: bash scripts/select-release-request.sh
 
   # The gates and release package use the same, newest Go patch release.
   go-version:
@@ -93,6 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.select-version.outputs.commit }}
           persist-credentials: false
       - name: Require current dependency pins
         run: bash scripts/plan-updates.sh --check
@@ -114,6 +114,9 @@ jobs:
     needs: [select-version, go-version]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.select-version.outputs.commit }}
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -151,6 +154,9 @@ jobs:
             platform: darwin-arm64
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.select-version.outputs.commit }}
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: release-assets
@@ -182,46 +188,58 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.select-version.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/download-artifact@v8
         with:
           name: release-assets
           path: dist
 
-      - name: Create and push release tag
+      - name: Render verified release notes
         env:
           VERSION: ${{ needs.select-version.outputs.version }}
+          TESTED_COMMIT: ${{ needs.select-version.outputs.commit }}
+          PREVIOUS_TAG: ${{ needs.select-version.outputs.previous_tag }}
+          PREVIOUS_COMMIT: ${{ needs.select-version.outputs.previous_commit }}
+          RELEASE_HIGHLIGHTS: ${{ needs.select-version.outputs.highlights }}
+          RUNTIME_BASH_VERSION: ${{ needs.test-gates.outputs.runtime_bash_version }}
+          RUNTIME_PODMAN_VERSION: ${{ needs.test-gates.outputs.runtime_podman_version }}
+          TESTED_AT: ${{ needs.test-gates.outputs.tested_at }}
+          TEST_RUN_URL: ${{ needs.test-gates.outputs.test_run_url }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$VERSION" -m "Release $VERSION" "$GITHUB_SHA"
-          git push origin "$VERSION"
+          python3 scripts/lib/release_notes.py render --verified \
+            "$VERSION" "$PREVIOUS_TAG" "$PREVIOUS_COMMIT" "$TESTED_COMMIT" > release-notes.md
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
-        with:
-          tag_name: ${{ needs.select-version.outputs.version }}
-          files: |
-            dist/jailbox-${{ needs.select-version.outputs.version }}-*.tar.gz
-            dist/jailbox-latest-*.tar.gz
-            dist/install.sh
-            dist/SHA256SUMS
+      - name: Prepare and publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.select-version.outputs.version }}
+          TESTED_COMMIT: ${{ needs.select-version.outputs.commit }}
+        run: python3 scripts/lib/publish_release.py "$VERSION" "$TESTED_COMMIT" release-notes.md dist
 
   # Remove the ephemeral request tag whether the release succeeded or not.
-  # A leftover marker is harmless (the next request force-pushes over it)
-  # but would clutter the tag list.
+  # The lease keeps a later push to the same ref from being deleted.
   cleanup-request:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     needs: [publish]
-    if: ${{ always() && github.event_name == 'push' }}
+    if: ${{ always() && github.event_name == 'push' && !github.event.deleted }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Delete release-request tag
-        run: git push origin ":refs/tags/${{ github.ref_name }}"
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          REQUEST_TAG: ${{ github.ref_name }}
+          REQUEST_AFTER: ${{ github.event.after }}
+        run: bash scripts/select-release-request.sh --cleanup
 
   record-compatibility:
     needs: [select-version, publish]
@@ -232,11 +250,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.select-version.outputs.commit }}
       - name: Append successful tested combination
         env:
           TARGET: ${{ needs.select-version.outputs.version }}
-          TESTED_COMMIT: ${{ github.sha }}
+          TESTED_COMMIT: ${{ needs.select-version.outputs.commit }}
           RUNTIME_BASH_VERSION: ${{ needs.publish.outputs.bash_version }}
           RUNTIME_PODMAN_VERSION: ${{ needs.publish.outputs.podman_version }}
           TESTED_AT: ${{ needs.publish.outputs.tested_at }}

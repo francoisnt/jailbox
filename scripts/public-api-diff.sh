@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LC_ALL=C
 
 # Read a file from the current checkout or from a git ref.
 file_at_ref() {
@@ -48,7 +49,11 @@ cli_api_values() {
         public_api_values "$ref" "CLI_OTHER_COMMANDS" || return 1
     } | sort -u)" || return 1
     if [ -n "$categorized" ]; then
-        { printf '%s\n' "$categorized"; public_api_values "$ref" "CLI_FLAGS_WITH_VALUES"; } | sort -u || return 1
+        {
+            printf '%s\n' "$categorized"
+            public_api_values "$ref" "CLI_FLAGS_WITH_VALUES" || return 1
+            public_api_values "$ref" "CLI_FLAGS_WITHOUT_VALUES" || return 1
+        } | sort -u || return 1
         return
     fi
 
@@ -77,19 +82,24 @@ public_api_names() {
     } | sort -u
 }
 
-# Compare BASE_REF to the current checkout and print removed, added, or unchanged.
+# Print the bump classification, followed by all changes in detailed mode.
 main() {
-    local base_ref removed added base_names current_names
+    local details=false base_ref target_ref removed added base_names current_names name
 
-    if [ "$#" -ne 1 ]; then
-        echo "Usage: scripts/public-api-diff.sh BASE_REF" >&2
+    if [ "${1:-}" = --details ]; then
+        details=true
+        shift
+    fi
+    if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+        echo "Usage: scripts/public-api-diff.sh [--details] BASE_REF [TARGET_REF]" >&2
         exit 2
     fi
 
     base_ref="$1"
+    target_ref="${2:-}"
 
     base_names=$(public_api_names "$base_ref") || return 1
-    current_names=$(public_api_names "") || return 1
+    current_names=$(public_api_names "$target_ref") || return 1
     removed=$(comm -23 <(printf '%s\n' "$base_names") <(printf '%s\n' "$current_names")) || return 1
     added=$(comm -13 <(printf '%s\n' "$base_names") <(printf '%s\n' "$current_names")) || return 1
 
@@ -99,6 +109,15 @@ main() {
         printf 'added\n'
     else
         printf 'unchanged\n'
+    fi
+
+    if [ "$details" = true ]; then
+        while IFS= read -r name; do
+            [ -z "$name" ] || printf 'removed\t%s\n' "$name"
+        done <<< "$removed"
+        while IFS= read -r name; do
+            [ -z "$name" ] || printf 'added\t%s\n' "$name"
+        done <<< "$added"
     fi
 }
 
