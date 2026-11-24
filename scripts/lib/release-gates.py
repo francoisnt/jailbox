@@ -12,7 +12,8 @@ import urllib.parse
 import zipfile
 
 GATES = {"lint", "portable", "runtime", "matrix", "editor"}
-WORKFLOWS = {"pr-checks.yml", "test-gates.yml", "release.yml", "canary.yml"}
+# The published-release editor check tests a tag and runs only the editor gate.
+WORKFLOWS = {"pr-checks.yml", "test-gates.yml", "release.yml"}
 PROOF_FILE = "verified-test-gates.json"
 RUNTIME_FIELDS = ("bash_version", "podman_version", "tested_at", "run_url")
 GO_VERSION = re.compile(r"1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
@@ -67,7 +68,7 @@ def record(env):
     if inputs.pop("go_version", "") not in ("", go_version):
         raise ValueError("gates did not use the requested Go release")
     if inputs.pop("run_editor", None) is not True or any(inputs.values()):
-        raise ValueError("evidence requires both editors and the pinned dependencies")
+        raise ValueError("evidence requires both editors and the full matrix")
     identity = {"repository": env["GITHUB_REPOSITORY"], "sha": env["GITHUB_SHA"],
                 "run_id": int(env["GITHUB_RUN_ID"]), "attempt": int(env["GITHUB_RUN_ATTEMPT"])}
     url = run_url(env["GITHUB_SERVER_URL"], identity["repository"], identity["run_id"], identity["attempt"])
@@ -128,7 +129,7 @@ def select(api, repository, sha, branch, current_run, server, go_version):
                       for run in runs)
 
     relevant = history()
-    # Push checks cannot carry canary overrides or PR merge-checkout ambiguity.
+    # Only push checks directly establish coverage for this master commit.
     candidates = [run for run in relevant if workflow(run) == "pr-checks.yml"
                   and run["event"] == "push" and run["head_branch"] == branch
                   and run["head_repository"]["full_name"] == repository]
@@ -139,8 +140,7 @@ def select(api, repository, sha, branch, current_run, server, go_version):
         raise ValueError("latest push CI has not passed")
     started = timestamp(candidate["run_started_at"])
     for run in relevant:
-        # Conservatively include canaries and partial/manual runs as blockers.
-        # A successful later canary cannot erase a failed pinned check.
+        # Conservatively include later failures and unfinished runs of the full gates.
         if (run["id"] != candidate["id"] and timestamp(run["updated_at"]) >= started
                 and (run["status"] != "completed" or run["conclusion"] != "success")):
             raise ValueError("a later test run is unfinished or did not pass")
@@ -178,7 +178,7 @@ def main():
                           os.environ["DEFAULT_BRANCH"], int(os.environ["GITHUB_RUN_ID"]),
                           os.environ["GITHUB_SERVER_URL"], go_release(os.environ["GO_VERSION"]))
         outputs.update(metadata, reuse="true")
-        print(f"Reusing complete passing CI: {metadata['run_url']}")
+        print(f"Reusing complete passing gates: {metadata['run_url']}")
     except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError,
             zipfile.BadZipFile) as error:
         # Missing permissions, expired artifacts and uncertain evidence all

@@ -53,7 +53,8 @@ printf '#!/bin/bash\nprintf "Linux\\n"\n' > "$tmp/bin/uname"
 chmod 755 "$tmp/bin/uname"
 for suite in integration/wrapper-images integration/lifecycle-state e2e/headless; do
     # shellcheck disable=SC2016 # Generated fixture expands its own environment.
-    printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/tests/$suite.sh"
+    printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n[[ ${FIXTURE_FAILED_SUITE:-} != "%s" ]]\n' \
+        "$suite" "$suite" > "$tmp/tree/tests/$suite.sh"
 done
 export SUITE_TRACE="$tmp/suites"
 for option in --help -h; do
@@ -92,10 +93,35 @@ pass 'CI gate summary and compact UTC console timestamps'
 mkdir -p "$tmp/tree/scripts" "$tmp/tree/tests/unit" "$tmp/tree/tests/harness/parallel" "$tmp/tree/tests/harness/exclusive" "$tmp/tree/tests/portable"
 for suite in scripts/lint scripts/check-go scripts/gen-tested-matrix scripts/gen-public-api tests/portable/smoke tests/e2e/editor-smoke; do
     # shellcheck disable=SC2016 # Generated fixture expands its own environment.
-    printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n' "$suite" > "$tmp/tree/$suite.sh"
+    printf '#!/bin/bash\nprintf "%%s|%%s\\n" "%s" "$*" >> "$SUITE_TRACE"\n[[ ${FIXTURE_FAILED_SUITE:-} != "%s" ]]\n' \
+        "$suite" "$suite" > "$tmp/tree/$suite.sh"
 done
 cp "$tmp/bin/podman" "$tmp/bin/shellcheck"
 cp "$tmp/bin/podman" "$tmp/bin/code"
+
+# CI retries gate failures, including the image build exercised by the gate.
+# A failed helper build happens before the gate tests start.
+for failed_suite in build images editor-smoke; do
+    : > "$tmp/gate-output"
+    case "$failed_suite" in
+        build) failure=FIXTURE_BUILD_STATUS=42 ;;
+        images) failure=FIXTURE_FAILED_SUITE=integration/wrapper-images ;;
+        editor-smoke) failure=FIXTURE_FAILED_SUITE=tests/e2e/editor-smoke ;;
+    esac
+    if env "$failure" GITHUB_ACTIONS=true GITHUB_OUTPUT="$tmp/gate-output" \
+        PATH="$tmp/bin:$PATH" DISPLAY=:fixture JAILBOX_EDITOR=code \
+        bash "$tmp/tree/tests/run" editor > "$tmp/output" 2>&1; then
+        fail "editor gate accepted a failure in $failed_suite"
+    fi
+    if [[ $failed_suite == build ]]; then
+        [[ ! -s "$tmp/gate-output" ]] || fail "classified $failed_suite as a test failure"
+    else
+        grep -Fxq 'test_failed=true' "$tmp/gate-output" || fail "missing test failure output for $failed_suite"
+    fi
+done
+pass 'editor gate failures include image builds and exclude helper preparation'
+: > "$SUITE_TRACE"
+
 PATH="$tmp/bin:$PATH" DISPLAY=:fixture JAILBOX_EDITOR=code bash "$tmp/tree/tests/run" > "$tmp/output"
 cat > "$tmp/expected" <<'EXPECTED'
 scripts/check-go|

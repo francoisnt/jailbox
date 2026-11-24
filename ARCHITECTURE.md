@@ -512,8 +512,9 @@ and installation. Ownership does not require separate user-facing test modes.
 
 `tests/run` validates prerequisites for all selected gates before running any.
 No argument runs all five in order, stopping on failure. Runtime and matrix are
-independent; editor prepares its own positive images. Pull requests, release and
-canary runs use all five. Python supports repository tooling and test fixtures.
+independent; editor prepares its own positive images. Pull requests and
+releases use all five. The daily check of the newest release runs only the
+editor gate. Python supports repository tooling and test fixtures.
 
 ### What makes a useful regression
 

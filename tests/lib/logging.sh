@@ -222,3 +222,11 @@ test_phase_begin() {
     TEST_PHASE_STARTED=$SECONDS
     printf 'Phase started: %s\n' "$TEST_PHASE_NAME"
 }
+
+# Tell CI that a test failed after setup. The step's exit status still
+# determines whether the gate passed.
+test_ci_record_failure() {
+    if [[ ${GITHUB_ACTIONS:-false} == true && -n ${GITHUB_OUTPUT:-} ]]; then
+        printf 'test_failed=true\n' >> "$GITHUB_OUTPUT"
+    fi
+}

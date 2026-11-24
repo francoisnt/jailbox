@@ -15,15 +15,41 @@ printf '[{"version":"go1.%s.3","stable":true},{"version":"go%s.9","stable":true}
 # Once both supported series are newer, resolution fails and names them.
 printf '[{"version":"go1.%s.0","stable":true},{"version":"go1.%s.4","stable":true},{"version":"go%s.9","stable":false}]\n' \
     "$((minor + 2))" "$((minor + 1))" "$series" > "$tmp/unsupported.json"
-if resolve unsupported 2> "$tmp/error"; then exit 1; fi
+# It exits 3, which callers tell apart from a failed lookup (exit 1).
+status=0
+resolve unsupported 2> "$tmp/error" || status=$?
+[[ $status -eq 3 ]]
 grep -Fq "Go $series is no longer supported" "$tmp/error"
 grep -Fq "go1.$((minor + 2)).0, go1.$((minor + 1)).4" "$tmp/error"
 
-# An empty or malformed listing is an error, not a pass.
+# An empty, malformed, or missing listing is an error, not a pass.
 printf '[]\n' > "$tmp/empty.json"
-if resolve empty 2>/dev/null; then exit 1; fi
 printf 'not json\n' > "$tmp/bad.json"
-if resolve bad 2>/dev/null; then exit 1; fi
+for listing in empty bad missing; do
+    status=0
+    resolve "$listing" 2>/dev/null || status=$?
+    [[ $status -eq 1 ]]
+done
+
+# The newest supported series is the highest numbered stable one.
+[[ $(GO_RELEASE_LISTING="$tmp/unsupported.json" bash "$ROOT/scripts/go-version.sh" --newest-series) = "1.$((minor + 2))" ]]
+printf '[{"version":"go1.9.1","stable":true},{"version":"go1.10.0","stable":true}]\n' > "$tmp/order.json"
+[[ $(GO_RELEASE_LISTING="$tmp/order.json" bash "$ROOT/scripts/go-version.sh" --newest-series) = 1.10 ]]
+if GO_RELEASE_LISTING="$tmp/empty.json" bash "$ROOT/scripts/go-version.sh" --newest-series 2>/dev/null; then exit 1; fi
+
+# --go-mod reads the series from another go.mod, such as a release tag's copy.
+printf 'module example\n\ngo 1.%s.0\n' "$((minor + 1))" > "$tmp/newer.mod"
+[[ $(GO_RELEASE_LISTING="$tmp/supported.json" bash "$ROOT/scripts/go-version.sh" --go-mod "$tmp/newer.mod") == \
+    "1.$((minor + 1)).3" ]]
+[[ $(GO_RELEASE_LISTING=/nonexistent bash "$ROOT/scripts/go-version.sh" --go-mod "$tmp/newer.mod" "1.$((minor + 1)).7") == \
+    "1.$((minor + 1)).7" ]]
+printf 'module example\n\ngo 1.%s\n' "$((minor + 3))" > "$tmp/unlisted.mod"
+status=0
+GO_RELEASE_LISTING="$tmp/supported.json" bash "$ROOT/scripts/go-version.sh" --go-mod "$tmp/unlisted.mod" \
+    2> "$tmp/error" || status=$?
+[[ $status -eq 3 ]]
+grep -Fq "update $tmp/unlisted.mod" "$tmp/error"
+if bash "$ROOT/scripts/go-version.sh" --go-mod 2>/dev/null; then exit 1; fi
 
 # A requested release must belong to the series; it needs no listing.
 [[ $(GO_RELEASE_LISTING=/nonexistent bash "$ROOT/scripts/go-version.sh" "$series.12") = "$series.12" ]]

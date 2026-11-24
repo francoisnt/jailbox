@@ -25,17 +25,20 @@ printf '%s\n' "$response"
 STUB
 chmod +x "$tmp/bin/curl"
 export PATH="$tmp/bin:$PATH"
-bash "$ROOT/scripts/resolve-latest-versions.sh" > "$tmp/out" 2> "$tmp/err"
+bash "$ROOT/scripts/resolve-updates.sh" --editors > "$tmp/out" 2> "$tmp/err"
 grep -q '^CODIUM_VERSION=1.2.3$' "$tmp/out"
 grep -q '^OPEN_REMOTE_SSH_VERSION=1.2.3$' "$tmp/out"
+# --editors looks up only the editor and extension versions.
+[[ $(wc -l < "$tmp/out") -eq 4 ]]
+if bash "$ROOT/scripts/resolve-updates.sh" --images > /dev/null 2>&1; then exit 1; fi
 for entry in 'github:VSCodium GitHub releases' 'code:VS Code update API' 'marketplace:VS Code Marketplace Remote SSH' 'openvsx:Open VSX Open Remote SSH'; do
     service=${entry%%:*}
     label=${entry#*:}
-    if FAIL_SERVICE=$service bash "$ROOT/scripts/resolve-latest-versions.sh" > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+    if FAIL_SERVICE=$service bash "$ROOT/scripts/resolve-updates.sh" --editors > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
     [[ ! -s $tmp/out ]]
     grep -Fq "could not fetch $label version" "$tmp/err"
     grep -Fq '403' "$tmp/err"
-    if BAD_SERVICE=$service bash "$ROOT/scripts/resolve-latest-versions.sh" > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+    if BAD_SERVICE=$service bash "$ROOT/scripts/resolve-updates.sh" --editors > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
     [[ ! -s $tmp/out ]]
     grep -Fq "$label returned a response without a valid version" "$tmp/err"
 done

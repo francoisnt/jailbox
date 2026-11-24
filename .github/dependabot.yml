@@ -1,7 +1,7 @@
 # Opens PRs for GitHub Actions, Go dependencies, and the Node test image tag.
 # Only Actions updates are eligible for auto-merge.
-# Editor/REH/extension pins live in versions.env and advance through the canary
-# workflow. The canary files an issue when a newer base-image series is out.
+# The versions.env pins (editors, extensions, REH, base images) and the Go
+# series are updated locally with scripts/plan-updates.sh and scripts/apply-updates.sh.
 version: 2
 updates:
   - package-ecosystem: "github-actions"

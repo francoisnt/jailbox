@@ -1,0 +1,151 @@
+name: Published release editor check
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: published-release-editor-check
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  resolve:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      release_go_version: ${{ steps.plan.outputs.release_go_version }}
+      release_editors: ${{ steps.plan.outputs.release_editors }}
+      release_editors_complete: ${{ steps.plan.outputs.release_editors_complete }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan the release check
+        id: plan
+        run: bash scripts/plan-release-check.sh >> "$GITHUB_OUTPUT"
+
+  # Test the newest release with the newest editors, using that release's own
+  # editor gate script. Its third-party editors run without write access.
+  # Each editor has its own job, which passes its result as a job output: a
+  # job that is not rerun keeps its output, and a rerun job that stops before
+  # classifying leaves none, which the report counts as an error.
+  release-check-code:
+    name: release check (code)
+    needs: resolve
+    if: needs.resolve.outputs.release_tag != '' && needs.resolve.outputs.release_go_version != 'unsupported'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EDITOR_CLI: code
+    outputs:
+      outcome: ${{ steps.outcome.outputs.outcome }}
+    steps: &release-check-steps
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.release_tag }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ needs.resolve.outputs.release_go_version }}
+          cache-dependency-path: src/go.sum
+
+      - name: Set up the newest editors
+        id: setup
+        if: needs.resolve.outputs.release_editors_complete == 'true'
+        env:
+          EDITORS: ${{ needs.resolve.outputs.release_editors }}
+        run: |
+          read -ra updates <<< "$EDITORS"
+          bash tests/ci/editor-gate.sh setup "${updates[@]}"
+
+      - name: Run editor gate
+        id: tests
+        if: steps.setup.outcome == 'success'
+        continue-on-error: true
+        env:
+          JAILBOX_EDITOR: ${{ env.EDITOR_CLI }}
+          JAILBOX_EDITOR_TIMEOUT: "60"
+        run: bash tests/ci/editor-gate.sh test
+
+      - name: Rerun editor gate
+        id: retest
+        if: steps.tests.outcome == 'failure' && steps.tests.outputs.test_failed == 'true'
+        continue-on-error: true
+        env:
+          JAILBOX_EDITOR: ${{ env.EDITOR_CLI }}
+          JAILBOX_EDITOR_TIMEOUT: "60"
+        run: bash tests/ci/editor-gate.sh test
+
+      - name: Classify outcome
+        id: outcome
+        if: always()
+        env:
+          TESTS: ${{ steps.tests.outcome }}
+          RETEST_FAILED: ${{ steps.retest.outcome == 'failure' && steps.retest.outputs.test_failed == 'true' }}
+        run: |
+          if [[ "$TESTS" == success ]]; then outcome=pass
+          elif [[ "$RETEST_FAILED" == true ]]; then outcome=test-fail
+          else outcome=error
+          fi
+          printf 'outcome=%s\n' "$outcome" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Upload editor logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: editor-check-logs-${{ env.EDITOR_CLI }}
+          path: |
+            testlog/*/editor/
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 7
+
+  release-check-codium:
+    name: release check (codium)
+    needs: resolve
+    if: needs.resolve.outputs.release_tag != '' && needs.resolve.outputs.release_go_version != 'unsupported'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EDITOR_CLI: codium
+    outputs:
+      outcome: ${{ steps.outcome.outputs.outcome }}
+    steps: *release-check-steps
+
+  report:
+    needs: [resolve, release-check-code, release-check-codium]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.resolve.outputs.release_tag != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: Record the release check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          RELEASE_GO_VERSION: ${{ needs.resolve.outputs.release_go_version }}
+          RELEASE_EDITORS: ${{ needs.resolve.outputs.release_editors }}
+          CODE_OUTCOME: ${{ needs.release-check-code.outputs.outcome }}
+          CODIUM_OUTCOME: ${{ needs.release-check-codium.outputs.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: bash scripts/report-release-check.sh

@@ -83,25 +83,47 @@ Configure GitHub's merge requirements before activating the automation:
 1. In Settings → General → Pull Requests, enable squash merging and auto-merge.
 2. Add or update branch protection or an active ruleset for `master`: require
    `PR gates` to pass and require branches to be up to date before merging.
-   Preserve existing required checks and review requirements. Run the new
-   workflow once if `PR gates` is not yet available in the check picker.
+   Every change to `master` goes through a PR, including automated ones.
+   Preserve existing checks and reviews. Run the PR workflow once if
+   `PR gates` is missing from the check picker.
 3. Set the repository Actions variable `DEPENDABOT_AUTO_MERGE` to `true`.
 
 GitHub enforces required checks, branch freshness, and reviews; the workflow
 does not duplicate those settings or approve PRs. Existing major action tags
 remain unchanged, so most current Dependabot proposals still require manual review.
 
-### Base-image updates
+### Dependency updates
 
-Dependabot opens PRs for the Node test image tag. The Debian, Alpine, and
-Fedora pins in `versions.env` are updated by hand in a reviewed PR. Alpine is
-the base of the egress proxy image and Debian the base of the Containerfile
-that `jailbox init` writes, so their updates change what users get; Fedora is
-test coverage only. The scheduled canary files one `canary` issue when Docker
-Official Images has a newer stable series. To update, run
-`bash scripts/bump-base-image.sh debian:13` (with the image the issue names),
-commit the result, and open a PR. Mention a new Debian or Alpine base in the
-release notes. Closing the issue without a bump skips that series.
+Dependabot opens PRs for GitHub Actions, Go modules, and the Node test image
+tag. Prepare editor, extension, base-image, and Go series updates locally with
+`just update` from a clean checkout. It looks up and applies every available
+update in one operation. The scripts require Bash 4.4 or newer, curl, jq, and
+Python 3.
+
+To apply a single update, list the available versions and pass one line to
+`scripts/apply-updates.sh`:
+
+```bash
+bash scripts/plan-updates.sh
+bash scripts/apply-updates.sh BASE_IMAGE_DEBIAN=debian:13
+git diff
+```
+
+For VSCodium, pass both assignments from its line so the desktop and server
+stay together. The script updates the pins and regenerates the affected files.
+Review and commit each update through the usual workflow. CI runs all five
+gates on the commit. Alpine is the base of the egress proxy and Debian is the
+default for `jailbox init`. Fedora provides test coverage.
+
+The daily published-release editor check tests the newest release with the
+newest editors. It and each release record their results in `releases.csv`
+on the data-only `compatibility` branch, never on `master`, so that branch
+must accept pushes from GitHub Actions. The check opens an issue for a
+repeated test failure or an unsupported Go series. Releases build and test with their committed pins. A release stops if a
+tracked dependency has a newer version or its latest version cannot be
+verified. It also checks the VSCodium build commit against the published
+package. Run `bash scripts/plan-updates.sh --check` locally before requesting
+a release.
 
 ### Local checks
 
@@ -292,11 +314,12 @@ The five gates are independent, self-contained quality gates. Naming no gate
 runs all five in order and stops at the first failing suite; it checks every
 gate's prerequisites before the first suite, so a missing Podman or editor
 fails immediately rather than after the earlier gates. Pull requests, pushes to
-`master`, releases, and canary runs require all five gates. Run
+`master`, and releases require all five gates; the
+daily check of the newest release runs only the editor gate. Run
 `tests/run lint portable` before sending a change, plus `tests/run runtime` when
 Podman is available.
 
-The full lifecycle matrix runs independently in PR, release and canary CI, as
+The full lifecycle matrix runs independently in PR and release CI, as
 eight shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
 one share; jobs are spread by recorded job time, every job belongs to exactly
 one shard, and each shard checks its own cases are complete. The longest
@@ -454,11 +477,11 @@ previews the automatic version and allows a higher bump interactively or with
 `--bump patch|minor|major`. It pushes an ephemeral request tag carrying that
 minimum; the Release workflow applies it when re-selecting the version and
 creates the version tag and GitHub Release only after validation passes.
-It first looks for complete passing push CI on the exact commit, using the
-same pinned dependencies and shared gate workflow. The saved result must
-confirm lint, portable, runtime, the full matrix, and both editors. A later failed, cancelled,
-skipped, or unfinished test run prevents reuse. Canary runs with version
-overrides are never used as release evidence.
+It looks for complete passing push CI on the exact commit, using the same
+pinned dependencies and shared gate workflow. The saved result must confirm
+lint, portable, runtime, the full matrix, and both editors. A later failed,
+canceled, skipped, or unfinished gate run prevents reuse. The daily
+published-release editor check has its own test history.
 
 Missing or expired evidence, or an unavailable GitHub API, causes fresh gates
 to run. Older CI runs without the verified-result artifact also need fresh
@@ -473,8 +496,9 @@ the bump, and confirm dispatch. Use `--bump minor` or `--bump major` to specify
 a minimum explicitly; `--bump patch` is also accepted. The higher of the
 automatic and requested bumps wins locally and in CI. `--yes` skips prompts;
 `--dry-run` and `--print-version` are non-interactive and honor `--bump`.
-The Actions Release workflow offers the same minimum-bump choice, defaulting
-to `auto`. A major bump before 1.0 produces `v1.0.0`; `--first-major` remains
+Start the Actions Release workflow from the default branch. It offers the
+same minimum-bump choice, defaulting to `auto`. A major bump before 1.0 produces
+`v1.0.0`; `--first-major` remains
 available only before 1.0 and cannot be combined with an explicit bump in
 either entry path. Overrides apply only to their release request.
 

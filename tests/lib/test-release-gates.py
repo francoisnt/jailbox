@@ -69,6 +69,14 @@ class GateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 gates.record(dict(self.env, GATE_INPUTS=json.dumps(inputs)))
 
+    def test_published_release_editor_checks_neither_prove_nor_block_reuse(self):
+        daily = dict(self.run, id=11, path=".github/workflows/release-check.yml", event="schedule",
+                     conclusion="failure", updated_at="2026-10-08T03:00:00Z")
+        self.assertEqual(self.select([daily, self.run]), self.runtime)
+        with self.assertRaises(ValueError):
+            self.select([dict(daily, conclusion="success")])
+
+
     def test_record_requires_complete_matrix_coverage(self):
         for coverage in (None, {"result": "failure", "outputs": {}}, {"result": "skipped", "outputs": {}}):
             needs = copy.deepcopy(self.needs)
@@ -112,7 +120,7 @@ class GateTests(unittest.TestCase):
 
     def test_rejects_wrong_commit_origin_branch_or_event(self):
         for change in ({"head_sha": "b" * 40}, {"head_branch": "other"}, {"event": "pull_request"},
-                       {"path": ".github/workflows/canary.yml"},
+                       {"path": ".github/workflows/release-check.yml"},
                        {"head_repository": {"full_name": "fork/project"}}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 self.select([dict(self.run, **change)])

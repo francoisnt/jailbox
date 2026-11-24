@@ -9,7 +9,7 @@ repository split is ever revived, each product moves its applicable floors
 into its own repository.
 
 A floor is not a pin. `versions.env` holds pins: the exact versions jailbox is
-tested against, bumped forward by the canary workflow when a run goes green. A
+tested against, updated locally and checked by normal CI. A
 floor is the opposite kind of statement — the oldest version jailbox accepts —
 and it must never be rewritten by automation. The two live apart deliberately.
 
@@ -198,7 +198,7 @@ Each floor is defined once, in the code that enforces it — the Bash guard in
 `jailbox`, the Podman check in `host/preflight.sh`. Documentation restates
 them; the code is the source of truth.
 
-None of them belong in `versions.env`. The canary workflow rewrites that file
-on green, `scripts/resolve-latest-versions.sh` reports its entries as drifting
-behind upstream, and `scripts/gen-tested-matrix.sh` renders them as tested
-configurations. All three behaviors are correct for pins and wrong for floors.
+None of them belong in `versions.env`. The local update script rewrites that
+file when applying a new pin. `scripts/plan-updates.sh` reports versions behind
+upstream, and `scripts/gen-tested-matrix.sh` renders the tested configurations.
+These behaviors apply to pins.

@@ -203,8 +203,7 @@ remain relative to the executable. Keep both layouts covered by tests.
   use the latest patch release of that series. One gate run and one release
   package each use a single exact Go release from `scripts/go-version.sh`;
   releases reuse gate results only when they tested that exact release.
-  Move to a newer series deliberately, in both files, before the current one
-  leaves support; the scheduled canary fails once it has. Build through
+  Build through
   `scripts/build-programs.sh` with the local toolchain and cgo disabled.
   Checkout builds stamp `dev` and write to the ignored `src/libexec/`.
 - Use `gofmt` and `go vet`. Put Go unit tests alongside their packages.
@@ -333,6 +332,14 @@ new test scripts cannot silently escape ShellCheck.
   use, with an early link for automation users. Detailed development, automation,
   and security guides live in docs/ and ship alongside README.md in the installed
   package. Keep shared contracts authoritative in one guide and link to them.
+- Every change to `master`, human or automated, goes through a pull request.
+  Automation writes only tags, GitHub Releases, and the data-only
+  `compatibility` branch, which holds the compatibility history.
+- Prepare dependency pin updates (editors, extensions, base images, and the
+  Go series) on a developer checkout with `scripts/plan-updates.sh` and
+  `scripts/apply-updates.sh`. Submit them like other changes so normal CI
+  tests the commit. Releases use committed pins and stop if a tracked pin is
+  outdated or its latest version cannot be verified.
 - Every pull request and push to master runs all five gates: lint, portable,
   runtime, matrix, and editor (both VS Code and VSCodium), always with the full
   matrix. The matrix runs as eight CI shards; a final coverage job proves from
@@ -342,8 +349,10 @@ new test scripts cannot silently escape ShellCheck.
   updates require manual review. Enforce the combined PR gates status and an
   up-to-date branch in GitHub branch protection or rulesets, not custom merge
   helpers. Configure these requirements before activating auto-merge.
-- Releases and canary runs use all five gates, always with the full matrix:
-  lint, portable, runtime, matrix, editor.
+- Releases use all five gates, always with the
+  full matrix: lint, portable, runtime, matrix, editor. The daily check of the
+  newest release runs only the editor gate, from that release's
+  `tests/ci/editor-gate.sh`.
   Releases may reuse a verified complete passing result from the shared gate
   workflow for the exact commit, dependency combination, and required coverage,
   provided no later failure remains unresolved. Otherwise run fresh gates.

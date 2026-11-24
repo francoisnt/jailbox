@@ -11,13 +11,9 @@ source "$SCRIPT_DIR/setup-common.sh"
 # shellcheck source=versions.env
 source "$ROOT_DIR/versions.env"
 
-# JAILBOX_* overrides let the canary workflow install latest upstream versions
-# without editing the pin file. Verifiers in setup-common.sh assert whatever
-# ends up in these variables.
-CODE_VERSION="${JAILBOX_CODE_VERSION:-$CODE_VERSION}"
-CODIUM_VERSION="${JAILBOX_CODIUM_VERSION:-$CODIUM_VERSION}"
-REMOTE_SSH_VERSION="${JAILBOX_REMOTE_SSH_VERSION:-$REMOTE_SSH_VERSION}"
-OPEN_REMOTE_SSH_VERSION="${JAILBOX_OPEN_REMOTE_SSH_VERSION:-$OPEN_REMOTE_SSH_VERSION}"
+# The pins decide the editor versions. To test other versions, apply them to
+# the checkout first (tests/ci/editor-gate.sh setup does). Verifiers in
+# setup-common.sh assert these exact versions.
 
 install_base_tools() {
     local packages=(

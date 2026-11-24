@@ -84,7 +84,7 @@ that `scripts/gen-tested-matrix.sh --write` performs.
     with the guidance item 9 uses. Remove the template's `FROM` rewrite and
     check from `scripts/gen-tested-matrix.sh`. Update
     `tests/unit/frontend-init.sh`, which compares the written file with the
-    committed template, and `tests/unit/base-image-updates.sh`, which checks
+    committed template, and `tests/unit/dependency-updates.sh`, which checks
     both `FROM` rewrites. Each lifecycle matrix worker runs
     jailbox from a private runtime tree in `tests/lib/lifecycle-runtime.sh`
     that links individual `libexec/` entries; include both rendered files

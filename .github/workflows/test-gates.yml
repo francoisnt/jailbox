@@ -21,22 +21,6 @@ on:
         description: Lifecycle matrix workers per shard (1-16) for measurements; empty sizes automatically
         type: string
         default: ""
-      code_version:
-        description: VS Code version override; empty uses versions.env
-        type: string
-        default: ""
-      codium_version:
-        description: VSCodium version override; empty uses versions.env
-        type: string
-        default: ""
-      remote_ssh_version:
-        description: VS Code Remote SSH version override; empty uses versions.env
-        type: string
-        default: ""
-      open_remote_ssh_version:
-        description: Open Remote SSH version override; empty uses versions.env
-        type: string
-        default: ""
       go_version:
         description: Exact Go release for every gate; empty uses the newest patch of the src/go.mod series
         type: string
@@ -366,18 +350,13 @@ jobs:
           cache-dependency-path: src/go.sum
 
       - name: Set up host with editors
-        env:
-          JAILBOX_CODE_VERSION: ${{ inputs.code_version }}
-          JAILBOX_CODIUM_VERSION: ${{ inputs.codium_version }}
-          JAILBOX_REMOTE_SSH_VERSION: ${{ inputs.remote_ssh_version }}
-          JAILBOX_OPEN_REMOTE_SSH_VERSION: ${{ inputs.open_remote_ssh_version }}
-        run: bash tests/ci/setup-linux.sh --with-editors
+        run: bash tests/ci/editor-gate.sh setup
 
       - name: Run editor gate
         env:
           JAILBOX_EDITOR: ${{ matrix.editor_cli }}
           JAILBOX_EDITOR_TIMEOUT: "60"
-        run: bash tests/run editor
+        run: bash tests/ci/editor-gate.sh test
 
       - name: Upload editor logs
         if: always()
@@ -394,9 +373,7 @@ jobs:
     needs: [go-version, lint, portable, runtime, matrix, matrix-coverage, editor]
     if: >-
       success() && inputs.run_editor &&
-      inputs.lifecycle_jobs == '' &&
-      inputs.code_version == '' && inputs.codium_version == '' &&
-      inputs.remote_ssh_version == '' && inputs.open_remote_ssh_version == ''
+      inputs.lifecycle_jobs == ''
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7

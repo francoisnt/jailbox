@@ -3,7 +3,8 @@ name: Release
 # Releases are initiated manually: either from the Actions UI
 # (workflow_dispatch) or by scripts/release.sh pushing an ephemeral
 # release-request tag — plain git, no gh dependency. The version is selected
-# in CI with the same policy as scripts/release.sh. Complete matching push CI
+# in CI with the same policy as scripts/release.sh. Dependency pins must be
+# current. Complete matching push CI
 # is reused when verified; otherwise fresh gates run. Tags are created only after
 # all validation succeeds — a failed gate leaves no stale version tag.
 on:
@@ -54,15 +55,23 @@ jobs:
           # diffs host/public-api.sh against it.
           fetch-depth: 0
 
-      - name: Require release requests to match the default branch head
-        if: github.event_name == 'push'
+      - name: Require a release from the default branch
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          git fetch origin "$DEFAULT_BRANCH"
-          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$DEFAULT_BRANCH")" ]]; then
-            echo "release-request must point at the head of $DEFAULT_BRANCH" >&2
-            exit 1
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+              echo "Start a manual release from $DEFAULT_BRANCH." >&2
+              exit 1
+            fi
+          else
+            git fetch origin "$DEFAULT_BRANCH"
+            head=$(git rev-parse HEAD)
+            default_head=$(git rev-parse "origin/$DEFAULT_BRANCH")
+            if [[ "$head" != "$default_head" ]]; then
+              echo "release-request must point at the head of $DEFAULT_BRANCH" >&2
+              exit 1
+            fi
           fi
 
       - name: Select release version
@@ -80,11 +89,16 @@ jobs:
   # The release builds with the newest Go patch release. Earlier gate results
   # are reused only when they tested that exact release.
   go-version:
+    needs: select-version
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.resolve.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require current dependency pins
+        run: bash scripts/plan-updates.sh --check
       - name: Resolve the Go release
         id: resolve
         run: |
@@ -249,6 +263,7 @@ jobs:
       - name: Append successful tested combination
         env:
           TARGET: ${{ needs.select-version.outputs.version }}
+          TESTED_COMMIT: ${{ github.sha }}
           RUNTIME_BASH_VERSION: ${{ needs.publish.outputs.bash_version }}
           RUNTIME_PODMAN_VERSION: ${{ needs.publish.outputs.podman_version }}
           TESTED_AT: ${{ needs.publish.outputs.tested_at }}

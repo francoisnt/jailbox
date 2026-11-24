@@ -67,6 +67,11 @@ suite_fail() {
 }
 
 run_suite() {
+    local report_failure=true
+    if [[ $1 == --no-failure-report ]]; then
+        report_failure=false
+        shift
+    fi
     local label="$1" started=$SECONDS
     shift
 
@@ -75,6 +80,7 @@ run_suite() {
         suite_pass "$label" "$((SECONDS - started))"
     else
         suite_fail "$label" "$((SECONDS - started))"
+        if [[ $report_failure == true ]]; then test_ci_record_failure; fi
         print_summary
         exit 1
     fi
@@ -176,7 +182,7 @@ run_gate() {
     local -a editor_stages
 
     if [[ "$1" != lint ]]; then
-        run_suite "build-programs" bash "$JAILBOX_DIR/scripts/build-programs.sh"
+        run_suite --no-failure-report "build-programs" bash "$JAILBOX_DIR/scripts/build-programs.sh"
     fi
     case "$1" in
         dev)
