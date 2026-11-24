@@ -12,8 +12,13 @@ CONFIG_SCALAR_KEYS=(
 )
 API
 git -C "$tmp" init -q
-git -C "$tmp" -c user.name=test -c user.email=test@example.invalid add scripts src
-git -C "$tmp" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+git -C "$tmp" config user.name test
+git -C "$tmp" config user.email test@example.invalid
+git -C "$tmp" add scripts src
+git -C "$tmp" commit -qm baseline
+baseline=$(git -C "$tmp" rev-parse HEAD)
+
+commit_api() { git -C "$tmp" commit -qam "$1"; }
 
 assert_version() {
     local expected=$1 actual
@@ -28,6 +33,9 @@ reject() {
     fi
     [[ ! -s "$tmp/out" && -s "$tmp/err" ]]
 }
+
+help=$(bash "$tmp/scripts/release.sh" --help)
+grep -Fq 'Use --yes to skip the bump prompt for unattended previews' <<< "$help"
 
 assert_version v0.1.0
 assert_version v1.0.0 --bump major
@@ -48,12 +56,15 @@ sed '/    ORIGINAL/a\
     ADDED
 ' "$tmp/src/public-api.sh" > "$tmp/api"
 cp "$tmp/api" "$tmp/src/public-api.sh"
+commit_api 'Add configuration key'
 assert_version v0.8.3
 sed '/    ORIGINAL/d' "$tmp/api" > "$tmp/src/public-api.sh"
+commit_api 'Remove configuration key'
 assert_version v0.9.0 --bump patch
 assert_version v0.9.0 --bump minor
 
-git -C "$tmp" show HEAD:src/public-api.sh > "$tmp/src/public-api.sh"
+git -C "$tmp" show "$baseline:src/public-api.sh" > "$tmp/src/public-api.sh"
+commit_api 'Restore baseline API'
 for level in patch minor major; do
     case "$level" in
         patch) expected=v0.8.3 ;;
@@ -88,8 +99,10 @@ assert_version v1.3.0 --bump minor
 assert_version v2.0.0 --bump major
 reject bash "$tmp/scripts/release.sh" --print-version --first-major
 cp "$tmp/api" "$tmp/src/public-api.sh"
+commit_api 'Add configuration key after v1'
 assert_version v1.3.0 --bump patch
 sed '/    ORIGINAL/d' "$tmp/api" > "$tmp/src/public-api.sh"
+commit_api 'Remove configuration key after v1'
 assert_version v2.0.0 --bump minor
 
 # Exercise the actual prompt and emitted dispatch arguments without pushing.
@@ -104,7 +117,8 @@ assert_version v2.0.0 --bump minor
             command git "$@"
         fi
     }
-    command git -C "$tmp" show HEAD:src/public-api.sh > "$tmp/src/public-api.sh"
+    command git -C "$tmp" show "$baseline:src/public-api.sh" > "$tmp/src/public-api.sh"
+    commit_api 'Restore baseline API again'
     select_release_version
     REQUESTED_BUMP=minor
     select_release_version
@@ -116,16 +130,17 @@ assert_version v2.0.0 --bump minor
     [[ "$SELECTED_VERSION" == v2.0.0 ]]
     confirm_release <<< y > /dev/null
     dispatch_release > /dev/null
-    grep -Fxq 'HEAD:refs/tags/release-request-bump-major' "$tmp/push"
+    pushed=$(tail -n 1 "$tmp/push")
+    object=${pushed%%:*}
+    [[ "$object" =~ ^[0-9a-f]{40}$ && "$pushed" == "$object:refs/tags/release-request-bump-major-$object" ]]
     REQUESTED_BUMP=""
     dispatch_release > /dev/null
-    grep -Fxq 'HEAD:refs/tags/release-request' "$tmp/push"
+    pushed=$(tail -n 1 "$tmp/push")
+    object=${pushed%%:*}
+    [[ "$object" =~ ^[0-9a-f]{40}$ && "$pushed" == "$object:refs/tags/release-request-$object" ]]
     YES=true
     choose_bump < /dev/null
 )
-output=$(bash "$tmp/scripts/release.sh" --dry-run --bump major < /dev/null)
-[[ "$output" == *'Selected version: v2.0.0'* && "$output" == *'Dry run: no release dispatched.'* ]]
-
 # Malformed base versions must fail before selection or arithmetic, even when
 # bumping would otherwise erase the malformed component.
 git -C "$tmp" tag -d v0.8.2 v1.2.3 > /dev/null
@@ -163,7 +178,7 @@ for inspection in latest major selected; do
         source "$ROOT/scripts/release.sh"
         ROOT_DIR=$tmp
         git() {
-            if [[ "${3:-}" == tag || "${3:-}" == rev-parse ]]; then return 42; fi
+            case "${3:-}" in tag|rev-parse|for-each-ref) return 42 ;; esac
             command git "$@"
         }
         case "$inspection" in

@@ -36,7 +36,7 @@ on:
         description: UTC time of the runtime check
         value: ${{ jobs.runtime.outputs.tested_at }}
       test_run_url:
-        description: Original test run and attempt
+        description: Test run and attempt
         value: ${{ jobs.runtime.outputs.run_url }}
 
 # Gates run third-party editors, extensions and images. Keep their token
@@ -46,8 +46,7 @@ permissions:
   contents: read
 
 jobs:
-  # Every gate in a run uses one exact Go release, so recorded evidence names
-  # the compiler that all of them tested.
+  # Every gate in a run uses one exact Go release.
   go-version:
     name: Go version
     runs-on: ubuntu-24.04
@@ -367,27 +366,3 @@ jobs:
             testlog/*/editor/
           if-no-files-found: ignore
           retention-days: 7
-
-  verified-result:
-    name: Record complete pinned gate result
-    needs: [go-version, lint, portable, runtime, matrix, matrix-coverage, editor]
-    if: >-
-      success() && inputs.run_editor &&
-      inputs.lifecycle_jobs == ''
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Record verified gate evidence
-        env:
-          GATE_RESULTS: ${{ toJSON(needs) }}
-          GATE_INPUTS: ${{ toJSON(inputs) }}
-        run: python3 scripts/lib/release-gates.py record
-      - name: Upload verified gate evidence
-        uses: actions/upload-artifact@v7
-        with:
-          name: verified-test-gates-${{ github.run_id }}-${{ github.run_attempt }}
-          path: verified-test-gates.json
-          if-no-files-found: error
-          retention-days: 30

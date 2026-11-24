@@ -76,8 +76,12 @@ def newer(key, newest, pinned):
 
 def read_env(path):
     """Read KEY="value" or KEY=value lines; the files are data, never evaluated."""
+    return parse_env(Path(path).read_text(encoding="utf-8"))
+
+
+def parse_env(text):
     values = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         match = re.match(r'([A-Z][A-Z0-9_]*)=(?:"([^"]*)"|([^"\s#]*)(?:\s|$))', line)
         if match:
             values[match[1]] = match[2] if match[2] is not None else match[3]

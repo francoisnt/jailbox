@@ -66,11 +66,18 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 ## Linting and tests
 
-### Dependabot merge policy
+### Development and merge checks
 
-Every PR and push to `master` runs lint, portable, runtime, matrix, and both
-editor variants through the shared gate workflow. The `PR gates` check succeeds
-only when all five gates succeed. Every run includes the full lifecycle matrix.
+Push ongoing work to `dev`. Open a PR from `dev` into `master` when the
+batch is ready. Use a merge commit so Git records which `dev` commits landed.
+
+Every push to `dev` and every PR runs lint, portable, runtime, matrix, and both
+editor variants through the shared gate workflow, including the full lifecycle
+matrix. The `PR gates` check succeeds only when all five gates succeed. If
+`master` advances, update the PR branch and let the gates pass again before
+merging. The merge into `master` adds no post-merge run.
+
+### Dependabot merge policy
 
 Verified patch/minor GitHub Actions updates can enable squash auto-merge after
 the gates pass. Major updates and missing or unknown update metadata require
@@ -82,10 +89,10 @@ Configure GitHub's merge requirements before activating the automation:
 
 1. In Settings → General → Pull Requests, enable squash merging and auto-merge.
 2. Add or update branch protection or an active ruleset for `master`: require
-   `PR gates` to pass and require branches to be up to date before merging.
-   Every change to `master` goes through a PR, including automated ones.
-   Preserve existing checks and reviews. Run the PR workflow once if
-   `PR gates` is missing from the check picker.
+   a pull request, require the GitHub Actions check `PR gates` to pass, and
+   require branches to be up to date before merging. Apply the rules to
+   administrators too, without bypasses. Preserve existing checks and reviews.
+   Run the PR workflow once if `PR gates` is missing from the check picker.
 3. Set the repository Actions variable `DEPENDABOT_AUTO_MERGE` to `true`.
 
 GitHub enforces required checks, branch freshness, and reviews; the workflow
@@ -313,13 +320,12 @@ file `EDITOR`. Product launches never use `JAILBOX_EDITOR` as an override.
 The five gates are independent, self-contained quality gates. Naming no gate
 runs all five in order and stops at the first failing suite; it checks every
 gate's prerequisites before the first suite, so a missing Podman or editor
-fails immediately rather than after the earlier gates. Pull requests, pushes to
-`master`, and releases require all five gates; the
-daily check of the newest release runs only the editor gate. Run
-`tests/run lint portable` before sending a change, plus `tests/run runtime` when
-Podman is available.
+fails immediately rather than after the earlier gates. Pushes to `dev`, pull
+requests, and releases run all five gates. The daily check of the newest
+release runs only the editor gate. Run `tests/run lint portable` before sending
+a change, plus `tests/run runtime` when Podman is available.
 
-The full lifecycle matrix runs independently in PR and release CI, as
+The full lifecycle matrix runs on `dev` pushes, PRs, and releases. Each run uses
 eight shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
 one share; jobs are spread by recorded job time, every job belongs to exactly
 one shard, and each shard checks its own cases are complete. The longest
@@ -475,41 +481,52 @@ that buffer their own output can delay individual lines.
 Releases are initiated manually and gated in CI: `scripts/release.sh`
 previews the automatic version and allows a higher bump interactively or with
 `--bump patch|minor|major`. It pushes an ephemeral request tag carrying that
-minimum; the Release workflow applies it when re-selecting the version and
-creates the version tag and GitHub Release only after validation passes.
-It looks for complete passing push CI on the exact commit, using the same
-pinned dependencies and shared gate workflow. The saved result must confirm
-lint, portable, runtime, the full matrix, and both editors. A later failed,
-canceled, skipped, or unfinished gate run prevents reuse. The daily
-published-release editor check has its own test history.
-
-Missing or expired evidence, or an unavailable GitHub API, causes fresh gates
-to run. Older CI runs without the verified-result artifact also need fresh
-gates. Evidence is retained for 30 days; compatibility records keep the original
-tested versions, timestamp, and successful test-run link. The versioned release
-package is always built and validated, even when CI results are reused. See the [version compatibility policy](docs/automation.md#versions-and-releases).
+minimum and the optional highlights. The Release workflow re-selects the
+version and prepares a draft with the notes and assets after validation.
+Publishing the draft creates the version tag at the tested commit.
+Each release runs lint, portable, runtime, the full matrix, and both editors on
+the exact release commit. The gates and versioned package build use the same Go
+release. The workflow validates the package before publication and records the
+tested versions, timestamp, and test-run link. The daily published-release
+editor check has its own test history. See the [version compatibility policy](docs/automation.md#versions-and-releases).
 
 ### Release requests
 
-Run `bash scripts/release.sh` to see the automatic selection, optionally raise
-the bump, and confirm dispatch. Use `--bump minor` or `--bump major` to specify
-a minimum explicitly; `--bump patch` is also accepted. The higher of the
-automatic and requested bumps wins locally and in CI. `--yes` skips prompts;
-`--dry-run` and `--print-version` are non-interactive and honor `--bump`.
-Start the Actions Release workflow from the default branch. It offers the
+Run `just release` or `bash scripts/release.sh` to see the automatic selection,
+optionally raise the bump, and confirm dispatch. Use `--bump minor` or
+`--bump major` to specify a minimum explicitly. `--bump patch` is also accepted.
+The higher of the automatic and requested bumps wins locally and in CI.
+`--yes` skips prompts and still drafts highlights when Codex is available.
+To enable drafting, install the Codex CLI, sign in with `codex login`, and put
+`codex` on your PATH. The release script prepares the Git context and runs
+Codex once with read-only access, low reasoning effort, and a 60-second limit.
+Codex's diagnostics and any tool calls appear on stderr. Tool calls start
+with `[CODEX TOOL]`, and the terminal bar shows elapsed time between messages.
+The script falls back to Git commit titles if Codex is unavailable or the
+draft fails validation.
+
+`just release --dry-run` uses the same bump selection and highlight drafting
+as a local release, with verification marked pending. It stops before creating or
+pushing a request tag. It uses local tags if the fetch fails, and falls back
+to Git titles if Codex is unavailable. Use `--dry-run --yes` to skip the bump
+prompt. `--print-version` prints only the chosen version.
+
+You can also start the Actions Release workflow from the default branch.
+This uses Git commit titles for highlights and offers the
 same minimum-bump choice, defaulting to `auto`. A major bump before 1.0 produces
 `v1.0.0`; `--first-major` remains
 available only before 1.0 and cannot be combined with an explicit bump in
 either entry path. Overrides apply only to their release request.
 
-Release requests use ephemeral `release-request`, `release-request-first-major`,
-or `release-request-bump-{patch,minor,major}` tags. They never participate in
-version-tag discovery. CI reuses verified passing push results for all five
-gates on the exact commit with the pinned dependencies, provided no later
-test failure or unfinished run remains. Otherwise, it runs fresh gates.
-It builds and validates all four platform archives, then tests installation
-on each native platform before creating the release tag. It publishes those
-archives, their platform-specific `latest` aliases, `install.sh`, and checksums.
+Local requests use annotated tags named `release-request-<object-id>`,
+`release-request-first-major-<object-id>`, or
+`release-request-bump-<level>-<object-id>`. CI uses the annotation's highlights
+when its previous release and tested commit match CI's selection.
+CI builds and validates all four platform archives and tests installation on
+each native platform. It uploads the archives, their platform-specific
+`latest` aliases, `install.sh`, and checksums to the draft. A failed upload
+leaves the version untagged, and a retry replaces the draft. If writing
+`releases.csv` fails after publication, rerun the failed reporting job.
 Packaging stamps `src/install.sh` with the selected release version. The
 standalone installer and the archive’s installer are identical and download
 assets from that fixed release by default. The README’s latest URL selects the

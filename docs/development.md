@@ -466,9 +466,9 @@ the newest editors and records the result in the release history linked below.
 
 | Container OS | VS Code 1.147.0 | VSCodium 1.143.17232 |
 |---|---|---|
-| Debian 12 | ✅ | ✅ |
+| Debian 13 | ✅ | ✅ |
 | Alpine 3.24 | — | ✅ |
-| Fedora 41 | ✅ | ✅ |
+| Fedora 45 | ✅ | ✅ |
 
 VS Code Remote SSH does not support Alpine SSH hosts; that combination is
 covered by VSCodium only.

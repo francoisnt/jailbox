@@ -159,16 +159,19 @@ def command_check_row(args):
     print(json.dumps(row))
 
 
-def command_release_row(args):
+def release_row(tag, commit, pins, env):
     """A published release's own row: its pins and the gates' runtime versions."""
-    row = {"target": args.tag, "kind": "release", "commit": args.commit,
-           "tested_at": os.environ["TESTED_AT"], "result": "pass",
-           **tested_versions(updates.read_env(args.pins), {}),
-           "RUNTIME_BASH_VERSION": os.environ["RUNTIME_BASH_VERSION"],
-           "RUNTIME_PODMAN_VERSION": os.environ["RUNTIME_PODMAN_VERSION"],
-           "run_url": os.environ["TEST_RUN_URL"]}
+    row = {"target": tag, "kind": "release", "commit": commit,
+           "tested_at": env["TESTED_AT"], "result": "pass", **tested_versions(pins, {}),
+           "RUNTIME_BASH_VERSION": env["RUNTIME_BASH_VERSION"],
+           "RUNTIME_PODMAN_VERSION": env["RUNTIME_PODMAN_VERSION"],
+           "run_url": env["TEST_RUN_URL"]}
     validate(row)
-    print(json.dumps(row))
+    return row
+
+
+def command_release_row(args):
+    print(json.dumps(release_row(args.tag, args.commit, updates.read_env(args.pins), os.environ)))
 
 
 def command_append(args):
