@@ -491,11 +491,12 @@ editor check has its own test history. See the [version compatibility policy](do
 
 ### Release requests
 
-Run `bash scripts/release.sh` to see the automatic selection, optionally raise
-the bump, and confirm dispatch. Use `--bump minor` or `--bump major` to specify
-a minimum explicitly; `--bump patch` is also accepted. The higher of the
-automatic and requested bumps wins locally and in CI. `--yes` skips prompts;
-`--dry-run` and `--print-version` are non-interactive and honor `--bump`.
+Run `just release` or `bash scripts/release.sh` to see the automatic selection,
+optionally raise the bump, and confirm dispatch. Use `--bump minor` or
+`--bump major` to specify a minimum explicitly. `--bump patch` is also accepted.
+The higher of the automatic and requested bumps wins locally and in CI.
+`--yes` skips prompts. `--dry-run` and `--print-version` are non-interactive and
+honor `--bump`.
 Start the Actions Release workflow from the default branch. It offers the
 same minimum-bump choice, defaulting to `auto`. A major bump before 1.0 produces
 `v1.0.0`; `--first-major` remains
