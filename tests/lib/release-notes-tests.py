@@ -232,7 +232,8 @@ class ReleaseNotesTests(unittest.TestCase):
         target = self.commit("Shipped update", "-m", summary)
         self.env.update(CODEX_EXPECT_SUMMARY=summary, CODEX_EXPECT_PLAN=plan_text, CODEX_REPO=str(self.repo))
         remote = self.remote()
-        before = self.git("show-ref")
+        # Fetching tags may also update remote-tracking refs (including origin/HEAD).
+        before = self.git("show-ref", "--heads", "--tags")
         trace = self.work / "preview-git"
         preview = self.run_cmd("bash", "scripts/release.sh", "--dry-run", input_text="minor\n", GIT_TRACE=str(trace))
         self.assertIn("request a higher bump", preview.stdout)
@@ -240,7 +241,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertIn(HIGHLIGHTS.decode(), preview.stdout)
         self.assertEqual((self.work / "calls").read_text(), "draft\n")
         self.assertEqual(self.git("status", "--porcelain"), "")
-        self.assertEqual(self.git("show-ref"), before)
+        self.assertEqual(self.git("show-ref", "--heads", "--tags"), before)
         self.assertEqual(self.git("ls-remote", "--refs", "origin", "refs/tags/release-request-*"), "")
         self.assertNotIn("git mktag", trace.read_text())
         self.assertNotIn("git push", trace.read_text())
