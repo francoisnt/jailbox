@@ -132,8 +132,9 @@ assert_ssh_forwarding_disabled() (
     SSH_AUTH_SOCK="$agent_dir/socket" ssh -A -F "$config" -o ConnectTimeout=3 \
         jailbox-test 'test -z "${SSH_AUTH_SOCK:-}"' || return 1
     policy=$(podman exec "$container" sshd -T -f /etc/ssh/jailbox_sshd_config) || return 1
-    grep -Fxq 'allowagentforwarding no' <<< "$policy" || return 1
-    grep -Fxq 'x11forwarding no' <<< "$policy"
+    # OpenSSH versions differ in the casing of dumped configuration keys.
+    grep -Fixq 'allowagentforwarding no' <<< "$policy" || return 1
+    grep -Fixq 'x11forwarding no' <<< "$policy"
 )
 
 # Image validation probes run before jailbox runtime hardening applies, so

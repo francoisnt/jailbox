@@ -66,12 +66,18 @@ the fourth argument for defaults. Keep value-specific checks with the consumer.
 
 ## Linting and tests
 
-### Dependabot merge policy
+### Development and merge checks
 
-Every PR runs lint, portable, runtime, matrix, and both editor variants through
-the shared gate workflow. The `PR gates` check succeeds only when all five
-gates succeed. Every run includes the full lifecycle matrix. If `master`
-advances, update the PR branch and let the gates pass again before merging.
+Push ongoing work to `dev`. Open a PR from `dev` into `master` when the
+batch is ready. Use a merge commit so Git records which `dev` commits landed.
+
+Every push to `dev` and every PR runs lint, portable, runtime, matrix, and both
+editor variants through the shared gate workflow, including the full lifecycle
+matrix. The `PR gates` check succeeds only when all five gates succeed. If
+`master` advances, update the PR branch and let the gates pass again before
+merging. The merge into `master` adds no post-merge run.
+
+### Dependabot merge policy
 
 Verified patch/minor GitHub Actions updates can enable squash auto-merge after
 the gates pass. Major updates and missing or unknown update metadata require
@@ -314,12 +320,12 @@ file `EDITOR`. Product launches never use `JAILBOX_EDITOR` as an override.
 The five gates are independent, self-contained quality gates. Naming no gate
 runs all five in order and stops at the first failing suite; it checks every
 gate's prerequisites before the first suite, so a missing Podman or editor
-fails immediately rather than after the earlier gates. Pull requests and
-releases require all five gates. The daily check of the newest release runs
-only the editor gate. Run `tests/run lint portable` before sending a change,
-plus `tests/run runtime` when Podman is available.
+fails immediately rather than after the earlier gates. Pushes to `dev`, pull
+requests, and releases run all five gates. The daily check of the newest
+release runs only the editor gate. Run `tests/run lint portable` before sending
+a change, plus `tests/run runtime` when Podman is available.
 
-The full lifecycle matrix runs independently in PR and release CI, as
+The full lifecycle matrix runs on `dev` pushes, PRs, and releases. Each run uses
 eight shards on separate machines. `JAILBOX_LIFECYCLE_SHARD=INDEX/COUNT` runs
 one share; jobs are spread by recorded job time, every job belongs to exactly
 one shard, and each shard checks its own cases are complete. The longest

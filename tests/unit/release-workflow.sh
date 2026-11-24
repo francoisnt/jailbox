@@ -23,9 +23,9 @@ for binding in 'RELEASE_EVENT: ${{ github.event_name }}' \
     'BUMP: ${{ inputs.bump }}'; do
     grep -Fq "$binding" "$workflow"
 done
-# PR updates trigger fresh gates, and merging into master adds no second run.
+# Pushes to dev and PR updates trigger gates. Merging into master adds no run.
 pr_events=$(awk '/^on:/{found=1; next} found && /^[^[:space:]]/{exit} found && NF' "$pr_checks")
-[[ "$pr_events" == '  pull_request:' ]]
+[[ "$pr_events" == $'  push:\n    branches: ["dev"]\n  pull_request:' ]]
 pr_test_gates=$(job "$pr_checks" test-gates)
 pr_result=$(job "$pr_checks" pr-gates)
 grep -Fxq '    name: PR gates' <<< "$pr_result"

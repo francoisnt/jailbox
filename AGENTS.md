@@ -86,8 +86,9 @@ remain relative to the executable. Keep both layouts covered by tests.
   particular, when reviewing staged changes and then applying requested fixes,
   leave those fixes unstaged so the user can inspect the new diff separately.
 - Do not create or amend a commit unless the user explicitly asks for a commit.
-- When the user asks for a commit, make it on `master` directly. Do not create
-  a branch first or offer branching as the default; the user works on `master`.
+- When the user asks for a commit, make it on `dev` directly. The user pushes
+  ongoing work to `dev` and merges batches into `master` through pull requests.
+  Use a merge commit for those pull requests to preserve the branch history.
 - Do not infer permission to commit from a request to fix, implement, test, or
   finish a change.
 - Treat a request to commit as an instruction to commit the current state, not
@@ -340,11 +341,11 @@ new test scripts cannot silently escape ShellCheck.
   `scripts/apply-updates.sh`. Submit them like other changes so normal CI
   tests the commit. Releases use committed pins and stop if a tracked pin is
   outdated or its latest version cannot be verified.
-- Every pull request runs lint, portable, runtime, matrix, and editor (both
-  VS Code and VSCodium), always with the full matrix. The matrix runs as eight
-  CI shards; a final coverage job proves from
-  every shard's logs that together they ran the complete matrix. Auto-merge is
-  limited to verified
+- Every push to `dev` and every pull request runs lint, portable, runtime,
+  matrix, and editor (both VS Code and VSCodium), always with the full matrix.
+  Merging into `master` adds no post-merge run. The matrix runs as eight CI
+  shards, and a final coverage job proves from every shard's logs that they
+  ran the complete matrix. Auto-merge is limited to verified
   Dependabot patch/minor GitHub Actions updates after all five gates pass; major
   updates require manual review. Enforce the combined PR gates status and an
   up-to-date branch in GitHub branch protection or rulesets, without bypasses.
