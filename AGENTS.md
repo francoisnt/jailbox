@@ -201,8 +201,8 @@ remain relative to the executable. Keep both layouts covered by tests.
   `scripts/go-series.sh`. Leave the directive and any `toolchain` line in
   whatever form Go's tools write. CI, releases, and the root `Containerfile`
   use the latest patch release of that series. One gate run and one release
-  package each use a single exact Go release from `scripts/go-version.sh`;
-  releases reuse gate results only when they tested that exact release.
+  package each use a single exact Go release from `scripts/go-version.sh`.
+  A release uses the same Go version for its gates and its package.
   Build through
   `scripts/build-programs.sh` with the local toolchain and cgo disabled.
   Checkout builds stamp `dev` and write to the ignored `src/libexec/`.
@@ -340,22 +340,22 @@ new test scripts cannot silently escape ShellCheck.
   `scripts/apply-updates.sh`. Submit them like other changes so normal CI
   tests the commit. Releases use committed pins and stop if a tracked pin is
   outdated or its latest version cannot be verified.
-- Every pull request and push to master runs all five gates: lint, portable,
-  runtime, matrix, and editor (both VS Code and VSCodium), always with the full
-  matrix. The matrix runs as eight CI shards; a final coverage job proves from
+- Every pull request runs lint, portable, runtime, matrix, and editor (both
+  VS Code and VSCodium), always with the full matrix. The matrix runs as eight
+  CI shards; a final coverage job proves from
   every shard's logs that together they ran the complete matrix. Auto-merge is
   limited to verified
   Dependabot patch/minor GitHub Actions updates after all five gates pass; major
   updates require manual review. Enforce the combined PR gates status and an
-  up-to-date branch in GitHub branch protection or rulesets, not custom merge
-  helpers. Configure these requirements before activating auto-merge.
+  up-to-date branch in GitHub branch protection or rulesets, without bypasses.
+  Configure these requirements before removing post-merge checks or activating
+  auto-merge.
 - Releases use all five gates, always with the
   full matrix: lint, portable, runtime, matrix, editor. The daily check of the
   newest release runs only the editor gate, from that release's
   `tests/ci/editor-gate.sh`.
-  Releases may reuse a verified complete passing result from the shared gate
-  workflow for the exact commit, dependency combination, and required coverage,
-  provided no later failure remains unresolved. Otherwise run fresh gates.
+  Run fresh gates on the exact release commit with the Go version used to
+  build the package.
   Always build and validate the versioned release package before publication.
   Runtime and matrix are independent jobs with no duplicated assertions.
 - Keep shared gate implementation in `.github/workflows/test-gates.yml`; caller

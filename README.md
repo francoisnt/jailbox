@@ -2,7 +2,7 @@
 
 **Run coding agents in your project's development container with less access to your host.**
 
-[![PR checks](https://github.com/francoisnt/jailbox/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/francoisnt/jailbox/actions/workflows/pr-checks.yml)
+[![PR checks](https://github.com/francoisnt/jailbox/actions/workflows/pr-checks.yml/badge.svg?event=pull_request)](https://github.com/francoisnt/jailbox/actions/workflows/pr-checks.yml)
 [![Latest release](https://img.shields.io/github/v/release/francoisnt/jailbox)](https://github.com/francoisnt/jailbox/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

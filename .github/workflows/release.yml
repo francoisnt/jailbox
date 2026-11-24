@@ -4,9 +4,8 @@ name: Release
 # (workflow_dispatch) or by scripts/release.sh pushing an ephemeral
 # release-request tag — plain git, no gh dependency. The version is selected
 # in CI with the same policy as scripts/release.sh. Dependency pins must be
-# current. Complete matching push CI
-# is reused when verified; otherwise fresh gates run. Tags are created only after
-# all validation succeeds — a failed gate leaves no stale version tag.
+# current. Each release runs all five gates on the commit being packaged.
+# Tags are created only after all validation succeeds.
 on:
   workflow_dispatch:
     inputs:
@@ -34,7 +33,6 @@ on:
 # Only jobs that push tags, commits or the release get write access.
 permissions:
   contents: read
-  actions: read
 
 # One release at a time: parallel runs would select the same version and
 # race on the tag push.
@@ -86,8 +84,7 @@ jobs:
           echo "Selected version: $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  # The release builds with the newest Go patch release. Earlier gate results
-  # are reused only when they tested that exact release.
+  # The gates and release package use the same, newest Go patch release.
   go-version:
     needs: select-version
     runs-on: ubuntu-24.04
@@ -105,31 +102,12 @@ jobs:
           version=$(bash scripts/go-version.sh)
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  previous-gates:
-    runs-on: ubuntu-24.04
-    needs: go-version
-    outputs:
-      reuse: ${{ steps.lookup.outputs.reuse }}
-      bash_version: ${{ steps.lookup.outputs.bash_version }}
-      podman_version: ${{ steps.lookup.outputs.podman_version }}
-      tested_at: ${{ steps.lookup.outputs.tested_at }}
-      run_url: ${{ steps.lookup.outputs.run_url }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Find verified CI for this commit
-        id: lookup
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GO_VERSION: ${{ needs.go-version.outputs.version }}
-        run: python3 scripts/lib/release-gates.py select
-
   test-gates:
-    needs: [go-version, previous-gates]
-    if: needs.previous-gates.outputs.reuse != 'true'
+    needs: go-version
     uses: ./.github/workflows/test-gates.yml
     with:
       go_version: ${{ needs.go-version.outputs.version }}
+      run_editor: true
 
   package:
     runs-on: ubuntu-24.04
@@ -195,17 +173,12 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-    needs: [select-version, previous-gates, test-gates, package, install]
-    if: >-
-      always() && needs.select-version.result == 'success' && needs.previous-gates.result == 'success' &&
-      needs.package.result == 'success' && needs.install.result == 'success' &&
-      ((needs.previous-gates.outputs.reuse == 'true' && needs.test-gates.result == 'skipped') ||
-       (needs.previous-gates.outputs.reuse == 'false' && needs.test-gates.result == 'success'))
+    needs: [select-version, test-gates, package, install]
     outputs:
-      bash_version: ${{ needs.previous-gates.outputs.reuse == 'true' && needs.previous-gates.outputs.bash_version || needs.test-gates.outputs.runtime_bash_version }}
-      podman_version: ${{ needs.previous-gates.outputs.reuse == 'true' && needs.previous-gates.outputs.podman_version || needs.test-gates.outputs.runtime_podman_version }}
-      tested_at: ${{ needs.previous-gates.outputs.reuse == 'true' && needs.previous-gates.outputs.tested_at || needs.test-gates.outputs.tested_at }}
-      run_url: ${{ needs.previous-gates.outputs.reuse == 'true' && needs.previous-gates.outputs.run_url || needs.test-gates.outputs.test_run_url }}
+      bash_version: ${{ needs.test-gates.outputs.runtime_bash_version }}
+      podman_version: ${{ needs.test-gates.outputs.runtime_podman_version }}
+      tested_at: ${{ needs.test-gates.outputs.tested_at }}
+      run_url: ${{ needs.test-gates.outputs.test_run_url }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
