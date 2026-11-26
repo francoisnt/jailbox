@@ -52,7 +52,7 @@ CI_BADGE = re.compile(
 
 def git(*args, quiet=False):
     return subprocess.check_output(
-        ["git", "-C", ROOT, *args], stderr=subprocess.DEVNULL if quiet else None,
+        ["git", *args], cwd=ROOT, stderr=subprocess.DEVNULL if quiet else None,
     )
 
 

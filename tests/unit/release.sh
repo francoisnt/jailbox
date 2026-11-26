@@ -111,7 +111,7 @@ assert_version v2.0.0 --bump minor
     source "$ROOT/scripts/release.sh"
     ROOT_DIR=$tmp
     git() {
-        if [[ "${3:-}" == push ]]; then
+        if [[ "${1:-}" == push ]]; then
             printf '%s\n' "$@" > "$tmp/push"
         else
             command git "$@"
@@ -167,6 +167,7 @@ for partial in '' v0.8.2; do
     done
     (
         source "$ROOT/scripts/release.sh"
+        # shellcheck disable=SC2329 # Invoked through release_git.
         git() { printf '%s' "$partial"; return 42; }
         status=0
         has_v1_or_later_tag || status=$?
@@ -178,7 +179,7 @@ for inspection in latest major selected; do
         source "$ROOT/scripts/release.sh"
         ROOT_DIR=$tmp
         git() {
-            case "${3:-}" in tag|rev-parse|for-each-ref) return 42 ;; esac
+            case "${1:-}" in tag|rev-parse|for-each-ref) return 42 ;; esac
             command git "$@"
         }
         case "$inspection" in

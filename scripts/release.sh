@@ -44,6 +44,12 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
+# Run Git from the repository root so the working directory is also correct
+# when Git is provided by jailbox command forwarding.
+release_git() {
+    (cd "$ROOT_DIR" && git "$@")
+}
+
 # Parse release flags. Version selection itself is policy-driven later.
 parse_args() {
     while [ "$#" -gt 0 ]; do
@@ -112,20 +118,20 @@ bump_version() {
 
 # Return the highest local version tag, if any.
 latest_tag() {
-    git -C "$ROOT_DIR" for-each-ref --count=1 --sort=-v:refname \
+    release_git for-each-ref --count=1 --sort=-v:refname \
         --format='%(refname:strip=2)' 'refs/tags/v[0-9]*.[0-9]*.[0-9]*'
 }
 
 # Fetch remote tags so local release decisions include published releases.
 refresh_tags() {
-    if git -C "$ROOT_DIR" remote get-url origin >/dev/null 2>&1; then
-        git -C "$ROOT_DIR" fetch --tags origin >/dev/null || \
+    if release_git remote get-url origin >/dev/null 2>&1; then
+        release_git fetch --tags origin >/dev/null || \
             echo "Warning: could not fetch tags from origin; using local tags only." >&2
     fi
 }
 
 remote_tag_exists() {
-    git -C "$ROOT_DIR" ls-remote --exit-code --tags origin "refs/tags/$1" >/dev/null 2>&1
+    release_git ls-remote --exit-code --tags origin "refs/tags/$1" >/dev/null 2>&1
 }
 
 # A failed release push can leave a local tag behind. Refuse to continue
@@ -133,7 +139,7 @@ remote_tag_exists() {
 ensure_no_local_only_version_tags() {
     local tag tags status
 
-    tags=$(git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*') || die 'could not inspect local release tags'
+    tags=$(release_git tag --list 'v[0-9]*.[0-9]*.[0-9]*') || die 'could not inspect local release tags'
     while IFS= read -r tag; do
         [ -n "$tag" ] || continue
         if remote_tag_exists "$tag"; then
@@ -149,7 +155,7 @@ ensure_no_local_only_version_tags() {
 # True when any v1+ tag exists; used to keep --first-major one-time only.
 has_v1_or_later_tag() {
     local tag tags
-    tags=$(git -C "$ROOT_DIR" tag --list 'v[0-9]*.[0-9]*.[0-9]*') || return 2
+    tags=$(release_git tag --list 'v[0-9]*.[0-9]*.[0-9]*') || return 2
     while IFS= read -r tag; do
         [ -n "$tag" ] || continue
         [ "$(version_major "$tag")" -lt 1 ] || return 0
@@ -160,14 +166,14 @@ has_v1_or_later_tag() {
 # Require a clean worktree for real releases. Dry runs intentionally skip this.
 ensure_clean_tree() {
     local status
-    status=$(git -C "$ROOT_DIR" status --porcelain) || die 'could not inspect working tree'
+    status=$(release_git status --porcelain) || die 'could not inspect working tree'
     [ -z "$status" ] || \
         die "working tree is not clean (commit or stash changes before releasing)"
 }
 
 # Require the remote used for fetching tags and pushing release tags.
 ensure_origin_remote() {
-    git -C "$ROOT_DIR" remote get-url origin >/dev/null 2>&1 || \
+    release_git remote get-url origin >/dev/null 2>&1 || \
         die "origin remote is required for releases"
 }
 
@@ -179,7 +185,7 @@ release_branch() {
         return 0
     fi
 
-    origin_head="$(git -C "$ROOT_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    origin_head="$(release_git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
     if [ -n "$origin_head" ]; then
         printf '%s\n' "${origin_head#origin/}"
     else
@@ -193,34 +199,34 @@ release_branch() {
 ensure_release_branch_synced() {
     local branch upstream upstream_branch
 
-    branch="$(git -C "$ROOT_DIR" branch --show-current)"
+    branch="$(release_git branch --show-current)"
     [ -n "$branch" ] || die "releases must be cut from a branch, not detached HEAD"
     [ "$branch" = "$(release_branch)" ] || \
         die "releases must be cut from $(release_branch) (current branch: $branch)"
 
-    upstream="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+    upstream="$(release_git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
     [ -n "$upstream" ] || die "release branch must track origin/$branch"
     upstream_branch="${upstream#origin/}"
     [ "$upstream" = "origin/$branch" ] || \
         die "release branch must track origin/$branch (current upstream: $upstream)"
     [ "$upstream_branch" = "$branch" ] || die "release branch upstream mismatch"
 
-    git -C "$ROOT_DIR" fetch origin "$branch" --tags >/dev/null
-    [ "$(git -C "$ROOT_DIR" rev-parse HEAD)" = "$(git -C "$ROOT_DIR" rev-parse "origin/$branch")" ] || \
+    release_git fetch origin "$branch" --tags >/dev/null
+    [ "$(release_git rev-parse HEAD)" = "$(release_git rev-parse "origin/$branch")" ] || \
         die "HEAD must match origin/$branch before releasing"
 }
 
 # Select SELECTED_VERSION/BUMP_REASON from published tags and the public API
 # diff. Local requests and CI both use this selector.
 select_release_version() {
-    TARGET_COMMIT=$(git -C "$ROOT_DIR" rev-parse --verify 'HEAD^{commit}') ||
+    TARGET_COMMIT=$(release_git rev-parse --verify 'HEAD^{commit}') ||
         die 'could not resolve the release commit'
     PREVIOUS_TAG=$(latest_tag) || die 'could not inspect latest release tag'
     PREVIOUS_COMMIT=""
     API_CHANGE=initial
     if [ -n "$PREVIOUS_TAG" ]; then
         validate_version "$PREVIOUS_TAG"
-        PREVIOUS_COMMIT=$(git -C "$ROOT_DIR" rev-parse --verify "refs/tags/$PREVIOUS_TAG^{commit}") ||
+        PREVIOUS_COMMIT=$(release_git rev-parse --verify "refs/tags/$PREVIOUS_TAG^{commit}") ||
             die 'could not resolve the previous release commit'
         API_CHANGE=$(bash "$ROOT_DIR/scripts/public-api-diff.sh" "$PREVIOUS_COMMIT" "$TARGET_COMMIT") ||
             die 'could not compare public API'
@@ -284,7 +290,7 @@ select_version() {
     fi
 
     validate_version "$SELECTED_VERSION"
-    if git -C "$ROOT_DIR" rev-parse --verify --quiet "refs/tags/$SELECTED_VERSION" >/dev/null; then
+    if release_git rev-parse --verify --quiet "refs/tags/$SELECTED_VERSION" >/dev/null; then
         die "tag already exists: $SELECTED_VERSION"
     else
         status=$?
@@ -334,17 +340,17 @@ dispatch_release() {
     request_tag="release-request"
     [ "$FIRST_MAJOR" = true ] && request_tag="release-request-first-major"
     [ -z "$REQUESTED_BUMP" ] || request_tag="release-request-bump-$REQUESTED_BUMP"
-    tagger=$(git -C "$ROOT_DIR" -c user.name='jailbox release request' \
+    tagger=$(release_git -c user.name='jailbox release request' \
         -c user.email='release-request@jailbox.invalid' var GIT_COMMITTER_IDENT) ||
         die 'could not create release request tagger'
     request_object=$(
         printf 'object %s\ntype commit\ntag %s\ntagger %s\n\njailbox release highlights v1\n%s\n%s\n%s\n%s\n' \
             "$TARGET_COMMIT" "$request_tag" "$tagger" \
             "$PREVIOUS_TAG" "$PREVIOUS_COMMIT" "$TARGET_COMMIT" "$RELEASE_HIGHLIGHTS" |
-            git -C "$ROOT_DIR" mktag
+            release_git mktag
     ) || die 'could not create annotated release request'
     request_tag+="-$request_object"
-    git -C "$ROOT_DIR" push origin "$request_object:refs/tags/$request_tag"
+    release_git push origin "$request_object:refs/tags/$request_tag"
     echo "Pushed $request_tag; the release workflow will tag and publish after the gate passes."
     echo "Follow it in GitHub Actions (Release workflow)."
 }

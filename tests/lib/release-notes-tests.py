@@ -235,7 +235,18 @@ class ReleaseNotesTests(unittest.TestCase):
         # Fetching tags may also update remote-tracking refs (including origin/HEAD).
         before = self.git("show-ref", "--heads", "--tags")
         trace = self.work / "preview-git"
-        preview = self.run_cmd("bash", "scripts/release.sh", "--dry-run", input_text="minor\n", GIT_TRACE=str(trace))
+        # A forwarding wrapper must receive Git commands from the project root.
+        forwarded_bin = self.work / "forwarded-bin"
+        forwarded_bin.mkdir()
+        git_wrapper = forwarded_bin / "git"
+        git_wrapper.write_text('#!/bin/bash\n'
+                               '[[ "$(pwd -P)" == "$RELEASE_GIT_TEST_ROOT" && ${1:-} != -C ]] || exit 1\n'
+                               'exec "$RELEASE_GIT_TEST_REAL" "$@"\n')
+        git_wrapper.chmod(0o755)
+        forwarded = dict(PATH=str(forwarded_bin) + os.pathsep + self.env["PATH"],
+                         RELEASE_GIT_TEST_REAL=shutil.which("git"), RELEASE_GIT_TEST_ROOT=str(self.repo.resolve()))
+        preview = self.run_cmd("bash", "-c", "cd src && bash ../scripts/release.sh --dry-run",
+                               input_text="minor\n", GIT_TRACE=str(trace), **forwarded)
         self.assertIn("request a higher bump", preview.stdout)
         self.assertIn("Dry run: no release dispatched.", preview.stdout)
         self.assertIn(HIGHLIGHTS.decode(), preview.stdout)
@@ -246,7 +257,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertNotIn("git mktag", trace.read_text())
         self.assertNotIn("git push", trace.read_text())
 
-        result = self.run_cmd("bash", "scripts/release.sh", "--yes", "--bump", "minor")
+        result = self.run_cmd("bash", "scripts/release.sh", "--yes", "--bump", "minor", **forwarded)
         self.assertIn(HIGHLIGHTS.decode(), result.stdout)
         self.assertIn("Requested minimum bump minor", result.stdout)
         self.assertIn(result.stdout.split("Pushed ", 1)[0], preview.stdout)

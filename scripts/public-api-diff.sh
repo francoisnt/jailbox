@@ -12,9 +12,9 @@ file_at_ref() {
         cat "$ROOT_DIR/$path"
     else
         # Missing historical paths are optional; an unsuccessful read is not.
-        paths=$(git -C "$ROOT_DIR" ls-tree --name-only "$ref" -- "$path") || return 1
+        paths=$(git ls-tree --name-only "$ref" -- "$path") || return 1
         [ -n "$paths" ] || return 0
-        git -C "$ROOT_DIR" show "$ref:$path"
+        git show "$ref:$path"
     fi
 }
 
@@ -97,6 +97,7 @@ main() {
 
     base_ref="$1"
     target_ref="${2:-}"
+    cd "$ROOT_DIR" || return 1
 
     base_names=$(public_api_names "$base_ref") || return 1
     current_names=$(public_api_names "$target_ref") || return 1

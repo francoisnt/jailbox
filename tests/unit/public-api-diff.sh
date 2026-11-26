@@ -99,7 +99,7 @@ done
 real_git=$(command -v git)
 cat > "$FIXTURE/bin/git" <<'STUB'
 #!/bin/bash
-if [[ "${3:-}" == show ]]; then printf '%s' "$FAULT_OUTPUT"; exit 42; fi
+if [[ "${1:-}" == show ]]; then printf '%s' "$FAULT_OUTPUT"; exit 42; fi
 exec "$REAL_GIT" "$@"
 STUB
 chmod 755 "$FIXTURE/bin/git"
