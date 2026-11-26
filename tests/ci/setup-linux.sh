@@ -40,7 +40,7 @@ install_code_editor() {
         "https://update.code.visualstudio.com/${CODE_VERSION}/linux-deb-x64/stable" \
         -o /tmp/code.deb
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/code.deb
-    code --install-extension "ms-vscode-remote.remote-ssh@${REMOTE_SSH_VERSION}" --force
+    install_extension_with_retry code --install-extension "ms-vscode-remote.remote-ssh@${REMOTE_SSH_VERSION}" --force
 }
 
 install_codium_editor() {

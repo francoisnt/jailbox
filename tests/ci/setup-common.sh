@@ -55,6 +55,22 @@ verify_base_tools() {
     ssh -V
 }
 
+# Marketplace extension installation can fail with a temporary server error.
+# Retry the identical pinned CLI request, without accepting another version.
+install_extension_with_retry() {
+    local attempt status=0 delay
+    for attempt in 1 2 3; do
+        if "$@"; then return 0; else status=$?; fi
+        if ((attempt < 3)); then
+            delay=$((attempt * 5))
+            printf 'Extension installation failed (attempt %d/3, exit %d); retrying in %ds.\n' \
+                "$attempt" "$status" "$delay" >&2
+            sleep "$delay" || return $?
+        fi
+    done
+    return "$status"
+}
+
 # When the pin variables are set (Linux sources versions.env), the verifiers
 # assert exact versions; without them (macOS installs floating via brew) they
 # only check presence.
