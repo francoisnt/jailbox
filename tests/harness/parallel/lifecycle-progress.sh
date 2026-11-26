@@ -90,6 +90,16 @@ if PATH="$tmp/bin:$PATH" FIXTURE_BUILD_STATUS=42 bash "$tmp/tree/tests/run" runt
 fi
 [[ $(cat "$SUITE_TRACE") = 'scripts/build-programs|' ]] || fail 'runtime ran after a failed helper build'
 : > "$SUITE_TRACE"
+if PATH="$tmp/bin:$PATH" FIXTURE_BUILD_STATUS=42 GITHUB_ACTIONS=true \
+    JAILBOX_TEST_LOG_ACTIVE=false JAILBOX_TEST_LOG_SCRIPT='' \
+    bash "$tmp/tree/tests/run" portable > "$tmp/output" 2>&1; then
+    fail 'portable accepted a failed helper build'
+fi
+[[ $(cat "$SUITE_TRACE") = 'scripts/build-programs|' ]] || fail 'portable ran after a failed helper build'
+logs=("$tmp/tree"/testlog/*/portable/gate.log)
+[[ ${#logs[@]} = 1 && -f "${logs[0]}" ]] || fail 'early portable failure has no uploaded gate log'
+grep -Eq 'FAIL +portable/build-programs' "${logs[0]}" || fail 'gate log lost early failure'
+: > "$SUITE_TRACE"
 GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY="$tmp/summary" JAILBOX_TEST_LOG_ACTIVE=false JAILBOX_TEST_LOG_SCRIPT='' \
     PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" runtime > "$tmp/ci-output"
 grep -Fxq '| runtime | 3 | 0 | 0s |' "$tmp/summary" || \

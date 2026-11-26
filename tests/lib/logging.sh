@@ -58,16 +58,24 @@ test_timestamp_stream() {
 # Re-enter the script with its normal shell options and traps. The pipeline
 # joins the formatter before returning and preserves failures with pipefail.
 test_log_entrypoint() {
+    local capture=""
+    if [[ "$1" = --capture ]]; then
+        capture=$2
+        shift 2
+    fi
     local script="$1"
     shift
     [[ ${JAILBOX_TEST_LOG_ACTIVE:-false} != true && ${JAILBOX_TEST_LOG_SCRIPT:-} != "$script" ]] || return 0
     local result=0
     export JAILBOX_TEST_LOG_ROOT="$TEST_LOG_REPOSITORY_ROOT"
     local terminal=false short=false
+    local -a copy=(cat)
+    if [[ -n "$capture" ]]; then copy=(tee "$capture"); fi
     [[ "$script" != */tests/run ]] || short=true
     [[ ! -t 1 || ${TERM:-dumb} = dumb ]] || terminal=true
     JAILBOX_TEST_LOG_ACTIVE=true JAILBOX_TEST_PROGRESS_TERMINAL=$terminal JAILBOX_TEST_LOG_SCRIPT="$script" bash "$script" "$@" 2>&1 |
         JAILBOX_TEST_FORMAT_COMMANDS=true test_timestamp_stream |
+        "${copy[@]}" |
         JAILBOX_TEST_CONSOLE_SHORT=$short test_display_stream || result=$?
     exit "$result"
 }

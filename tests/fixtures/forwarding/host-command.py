@@ -39,15 +39,28 @@ elif mode == "effect":
 elif mode == "terminal":
     print(*(os.isatty(fd) for fd in range(3)))
 elif mode == "signals":
+    input_finished = False
+    exit_requested = False
+
     def received(signum, _frame):
-        print(signal.Signals(signum).name, flush=True)
+        global exit_requested
+        # The next signal can arrive as soon as its predecessor's output is
+        # visible. Avoid re-entering Python's buffered stdout in the handler.
+        os.write(1, (signal.Signals(signum).name + "\n").encode())
+        if input_finished and signum == signal.SIGTERM:
+            exit_requested = True
+
     for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(signum, received)
     print("ready", flush=True)
     data = sys.stdin.buffer.read()
+    input_finished = True
     sys.stdout.buffer.write(data)
     sys.stdout.flush()
-    time.sleep(0.5)
+    # Wait for the test's final signal instead of assuming it arrives within
+    # a fixed time after stdin closes.
+    while not exit_requested:
+        time.sleep(0.01)
     sys.exit(37)
 elif mode == "signal-exit":
     signum = getattr(signal, sys.argv[2])
@@ -60,7 +73,7 @@ elif mode == "blocked-input":
     def release(_signum, _frame):
         global released
         released = True
-        print("released", flush=True)
+        os.write(1, b"released\n")
     signal.signal(signal.SIGINT, release)
     print("ready", flush=True)
     while not released:
@@ -72,7 +85,7 @@ elif mode == "survivor":
     sys.exit(23)
 elif mode == "survivor-child":
     def stop(_signum, _frame):
-        print("descendant received signal", flush=True)
+        os.write(1, b"descendant received signal\n")
         sys.exit(0)
     signal.signal(signal.SIGTERM, stop)
     while os.getppid() == int(sys.argv[2]):

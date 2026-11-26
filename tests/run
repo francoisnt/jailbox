@@ -297,7 +297,18 @@ else
 fi
 
 # Help and argument validation finish before timestamped execution begins.
-test_log_entrypoint "$SCRIPT_DIR/run" "$@"
+# In CI every job runs one gate. Allocate its artifact directory before the
+# first suite, so failures during builds, Go tests or preflight retain a log.
+capture_options=()
+if [[ ${GITHUB_ACTIONS:-false} = true && ${JAILBOX_TEST_LOG_ACTIVE:-false} != true &&
+      ${JAILBOX_TEST_LOG_SCRIPT:-} != "$SCRIPT_DIR/run" && ${#GATES[@]} = 1 ]] &&
+    command -v python3 >/dev/null 2>&1; then
+    test_run_directory "$JAILBOX_DIR" || die 'could not create run log directory'
+    gate_log_dir="$JAILBOX_TEST_RUN_DIR/${GATES[0]}"
+    mkdir -p "$gate_log_dir" || die 'could not create gate log directory'
+    capture_options=(--capture "$gate_log_dir/gate.log")
+fi
+test_log_entrypoint "${capture_options[@]}" "$SCRIPT_DIR/run" "$@"
 require_gate_prerequisites "$@"
 test_run_directory "$JAILBOX_DIR" || die 'could not create run log directory'
 printf 'Run logs: %s\n' "$JAILBOX_TEST_RUN_DIR"
