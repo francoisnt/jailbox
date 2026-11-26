@@ -377,6 +377,70 @@ sharing mechanism. VM implementation and its acceptance requirements are not
 part of the Go migration. Saved probe results and `debianimage/` remain design
 inputs, not proof of full platform support.
 
+## Host command forwarding
+
+### Open questions for revising Git forwarding
+
+Settle these when revising `10.2-host-git-forwarding-plan.md` against the
+sectioned policy format of `10.1.4-host-command-forwarding-refinements-plan.md`:
+
+- Combining bundled and user policies with the repeated-header merge rule:
+  whether conflicting `log` or `fallback` values remain an error or the user
+  policy may override bundled values, and whether bundled or user `insert`
+  arguments come first (Git applies the last `-c` value).
+- How user `insert` lines and custom rules are prevented from overriding or
+  skipping the bundled Git protections, including Git commands the bundled
+  policy does not cover. All forwarding behavior, including Git's mandatory
+  arguments, is defined in bundled or user policy; replace the plan's
+  host-controlled argument mechanism with the bundled policy.
+- Replacing the plan's "custom insertions" wording and its extension of
+  policy provenance in the match log, which no longer records policy sources.
+
+### Patterns in forwarding policy section headers
+
+Consider allowing regex sections in header words, such as
+`[git -C {{.+}} push]`, so a subsection's rules, insertions and settings also
+cover invocations with variable leading options. Literal headers already
+cover fixed prefixes, such as `[git -c core.quotepath=false status]`, so the
+gain is limited to variable values. A design must define which header wins
+settings resolution when several pattern headers match the same request,
+when two pattern headers count as the same section for merging, and which
+headers count as ancestors for insertion. Headers would still match a fixed
+number of arguments. Reassess with real Git policies from
+`10.2-host-git-forwarding-plan.md`, where editors and tools add leading
+options.
+
+### Forwarded environment variables
+
+Consider a policy directive that passes listed environment variables from the
+sandbox to a forwarded command, optionally only when the value matches a
+pattern, such as `env GIT_TERMINAL_PROMPT` or `env LANG {{[A-Za-z_.0-9-]+}}`.
+Host commands currently inherit only the service's launch-time environment.
+Passing the sandbox environment wholesale would let the sandbox run code on the
+host through variables such as `LD_PRELOAD`, `PATH`, `PAGER`, `EDITOR`,
+`GIT_SSH_COMMAND` or `GIT_CONFIG_*`, so every passed name must be listed
+explicitly and the security guide must warn about such variables.
+
+### Interactive forwarded commands
+
+Consider an opt-in per-command terminal mode (for example `tty true`) that runs
+the host program on a pseudo-terminal, puts the caller's terminal in raw mode
+and forwards window-size changes over the existing socket protocol. Many
+programs offer shell escapes only on a terminal, such as pagers, editors and
+Git's pager and editor integration, so enabling it can effectively grant a host
+shell to anything in the sandbox able to write to that terminal. Keep it off by
+default and document that risk in the security guide.
+
+### Project path translation in forwarded arguments
+
+Consider rewriting absolute container project paths in forwarded arguments,
+such as `/home/jailbox/project/icon.png`, to the host project path. Relative
+paths already work because the working directory is mapped. A rewrite must
+decide how to treat paths embedded in arguments (`--file=/home/...`), text
+that only resembles a path (such as a commit message), paths outside the
+project that have no host equivalent, and whether policy matching sees the
+original or rewritten argument. Pursue only for a concrete need.
+
 ## Developer experience
 
 ### Repository-owned editor configuration and extensions
