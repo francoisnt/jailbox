@@ -13,13 +13,23 @@
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+setup_editors() {
+    if (($#)); then
+        bash "$ROOT_DIR/scripts/apply-updates.sh" "$@" || return $?
+    fi
+    bash "$ROOT_DIR/tests/ci/setup-linux.sh" --with-editors
+}
+
 case "${1-}" in
     setup)
         shift
-        if (($#)); then
-            bash "$ROOT_DIR/scripts/apply-updates.sh" "$@"
-        fi
-        bash "$ROOT_DIR/tests/ci/setup-linux.sh" --with-editors
+        # The workflow uploads testlog/*/editor/ even if setup fails before
+        # tests/run creates its own log directory.
+        # shellcheck source=tests/lib/logging.sh
+        source "$ROOT_DIR/tests/lib/logging.sh"
+        setup_logs="$ROOT_DIR/testlog/ci-setup/editor"
+        mkdir -p "$setup_logs"
+        setup_editors "$@" 2>&1 | test_timestamp_stream | tee "$setup_logs/setup.log"
         ;;
     test)
         (($# == 1)) || { echo 'usage: editor-gate.sh test' >&2; exit 2; }
