@@ -42,14 +42,24 @@ cat > "$tmp/tree/scripts/build-programs.sh" <<'BUILD'
 printf 'scripts/build-programs|%s\n' "$*" >> "$SUITE_TRACE"
 exit "${FIXTURE_BUILD_STATUS:-0}"
 BUILD
-# shellcheck disable=SC2016 # These stand-ins trace their own argument lists.
-printf '#!/bin/bash\nprintf "go|%%s\n" "$*" >> "$SUITE_TRACE"\n' > "$tmp/bin/go"
+cat > "$tmp/bin/go" <<'GO'
+#!/bin/bash
+if [[ "$1" = vet ]]; then
+    printf 'go|%s|%s\n' "$GOOS" "$*" >> "$SUITE_TRACE"
+    exit "${FIXTURE_CROSS_VET_STATUS:-0}"
+fi
+printf 'go|%s\n' "$*" >> "$SUITE_TRACE"
+if [[ "${GOOS:-}" = windows && "$1" = build ]]; then
+    exit "${FIXTURE_WINDOWS_BUILD_STATUS:-0}"
+fi
+GO
 chmod 755 "$tmp/bin/go"
 printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/podman"
 chmod +x "$tmp/bin/podman"
 cp "$tmp/bin/podman" "$tmp/bin/setsid"
 # The dispatcher fixture models a Linux host even in the macOS portable gate.
-printf '#!/bin/bash\nprintf "Linux\\n"\n' > "$tmp/bin/uname"
+# shellcheck disable=SC2016 # The fixture expands its own environment.
+printf '#!/bin/bash\nprintf "%%s\\n" "${FIXTURE_HOST_OS:-Linux}"\n' > "$tmp/bin/uname"
 chmod 755 "$tmp/bin/uname"
 for suite in integration/wrapper-images integration/lifecycle-state e2e/headless; do
     # shellcheck disable=SC2016 # Generated fixture expands its own environment.
@@ -168,15 +178,29 @@ for suite in fast slow new harness-fast harness-slow; do
 done
 : > "$SUITE_TRACE"
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev > "$tmp/output"
-printf 'scripts/build-programs|\nscripts/check-go|\ngo|test -mod=readonly -count=1 ./...\ntests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nharness-fast\n' > "$tmp/expected"
+printf 'scripts/build-programs|--check-platforms\nscripts/check-go|\ngo|test -mod=readonly -count=1 ./...\ngo|darwin|vet -mod=readonly ./...\ngo|build -mod=readonly ./internal/...\ntests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nharness-fast\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'dev defaults, discovery, or phase ownership'
 grep -Fq 'Development checks passed — partial coverage' "$tmp/output"
-[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 9 ]] || fail 'wrong dev result labels'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 11 ]] || fail 'wrong dev result labels'
 : > "$SUITE_TRACE"
 PATH="$tmp/bin:$PATH" bash "$tmp/tree/tests/run" dev slow slow.sh fast harness-slow > "$tmp/output"
-printf 'scripts/build-programs|\nscripts/check-go|\ngo|test -mod=readonly -count=1 ./...\ntests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nslow\nharness-fast\nharness-slow\n' > "$tmp/expected"
+printf 'scripts/build-programs|--check-platforms\nscripts/check-go|\ngo|test -mod=readonly -count=1 ./...\ngo|darwin|vet -mod=readonly ./...\ngo|build -mod=readonly ./internal/...\ntests/portable/syntax|\nscripts/lint|--worktree\nscripts/gen-tested-matrix|--check\nscripts/gen-public-api|--check\nfast\nnew\nslow\nharness-fast\nharness-slow\n' > "$tmp/expected"
 cmp "$tmp/expected" "$SUITE_TRACE" || fail 'explicit additions were omitted or duplicated'
-[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 11 ]] || fail 'wrong explicit-suite result labels'
+[[ $(grep -Ec 'PASS +dev/' "$tmp/output") = 13 ]] || fail 'wrong explicit-suite result labels'
+: > "$SUITE_TRACE"
+if PATH="$tmp/bin:$PATH" FIXTURE_HOST_OS=Darwin FIXTURE_CROSS_VET_STATUS=42 bash "$tmp/tree/tests/run" dev > "$tmp/output" 2>&1; then
+    fail 'dev accepted a failed cross-platform Go vet'
+fi
+grep -Eq 'FAIL +dev/go-cross-vet' "$tmp/output"
+printf 'scripts/build-programs|--check-platforms\nscripts/check-go|\ngo|test -mod=readonly -count=1 ./...\ngo|linux|vet -mod=readonly ./...\n' > "$tmp/expected"
+cmp "$tmp/expected" "$SUITE_TRACE" || fail 'dev missed Linux vet on macOS or continued after failure'
+: > "$SUITE_TRACE"
+if PATH="$tmp/bin:$PATH" FIXTURE_WINDOWS_BUILD_STATUS=42 bash "$tmp/tree/tests/run" dev > "$tmp/output" 2>&1; then
+    fail 'dev accepted a failed Windows shared-package build'
+fi
+grep -Eq 'FAIL +dev/windows-shared-build' "$tmp/output"
+printf 'scripts/build-programs|--check-platforms\nscripts/check-go|\ngo|test -mod=readonly -count=1 ./...\ngo|darwin|vet -mod=readonly ./...\ngo|build -mod=readonly ./internal/...\n' > "$tmp/expected"
+cmp "$tmp/expected" "$SUITE_TRACE" || fail 'dev continued after a failed Windows shared-package build'
 : > "$SUITE_TRACE"
 if bash "$tmp/tree/tests/run" dev missing > "$tmp/output" 2>&1; then fail 'unknown dev suite accepted'; fi
 [[ ! -s "$SUITE_TRACE" ]] || fail 'dev started before validating selection'

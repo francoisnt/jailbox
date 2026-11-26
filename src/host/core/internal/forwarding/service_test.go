@@ -2,6 +2,7 @@ package forwarding
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +25,13 @@ import (
 func TestMain(m *testing.M) {
 	switch {
 	case len(os.Args) > 2 && os.Args[1] == buildversion.Version:
-		if err := Run(os.Args[2], os.Args[3:]); err != nil {
+		var err error
+		if os.Args[2] == "request" && os.Getenv("FORWARDING_TEST_MATCH_TIMEOUT") == "1" {
+			err = request(os.Args[3], time.Nanosecond)
+		} else {
+			err = Run(os.Args[2], os.Args[3:])
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -135,10 +142,15 @@ func newSocketFixtureWith(t *testing.T, copyProgram bool) socketFixture {
 		"'\nexec /bin/cat >/dev/null\n", 0755)
 	t.Setenv("PATH", filepath.Join(root, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FORWARDING_TEST_HOST", "launch-time-host")
-	policy := "forwarded-command stream\nforwarded-command args '' {{.*}} {{.*}}\n" +
-		"forwarded-command directory {{.*}}\nforwarded-command hold\n" +
-		"forwarded-command effect one\nforwarded-command effect {{.*}}\nforwarded-command terminal\n" +
-		"forwarded-command first-line\n"
+	policy := "[forwarded-command]\nlog all\nallow stream\nallow args '' {{.*}} {{.*}}\n" +
+		"allow directory {{.*}}\nallow hold\nallow wait\n" +
+		"allow effect one\nallow effect {{.*}}\nallow terminal\n" +
+		"allow first-line\nallow signals\nallow blocked-input\nallow survivor\nallow signal-exit {{[A-Z0-9]+}}\nallow status {{[0-9]+}}\n" +
+		"[forwarded-command args]\ninsert 'inserted arg'\n" +
+		"[forwarded-command disabled]\nfallback false\nlog unmatched\n" +
+		"[forwarded-command silent]\nlog none\n" +
+		"[forwarded-command status]\nlog unmatched\n" +
+		"[settings-only]\nlog all\n"
 	writeFixture(t, fixture.project+"/policy", policy, 0644)
 	frame := fixture.mustTool(t, nil, "capture", fixture.project, "policy")
 	manifest := fixture.mustTool(t, frame, "describe", fixture.project, source)
@@ -190,7 +202,11 @@ func (fixture socketFixture) dial() (net.Conn, error) {
 }
 
 func (fixture socketFixture) request(directory string, args ...string) (net.Conn, error) {
-	frame, err := argv.Encode("test forwarding request", append([]string{"forwarded-command"}, args...))
+	return fixture.requestArgs(directory, append([]string{"forwarded-command"}, args...))
+}
+
+func (fixture socketFixture) requestArgs(directory string, args []string) (net.Conn, error) {
+	frame, err := argv.Encode("test forwarding request", args)
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +244,7 @@ func (fixture socketFixture) collect(directory string, input []byte, args ...str
 			return execution{}, err
 		}
 		switch kind {
+		case 'S':
 		case 'C':
 			n := min(len(input), forwardproto.Chunk)
 			if err := forwardproto.Send(conn, 'I', input[:n]); err != nil {
@@ -254,7 +271,7 @@ func TestSocketRequests(t *testing.T) {
 		}
 		return got
 	}
-	writeFixture(t, fixture.project+"/policy", "forwarded-command changed\n", 0644)
+	writeFixture(t, fixture.project+"/policy", "[forwarded-command]\nallow changed\n", 0644)
 	for i, data := range [][]byte{bytes.Repeat([]byte("\x00\xff\n"), 100000), []byte("some input\x00\xff\n")} {
 		t.Run(fmt.Sprintf("binary stream %d", i), func(t *testing.T) {
 			t.Parallel()
@@ -270,7 +287,7 @@ func TestSocketRequests(t *testing.T) {
 	if got := require("", input, "first-line"); got != (execution{'X', "\x00", "first line\nstill running\n", ""}) {
 		t.Fatalf("command that stops reading stdin early: %#v", got)
 	}
-	if got := require("", nil, "args", "", "\xff\n'$x*", "hello world\n"); got != (execution{'X', "\x00", "\x00\xff\n'$x*\x00hello world\n\x00", ""}) {
+	if got := require("", nil, "args", "", "\xff\n'$x*", "hello world\n"); got != (execution{'X', "\x00", "inserted arg\x00\x00\xff\n'$x*\x00hello world\n\x00", ""}) {
 		t.Fatalf("argument preservation: %#v", got)
 	}
 	if got := require("", nil, "terminal"); got.stdout != "False False False\n" {
@@ -290,13 +307,19 @@ func TestSocketRequests(t *testing.T) {
 			t.Fatalf("directory %q accepted: %#v", directory, got)
 		}
 	}
-	for _, args := range [][]string{{"effect", "one"}, {"effect", "one", "extra"}} {
-		if got := require("", nil, args...); got.kind != 'F' {
+	for _, args := range [][]string{{"effect", "one", "extra"}} {
+		if got := require("", nil, args...); got.kind != 'L' {
 			t.Fatalf("invalid request accepted: %#v", got)
 		}
 	}
 	if _, err := os.Stat(fixture.project + "/forwarded-effect"); !os.IsNotExist(err) {
 		t.Fatalf("invalid request had a host effect: %v", err)
+	}
+	if got := require("", nil, "effect", "one"); got.kind != 'X' {
+		t.Fatalf("overlapping rules refused: %#v", got)
+	}
+	if err := os.Remove(fixture.project + "/forwarded-effect"); err != nil {
+		t.Fatal(err)
 	}
 	if err := os.Rename(fixture.project+"/data", fixture.project+"/moved"); err != nil {
 		t.Fatal(err)
@@ -304,7 +327,7 @@ func TestSocketRequests(t *testing.T) {
 	if err := os.MkdirAll(fixture.project+"/data/hidden", 0755); err != nil {
 		t.Fatal(err)
 	}
-	if got := require("moved/hidden/missing", nil, "directory", "marker"); got.kind != 'F' ||
+	if got := require("moved/hidden/missing", nil, "directory", "marker"); got.kind != 'L' ||
 		!strings.Contains(got.result, "working directory is hidden by HIDDEN_PATHS") {
 		t.Fatalf("moved hidden path accepted: %#v", got)
 	}
@@ -345,6 +368,15 @@ func TestUnavailableHostExecutable(t *testing.T) {
 	result, err := fixture.collect("", nil, "terminal")
 	if err != nil || result.kind != 'F' || !strings.Contains(result.result, "host executable could not start") {
 		t.Fatalf("unavailable executable: %#v, %v", result, err)
+	}
+	result, err = fixture.collect("", nil, "unmatched")
+	if err != nil || result.kind != 'F' || !strings.Contains(result.result, "unavailable") {
+		t.Fatalf("unavailable executable hidden by fallback: %#v, %v", result, err)
+	}
+	writeFixture(t, fixture.executable, "#!/nonexistent-test-interpreter\n", 0755)
+	result, err = fixture.collect("", nil, "terminal")
+	if err != nil || result.kind != 'F' || !strings.Contains(result.result, "could not start") {
+		t.Fatalf("start failure: %#v %v", result, err)
 	}
 }
 
@@ -646,5 +678,303 @@ func TestMountSourceOutsideHost(t *testing.T) {
 	}
 	if err := saved.checkStorage(filepath.Join(dangling, "_data")); err == nil || !strings.Contains(err.Error(), "could not resolve") {
 		t.Fatalf("dangling link in a mount source: %v", err)
+	}
+}
+
+func TestFallbackAndLogging(t *testing.T) {
+	fixture := newSocketFixture(t)
+	for _, tc := range []struct {
+		cwd, arg string
+		kind     byte
+	}{
+		{"", "unknown", 'L'}, {"", "disabled", 'F'}, {"", "silent", 'L'}, {"missing", "unknown", 'F'}, {"data/hidden/missing", "terminal", 'L'}, {"data/hidden/../other", "unknown", 'F'}, {"", "terminal", 'X'},
+	} {
+		got, err := fixture.collect(tc.cwd, nil, tc.arg)
+		if err != nil || got.kind != tc.kind {
+			t.Fatalf("%+v: %#v, %v", tc, got, err)
+		}
+	}
+	if got, err := fixture.collect("", nil, "status", "130"); err != nil || got.kind != 'X' {
+		t.Fatalf("matched log unmatched: %#v, %v", got, err)
+	}
+	// A settings-only command has no executable to resolve, but its direct
+	// request still receives the configured match log and local refusal.
+	conn, err := fixture.requestArgs("", []string{"settings-only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kind, _, err := forwardproto.Receive(conn, forwardproto.Chunk)
+	conn.Close()
+	if err != nil || kind != 'L' {
+		t.Fatalf("settings-only request: %c %v", kind, err)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.server, "host-commands", "settings-only")); !os.IsNotExist(err) {
+		t.Fatalf("settings-only wrapper: %v", err)
+	}
+	maxArg := strings.Repeat("x", base64.StdEncoding.DecodedLen(argv.Limit)-len("forwarded-command")-len("args")-3)
+	if got, err := fixture.collect("", nil, "args", maxArg); err != nil || got.kind != 'F' || !strings.Contains(got.result, "argument list too long") {
+		t.Fatalf("unmatched insertion overflow: %c %s, %v", got.kind, got.result, err)
+	}
+	dir := filepath.Dir(fixture.state)
+	before, rows := readMatchLog(t, dir)
+	if len(rows) != 9 {
+		t.Fatalf("log should omit silent command: %q", rows)
+	}
+	for i, want := range []string{"unmatched", "unmatched", "unmatched", "matched", "unmatched", "matched", "unmatched", "unmatched"} {
+		if rows[i+1][3] != want {
+			t.Fatalf("unexpected match log: %q", rows)
+		}
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, "policy-matches.lock"), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	got, err := fixture.collect("", nil, "unknown")
+	lock.Close()
+	if err != nil || got.kind != 'L' {
+		t.Fatalf("blocked log changed fallback: %#v %v", got, err)
+	}
+	blocked, _ := readMatchLog(t, dir)
+	if !bytes.Equal(before, blocked) {
+		t.Fatal("blocked writer changed log")
+	}
+	snapshot := filepath.Join(fixture.state, policyFile)
+	writeFixture(t, snapshot, "[forwarded-command]\nallow terminal\n", 0600)
+	got, err = fixture.collect("", nil, "terminal")
+	if err != nil || got.kind != 'F' || !strings.Contains(got.result, "snapshot has changed") {
+		t.Fatalf("changed snapshot: %#v, %v", got, err)
+	}
+	after, _ := readMatchLog(t, dir)
+	if !bytes.Equal(before, after) {
+		t.Fatal("changed snapshot logged")
+	}
+	fixture.mustTool(t, nil, "retire", fixture.state)
+	after, _ = readMatchLog(t, dir)
+	if !bytes.Equal(before, after) {
+		t.Fatal("retirement removed policy match log")
+	}
+}
+
+func TestForwardedSignals(t *testing.T) {
+	fixture := newSocketFixture(t)
+	for _, name := range []string{"SIGUSR1", "SIGABRT"} {
+		got, err := fixture.collect("", nil, "signal-exit", name)
+		if err != nil || got.kind != 'X' || got.result != name {
+			t.Fatalf("signal termination: %#v, %v", got, err)
+		}
+	}
+	got, err := fixture.collect("", nil, "status", "130")
+	if err != nil || got.kind != 'X' || got.result != string([]byte{130}) {
+		t.Fatalf("numeric exit: %#v, %v", got, err)
+	}
+	conn, err := fixture.request("", "signals")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var out strings.Builder
+	var credited bool
+	readUntil := func(want string) {
+		t.Helper()
+		for !strings.Contains(out.String(), want) {
+			kind, data, err := forwardproto.Receive(conn, forwardproto.Chunk)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case 'S':
+			case 'C':
+				credited = true
+			case 'O':
+				out.Write(data)
+			default:
+				t.Fatalf("unexpected response %c: %q", kind, data)
+			}
+		}
+	}
+	readUntil("ready\n")
+	for _, name := range []string{"SIGINT", "SIGTERM", "SIGHUP", "SIGINT"} {
+		out.Reset()
+		if err := forwardproto.Send(conn, 'G', []byte(name)); err != nil {
+			t.Fatal(err)
+		}
+		readUntil(name + "\n")
+	}
+	for !credited {
+		kind, _, err := forwardproto.Receive(conn, forwardproto.Chunk)
+		if err != nil || kind != 'C' {
+			t.Fatalf("expected stdin credit: %c, %v", kind, err)
+		}
+		credited = true
+	}
+	if err := forwardproto.Send(conn, 'I', []byte("input\n")); err != nil {
+		t.Fatal(err)
+	}
+	kind, _, err := forwardproto.Receive(conn, forwardproto.Chunk)
+	if err != nil || kind != 'C' {
+		t.Fatalf("expected second credit: %c, %v", kind, err)
+	}
+	if err := forwardproto.Send(conn, 'I', nil); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	readUntil("input\n")
+	if err := forwardproto.Send(conn, 'G', []byte("SIGTERM")); err != nil {
+		t.Fatal(err)
+	}
+	readUntil("SIGTERM\n")
+	kind, data, err := forwardproto.Receive(conn, forwardproto.Chunk)
+	if err != nil || kind != 'X' || len(data) != 1 || data[0] != 37 {
+		t.Fatalf("exit after signals: %c %q %v", kind, data, err)
+	}
+}
+
+func TestSignalMessageTiming(t *testing.T) {
+	fixture := newSocketFixture(t)
+	for _, tc := range []struct {
+		signal string
+		kind   byte
+		result string
+	}{
+		{"SIGTERM", 'X', "SIGTERM"}, {"SIGUSR1", 0, ""},
+	} {
+		// Queue a signal with metadata, before waiting for the start message.
+		conn, err := fixture.request("", "wait")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := forwardproto.Send(conn, 'G', []byte(tc.signal)); err != nil {
+			t.Fatal(err)
+		}
+		kind, _, err := forwardproto.Receive(conn, forwardproto.Chunk)
+		if err != nil || kind != 'S' {
+			t.Fatalf("signal affected pre-execution: %c, %v", kind, err)
+		}
+		for {
+			kind, data, err := forwardproto.Receive(conn, forwardproto.Chunk)
+			if err != nil {
+				if tc.kind != 0 {
+					t.Fatalf("lost signal exit: %v", err)
+				}
+				if e, ok := err.(net.Error); ok && e.Timeout() {
+					t.Fatal("invalid signal did not close request")
+				}
+				break
+			}
+			if kind == 'X' || kind == 'F' {
+				if kind != tc.kind || string(data) != tc.result {
+					t.Fatalf("signal response: %c %q", kind, data)
+				}
+				break
+			}
+		}
+		conn.Close()
+	}
+}
+
+func TestSignalsIndependentOfInputAndOutput(t *testing.T) {
+	fixture := newSocketFixture(t)
+	t.Run("blocked stdin", func(t *testing.T) {
+		conn, err := fixture.request("", "blocked-input")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		var output bytes.Buffer
+		credited := false
+		for !credited || output.String() != "ready\n" {
+			kind, data, err := forwardproto.Receive(conn, forwardproto.Chunk)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case 'S':
+			case 'C':
+				credited = true
+			case 'O':
+				output.Write(data)
+			default:
+				t.Fatalf("unexpected %c %q", kind, data)
+			}
+		}
+		payload := bytes.Repeat([]byte{0, 0xff, 'a', '\n'}, forwardproto.Chunk/4)
+		if err := forwardproto.Send(conn, 'I', payload); err != nil {
+			t.Fatal(err)
+		}
+		if err := forwardproto.Send(conn, 'G', []byte("SIGINT")); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			kind, data, err := forwardproto.Receive(conn, forwardproto.Chunk)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case 'C':
+				if err := forwardproto.Send(conn, 'I', nil); err != nil {
+					t.Fatal(err)
+				}
+			case 'O':
+				output.Write(data)
+			case 'X':
+				want := append([]byte("ready\nreleased\n"), payload...)
+				if !bytes.Equal(output.Bytes(), want) || !bytes.Equal(data, []byte{0}) {
+					t.Fatal("signal or data lost while stdin blocked")
+				}
+				return
+			default:
+				t.Fatalf("unexpected %c %q", kind, data)
+			}
+		}
+	})
+	t.Run("surviving group", func(t *testing.T) {
+		conn, err := fixture.request("", "survivor")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		var output strings.Builder
+		for !strings.Contains(output.String(), "descendant ready\n") {
+			kind, data, err := forwardproto.Receive(conn, forwardproto.Chunk)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == 'O' {
+				output.Write(data)
+			}
+		}
+		if err := forwardproto.Send(conn, 'G', []byte("SIGTERM")); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			kind, data, err := forwardproto.Receive(conn, forwardproto.Chunk)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == 'O' {
+				output.Write(data)
+			}
+			if kind == 'X' {
+				if !strings.Contains(output.String(), "descendant received signal\n") || !bytes.Equal(data, []byte{23}) {
+					t.Fatalf("wrong output or exit: %q %q", output.String(), data)
+				}
+				break
+			}
+		}
+	})
+}
+
+func TestMatchingTimeoutNotLogged(t *testing.T) {
+	t.Setenv("FORWARDING_TEST_MATCH_TIMEOUT", "1")
+	fixture := newSocketFixture(t)
+	got, err := fixture.collect("", nil, "terminal")
+	if err != nil || got.kind != 'F' || !strings.Contains(got.result, "timed out") {
+		t.Fatalf("matching timeout: %#v %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(fixture.state), matchLogFile)); !os.IsNotExist(err) {
+		t.Fatalf("timed out request logged: %v", err)
 	}
 }

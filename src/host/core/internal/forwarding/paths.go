@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var errHiddenDirectory = errors.New("working directory is hidden by HIDDEN_PATHS")
+
 const dirFlags = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
 
 type identity [2]uint64
@@ -26,13 +28,17 @@ func directoryID(fd int) (identity, error) {
 	return fileID(&info), err
 }
 
+func validComponent(component string) bool {
+	return component != "" && component != "." && component != ".." && !strings.ContainsRune(component, 0)
+}
+
 func openDirectory(root int, relative string, hidden map[identity]bool) (int, error) {
 	fd, err := unix.FcntlInt(uintptr(root), unix.F_DUPFD_CLOEXEC, 0)
 	if err != nil || relative == "" {
 		return fd, err
 	}
 	for _, component := range strings.Split(relative, "/") {
-		if component == "" || component == "." || component == ".." || strings.ContainsRune(component, 0) {
+		if !validComponent(component) {
 			unix.Close(fd)
 			return -1, errors.New("invalid project-relative working directory or policy path")
 		}
@@ -44,12 +50,13 @@ func openDirectory(root int, relative string, hidden map[identity]bool) (int, er
 		fd = child
 		if len(hidden) != 0 {
 			id, err := directoryID(fd)
-			if err != nil || hidden[id] {
+			if err != nil {
 				unix.Close(fd)
-				if err != nil {
-					return -1, err
-				}
-				return -1, errors.New("working directory is hidden by HIDDEN_PATHS")
+				return -1, err
+			}
+			if hidden[id] {
+				// Return the pinned directory itself, without inspecting descendants.
+				return fd, errHiddenDirectory
 			}
 		}
 	}
@@ -170,6 +177,15 @@ func (saved manifest) hiddenIdentities(paths []string) ([]identity, error) {
 }
 
 func (saved manifest) enterProject(relative string) error {
+	// The claimed path must be syntactically valid even if its contents are hidden.
+	if relative != "" {
+		for _, component := range strings.Split(relative, "/") {
+			if !validComponent(component) {
+				return errors.New("invalid project-relative working directory or policy path")
+			}
+		}
+	}
+
 	root, err := saved.openProject()
 	if err != nil {
 		return err
@@ -179,9 +195,9 @@ func (saved manifest) enterProject(relative string) error {
 	for _, id := range saved.HiddenDirectories {
 		hidden[id] = true
 	}
-	dir, err := openDirectory(root, relative, hidden)
-	if err != nil {
-		return err
+	dir, mappingErr := openDirectory(root, relative, hidden)
+	if mappingErr != nil && !errors.Is(mappingErr, errHiddenDirectory) {
+		return mappingErr
 	}
 	defer unix.Close(dir)
 	if err := unix.Fchdir(dir); err != nil {
@@ -195,5 +211,5 @@ func (saved manifest) enterProject(relative string) error {
 	if !inTree(cwd, string(saved.Project)) {
 		return errors.New("working directory lies outside the host project")
 	}
-	return nil
+	return mappingErr
 }

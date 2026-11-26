@@ -92,7 +92,7 @@ func Run(operation string, args []string) error {
 	case "serve":
 		return serve(args[0], args[1], args[2])
 	case "request":
-		return request(args[0])
+		return request(args[0], time.Second)
 	}
 	return errors.New("unknown host forwarding operation")
 }

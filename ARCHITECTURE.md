@@ -44,10 +44,14 @@ validates it on reuse; startup validates the address before creating SSH options
 Core also owns optional host command forwarding. It snapshots the selected
 policy before publishing wrappers and runs a separate SSH connection with a
 reverse Unix socket. A wrapper sends its arguments and working directory
-through that socket. The host checks the snapshot, pins the project directory
-for the command, and relays the three standard streams. Each request has its
-own Go worker process and working directory. Stop and clean retire
-the connection before removing sandbox resources. See the
+through that socket. The host checks the snapshot, resolves section settings
+and constructs the approved argument array with literal insertions, pins the
+project directory and relays the standard streams and signals. For eligible
+refusals the container client can replace itself with the local executable;
+it does not retry a host action. Each request has its own Go worker process
+and working directory. An optional bounded policy-match CSV lives in project
+state outside the disposable forwarding directory. Stop and clean retire the
+connection before removing sandbox resources; clean also removes the log. See the
 [forwarding security rules](docs/security.md#host-command-forwarding).
 
 Runtime sources and the Go module live under `src/`. The core program handles

@@ -961,7 +961,7 @@ run_stage() {
     if [[ "$stage" = debian ]]; then
         EDITOR_CACHE_SEEDED=0
         printf 'HOME_SETUP_SCRIPT=setup-home.sh\nHOST_COMMAND_POLICY=editor-host-policy\n' >> "$project_dir/jailbox.conf" || return 1
-        printf 'hostname\n' > "$project_dir/editor-host-policy" || return 1
+        printf '[hostname]\nallow\n' > "$project_dir/editor-host-policy" || return 1
         chmod 644 "$project_dir/editor-host-policy" || return 1
         printf '#!/bin/sh\nexit 37\n' > "$project_dir/setup-home.sh" || return 1
         chmod 755 "$project_dir/setup-home.sh" || return 1

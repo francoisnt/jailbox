@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Build the private runtime programs. With no arguments, build the checkout.
+# --check-platforms also builds non-native core targets without publishing them.
 # --release builds every release program once: OUTPUT_DIR/core/OS-ARCH/jailbox-core
 # and OUTPUT_DIR/linux-ARCH/jailbox-container.
 set -euo pipefail
@@ -7,6 +8,11 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
+check_platforms=false
+if (($# == 1)) && [[ "$1" = --check-platforms ]]; then
+    check_platforms=true
+    shift
+fi
 if (($# == 0)); then
     case "$(uname -s)/$(uname -m)" in
         Linux/x86_64) platform=linux-amd64 ;;
@@ -21,7 +27,7 @@ elif (($# == 3)) && [[ "$1" = --release ]]; then
     platform=release output=$2 version=$3
     [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || die 'invalid release version'
 else
-    die 'Usage: scripts/build-programs.sh [--release OUTPUT_DIR VERSION]'
+    die 'Usage: scripts/build-programs.sh [--check-platforms|--release OUTPUT_DIR VERSION]'
 fi
 
 command -v go >/dev/null || die 'Go is required to build jailbox programs'
@@ -48,13 +54,15 @@ for arch in amd64 arm64; do
     mkdir "$stage/linux-$arch"
     build "linux-$arch" "linux-$arch/jailbox-container" ./container/cmd/jailbox-container
 done
-if [[ "$platform" = release ]]; then
-    for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
-        mkdir -p "$stage/core/$target"
-        build "$target" "core/$target/jailbox-core" ./host/core/cmd/jailbox-core
-    done
-else
-    build "$platform" jailbox-core ./host/core/cmd/jailbox-core
+core_targets=(linux-amd64 linux-arm64 darwin-amd64 darwin-arm64)
+if [[ "$platform" != release && "$check_platforms" = false ]]; then
+    core_targets=("$platform")
+fi
+for target in "${core_targets[@]}"; do
+    mkdir -p "$stage/core/$target"
+    build "$target" "core/$target/jailbox-core" ./host/core/cmd/jailbox-core
+done
+if [[ "$platform" != release ]]; then
     mkdir "$stage/native"
     if [[ "$platform" = linux-* ]]; then
         cp "$stage/$platform/jailbox-container" "$stage/native/jailbox-container"
@@ -73,5 +81,5 @@ if [[ "$platform" = release ]]; then
     rm -rf -- "$output/core"
     mv -- "$stage/core" "$output/core"
 else
-    mv -f -- "$stage/jailbox-core" "$output/"
+    mv -f -- "$stage/core/$platform/jailbox-core" "$output/"
 fi

@@ -663,8 +663,16 @@ assert_host_forwarding() (
     chmod 755 forward-hidden-parent forward-hidden-parent/hidden || return 1
     printf 'test argument\n' > forwarding-marker || return 1
     printf 'hidden fixture\n' > forward-hidden-parent/hidden/forwarding-marker || return 1
-    printf '%s\n' 'forwarded-command directory ../forwarding-marker' 'forwarded-command directory forwarding-marker' \
-        'forwarded-command stream' 'forwarded-command terminal' > host-policy || return 1
+    mkdir -m 755 local-bin || return 1
+    # The local counterpart is selected only on eligible refusal or outside the project.
+    # shellcheck disable=SC2016 # Executed by the sandbox shell.
+    printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$PWD" "$LOCAL_MARKER" "$@"' 'cat' 'exit 37' > local-bin/forwarded-command || return 1
+    chmod 755 local-bin/forwarded-command || return 1
+    ln -s /run/jailbox-sshd/host-commands shim-alias || return 1
+    printf '%s\n' '[forwarded-command]' 'allow directory ../forwarding-marker' 'allow directory forwarding-marker' \
+        'allow stream' 'allow terminal' 'allow status 37' 'log all' \
+        '[forwarded-command disabled]' 'fallback false' \
+        '[forwarded-command args]' 'insert "inserted arg"' 'allow {{.*}}' > host-policy || return 1
     chmod 644 host-policy || return 1
     printf 'DEV_IMAGE=%s\nHOST_COMMAND_POLICY=host-policy\nREADONLY_PATHS=jailbox.conf,forward.conf\nHIDDEN_PATHS=forward-hidden-parent/hidden\n' \
         "$image" > forward.conf || return 1
@@ -696,11 +704,32 @@ assert_host_forwarding() (
             'cd /home/jailbox/project/forward-sub && FORWARDING_TEST_HOST=container forwarded-command directory ../forwarding-marker' \
             > "$log/output" || return 1
         cmp -s "$log/expected-directory" "$log/output" || return 1
+        printf 'inserted arg\0original\0' > "$log/expected-args"
+        "${machine[@]}" exec forwarded-command args original > "$log/output" 2> "$log/error" || return 1
+        cmp -s "$log/expected-args" "$log/output" && [[ ! -s "$log/error" ]] || return 1
         ssh -tt -F "$config" "$prefix" \
             'cd /home/jailbox/project && exec bash -lc "forwarded-command terminal"' </dev/null |
             tr -d '\r' | grep -Fxq 'False False False' || return 1
         if ssh -T -F "$config" "$prefix" \
             'cd /home/jailbox/project && forwarded-command stream --unexpected'; then return 1; fi
+        status=0
+        printf 'local stdin\n' | podman exec -i -w /home/jailbox/project "$prefix" /bin/bash -c '
+            PATH="$PATH:$PWD/shim-alias:$PWD/local-bin" LOCAL_MARKER=local forwarded-command unknown "two words"' \
+            > "$log/local-output" 2> "$log/local-error" || status=$?
+        [[ "$status" = 37 && ! -s "$log/local-error" ]] || return 1
+        printf '%s\n' /home/jailbox/project local unknown 'two words' 'local stdin' > "$log/local-expected"
+        cmp -s "$log/local-output" "$log/local-expected" || return 1
+        if podman exec -w /home/jailbox/project "$prefix" /bin/bash -c '
+            PATH="$PATH:$PWD/local-bin" forwarded-command disabled' > "$log/local-output" 2> "$log/local-error"; then return 1; fi
+        [[ ! -s "$log/local-output" ]] && grep -Fq 'does not match' "$log/local-error" || return 1
+        podman exec -t -w /home/jailbox/project "$prefix" forwarded-command terminal > "$log/terminal-output" 2>&1 || return 1
+        printf '%s\n' '[HOST]' 'False False False' > "$log/terminal-expected"
+        tr -d '\r' < "$log/terminal-output" | cmp -s - "$log/terminal-expected" || return 1
+        status=0
+        podman exec -t -w /home/jailbox/project "$prefix" forwarded-command status 37 \
+            > "$log/terminal-output" 2>&1 || status=$?
+        [[ "$status" = 37 ]] && tr -d '\r' < "$log/terminal-output" | grep -Fxq '[HOST]' || return 1
+
         if ssh -T -F "$config" "$prefix" \
             'cd /home/jailbox/project && printf changed > host-policy' 2>/dev/null; then return 1; fi
         generation=$(cat "${config%/*}/container-id") || return 1
@@ -723,6 +752,13 @@ assert_host_forwarding() (
     grep -Fq 'jailbox stop' "$log/refusal" || return 1
     if podman exec -w /home/jailbox/project "$prefix" forwarded-command stream > "$log/output" 2> "$log/error"; then return 1; fi
     grep -Fq 'service unavailable' "$log/error" || return 1
+    status=0
+    podman exec -w /tmp "$prefix" /bin/bash -c '
+        PATH="$PATH:/home/jailbox/project/local-bin" LOCAL_MARKER=local forwarded-command disabled' \
+        > "$log/local-output" 2> "$log/local-error" || status=$?
+    [[ "$status" = 37 && ! -s "$log/local-error" ]] || return 1
+    printf '%s\n' /tmp local disabled > "$log/local-expected"
+    cmp -s "$log/local-output" "$log/local-expected" || return 1
     "$cli" stop || return 1
     "${machine[@]}" up || return 1
     "${machine[@]}" exec forwarded-command terminal | grep -Fxq 'False False False' || return 1
@@ -739,6 +775,13 @@ assert_host_forwarding() (
         return 1
     fi
     [[ ! -s "$log/output" ]] && grep -Fq 'working directory is hidden by HIDDEN_PATHS' "$log/error" || return 1
+    status=0
+    podman exec -w /home/jailbox/project/forward-moved-parent/hidden "$prefix" /bin/bash -c '
+        PATH="$PATH:/home/jailbox/project/local-bin" LOCAL_MARKER=local forwarded-command directory forwarding-marker' \
+        > "$log/local-output" 2> "$log/local-error" || status=$?
+    [[ "$status" = 37 && ! -s "$log/local-error" ]] || return 1
+    printf '%s\n' /home/jailbox/project/forward-moved-parent/hidden local directory forwarding-marker > "$log/local-expected"
+    cmp -s "$log/local-output" "$log/local-expected" || return 1
     "$cli" stop || return 1
     [[ ! -e "$state" ]]
 )

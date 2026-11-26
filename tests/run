@@ -173,6 +173,17 @@ run_go_tests() (
     CGO_ENABLED=0 GOTOOLCHAIN=local GOWORK=off go test -mod=readonly -count=1 ./...
 )
 
+cross_go_vet() (
+    local target
+    case "$(uname -s)" in
+        Linux) target=darwin ;;
+        Darwin) target=linux ;;
+        *) die 'unsupported host for cross-platform Go vet' ;;
+    esac
+    cd "$JAILBOX_DIR/src" || return 1
+    CGO_ENABLED=0 GOTOOLCHAIN=local GOWORK=off GOOS="$target" go vet -mod=readonly ./...
+)
+
 compile_windows_shared() (
     cd "$JAILBOX_DIR/src" || return 1
     CGO_ENABLED=0 GOTOOLCHAIN=local GOWORK=off GOOS=windows GOARCH=amd64 go build -mod=readonly ./internal/...
@@ -181,13 +192,17 @@ compile_windows_shared() (
 run_gate() {
     local -a editor_stages
 
-    if [[ "$1" != lint ]]; then
+    if [[ "$1" = dev ]]; then
+        run_suite --no-failure-report "build-programs" bash "$JAILBOX_DIR/scripts/build-programs.sh" --check-platforms
+    elif [[ "$1" != lint ]]; then
         run_suite --no-failure-report "build-programs" bash "$JAILBOX_DIR/scripts/build-programs.sh"
     fi
     case "$1" in
         dev)
             run_suite "go-check" bash "$JAILBOX_DIR/scripts/check-go.sh"
             run_suite "go-test" run_go_tests
+            run_suite "go-cross-vet" cross_go_vet
+            run_suite "windows-shared-build" compile_windows_shared
             run_suite "syntax" bash "$SCRIPT_DIR/portable/syntax.sh"
             run_suite "shellcheck-worktree" bash "$JAILBOX_DIR/scripts/lint.sh" --worktree
             run_suite "generated-files" check_generated_files
@@ -236,7 +251,10 @@ Name multiple gates to run them in the given order, sharing one log directory.
 Runtime and matrix are independent gates; matrix prepares its own required images.
 
 Development checks:
-  dev [SUITE ...]  Syntax, worktree ShellCheck, generated files, fast and named suites
+  dev [SUITE ...]  Go builds for all supported targets, Windows shared-package build,
+                  Go formatting, native and cross-platform vet, native tests,
+                  syntax, worktree ShellCheck,
+                  generated files, fast and named suites
                   Partial coverage; omits full ShellCheck and distribution
 
 Test gates:

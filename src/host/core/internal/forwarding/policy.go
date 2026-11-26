@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"regexp"
 	"regexp/syntax"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/francoisnt/jailbox/internal/argv"
 )
 
 const policyLimit = 32768
@@ -20,7 +24,28 @@ type argument struct {
 	pattern string
 }
 
-type policy map[string][][]argument
+type section struct {
+	words        []string
+	rules        [][]argument
+	inserts      []string
+	log          string
+	logLine      int
+	fallback     *bool
+	fallbackLine int
+}
+
+type policy map[string][]*section
+
+var errUnmatched = errors.New("request does not match the host command policy")
+
+func (sections policy) hasRules(name string) bool {
+	for _, section := range sections[name] {
+		if len(section.rules) > 0 {
+			return true
+		}
+	}
+	return false
+}
 
 // Map all 256 byte values to separate runes so Go's UTF-8 regular expression
 // engine sees the same alphabet as a POSIX implementation in the C locale.
@@ -196,6 +221,8 @@ func tokenize(line string, newline bool) ([][]fragment, bool, error) {
 	for pos := 0; pos < len(line); pos++ {
 		char := line[pos]
 		switch {
+		case quote == '\'' && char != '\'':
+			literal.WriteByte(char)
 		case char == '\\':
 			pos++
 			if pos == len(line) {
@@ -270,19 +297,66 @@ func argumentPattern(parts []fragment) (argument, error) {
 	return argument{pattern: pattern.String()}, nil
 }
 
+// headerWords scans the closing delimiter using the same quote and escape
+// conventions as the argument lexer. Regex fragments are not header words.
+func headerWords(line string) ([]string, error) {
+	var quote byte
+	for i := 1; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case quote == '\'' && c != '\'':
+		case c == '\\':
+			i++
+		case (c == '\'' || c == '"') && (quote == 0 || quote == c):
+			quote ^= c
+		case c == ']' && quote == 0:
+			if strings.Trim(line[i+1:], " \t") != "" {
+				return nil, errors.New("unexpected text after section header")
+			}
+			parts, _, err := tokenize(line[1:i], false)
+			if err != nil {
+				return nil, err
+			}
+			return literalWords(parts)
+		}
+	}
+	return nil, errors.New("unclosed section header")
+}
+
+func literalWord(parts []fragment) (string, error) {
+	if len(parts) != 1 || parts[0].regex {
+		return "", errors.New("expected literal argument")
+	}
+	return parts[0].text, nil
+}
+
+func literalWords(parts [][]fragment) ([]string, error) {
+	words := make([]string, 0, len(parts))
+	for _, word := range parts {
+		literal, err := literalWord(word)
+		if err != nil {
+			return nil, err
+		}
+		words = append(words, literal)
+	}
+	return words, nil
+}
+
 func compilePolicy(contents string, reserved map[string]bool) (policy, error) {
 	if len(contents) > policyLimit {
 		return nil, errors.New("HOST_COMMAND_POLICY exceeds 32768 bytes")
 	}
 	rules := make(policy)
-	var name string
-	var patterns []argument
+	var current *section
+	type locatedWord struct {
+		parts []fragment
+		line  int
+	}
+	var pending []locatedWord
 	continued := false
 	lines := strings.Split(contents, "\n")
 	for i, line := range lines {
-		diagnostic := func(err error) (policy, error) {
-			return nil, fmt.Errorf("HOST_COMMAND_POLICY line %d: %w", i+1, err)
-		}
+		diagnostic := func(err error) (policy, error) { return nil, fmt.Errorf("HOST_COMMAND_POLICY line %d: %w", i+1, err) }
 		if strings.ContainsRune(line, 0) {
 			return diagnostic(errors.New("NUL byte in policy"))
 		}
@@ -296,70 +370,195 @@ func compilePolicy(contents string, reserved map[string]bool) (policy, error) {
 			}
 			continue
 		}
+		if !continued && strings.HasPrefix(trimmed, "[") {
+			words, err := headerWords(trimmed)
+			if err != nil {
+				return diagnostic(err)
+			}
+			if len(words) == 0 || !commandName.MatchString(words[0]) {
+				return diagnostic(errors.New("executable must be a literal command name"))
+			}
+			name := words[0]
+			for _, word := range words[1:] {
+				if len(word) > patternLimit {
+					return diagnostic(errors.New("header argument is too long"))
+				}
+			}
+			if reserved[name] {
+				return diagnostic(fmt.Errorf("executable %s collides with a jailbox runtime helper", name))
+			}
+			current = nil
+			for _, candidate := range rules[name] {
+				if slices.Equal(candidate.words, words[1:]) {
+					current = candidate
+					break
+				}
+			}
+			if current == nil {
+				current = &section{words: words[1:]}
+				rules[name] = append(rules[name], current)
+			}
+			continue
+		}
+		if current == nil {
+			return diagnostic(errors.New("expected section header"))
+		}
 		words, next, err := tokenize(line, i < len(lines)-1)
 		if err != nil {
 			return diagnostic(err)
 		}
 		for _, word := range words {
-			if name == "" {
-				if len(word) != 1 || !commandName.MatchString(word[0].text) {
-					return diagnostic(errors.New("executable must be a literal command name"))
+			pending = append(pending, locatedWord{word, i + 1})
+		}
+		if len(pending) == 0 {
+			return diagnostic(errors.New("expected section keyword"))
+		}
+		continued = next
+		if continued {
+			continue
+		}
+		keyword, err := literalWord(pending[0].parts)
+		keywordLine := pending[0].line
+		fromLine := func(line int, err error) (policy, error) {
+			return nil, fmt.Errorf("HOST_COMMAND_POLICY line %d: %w", line, err)
+		}
+		if err != nil {
+			return diagnostic(err)
+		}
+		values := pending[1:]
+		pending = nil
+		literals := func() ([]string, error) {
+			var args []string
+			for _, word := range values {
+				literal, err := literalWord(word.parts)
+				if err != nil {
+					return nil, fmt.Errorf("line %d: %w", word.line, err)
 				}
-				name = word[0].text
-				if reserved[name] {
-					return diagnostic(fmt.Errorf("executable %s collides with a jailbox runtime helper", name))
-				}
-				continue
+				args = append(args, literal)
 			}
-			pattern, err := argumentPattern(word)
+			return args, nil
+		}
+		switch keyword {
+		case "allow":
+			patterns := make([]argument, 0, len(values))
+			for _, word := range values {
+				pattern, err := argumentPattern(word.parts)
+				if err != nil {
+					return fromLine(word.line, err)
+				}
+				patterns = append(patterns, pattern)
+			}
+			current.rules = append(current.rules, patterns)
+		case "insert":
+			args, err := literals()
 			if err != nil {
 				return diagnostic(err)
 			}
-			patterns = append(patterns, pattern)
+			if len(args) == 0 {
+				return diagnostic(errors.New("insert requires arguments"))
+			}
+			current.inserts = append(current.inserts, args...)
+		case "log", "fallback":
+			args, err := literals()
+			if err != nil {
+				return diagnostic(err)
+			}
+			if len(args) != 1 {
+				return diagnostic(errors.New("expected one setting value"))
+			}
+			if keyword == "log" {
+				if args[0] != "none" && args[0] != "unmatched" && args[0] != "all" {
+					return diagnostic(errors.New("invalid log setting"))
+				}
+				if current.log != "" && current.log != args[0] {
+					return diagnostic(fmt.Errorf("conflicting log setting (line %d)", current.logLine))
+				}
+				current.log, current.logLine = args[0], keywordLine
+			} else {
+				if args[0] != "true" && args[0] != "false" {
+					return diagnostic(errors.New("invalid fallback setting"))
+				}
+				value := args[0] == "true"
+				if current.fallback != nil && *current.fallback != value {
+					return diagnostic(fmt.Errorf("conflicting fallback setting (line %d)", current.fallbackLine))
+				}
+				current.fallback, current.fallbackLine = &value, keywordLine
+			}
+		default:
+			return fromLine(keywordLine, fmt.Errorf("unknown section keyword %q", keyword))
 		}
-		continued = next
-		if !continued {
-			rules[name] = append(rules[name], patterns)
-			name, patterns = "", nil
-		}
+	}
+	for _, sections := range rules {
+		sort.Slice(sections, func(i, j int) bool { return len(sections[i].words) < len(sections[j].words) })
 	}
 	return rules, nil
 }
 
+func matchesHeader(words, args []string) bool {
+	return len(words) <= len(args) && slices.Equal(words, args[:len(words)])
+}
+
 func (rules policy) authorize(args []string) error {
-	found := false
-	values := make([]string, len(args)-1)
-definitions:
-	for _, patterns := range rules[args[0]] {
-		if len(patterns) != len(values) {
+	mapped := make([]string, len(args)-1)
+	for _, section := range rules[args[0]] {
+		if !matchesHeader(section.words, args[1:]) {
 			continue
 		}
-		for i, pattern := range patterns {
-			value := args[i+1]
-			if pattern.pattern == "" {
-				if value != pattern.literal {
-					continue definitions
-				}
+		values := args[1+len(section.words):]
+	definitions:
+		for _, patterns := range section.rules {
+			if len(patterns) != len(values) {
 				continue
 			}
-			if values[i] == "" {
-				values[i] = byteRunes(value)
+			for i, pattern := range patterns {
+				if pattern.pattern == "" {
+					if values[i] != pattern.literal {
+						continue definitions
+					}
+					continue
+				}
+				compiled, err := regexp.Compile(pattern.pattern)
+				if err != nil {
+					return fmt.Errorf("regular expression matching failed: %w", err)
+				}
+				index := len(section.words) + i
+				if mapped[index] == "" {
+					mapped[index] = byteRunes(values[i])
+				}
+				if !compiled.MatchString(mapped[index]) {
+					continue definitions
+				}
 			}
-			compiled, err := regexp.Compile(pattern.pattern)
-			if err != nil {
-				return fmt.Errorf("regular expression matching failed: %w", err)
-			}
-			if !compiled.MatchString(values[i]) {
-				continue definitions
-			}
+			return nil
 		}
-		if found {
-			return errors.New("multiple policy definitions match this request")
+	}
+	return errUnmatched
+}
+
+type resolution struct {
+	args     []string
+	log      string
+	fallback bool
+}
+
+func (rules policy) resolve(args []string) (resolution, error) {
+	result := resolution{args: []string{args[0]}, log: "none", fallback: true}
+	used := 0
+	for _, section := range rules[args[0]] {
+		if !matchesHeader(section.words, args[1:]) {
+			continue
 		}
-		found = true
+		result.args = append(result.args, args[1+used:1+len(section.words)]...)
+		used = len(section.words)
+		result.args = append(result.args, section.inserts...)
+		if section.log != "" {
+			result.log = section.log
+		}
+		if section.fallback != nil {
+			result.fallback = *section.fallback
+		}
 	}
-	if !found {
-		return errors.New("request does not match the host command policy")
-	}
-	return nil
+	result.args = append(result.args, args[1+used:]...)
+	_, err := argv.Encode("forwarded command with inserted arguments", result.args)
+	return result, err
 }

@@ -107,7 +107,7 @@ smoke_install_update_uninstall() {
     grep -Fxq $'SETUP_INPUT_SCRIPT\tscalar' "$tmp/schema"
     grep -Fxq $'HOST_COMMAND_POLICY\tscalar' "$tmp/schema"
     mkdir "$tmp/forward-project"
-    printf 'hostname\n' > "$tmp/forward-project/policy"
+    printf '[hostname]\nallow\n' > "$tmp/forward-project/policy"
     (
         cd "$tmp/forward-project"
         JAILBOX_CONFIG_DEV_IMAGE=local/forwarding-test JAILBOX_CONFIG_HOST_COMMAND_POLICY=policy "$tmp/bin/jailbox" validate

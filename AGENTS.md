@@ -300,8 +300,10 @@ During development, run `tests/run dev` and the suites affected by the change.
 For plans written before the dev suite existed, use dev and affected suites
 instead of their blanket local portable requirement, unless the user explicitly
 requests the full portable gate.
-The dev gate includes Go checks and ShellCheck of staged, unstaged, and
-untracked shell files using their current worktree contents. Full ShellCheck and portable coverage
+The dev gate includes Go formatting, vet for Linux and macOS, all native Go unit
+tests, builds for all supported core and container targets, Windows shared-package
+compilation, and ShellCheck of staged, unstaged, and untracked shell files using their current
+worktree contents. Full ShellCheck and portable coverage
 belong to CI; do not run full portable routinely after each local change.
 `tests/run dev attachment exec` adds named product or harness suites to the fast defaults;
 this is partial coverage, not a fifth acceptance gate. Full portable still

@@ -2,6 +2,7 @@
 """Harmless host program used by forwarding tests."""
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -27,6 +28,8 @@ elif mode == "directory":
     print(os.getcwd())
     print(os.environ["FORWARDING_TEST_HOST"])
     print(Path(sys.argv[2]).read_text(), end="")
+elif mode == "wait":
+    time.sleep(60)
 elif mode == "hold":
     child = subprocess.Popen((sys.executable, "-c", "import time; time.sleep(60)"))
     print(child.pid, flush=True)
@@ -35,3 +38,44 @@ elif mode == "effect":
     Path("forwarded-effect").write_text("host command ran")
 elif mode == "terminal":
     print(*(os.isatty(fd) for fd in range(3)))
+elif mode == "signals":
+    def received(signum, _frame):
+        print(signal.Signals(signum).name, flush=True)
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, received)
+    print("ready", flush=True)
+    data = sys.stdin.buffer.read()
+    sys.stdout.buffer.write(data)
+    sys.stdout.flush()
+    time.sleep(0.5)
+    sys.exit(37)
+elif mode == "signal-exit":
+    signum = getattr(signal, sys.argv[2])
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+elif mode == "status":
+    sys.exit(int(sys.argv[2]))
+elif mode == "blocked-input":
+    released = False
+    def release(_signum, _frame):
+        global released
+        released = True
+        print("released", flush=True)
+    signal.signal(signal.SIGINT, release)
+    print("ready", flush=True)
+    while not released:
+        time.sleep(0.01)
+    sys.stdout.buffer.write(sys.stdin.buffer.read())
+    sys.stdout.flush()
+elif mode == "survivor":
+    subprocess.Popen((sys.executable, __file__, "survivor-child", str(os.getpid())))
+    sys.exit(23)
+elif mode == "survivor-child":
+    def stop(_signum, _frame):
+        print("descendant received signal", flush=True)
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, stop)
+    while os.getppid() == int(sys.argv[2]):
+        time.sleep(0.01)
+    print("descendant ready", flush=True)
+    time.sleep(60)

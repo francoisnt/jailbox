@@ -155,36 +155,77 @@ approved executable available on the host's `PATH`. This policy permits
 `notify-send "Build finished"` inside the sandbox.
 
 ```text
-# One message argument.
-notify-send \
-    {{.*}}
+[notify-send]
+allow {{.*}}
+
+[git log]
+insert --oneline
+allow main
 ```
 
-Jailbox puts wrappers for approved names first in the sandbox's normal
-`PATH`. Jailbox refuses names that collide with required helpers or are
-shadowed by shell builtins. Use an explicit sandbox executable path to run
-the local version.
-The wrapper passes arguments unchanged and runs the program from the
-corresponding project directory on the host. Relative path arguments are
-interpreted by the host program from that directory. Absolute arguments keep
-their original spelling. The command receives pipes for stdin, stdout, and
-stderr, so pipelines and exit statuses work. Interactive terminal programs
-require a separate design.
+This also permits `git log main`, run on the host as
+`git log --oneline main`. A section header names a command and optionally
+literal leading arguments. `allow` matches the remaining arguments of the
+original invocation; an empty `allow` permits the header alone. Any matching
+rule permits the request. The host adds literal `insert` arguments after
+matching header words, from the shortest matching header to the longest.
+Repeated headers combine their rules and insertions in file order. Sections
+without `allow` rules can supply inherited insertions and settings, but do not
+grant permission or create a wrapper by themselves.
 
-Jailbox writes a diagnostic to stderr when it refuses a request or loses the
-connection. Those failures can share an exit code with a host command.
-
-Each logical policy line describes one complete invocation. Spaces and tabs
-separate arguments. Use single or double quotes to group literal text,
-`''` for an empty argument, and backslash to make the next character
-literal. `{{regex}}` matches part or all of a single argument, including
-inside quotes. Regexes use byte-oriented POSIX extended syntax in the C
-locale. Dot matches newlines. Group repetition expressions next to the
-closing delimiter, as in `{{([0-9]{2})}}`. A line-ending backslash at an
-argument boundary joins the next line. Blank lines and lines starting with
-`#` can appear between definitions. Inline `#` is literal text.
-Exactly one definition must match all the arguments. Policies are limited to
+Spaces and tabs separate arguments. Single quotes are fully literal; double
+quotes group text while keeping backslash escapes and `{{regex}}` active.
+Use `''` for an empty argument. Outside single quotes, backslash makes the
+next character literal. A regex matches part or all of a single argument and
+uses byte-oriented POSIX extended syntax in the C locale. Dot matches newlines.
+Group repetition expressions near the closing delimiter, as in
+`{{([0-9]{2})}}`. A line-ending backslash at an argument boundary joins the
+next line of a section statement; headers cannot continue. Blank lines and
+lines starting with `#` can appear between statements. Inline `#` is literal.
+The former one-line policy format is not accepted. Policies are limited to
 32 KiB, argument patterns to 512 bytes, and matching runs with a deadline.
+
+Each section may set `fallback true` (default) or `fallback false`, and
+`log none` (default), `log unmatched`, or `log all`. Settings come from the
+longest matching header that sets them, then shorter headers, regardless of
+which `allow` rule matches. Conflicting settings in repeated headers are errors.
+
+Insertions also follow the longest header's leading words, not the rule that
+permits the invocation. Options before a subcommand select a shorter header;
+command-wide settings and insertions belong in `[COMMAND]`. Inserted arguments
+precede the remaining original arguments, so a program honoring the last of
+conflicting options may let a permitted later argument override an insertion.
+A regex matching an arbitrary argument can also match an option. Prefer a
+literal `--` before free values where the program supports it, or a pattern
+that cannot start with `-`.
+
+Jailbox puts wrappers for approved names first in the sandbox's normal `PATH`.
+It refuses names that collide with required helpers or are shadowed by shell
+builtins. Use an explicit sandbox executable path to run the local version.
+Outside the project, wrappers run the local executable directly. Inside the
+project, unmatched commands and calls from hidden directories run locally
+with their original arguments, environment, working directory and streams,
+unless fallback is disabled. If the local executable is missing, the error
+includes the host refusal. Other host errors, broken connections and host
+command exits never trigger a local retry.
+
+Forwarded commands run from the corresponding validated project directory on
+the host. Relative paths are interpreted there; absolute arguments keep their
+original spelling. The host program receives pipes for stdin, stdout and
+stderr, so pipelines and exit statuses work. Signals such as Ctrl-C reach the
+host program and its process group. Interactive terminal programs require a
+separate design. When both output streams are terminals, `[HOST]` appears once
+on stderr before command output; captured output and local calls are unchanged.
+
+When enabled, match logging stores UTC timestamps, project-relative working
+directories, original command arguments and match results in
+`projects/<project-id>/policy-matches.csv` under the host state root (normally
+`~/.local/state/jailbox/`). An empty directory field means the project root.
+The private CSV log is capped at 1 MiB, dropping oldest records and skipping
+records too large to fit. It survives stops, relaunches and failed-launch
+rollbacks; `jailbox --clean` removes it. Logging does not prove a program ran,
+and a logging failure does not change the command result. Arguments may
+contain credentials, so logging is off by default.
 
 Use `jailbox stop` followed by your launch command to apply policy edits or
 recover failed forwarding. A running service retains the policy it started

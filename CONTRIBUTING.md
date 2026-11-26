@@ -134,8 +134,11 @@ a release.
 
 ### Local checks
 
-Use `tests/run dev` during editing: syntax, worktree ShellCheck, generated-file
-checks, and the fast product and harness suites. Add affected suites explicitly, for example
+Use `tests/run dev` during editing: Go formatting, vet for Linux and macOS,
+native Go unit tests, builds for all supported core and container targets,
+Windows shared-package compilation,
+syntax, worktree ShellCheck, generated-file checks, and the fast product and
+harness suites. Add affected suites explicitly, for example
 `tests/run dev attachment exec` (names may include `.sh`). The extra suites run
 once alongside the defaults, under the same resource limits and scheduling
 as portable. All suite directories are discovered automatically; only the

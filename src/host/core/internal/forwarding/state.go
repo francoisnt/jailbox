@@ -108,6 +108,9 @@ func prepare(project, install string, contents []byte, umask int) (manifest, err
 	}
 	executables := make(map[string][]byte, len(rules))
 	for name := range rules {
+		if !rules.hasRules(name) {
+			continue
+		}
 		_, path, err := locateExecutable(name, project)
 		if err != nil {
 			return manifest{}, err

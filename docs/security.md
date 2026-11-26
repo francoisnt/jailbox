@@ -196,7 +196,13 @@ invocations listed in the policy. The host checks every request against the
 snapshot. Approved commands run with your host permissions and launch
 environment. Their filesystem and network access can bypass writable,
 read-only, hidden-path, and egress rules that apply inside the container.
-Jailbox refuses requests from working directories covered by `HIDDEN_PATHS`.
+Jailbox refuses host execution from working directories covered by
+`HIDDEN_PATHS`. Unmatched requests and calls from hidden directories can run
+locally inside the sandbox, without additional host authority, unless fallback
+is disabled. Other failures and host command exits never trigger local retry.
+The host adds literal policy insertions to approved invocations. These are not
+guaranteed protections: a permitted later argument may override an insertion,
+and options before a subcommand select a shorter header.
 Argument patterns limit spelling. Approved programs can still use path
 arguments to reach hidden files, follow symlinks, traverse parent directories,
 load configuration and plugins, and use host credentials or network services.
@@ -213,7 +219,12 @@ The service uses a dedicated connection authenticated with the sandbox's
 pinned SSH host key. Stopping revokes the endpoint and terminates active
 foreground command groups while the service is alive. If the connection
 breaks, a command may have completed some or all of its effects. Jailbox
-reports interruption and never retries the command. Abrupt service death or
+reports interruption and never retries the command. Forwarded SIGINT, SIGTERM
+and SIGHUP reach the host program's process group. Policy-match logging is
+opt-in and stores original command arguments in private host state: these may
+contain credentials. The log also contains sandbox-controlled text, such as
+working-directory names, which spreadsheet applications may interpret as
+formulas. Abrupt service death or
 programs that detach can leave host processes running.
 
 ## Network enforcement

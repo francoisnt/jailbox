@@ -1,36 +1,37 @@
 # Host command forwarding policy for this project.
 # Git invocations used by just release.
 # The release tool runs Git from the project root on both host and sandbox.
-git for-each-ref --count=1 --sort=-v:refname '--format=%(refname:strip=2)' 'refs/tags/v[0-9]*.[0-9]*.[0-9]*'
-git remote get-url origin
-git tag --list 'v[0-9]*.[0-9]*.[0-9]*'
-git status --porcelain
-git symbolic-ref --short refs/remotes/origin/HEAD
-git branch --show-current
-git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
-git rev-parse HEAD
-git rev-parse origin/master
-git rev-parse --verify 'HEAD^{commit}'
-git rev-parse --verify refs/tags/v{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}'^{commit}'
-git rev-parse --verify --quiet refs/tags/v{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}
+[git]
+allow for-each-ref --count=1 --sort=-v:refname '--format=%(refname:strip=2)' 'refs/tags/v[0-9]*.[0-9]*.[0-9]*'
+allow remote get-url origin
+allow tag --list 'v[0-9]*.[0-9]*.[0-9]*'
+allow status --porcelain
+allow symbolic-ref --short refs/remotes/origin/HEAD
+allow branch --show-current
+allow rev-parse --abbrev-ref --symbolic-full-name '@{u}'
+allow rev-parse HEAD
+allow rev-parse origin/master
+allow rev-parse --verify 'HEAD^{commit}'
+allow rev-parse --verify refs/tags/v{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}'^{commit}'
+allow rev-parse --verify --quiet refs/tags/v{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}
 
 # Read release history, public API declarations, pins and archived plans.
-git ls-tree --name-only {{([0-9a-f]{40})}} -- {{src/public-api[.]sh|src/public[.]sh|host/public-api[.]sh|lib/public-api[.]sh|versions[.]env|README[.]md|docs/development[.]md|src/go[.]mod|src/host/frontend/Containerfile[.]template|src/container/tinyproxy/Containerfile}}
-git show {{([0-9a-f]{40})}}:{{src/public-api[.]sh|src/public[.]sh|host/public-api[.]sh|lib/public-api[.]sh|versions[.]env|README[.]md|docs/development[.]md|src/go[.]mod|src/host/frontend/Containerfile[.]template|src/container/tinyproxy/Containerfile|plans/archive/[A-Za-z0-9._/-]+}}
-git log --no-merges --no-show-signature -z --format=%H%x00%s%x00%b {{([0-9a-f]{40})([.][.]([0-9a-f]{40}))?}} --
-git diff-tree --root --no-commit-id -r --no-renames --name-only -z {{([0-9a-f]{40})}} -- src README.md LICENSE docs scripts/build-tarball.sh scripts/build-programs.sh scripts/go-series.sh scripts/go-version.sh jailbox install.sh host container lib ':(exclude,glob)**/*_test.go'
-git show -s --no-show-signature --format=%P {{([0-9a-f]{40})}}
-git diff --no-renames --diff-filter=A --name-only -z {{([0-9a-f]{40})}} {{([0-9a-f]{40})}} -- plans/archive
-git ls-tree -r --name-only -z {{([0-9a-f]{40})}} -- plans/archive
+allow ls-tree --name-only {{([0-9a-f]{40})}} -- {{src/public-api[.]sh|src/public[.]sh|host/public-api[.]sh|lib/public-api[.]sh|versions[.]env|README[.]md|docs/development[.]md|src/go[.]mod|src/host/frontend/Containerfile[.]template|src/container/tinyproxy/Containerfile}}
+allow show {{([0-9a-f]{40})}}:{{src/public-api[.]sh|src/public[.]sh|host/public-api[.]sh|lib/public-api[.]sh|versions[.]env|README[.]md|docs/development[.]md|src/go[.]mod|src/host/frontend/Containerfile[.]template|src/container/tinyproxy/Containerfile|plans/archive/[A-Za-z0-9._/-]+}}
+allow log --no-merges --no-show-signature -z --format=%H%x00%s%x00%b {{([0-9a-f]{40})([.][.]([0-9a-f]{40}))?}} --
+allow diff-tree --root --no-commit-id -r --no-renames --name-only -z {{([0-9a-f]{40})}} -- src README.md LICENSE docs scripts/build-tarball.sh scripts/build-programs.sh scripts/go-series.sh scripts/go-version.sh jailbox install.sh host container lib ':(exclude,glob)**/*_test.go'
+allow show -s --no-show-signature --format=%P {{([0-9a-f]{40})}}
+allow diff --no-renames --diff-filter=A --name-only -z {{([0-9a-f]{40})}} {{([0-9a-f]{40})}} -- plans/archive
+allow ls-tree -r --name-only -z {{([0-9a-f]{40})}} -- plans/archive
 
 # Refresh published tags and dispatch only release-request tags.
-git fetch --tags origin
-git fetch origin master --tags
-git ls-remote --exit-code --tags origin refs/tags/v{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}
-git -c 'user.name=jailbox release request' -c user.email=release-request@jailbox.invalid var GIT_COMMITTER_IDENT
-git mktag
-git push origin {{([0-9a-f]{40})}}:refs/tags/release-request{{(-first-major|-bump-(patch|minor|major))?}}-{{([0-9a-f]{40})}}
+allow fetch --tags origin
+allow fetch origin master --tags
+allow ls-remote --exit-code --tags origin refs/tags/v{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}.{{(0|[1-9][0-9]*)}}
+allow -c 'user.name=jailbox release request' -c user.email=release-request@jailbox.invalid var GIT_COMMITTER_IDENT
+allow mktag
+allow push origin {{([0-9a-f]{40})}}:refs/tags/release-request{{(-first-major|-bump-(patch|minor|major))?}}-{{([0-9a-f]{40})}}
 
 
-git --version
+allow --version
 

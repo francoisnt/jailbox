@@ -18,19 +18,19 @@ cleanup_forwarding_fixture() {
 trap cleanup_forwarding_fixture EXIT
 export JAILBOX_CONFIG_HOST_COMMAND_POLICY=host-policy
 expect_failure 'HOST_COMMAND_POLICY path does not exist'
-printf 'hostname {{[z-a]}}\n' > "$FIXTURE/project/host-policy"
+printf '[hostname]\nallow {{[z-a]}}\n' > "$FIXTURE/project/host-policy"
 chmod 644 "$FIXTURE/project/host-policy"
-expect_failure 'HOST_COMMAND_POLICY line 1'
+expect_failure 'HOST_COMMAND_POLICY line 2'
 [[ ! -e "$CONVERGENCE_LOG" ]]
-printf 'hostname\n' > "$FIXTURE/project/host-policy"
+printf '[hostname]\nallow\n' > "$FIXTURE/project/host-policy"
 JAILBOX_CONFIG_HIDDEN_PATHS_0=host-policy expect_failure 'conflicts with HIDDEN_PATHS'
 cp "$ROOT/tests/fixtures/forwarding/host-command.py" "$FIXTURE/project/project-tool"
 chmod 755 "$FIXTURE/project/project-tool"
-printf 'project-tool\n' > "$FIXTURE/project/host-policy"
+printf '[project-tool]\nallow\n' > "$FIXTURE/project/host-policy"
 PATH="$FIXTURE/project:$PATH" expect_failure 'inside the project tree'
-printf 'jailbox-unavailable-test-command\n' > "$FIXTURE/project/host-policy"
+printf '[jailbox-unavailable-test-command]\nallow\n' > "$FIXTURE/project/host-policy"
 expect_failure 'is unavailable'
-printf 'hostname\n' > "$FIXTURE/project/host-policy"
+printf '[hostname]\nallow\n[jailbox-unavailable-test-command]\ninsert x\nlog all\nfallback false\n' > "$FIXTURE/project/host-policy"
 
 mkdir -m 755 "$FIXTURE/project/hidden"
 printf 'fixture contents\n' > "$FIXTURE/project/hidden-file"
@@ -38,6 +38,7 @@ chmod 644 "$FIXTURE/project/hidden-file"
 export JAILBOX_CONFIG_HIDDEN_PATHS_0=hidden JAILBOX_CONFIG_HIDDEN_PATHS_1=hidden-file
 expect_success
 [[ -x "$GENERATION/server/host-commands/hostname" ]]
+[[ ! -e "$GENERATION/server/host-commands/jailbox-unavailable-test-command" ]]
 [[ -f "$state/policy" ]]
 python3 -c '
 import json, os, sys
@@ -51,7 +52,7 @@ expect_success
 [[ "$before" = "$(snapshot)" ]]
 printf '# changed by the host\n' >> "$FIXTURE/project/host-policy"
 expect_failure 'jailbox stop'
-cmp -s "$state/policy" <(printf 'hostname\n')
+cmp -s "$state/policy" <(printf '[hostname]\nallow\n[jailbox-unavailable-test-command]\ninsert x\nlog all\nfallback false\n')
 launch stop
 
 for recovery in stop --clean; do

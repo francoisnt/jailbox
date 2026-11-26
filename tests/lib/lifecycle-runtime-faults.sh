@@ -22,8 +22,12 @@ fault_baseline() {
         launch:host-forwarding)
             construct absent plain none true
             export JAILBOX_CONFIG_HOST_COMMAND_POLICY=host-policy
-            printf 'hostname\n' > "$PROJECT/host-policy"
+            printf '[hostname]\nallow\nlog all\n' > "$PROJECT/host-policy"
             chmod 644 "$PROJECT/host-policy"
+            mkdir -p "$STATE"
+            chmod 700 "$STATE"
+            printf '%s\n' 'timestamp,cwd,command,match' '2026-01-01T00:00:00Z,,hostname,matched' > "$STATE/policy-matches.csv"
+            chmod 600 "$STATE/policy-matches.csv"
             ;;
         launch:home-setup)
             construct absent plain none true
@@ -154,6 +158,16 @@ run_mutation_faults() {
     if [[ "$policy" = host-forwarding ]]; then assert_forwarding_ready; fi
     cp "$LIFECYCLE_EVENTS" "$trace"
     unset LIFECYCLE_EVENTS
+    if [[ "$policy" = host-forwarding ]]; then
+        local log_before="$LOG/$CASE_KEY/policy-matches-before.csv"
+        cp "$STATE/policy-matches.csv" "$log_before"
+        expect_success stop
+        cmp -s "$log_before" "$STATE/policy-matches.csv" || matrix_die 'stop changed retained match log'
+        expect_success up
+        assert_forwarding_ready
+        expect_success --clean
+        [[ ! -e "$STATE/policy-matches.csv" ]] || matrix_die 'clean retained policy match log'
+    fi
     lifecycle_require_fault_coverage "$trace" "$command" "$policy" || matrix_die 'persistent mutation coverage regressed'
     cases=$(lifecycle_fault_cases "$trace" "$command" "$policy" "$piece" "$pieces") || matrix_die 'could not select interruption cases'
     if [[ -n "$cases" ]]; then printf '%s\n' "$cases" >> "$LOG/expected-faults"; fi
@@ -230,6 +244,9 @@ run_mutation_faults() {
         # owning recovery for interrupted operations; execute it.
         expect_success "$recovery"
         [[ ! -e "$STATE/forwarding" ]] || matrix_die 'recovery left forwarding state'
+        if [[ "$policy" = host-forwarding ]]; then
+            grep -Fxq '2026-01-01T00:00:00Z,,hostname,matched' "$STATE/policy-matches.csv" || matrix_die 'launch rollback lost retained match records'
+        fi
         if [[ "$contract:$policy" = launch:new-ephemeral || "$contract:$policy" = launch:home-setup ||
             "$contract:$policy" = launch:host-forwarding ]]; then
             require_absent volume "$HOME_VOLUME"
@@ -255,6 +272,8 @@ assert_forwarding_ready() {
     local result
     result=$(cd "$PROJECT" && "$ROOT/src/jailbox" exec hostname) || matrix_die 'forwarding did not accept the host command'
     [[ "$result" = "$(hostname)" ]] || matrix_die 'forwarded hostname did not run on the host'
+    [[ -f "$STATE/policy-matches.csv" ]] || matrix_die 'policy match log is absent'
+    grep -Fq ',"""hostname""",matched' "$STATE/policy-matches.csv" || matrix_die 'forwarding did not log a match'
 }
 
 assert_setup_marker() {

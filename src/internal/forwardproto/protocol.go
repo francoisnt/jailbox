@@ -17,7 +17,10 @@ const (
 
 // D and A carry request metadata. C grants credit for one I chunk.
 // An empty I ends stdin. O and E carry output, X is a command exit, and
-// F is a service refusal. P is a readiness challenge or reply.
+// S announces a started command before any credit or output. G delivers a
+// signal by name, independently of stdin. X carries a single status byte or
+// a signal name. F refuses a request; L refuses with permission to run locally.
+// P is a readiness challenge or reply.
 func Receive(r io.Reader, limit uint32) (byte, []byte, error) {
 	var header [5]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
